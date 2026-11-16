@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.5 · 2026-11-16
+> v0.6 · 2026-11-16
 
 ---
 
@@ -13,7 +13,7 @@
 - **Current phase:** Phase 1 — Import Agntree
 - **Current step:** 1.1 — write the Phase 1 plan (merge Agntree with history via an `upstream` remote)
 - **Last update:** 2026-11-16
-- **Next action:** Fold D9–D33 + the reuse survey into the Phase 1 plan (Sharif reviews), run the three Windows spikes, then start the import.
+- **Next action:** Sharif decides Q1 (assumption tests say one window can't hold other repos' chats: switch to window-per-repo?). Then fold D9–D34 + test results into the Phase 1 plan.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -69,6 +69,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D31 | Tabs from several repos at once: session clicks keep adding tabs from any repo, all on screen and each labelled with its repo; clicking a repo name filters to that repo; an "All open tabs" row brings everything back; switching never closes tabs. Depends on the one-window test (2.6) | Sharif 2026-11-16, decision log 21 |
 | D32 | Pin tabs with Cursor's own Pin Tab (right-click → Pin, Ctrl+K Shift+Enter): pinned tabs sit left and survive "Close Others" | Sharif 2026-11-16, decision log 22 |
 | D33 | Sidebar never scrolls sideways (rows truncate with "…"); its edge drags to resize or hide, and the line above FILES drags to resize it, like any Cursor panel | Sharif 2026-11-16, decision log 23 |
+| D34 | Each repo row gets a session-history button (clock) next to "+": lists every past Claude Code chat in that repo, beyond the 14-day list, and resumes the one you pick in Claude's panel | Sharif 2026-11-16 |
 ---
 
 ## §3 The Checklist — every Phase from start to v1.0.0
@@ -117,8 +118,8 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
-| 2.1 | Multi-root workspace with 3 repos; open a session per repo via the link handler; record which folder each runs in | ⏸ | ⏸ | — | `transcripts/inital_idea.md` |
-| 2.2 | Check the "already-open session opens a duplicate tab" bug | ⏸ | ⏸ | — | `transcripts/inital_idea.md` |
+| 2.1 | Multi-root workspace with 3 repos; open a session per repo via the link handler; record which folder each runs in | ~ | — | spike 2026-11-16: **FAIL**, another repo's chat opens as a new empty chat in the window's folder ([tests](docs/research/2026-11-16-assumption-tests.md) T5) | `transcripts/inital_idea.md` |
+| 2.2 | Check the "already-open session opens a duplicate tab" bug | ~ | — | spike 2026-11-16: PASS, re-open focuses the existing tab, even in another window (T6) | `transcripts/inital_idea.md` |
 | 2.3 | Record the verdict: one-window vs jump-to-window | ⏸ | ⏸ | — | — |
 | 2.4 | Open two sessions from different repos side by side in one window (the "N need you" view) | ⏸ | ⏸ | — | D25 |
 | 2.5 | Can Claude Code chat tabs show their repo (description, tooltip, title)? Record what is possible | ⏸ | ⏸ | — | D26 |
@@ -185,7 +186,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 
 | # | Decision | Deadline / Trigger | Phase impact |
 |---|---|---|---|
-| Q1 | One-window vs jump-to-window | End of Phase 2 | Phase 3 design |
+| Q1 | One-window vs jump-to-window. Spike 2026-11-16 says one window can't hold other repos' chats (T5) → recommend window-per-repo with "jump to the repo's window"; affects D15, D25, D31 | **Now (Sharif)** | Phase 2–3 design |
 | Q2 | ~~Keep Agntree's other agents?~~ Resolved → D9 | — | — |
 | Q4 | ~~Spec canvas decisions 2–12~~ Resolved → D13–D21 (all locked 2026-11-16); 13–20 → D22–D29 | — | — |
 | Q3 | Publish to Open VSX / Marketplace, or `.vsix` only | Phase 5 | 5.4 |
@@ -199,6 +200,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 - [Agntree](https://github.com/subhashkhileri/agntree): upstream (MIT)
 - **Spec canvas** (wireframes, buildability, status rules, decisions) + **Brand Book** page: https://claude.ai/artifact/XhYy9L747DwQzBsQDpaFF2
 - [Reuse survey](docs/research/2026-11-16-reuse-survey.md): what code to lift from which repo, licenses, Windows spikes
+- [Assumption tests round 1](docs/research/2026-11-16-assumption-tests.md): T1–T16 live results (status, hooks, maximize, one-window, tabs, pop-ups)
 - `transcripts/inital_idea.md`: origin conversation (local only, never committed)
 
 ---
@@ -210,3 +212,4 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 - **v0.3 · 2026-11-16.** Spec decisions D9–D29 locked. D22–D29 came from the prototype review: files open as tabs, copying between repos, one search box, clickable bottom-bar counts, repo under each tab, sound switches, repo-row "+" and Dismiss, and inherit-from-Cursor as a rule. New rows 2.4–2.5 (one-window tests for cross-repo side by side and tab labels), 4.4 (sound), and a Phase 6 backlog (6.1 instant in-chat search, 6.2 custom panel).
 - **v0.4 · 2026-11-16.** D30: `main` stays open for Sharif and his Claude for now; row 5.5 protects it (PR + review + CI, admin-only bypass) before the contributor call, which moves to 5.6.
 - **v0.5 · 2026-11-16.** D31–D33: tabs from several repos stay on screen together (repo click filters, "All open tabs" restores; amends D11), Cursor's own tab pinning, resizable sidebar with no sideways scroll. New row 2.6 tests the repo filter over a shared tab set.
+- **v0.6 · 2026-11-16.** Assumption tests round 1. PASS: status files show "waiting" (T1), hooks fire in the panel (T11), maximize/restore editor groups in Cursor (T3), no duplicate tabs (T6), US keyboard (T4). FAIL: one window can't resume another repo's chat (T5) → Q1 reopened for Sharif. Blocked: pop-ups (Windows notifications off on this machine, T2/T12). Risk confirmed: tab-to-chat matching by title (T10). D34: session-history button per repo.
