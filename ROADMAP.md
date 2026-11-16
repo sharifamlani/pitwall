@@ -50,6 +50,8 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D13 | Repos are found automatically (any repo with a Claude session in the last 14 days); any repo can be removed (stays hidden until re-added); repos can be added by hand (title-bar folder icon or "Pitwall: Add Repository") | Sharif 2026-11-16, spec canvas Decision 2 |
 | D14 | No worktree level: sessions sit under the repo, and every row always shows its branch/worktree (even main); hover shows the worktree folder; the bottom-bar corner shows the open chat's branch | Sharif 2026-11-16, spec canvas Decision 6 |
 | D15 | Hotkey to open a repo itself in its own Cursor window (proposed Ctrl+Alt+Shift+1–9 by position, Ctrl+Alt+O for the current repo; focuses the existing window if one is open) | Sharif 2026-11-16 |
+| D16 | Claude Code chats stay ordinary Cursor tabs: drag-to-reorder, split and pin keep working; switching repos never closes or rebuilds tabs, so tab order is preserved | Sharif 2026-11-16 |
+| D17 | Brand: dark-first with a light mode; Inter + JetBrains Mono; Pitwall orange #f0883e only for "needs you"; status colors per the brand book (all pairs WCAG-checked) | Sharif 2026-11-16, brand book page |
 
 ---
 
@@ -161,7 +163,8 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 - [Foundation plan](docs/superpowers/plans/2026-11-16-foundation.md): Phase 0 tasks, smokes, evaluation criteria
 - [CLAUDE.md](CLAUDE.md): project rules, never-track list, versioning and tags
 - [Agntree](https://github.com/subhashkhileri/agntree): upstream (MIT)
-- **Spec canvas** (wireframes, buildability, status rules, decisions): https://claude.ai/artifact/XhYy9L747DwQzBsQDpaFF2
+- **Spec canvas** (wireframes, buildability, status rules, decisions) + **Brand Book** page: https://claude.ai/artifact/XhYy9L747DwQzBsQDpaFF2
+- [Reuse survey](docs/research/2026-11-16-reuse-survey.md): what code to lift from which repo, licenses, Windows spikes
 - `transcripts/inital_idea.md`: origin conversation (local only, never committed)
 
 ---
