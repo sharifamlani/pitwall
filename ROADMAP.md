@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.2 · 2026-11-16
+> v0.3 · 2026-11-16
 
 ---
 
@@ -13,7 +13,7 @@
 - **Current phase:** Phase 1 — Import Agntree
 - **Current step:** 1.1 — write the Phase 1 plan (merge Agntree with history via an `upstream` remote)
 - **Last update:** 2026-11-16
-- **Next action:** Fold D9–D21 + the reuse survey into the Phase 1 plan (Sharif reviews), run the three Windows spikes, then start the import.
+- **Next action:** Fold D9–D29 + the reuse survey into the Phase 1 plan (Sharif reviews), run the three Windows spikes, then start the import.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -46,7 +46,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D9 | Claude Code only for v1; every agent lives in its own `src/harnesses/<id>/` folder, switched on by one `enabled.json` (Codex / opencode / Pi kept dormant) | Sharif 2026-11-16 |
 | D10 | Sidebar = standard VS Code list (TreeView) for v1; the custom card panel is v2 | Sharif 2026-11-16, spec canvas Decision 1 |
 | D11 | Two ways into a chat: click a repo → its open chats come up; click a session → its tab opens and the view switches to its repo | Sharif 2026-11-16, spec canvas "Two ways into a chat" |
-| D12 | Hotkeys jump to repos by their position in the sidebar (1st, 2nd, 3rd…); each repo row shows its key. Exact keys + repo order = spec canvas Decisions 11–12 | Sharif 2026-11-16 |
+| D12 | Hotkeys jump to repos by their position in the sidebar (1st, 2nd, 3rd…). Keys are latent: not printed on rows, shown in the hover tooltip (D28). Exact keys + repo order = spec canvas Decisions 11–12 | Sharif 2026-11-16 |
 | D13 | Repos are found automatically (any repo with a Claude session in the last 14 days); any repo can be removed (stays hidden until re-added); repos can be added by hand (title-bar folder icon or "Pitwall: Add Repository") | Sharif 2026-11-16, spec canvas Decision 2 |
 | D14 | No worktree level: sessions sit under the repo, and every row always shows its branch/worktree (even main); hover shows the worktree folder; the bottom-bar corner shows the open chat's branch | Sharif 2026-11-16, spec canvas Decision 6 |
 | D15 | Hotkey to open a repo itself in its own Cursor window (proposed Ctrl+Alt+Shift+1–9 by position, Ctrl+Alt+O for the current repo; focuses the existing window if one is open) | Sharif 2026-11-16 |
@@ -57,6 +57,14 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D20 | Pop-ups for Needs you + Finished (silent); click a session open elsewhere → that window comes forward; a repo's chats show as tabs (side-by-side on right-click) | Sharif 2026-11-16, decision log 8–10 |
 | D21 | Repo order is inbox-style and moving: attention rises to the top, hotkeys follow position; rows move only on status change, never under the mouse. rank Needs you → Finished → Working → Idle, newest first (confirmed) | Sharif 2026-11-16, decision log 11–12 |
 
+| D22 | Clicking a file in FILES opens it as a normal Cursor editor tab in that repo's tab group, next to its chats (preview tabs and editing inherited) | Sharif 2026-11-16, decision log 13 |
+| D23 | Copy files between repos: copy/cut in one repo, switch, paste (Agntree's clipboard survives switching; paste lands in the shown repo/worktree; name clashes get " copy"). New: right-click "Copy to another repo" and drag a file onto a repo row. A copied `.env` that the target's `.gitignore` doesn't cover triggers an offer to add it | Sharif 2026-11-16, decision log 14 |
+| D24 | Search (Ctrl+Alt+R), one box: v1 = repos + chats by name/branch (instant) + Agntree's Find Session (agent reads transcripts). Instant text search inside chats → row 6.1 | Sharif 2026-11-16, decision log 15 |
+| D25 | Bottom-bar counts are buttons: click "N need you" (or working / finished) → those sessions open side by side across repos, each labelled with its repo; Back returns. Cross-repo depends on the one-window test (2.4) | Sharif 2026-11-16, decision log 16 |
+| D26 | Every tab shows its repo + branch underneath. File tabs: Cursor's tab-label setting. Claude's chat tabs can't be written on by another extension: until 2.5 finds a way, the repo shows in the tooltip, bottom bar and window title | Sharif 2026-11-16, decision log 17 |
+| D27 | Sound: off by default (refines D20). Two switches, "needs you" and "finished"; when on, the Windows pop-up plays the system sound. Bell in the sidebar header + Settings | Sharif 2026-11-16, decision log 18 |
+| D28 | Repo rows: no printed hotkeys; a "+" on each repo starts a new Claude Code chat there; the header keeps only the folder icon (add repo). Right-click → "Dismiss from Pitwall" hides the repo (nothing on disk changes); it returns when re-added or when a new session starts in it | Sharif 2026-11-16, decision log 19 |
+| D29 | Principle: inherit everything Cursor already does (tabs, editor, menus, quick-pick box, keybinding editor, themes); never rebuild it. Canvas board "What Pitwall gets from Cursor" | Sharif 2026-11-16, decision log 20 |
 ---
 
 ## §3 The Checklist — every Phase from start to v1.0.0
@@ -108,6 +116,8 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | 2.1 | Multi-root workspace with 3 repos; open a session per repo via the link handler; record which folder each runs in | ⏸ | ⏸ | — | `transcripts/inital_idea.md` |
 | 2.2 | Check the "already-open session opens a duplicate tab" bug | ⏸ | ⏸ | — | `transcripts/inital_idea.md` |
 | 2.3 | Record the verdict: one-window vs jump-to-window | ⏸ | ⏸ | — | — |
+| 2.4 | Open two sessions from different repos side by side in one window (the "N need you" view) | ⏸ | ⏸ | — | D25 |
+| 2.5 | Can Claude Code chat tabs show their repo (description, tooltip, title)? Record what is possible | ⏸ | ⏸ | — | D26 |
 
 ### Phase 3 — Chat panel by default
 **Goal:** Clicking a session opens the Claude Code chat panel directly, with no terminal step.
@@ -133,6 +143,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | 4.1 | Map Agntree's status labels to the D4 colors | ⏸ | ⏸ | — | D4 |
 | 4.2 | Hook-driven "needs you" on native Windows | ⏸ | ⏸ | — | `transcripts/inital_idea.md` |
 | 4.3 | Windows toast on finish / needs-you; clicking it focuses the session | ⏸ | ⏸ | — | `transcripts/inital_idea.md` |
+| 4.4 | Sound switches (needs you / finished), off by default; toast plays the system sound when on | ⏸ | ⏸ | — | D27 |
 
 ### Phase 5 — Package + install
 **Goal:** An installable `.vsix`, running in Sharif's daily Cursor.
@@ -149,6 +160,19 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | 5.4 | (Optional) Publish to Open VSX with `OVSX_PAT` | ⏸ | ⏸ | — | `.env.example` |
 | 5.5 | LinkedIn launch post: opens with the problem (idle sessions unnoticed in other windows), then what Pitwall does, then asks developers to contribute to the MIT repo | ⏸ | ⏸ | — | Sharif 2026-11-16 |
 
+
+### Phase 6 — After v1 (backlog)
+**Goal:** Improvements agreed during spec work but deliberately left out of v1.
+**Entry gate:** Phase 5 ✅ (`v1.0.0`).
+**Exit gate:** Per row.
+**Status:** ⏸ backlog.
+**Plan:** ⏸ to write
+
+| # | Action | Status | Plan? | Date · Commit / Plan | Source |
+|---|---|---|---|---|---|
+| 6.1 | Instant search of the text inside chats (index the transcripts; results in the Ctrl+Alt+R box) | ⏸ | ⏸ | — | D24 |
+| 6.2 | Custom card panel for the sidebar (v2 look) | ⏸ | ⏸ | — | D10 |
+
 ---
 
 ## §4 Open decisions still to make
@@ -157,7 +181,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 |---|---|---|---|
 | Q1 | One-window vs jump-to-window | End of Phase 2 | Phase 3 design |
 | Q2 | ~~Keep Agntree's other agents?~~ Resolved → D9 | — | — |
-| Q4 | ~~Spec canvas decisions 2–12~~ Resolved → D13–D21 (all locked 2026-11-16) | — | — |
+| Q4 | ~~Spec canvas decisions 2–12~~ Resolved → D13–D21 (all locked 2026-11-16); 13–20 → D22–D29 | — | — |
 | Q3 | Publish to Open VSX / Marketplace, or `.vsix` only | Phase 5 | 5.4 |
 
 ---
@@ -177,3 +201,4 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 
 - **v0.1 · 2026-11-16.** Roadmap created. Phases 0–5 laid out from the origin conversation. Phase 0 rows 0.1–0.3 shipped. Versioning rule D8 locked (annotated tag on every bump).
 - **v0.2 · 2026-11-16.** Phase 0 closed and tagged `v0.1.0`. Public repo at github.com/sharifamlani/pitwall. A whole-branch review found four Important issues, all fixed in `ab838e2`/`cdd42b3`/`0c295ae`: the env check passed with no template, the privacy check only caught top-level exact-case paths, the container's `node_modules` was root-owned, and the container could read the Claude login and `.packages/`. Phase 1 is unblocked. Machine note: Windows long paths are disabled (`LongPathsEnabled=0`), so enable them before Phase 1's npm install.
+- **v0.3 · 2026-11-16.** Spec decisions D9–D29 locked. D22–D29 came from the prototype review: files open as tabs, copying between repos, one search box, clickable bottom-bar counts, repo under each tab, sound switches, repo-row "+" and Dismiss, and inherit-from-Cursor as a rule. New rows 2.4–2.5 (one-window tests for cross-repo side by side and tab labels), 4.4 (sound), and a Phase 6 backlog (6.1 instant in-chat search, 6.2 custom panel).
