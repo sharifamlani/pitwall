@@ -4,7 +4,7 @@ Prints key names only — never values. Empty values count as present.
 
     poetry run python -m tools.check_env [--example PATH] [--env PATH]
 
-Exit codes: 0 all keys present, 1 keys missing, 2 env file not found.
+Exit codes: 0 all keys present, 1 keys missing, 2 .env or .env.example not found.
 """
 
 import argparse
@@ -29,6 +29,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--example", type=Path, default=Path(".env.example"))
     parser.add_argument("--env", type=Path, default=Path(".env"))
     args = parser.parse_args(argv)
+
+    if not args.example.is_file():
+        print(f"{args.example} not found. It is the tracked template; restore it from git.", file=sys.stderr)
+        return 2
 
     if not args.env.is_file():
         print(f"{args.env} not found. Create it with: cp .env.example .env", file=sys.stderr)

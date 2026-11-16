@@ -43,6 +43,14 @@ def test_main_never_prints_values(tmp_path, capsys):
     assert "MISSING: B" in err
 
 
+def test_main_missing_example_file_exits_2(tmp_path, capsys):
+    env = _write(tmp_path / ".env", "A=1\n")
+    code = main(["--example", str(tmp_path / "nope"), "--env", str(env)])
+    _, err = capsys.readouterr()
+    assert code == 2
+    assert "not found" in err
+
+
 def test_main_missing_env_file_exits_2_with_hint(tmp_path, capsys):
     example = _write(tmp_path / ".env.example", "A=\n")
     code = main(["--example", str(example), "--env", str(tmp_path / "nope")])
