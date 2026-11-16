@@ -13,7 +13,7 @@
 - **Current phase:** Phase 1 — Import Agntree
 - **Current step:** 1.1 — write the Phase 1 plan (merge Agntree with history via an `upstream` remote)
 - **Last update:** 2026-11-16
-- **Next action:** Sharif answers Decisions 3–12 on the spec canvas; then fold them into the Phase 1 plan and start the import.
+- **Next action:** Sharif answers Decisions 3–5 and 7–12 on the spec canvas; then fold them into the Phase 1 plan and start the import.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -48,6 +48,8 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D11 | Two ways into a chat: click a repo → its open chats come up; click a session → its tab opens and the view switches to its repo | Sharif 2026-11-16, spec canvas "Two ways into a chat" |
 | D12 | Hotkeys jump to repos by their position in the sidebar (1st, 2nd, 3rd…); each repo row shows its key. Exact keys + repo order = spec canvas Decisions 11–12 | Sharif 2026-11-16 |
 | D13 | Repos are found automatically (any repo with a Claude session in the last 14 days); any repo can be removed (stays hidden until re-added); repos can be added by hand (title-bar folder icon or "Pitwall: Add Repository") | Sharif 2026-11-16, spec canvas Decision 2 |
+| D14 | No worktree level: sessions sit under the repo, and every row always shows its branch/worktree (even main); hover shows the worktree folder; the bottom-bar corner shows the open chat's branch | Sharif 2026-11-16, spec canvas Decision 6 |
+| D15 | Hotkey to open a repo itself in its own Cursor window (proposed Ctrl+Alt+Shift+1–9 by position, Ctrl+Alt+O for the current repo; focuses the existing window if one is open) | Sharif 2026-11-16 |
 
 ---
 
@@ -148,7 +150,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 |---|---|---|---|
 | Q1 | One-window vs jump-to-window | End of Phase 2 | Phase 3 design |
 | Q2 | ~~Keep Agntree's other agents?~~ Resolved → D9 | — | — |
-| Q4 | Spec canvas Decisions 3–12 (which sessions show, Finished→Idle, session order, worktrees, extra panels, pop-ups, cross-window click, tabs vs side by side, hotkey combo, repo order) | Before Phase 1 import | Phase 1 scope + later phases |
+| Q4 | Spec canvas Decisions 3–5, 7–12 (which sessions show, Finished→Idle, session order, extra panels, pop-ups, cross-window click, tabs vs side by side, hotkey combo, repo order) | Before Phase 1 import | Phase 1 scope + later phases |
 | Q3 | Publish to Open VSX / Marketplace, or `.vsix` only | Phase 5 | 5.4 |
 
 ---
