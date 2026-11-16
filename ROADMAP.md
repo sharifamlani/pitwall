@@ -141,6 +141,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | 5.2 | Install via *Extensions: Install from VSIX…* | ⏸ | ⏸ | — | `transcripts/inital_idea.md` |
 | 5.3 | `gh release create v1.0.0` with the `.vsix` attached | ⏸ | ⏸ | — | D8 |
 | 5.4 | (Optional) Publish to Open VSX with `OVSX_PAT` | ⏸ | ⏸ | — | `.env.example` |
+| 5.5 | LinkedIn launch post: opens with the problem (idle sessions unnoticed in other windows), then what Pitwall does, then asks developers to contribute to the MIT repo | ⏸ | ⏸ | — | Sharif 2026-11-16 |
 
 ---
 
