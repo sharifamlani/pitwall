@@ -13,7 +13,7 @@
 - **Current phase:** Phase 1 — Import Agntree
 - **Current step:** 1.1 — write the Phase 1 plan (merge Agntree with history via an `upstream` remote)
 - **Last update:** 2026-11-16
-- **Next action:** Sharif answers Decisions 3–5 and 7–12 on the spec canvas; then fold them into the Phase 1 plan and start the import.
+- **Next action:** Sharif confirms Needs-you-vs-Finished rank (Q4); then fold D9–D21 into the Phase 1 plan, run the three Windows spikes, and start the import.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -52,6 +52,10 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D15 | Hotkey to open a repo itself in its own Cursor window (proposed Ctrl+Alt+Shift+1–9 by position, Ctrl+Alt+O for the current repo; focuses the existing window if one is open) | Sharif 2026-11-16 |
 | D16 | Claude Code chats stay ordinary Cursor tabs: drag-to-reorder, split and pin keep working; switching repos never closes or rebuilds tabs, so tab order is preserved | Sharif 2026-11-16 |
 | D17 | Brand: dark-first with a light mode; Inter + JetBrains Mono; Pitwall orange #f0883e only for "needs you"; status colors per the brand book (all pairs WCAG-checked); logo = the status row (four dots: working, needs you, finished, idle), one-color with an enlarged needs-you dot at ≤24px | Sharif 2026-11-16, brand book page |
+| D18 | Sessions: every session from the last 14 days; Finished turns Idle when its chat is opened; in-repo order Needs you → Working → Finished → Idle | Sharif 2026-11-16, decision log 3–5 |
+| D19 | Keep a FILES section under the repo list inside Pitwall (Agntree's files view), collapsed by default, Ctrl+Alt+F; follows the selected repo / the open session's worktree. Hide Changes, worktree create/delete, PR badges; keep Find Session + Fork | Sharif 2026-11-16, decision log 7 |
+| D20 | Pop-ups for Needs you + Finished (silent); click a session open elsewhere → that window comes forward; a repo's chats show as tabs (side-by-side on right-click) | Sharif 2026-11-16, decision log 8–10 |
+| D21 | Repo order is inbox-style and moving: attention rises to the top, hotkeys follow position; rows move only on status change, never under the mouse. Needs-you-vs-Finished rank still open (prototype: Needs you first) | Sharif 2026-11-16, decision log 11–12 |
 
 ---
 
@@ -153,7 +157,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 |---|---|---|---|
 | Q1 | One-window vs jump-to-window | End of Phase 2 | Phase 3 design |
 | Q2 | ~~Keep Agntree's other agents?~~ Resolved → D9 | — | — |
-| Q4 | Spec canvas Decisions 3–5, 7–12 (which sessions show, Finished→Idle, session order, extra panels, pop-ups, cross-window click, tabs vs side by side, hotkey combo, repo order) | Before Phase 1 import | Phase 1 scope + later phases |
+| Q4 | ~~Spec canvas decisions 2–12~~ Resolved → D13–D21, except: does Needs you rank above Finished in the repo order? | Before Phase 1 plan is finalized | Phase 5 sorting |
 | Q3 | Publish to Open VSX / Marketplace, or `.vsix` only | Phase 5 | 5.4 |
 
 ---
