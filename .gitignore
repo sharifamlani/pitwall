@@ -41,3 +41,6 @@ desktop.ini
 /.superpowers/
 # Playwright MCP runtime dumps
 .playwright-mcp/
+
+# public: third-party repos cloned for reference (license-checked before any code is copied)
+/public/
