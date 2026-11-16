@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.3 · 2026-11-16
+> v0.4 · 2026-11-16
 
 ---
 
@@ -65,6 +65,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D27 | Sound: off by default (refines D20). Two switches, "needs you" and "finished"; when on, the Windows pop-up plays the system sound. Bell in the sidebar header + Settings | Sharif 2026-11-16, decision log 18 |
 | D28 | Repo rows: no printed hotkeys; a "+" on each repo starts a new Claude Code chat there; the header keeps only the folder icon (add repo). Right-click → "Dismiss from Pitwall" hides the repo (nothing on disk changes); it returns when re-added or when a new session starts in it | Sharif 2026-11-16, decision log 19 |
 | D29 | Principle: inherit everything Cursor already does (tabs, editor, menus, quick-pick box, keybinding editor, themes); never rebuild it. Canvas board "What Pitwall gets from Cursor" | Sharif 2026-11-16, decision log 20 |
+| D30 | Until contributions open, `main` stays unprotected so Sharif and his Claude push directly. Before the contributor call goes out (5.6), `main` gets a GitHub ruleset: changes only through a pull request with 1 approving review and passing CI, no force-push or deletion; only the repo admin (Sharif, and his Claude using his login) may bypass | Sharif 2026-11-16 |
 ---
 
 ## §3 The Checklist — every Phase from start to v1.0.0
@@ -158,7 +159,8 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | 5.2 | Install via *Extensions: Install from VSIX…* | ⏸ | ⏸ | — | `transcripts/inital_idea.md` |
 | 5.3 | `gh release create v1.0.0` with the `.vsix` attached | ⏸ | ⏸ | — | D8 |
 | 5.4 | (Optional) Publish to Open VSX with `OVSX_PAT` | ⏸ | ⏸ | — | `.env.example` |
-| 5.5 | LinkedIn launch post: opens with the problem (idle sessions unnoticed in other windows), then what Pitwall does, then asks developers to contribute to the MIT repo | ⏸ | ⏸ | — | Sharif 2026-11-16 |
+| 5.5 | Protect `main` before inviting contributors (D30): ruleset requiring a PR + 1 approving review + green CI, blocking force-push and deletion, bypass for the admin only; add `CONTRIBUTING.md` (fork → branch → PR) and `.github/CODEOWNERS` (@sharifamlani). Verify: a non-admin test account's direct push to `main` is rejected | ⏸ | ⏸ | — | D30 |
+| 5.6 | LinkedIn launch post: opens with the problem (idle sessions unnoticed in other windows), then what Pitwall does, then asks developers to contribute to the MIT repo. Posts only after 5.5 | ⏸ | ⏸ | — | Sharif 2026-11-16 |
 
 
 ### Phase 6 — After v1 (backlog)
@@ -202,3 +204,4 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 - **v0.1 · 2026-11-16.** Roadmap created. Phases 0–5 laid out from the origin conversation. Phase 0 rows 0.1–0.3 shipped. Versioning rule D8 locked (annotated tag on every bump).
 - **v0.2 · 2026-11-16.** Phase 0 closed and tagged `v0.1.0`. Public repo at github.com/sharifamlani/pitwall. A whole-branch review found four Important issues, all fixed in `ab838e2`/`cdd42b3`/`0c295ae`: the env check passed with no template, the privacy check only caught top-level exact-case paths, the container's `node_modules` was root-owned, and the container could read the Claude login and `.packages/`. Phase 1 is unblocked. Machine note: Windows long paths are disabled (`LongPathsEnabled=0`), so enable them before Phase 1's npm install.
 - **v0.3 · 2026-11-16.** Spec decisions D9–D29 locked. D22–D29 came from the prototype review: files open as tabs, copying between repos, one search box, clickable bottom-bar counts, repo under each tab, sound switches, repo-row "+" and Dismiss, and inherit-from-Cursor as a rule. New rows 2.4–2.5 (one-window tests for cross-repo side by side and tab labels), 4.4 (sound), and a Phase 6 backlog (6.1 instant in-chat search, 6.2 custom panel).
+- **v0.4 · 2026-11-16.** D30: `main` stays open for Sharif and his Claude for now; row 5.5 protects it (PR + review + CI, admin-only bypass) before the contributor call, which moves to 5.6.
