@@ -1,64 +1,38 @@
-# Secrets
-*.env*
+# Secrets — .env holds local values; only the documented template is tracked
+.env
+.env.*
 !.env.example
 
-# Python
+# Python (dev tooling under tools/, managed by Poetry)
 __pycache__/
 *.py[cod]
-*$py.class
-*.egg-info/
 .venv/
 .pytest_cache/
+*.egg-info/
 
-# Job pipeline runtime state (never commit — contains scraped data + LLM session logs)
-Scripts/data/*
-Scripts/claude_cli/sessions/
-Scripts/claude_cli/logs/
-Scripts/job_orchestrator/logs/
-Scripts/job_orchestrator/state.yaml
-# create_account plaintext credential vault (belt-and-suspenders on top of Scripts/data/)
-Scripts/data/credentials.yaml
-
-# Learned-answers store (Phase 2.5, Decision L — belt-and-suspenders on top of Scripts/data/)
-Scripts/data/learned_answers.yaml
-
-# EEO race-list variants — explicitly trackable (no PII, audit-grade documentation)
-!Scripts/data/race_list_variants.yaml
+# Node / extension build output (mirrors Agntree's ignores so the Phase 1 import merges cleanly)
+node_modules/
+out/
+dist/
+*.vsix
+.vscode-test/
+test/dry/.build/
+_site/
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
-gcp_service-account-key.json
-
-# Playwright MCP runtime dumps (auto-generated per session — never useful in git)
+# Private, local-only — this repo is PUBLIC; none of these may ever be committed
+# transcripts: planning conversations (both casings, so Linux containers match too)
+/transcripts/
+/Transcripts/
+# .packages: local connector scripts; holds a live OAuth token
+/.packages/
+# .claude: per-machine Claude Code settings, skills and locks
+/.claude/
+# .superpowers: plan-execution scratch (ledgers, briefs, review packages)
+/.superpowers/
+# Playwright MCP runtime dumps
 .playwright-mcp/
-
-# _tmp_*.py scaffolding — never commit exploratory scripts (Sharif directive 2026-08-12)
-Scripts/_tmp_*.py
-Scripts/_tmp_*.sh
-Scripts/*/_spike_*.py
-
-# LaTeX build artifacts (per Sharif's Resume/v1 build)
-*.aux
-*.log
-*.out
-
-# Debug logs from live smokes
-debug.log
-linkedin_probe.png
-Scripts/data/canary_v3_evidence/
-
-# Runtime lock files
-.claude/scheduled_tasks.lock
-
-# Ghostscript /screen derivatives for Oracle HCM upload — regenerate from the
-# canonical PDF in Companies/<Company>/ rather than tracking (CLAUDE.md Amex)
-Private Market/Companies/_compressed/
-
-# Derived artifact — regenerate with scripts/zip-for-girlfriend if needed
-For-Girlfriend.zip
-
-transcripts/
-.packages/
-.claude/
