@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.1 · 2026-11-16
+> v0.2 · 2026-11-16
 
 ---
 
 ## §0 You are here
 
-- **Current phase:** Phase 0 — Foundation
-- **Current step:** 0.7 — secret scan, then publish the public GitHub repo
+- **Current phase:** Phase 1 — Import Agntree
+- **Current step:** 1.1 — write the Phase 1 plan (merge Agntree with history via an `upstream` remote)
 - **Last update:** 2026-11-16
-- **Next action:** Run gitleaks over the git history, then `gh repo create sharifamlani/pitwall --public`.
+- **Next action:** Decide Q2 (keep or strip Agntree's Codex / opencode / Pi support), then write the Phase 1 plan. Enable Windows long paths first (README), since `node_modules` nests deep.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -52,7 +52,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 **Goal:** Clean, public repo with Poetry, `.env`, a dev container and a one-command verify script.
 **Entry gate:** N/A.
 **Exit gate:** Evaluator scorecard all PASS; tag `v0.1.0` pushed.
-**Status:** ⏳ in flight.
+**Status:** ✅ done · tag `v0.1.0`.
 **Plan:** [2026-11-16-foundation.md](docs/superpowers/plans/2026-11-16-foundation.md)
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
@@ -60,17 +60,18 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | 0.1 | Rewrite `.gitignore`, add `.gitattributes` + MIT `LICENSE` | ✅ | — | 2026-11-16 · `b78bf86` | plan Task 1 |
 | 0.2 | Poetry project, `.env.example`, `tools/check_env.py` (6 tests) | ✅ | — | 2026-11-16 · `cca13ac` | plan Task 2 |
 | 0.3 | Dev container (Python 3.13, Node 22, Poetry 2.3.4) | ✅ | — | 2026-11-16 · `4b0f06a` | plan Task 3 |
-| 0.4 | `scripts/verify-foundation.sh` | ⏳ | ✅ plan | Task 4 | plan Task 4 |
-| 0.5 | README, CLAUDE.md, this ROADMAP | ⏳ | ✅ plan | Task 4 | plan Task 4 |
-| 0.6 | Secret scan of git history (gitleaks) | ⏸ | ✅ plan | Task 5 | plan Task 5 |
-| 0.7 | Create public GitHub repo + push | ⏸ | ✅ plan | Task 5 | plan Task 5 |
-| 0.8 | Fresh-clone end-to-end verify | ⏸ | ✅ plan | Task 5 | plan Task 5 |
-| 0.9 | Independent evaluator scorecard (E1–E10) all PASS | ⏸ | ✅ plan | Task 5 | plan §4 |
-| 0.10 | Tag `v0.1.0` | ⏸ | ✅ plan | Task 5 | D8 |
+| 0.4 | `scripts/verify-foundation.sh` | ✅ | — | 2026-11-16 · `f27b8f8` | plan Task 4 |
+| 0.5 | README, CLAUDE.md, this ROADMAP | ✅ | — | 2026-11-16 · `f27b8f8` | plan Task 4 |
+| 0.6 | Secret scan of git history (gitleaks) | ✅ | — | 2026-11-16 · `f27b8f8` (no leaks, 9 commits) | plan Task 5 |
+| 0.7 | Create public GitHub repo + push | ✅ | — | 2026-11-16 · `f27b8f8` · github.com/sharifamlani/pitwall | plan Task 5 |
+| 0.8 | Fresh-clone end-to-end verify | ✅ | — | 2026-11-16 · `29a78a3` | plan Task 5 |
+| 0.9 | Review fix pass: check_env missing template, privacy check any depth/casing, container isolation | ✅ | — | 2026-11-16 · `0c295ae` | whole-branch review |
+| 0.10 | Independent evaluator scorecard (E1–E10) all PASS | ✅ | — | 2026-11-16 · E1–E8 @ `29a78a3`, re-grade @ `0c295ae` (7/7 PASS) | plan §4 |
+| 0.11 | Tag `v0.1.0` | ✅ | — | 2026-11-16 · tag `v0.1.0` | D8 |
 
 ### Phase 1 — Import Agntree
 **Goal:** Agntree's code in this repo, with its history and MIT credit kept, building as Pitwall.
-**Entry gate:** Phase 0 ✅.
+**Entry gate:** Phase 0 ✅ (`v0.1.0`).
 **Exit gate:** `npm ci && npm run compile && npm test` green on host and in the container; tag `v0.2.0`.
 **Status:** ⏸ planned.
 **Plan:** ⏸ to write
@@ -78,7 +79,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
 | 1.1 | Add `upstream` remote → `subhashkhileri/agntree`; merge with `--allow-unrelated-histories` | ⏸ | ⏸ | — | D2 |
-| 1.2 | Resolve root collisions (README, ROADMAP, `.gitignore`, LICENSE, `.claude/`) | ⏸ | ⏸ | — | D2, D7 |
+| 1.2 | Resolve root collisions (README, ROADMAP, `.gitignore`, LICENSE). Agntree tracks `.claude/`, which `check_private_paths` blocks: drop it or move it | ⏸ | ⏸ | — | D2, D7 |
 | 1.3 | Rename to Pitwall in `package.json` (name, displayName, publisher); `version` → `0.2.0` | ⏸ | ⏸ | — | D5, D8 |
 | 1.4 | `npm ci`, compile, dry tests green; add an npm step to `verify-foundation.sh` | ⏸ | ⏸ | — | D6 |
 
@@ -159,3 +160,4 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 ## §6 Changelog
 
 - **v0.1 · 2026-11-16.** Roadmap created. Phases 0–5 laid out from the origin conversation. Phase 0 rows 0.1–0.3 shipped. Versioning rule D8 locked (annotated tag on every bump).
+- **v0.2 · 2026-11-16.** Phase 0 closed and tagged `v0.1.0`. Public repo at github.com/sharifamlani/pitwall. A whole-branch review found four Important issues, all fixed in `ab838e2`/`cdd42b3`/`0c295ae`: the env check passed with no template, the privacy check only caught top-level exact-case paths, the container's `node_modules` was root-owned, and the container could read the Claude login and `.packages/`. Phase 1 is unblocked. Machine note: Windows long paths are disabled (`LongPathsEnabled=0`), so enable them before Phase 1's npm install.
