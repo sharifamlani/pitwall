@@ -1,0 +1,23 @@
+[project]
+name = "pitwall-tools"
+version = "0.1.0"
+description = "Dev tooling for Pitwall"
+authors = [{ name = "Sharif Amlani", email = "sharifocc@gmail.com" }]
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "python-dotenv (>=1.0.1)",
+]
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.3"
+
+[tool.pytest.ini_options]
+testpaths = ["tools/tests"]
+pythonpath = ["."]
