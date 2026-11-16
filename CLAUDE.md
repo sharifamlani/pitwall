@@ -15,7 +15,7 @@ Pitwall is a Cursor / VS Code extension: one sidebar showing every Claude Code s
 
 | Path | Why |
 |---|---|
-| `.packages/` | Local connector scripts; holds a live Gmail OAuth `token.json` |
+| `.packages/` | Local connector scripts; may hold local credentials |
 | `transcripts/` | Private planning conversations |
 | `.claude/` | Per-machine Claude Code settings, skills, locks |
 | `.superpowers/` | Plan-execution scratch |
@@ -40,6 +40,8 @@ Run `bash scripts/verify-foundation.sh` before every push; its `ignore` check fa
 ## Environment gotchas
 
 - **This machine's shells can inherit `VIRTUAL_ENV` from another project.** Poetry will then install into that project's venv. Run `unset VIRTUAL_ENV` before any `poetry` command; `verify-foundation.sh` does this itself.
-- In the container, Poetry's venv lives outside the workspace (`POETRY_VIRTUALENVS_IN_PROJECT=false`) and `node_modules` is a named volume, so the host's Windows environments are never overwritten.
+- In the container, Poetry's venv lives outside the workspace (`POETRY_VIRTUALENVS_IN_PROJECT=false`). `node_modules` is a per-checkout named volume that `postCreateCommand` hands to `vscode`. Together these mean the host's Windows environments are never overwritten.
+- **The container sees no credentials.** Only `~/.claude/projects` is mounted (read-only), not `~/.claude`, which holds `.credentials.json`. `.packages/` is masked with an empty volume. npm install scripts run in there, so keep it that way. `verify-foundation.sh`'s `isolation` check enforces it.
+- Tools must never call `load_dotenv(override=True)`: the host `.env` would override the container's `PITWALL_CLAUDE_HOME`.
 - **Windows MAX_PATH (260 chars):** long paths are disabled on this machine. Poetry and npm installs fail with `WinError 206` in deep folders, such as the Claude scratchpad. Run fresh-clone tests from a short path like `C:\Users\Shari\AppData\Local\Temp\pw-e2e`. README has the one-time admin fix.
 - Write `.env` with the file tools, not `sed`/`awk`, which mangle Windows backslash paths.

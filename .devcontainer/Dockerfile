@@ -11,7 +11,7 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
  && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git \
+ && apt-get install -y --no-install-recommends git sudo \
  && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir poetry==2.3.4
@@ -19,5 +19,8 @@ RUN pip install --no-cache-dir poetry==2.3.4
 # Keep the Linux venv out of the bind-mounted workspace so it can't clobber the host's Windows .venv
 ENV POETRY_VIRTUALENVS_IN_PROJECT=false
 
-RUN useradd -m -s /bin/bash vscode
+# Passwordless sudo lets postCreateCommand hand the root-owned node_modules volume to vscode
+RUN useradd -m -s /bin/bash vscode \
+ && echo 'vscode ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/vscode \
+ && chmod 0440 /etc/sudoers.d/vscode
 USER vscode

@@ -27,7 +27,7 @@ Phase 5 : Package .vsix + install in Cursor
 
 - Repo: `github.com/sharifamlani/pitwall`, **public**, default branch `main`.
 - Description: `Pitwall: every Claude Code session across your repos, in one sidebar.`
-- Never tracked, ever (public repo): `.packages/` (holds a live Gmail OAuth `token.json`), `transcripts/`, `.claude/`, `.env`.
+- Never tracked, ever (public repo): `.packages/` (local connector scripts; may hold credentials), `transcripts/`, `.claude/`, `.env`.
 - "Claude" must not appear in the product name (Anthropic trademark); "for Claude Code" in descriptions is fine.
 - Python `requires-python = ">=3.13,<3.14"`; Poetry `package-mode = false`; venv in-project on the host (matches `audio-to-transcript`).
 - Poetry pinned to `2.3.4` in the container (host already has 2.3.4). Node major `22` (host has v22.23.2).
@@ -210,7 +210,7 @@ Graded by an **independent evaluator sub-agent**, not the builder.
   - *Python:* `__pycache__/`, `*.py[cod]`, `.venv/`, `.pytest_cache/`, `*.egg-info/`
   - *Node / extension (matches Agntree's ignores so Phase 1 merges cleanly):* `node_modules/`, `out/`, `dist/`, `*.vsix`, `.vscode-test/`, `test/dry/.build/`, `_site/`
   - *OS:* `.DS_Store`, `Thumbs.db`, `desktop.ini`
-  - *Private, local-only — never public:* `/transcripts/`, `/Transcripts/`, `/.packages/` (comment: "holds a live OAuth token"), `/.claude/`, `.playwright-mcp/`
+  - *Private, local-only — never public:* `/transcripts/`, `/Transcripts/`, `/.packages/` (comment: "may hold local credentials"), `/.claude/`, `.playwright-mcp/`
   - Do **not** ignore `.vscode/` (Agntree tracks its debug launch config).
 - [ ] **Step 2:** Create `.gitattributes`: `* text=auto eol=lf`, `*.ps1 text eol=crlf`, `*.png binary`, `*.ico binary`.
 - [ ] **Step 3:** Create `LICENSE` — standard MIT text, `Copyright (c) 2026 Sharif Amlani`.
