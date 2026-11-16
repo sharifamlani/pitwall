@@ -197,6 +197,7 @@ Graded by an **independent evaluator sub-agent**, not the builder.
 | E7 | Env check is safe and correct | 6/6 tests pass, incl. BOM/CRLF and never-print-values | `poetry run pytest tools/tests -v` | pytest output |
 | E8 | Line endings won't break the container | 0 tracked text files stored with CRLF | `git ls-files --eol \| grep -c 'i/crlf'` → `0` | count |
 | E9 | ROADMAP reflects reality | Phase 0 row `✅ <date> · <sha>`, §0 banner names Phase 1 as next, §6 has a 2026-11-16 entry, version stamp present | `grep` on `ROADMAP.md` | grep output |
+| E10 | The release is tagged (added by Sharif 2026-11-16: "as we have new version releases … we're tagging those versions") | annotated tag `v0.1.0` exists on GitHub and points at the Phase 0 close commit | `git ls-remote --tags origin v0.1.0` + `git cat-file -t v0.1.0` → `tag` | command output |
 
 ## 5. Implementation tasks
 
@@ -293,13 +294,14 @@ Graded by an **independent evaluator sub-agent**, not the builder.
 - [ ] **Step 3:** Run Smoke 8.
 - [ ] **Step 4:** Run Smoke 9 in the scratchpad, then the ground-truth `gh api` query.
 - [ ] **Step 5:** Flip ROADMAP Phase 0 to `✅ 2026-11-16 · <sha>`, refresh §0 (next: Phase 1 Import Agntree), add §6 entry, bump to `v0.2`. Commit `roadmap: Phase 0 foundation complete` and push.
+- [ ] **Step 5b:** `git tag -a v0.1.0 -m "Phase 0: foundation" && git push origin v0.1.0` (Sharif 2026-11-16: every version bump gets a tag).
 - [ ] **Step 6:** Dispatch an independent evaluator sub-agent with §4's table only; it grades E1–E9 and returns the scorecard. Fix any FAIL and re-grade until all PASS.
 
 ## 6. Scorecard (filled at close by the evaluator)
 
 | Criterion | Threshold | Result | Evidence | PASS/FAIL |
 |---|---|---|---|---|
-| E1 … E9 | | | | |
+| E1 … E10 | | | | |
 
 ## Out of scope (next plans)
 
