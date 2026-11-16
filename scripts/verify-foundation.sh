@@ -15,20 +15,19 @@ unset VIRTUAL_ENV
 pass() { echo "PASS $1"; }
 fail() { echo "FAIL $1: $2"; exit 1; }
 
-# 1. ignore — nothing private is tracked (this repo is public)
-leaked=$(git ls-files | grep -E '^(\.packages|transcripts|Transcripts|\.claude|\.superpowers)/|^\.env$' || true)
-[[ -z "$leaked" ]] || fail ignore "private paths are tracked: $leaked"
-pass ignore
-
-# 2. eol — no tracked text file is stored with CRLF (breaks shell scripts in the container)
+# 1. eol — no tracked text file is stored with CRLF (breaks shell scripts in the container)
 crlf=$(git ls-files --eol | grep -c 'i/crlf' || true)
 [[ "$crlf" == "0" ]] || fail eol "$crlf tracked files stored with CRLF"
 pass eol
 
-# 3. poetry — install and run the Python test suite
+# 2. poetry — install and run the Python test suite
 poetry install --no-interaction -q || fail poetry "poetry install failed"
 poetry run pytest -q || fail poetry "tests failed"
 pass poetry
+
+# 3. ignore — nothing private is tracked (this repo is public); any depth, any casing
+poetry run python -m tools.check_private_paths || fail ignore "private paths are tracked (see LEAKED lines)"
+pass ignore
 
 # 4. env — every .env.example key exists in .env
 if [[ ! -f .env ]]; then
@@ -38,7 +37,18 @@ fi
 poetry run python -m tools.check_env || fail env "check_env reported a problem"
 pass env
 
-# 5. docker — container builds with the pinned toolchain (host only)
+# 5. isolation — inside the dev container only: node_modules writable, no credentials visible
+if [[ "${PITWALL_CLAUDE_HOME:-}" == "/home/vscode/.claude-host" ]]; then
+  { touch node_modules/.write-probe 2>/dev/null && rm -f node_modules/.write-probe; } \
+    || fail isolation "node_modules is not writable by $(whoami)"
+  [[ ! -e "$PITWALL_CLAUDE_HOME/.credentials.json" ]] \
+    || fail isolation "Claude login credentials are visible in the container"
+  [[ -z "$(ls -A .packages 2>/dev/null)" ]] \
+    || fail isolation ".packages/ (local credentials) is visible in the container"
+  pass isolation
+fi
+
+# 6. docker — container builds with the pinned toolchain (host only)
 if [[ $SKIP_DOCKER -eq 1 || -f /.dockerenv ]]; then
   echo "SKIP docker (inside container or --skip-docker)"
 elif ! command -v docker >/dev/null 2>&1; then

@@ -2,6 +2,11 @@
 .env
 .env.*
 !.env.example
+token.json
+credentials.json
+.credentials.json
+*.pem
+*.key
 
 # Python (dev tooling under tools/, managed by Poetry)
 __pycache__/
@@ -28,7 +33,7 @@ desktop.ini
 # transcripts: planning conversations (both casings, so Linux containers match too)
 /transcripts/
 /Transcripts/
-# .packages: local connector scripts; holds a live OAuth token
+# .packages: local connector scripts; may hold local credentials
 /.packages/
 # .claude: per-machine Claude Code settings, skills and locks
 /.claude/
