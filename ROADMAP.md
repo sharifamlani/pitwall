@@ -66,8 +66,8 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | 0.7 | Create public GitHub repo + push | ✅ | — | 2026-11-16 · `f27b8f8` · github.com/sharifamlani/pitwall | plan Task 5 |
 | 0.8 | Fresh-clone end-to-end verify | ✅ | — | 2026-11-16 · `29a78a3` | plan Task 5 |
 | 0.9 | Review fix pass: check_env missing template, privacy check any depth/casing, container isolation | ✅ | — | 2026-11-16 · `0c295ae` | whole-branch review |
-| 0.10 | Independent evaluator scorecard (E1–E10) all PASS | ✅ | — | 2026-11-16 · E1–E8 @ `29a78a3`, re-grade @ `0c295ae` (7/7 PASS) | plan §4 |
-| 0.11 | Tag `v0.1.0` | ✅ | — | 2026-11-16 · tag `v0.1.0` | D8 |
+| 0.10 | Independent evaluator scorecard (E1–E10) all PASS | ✅ | — | 2026-11-16 · E1–E8 @ `29a78a3`; E2/E3/E5/E7 + isolation re-graded @ `0c295ae`; E9–E10 @ `32214f9`. All 10 PASS | plan §4 |
+| 0.11 | Tag `v0.1.0` | ✅ | — | 2026-11-16 · tag `v0.1.0` → `32214f9` | D8 |
 
 ### Phase 1 — Import Agntree
 **Goal:** Agntree's code in this repo, with its history and MIT credit kept, building as Pitwall.
