@@ -1,0 +1,63 @@
+# Secrets
+*.env*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Job pipeline runtime state (never commit — contains scraped data + LLM session logs)
+Scripts/data/*
+Scripts/claude_cli/sessions/
+Scripts/claude_cli/logs/
+Scripts/job_orchestrator/logs/
+Scripts/job_orchestrator/state.yaml
+# create_account plaintext credential vault (belt-and-suspenders on top of Scripts/data/)
+Scripts/data/credentials.yaml
+
+# Learned-answers store (Phase 2.5, Decision L — belt-and-suspenders on top of Scripts/data/)
+Scripts/data/learned_answers.yaml
+
+# EEO race-list variants — explicitly trackable (no PII, audit-grade documentation)
+!Scripts/data/race_list_variants.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+gcp_service-account-key.json
+
+# Playwright MCP runtime dumps (auto-generated per session — never useful in git)
+.playwright-mcp/
+
+# _tmp_*.py scaffolding — never commit exploratory scripts (Sharif directive 2026-08-12)
+Scripts/_tmp_*.py
+Scripts/_tmp_*.sh
+Scripts/*/_spike_*.py
+
+# LaTeX build artifacts (per Sharif's Resume/v1 build)
+*.aux
+*.log
+*.out
+
+# Debug logs from live smokes
+debug.log
+linkedin_probe.png
+Scripts/data/canary_v3_evidence/
+
+# Runtime lock files
+.claude/scheduled_tasks.lock
+
+# Ghostscript /screen derivatives for Oracle HCM upload — regenerate from the
+# canonical PDF in Companies/<Company>/ rather than tracking (CLAUDE.md Amex)
+Private Market/Companies/_compressed/
+
+# Derived artifact — regenerate with scripts/zip-for-girlfriend if needed
+For-Girlfriend.zip
+
+Transcript/
+.packages/
