@@ -51,7 +51,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D14 | No worktree level: sessions sit under the repo, and every row always shows its branch/worktree (even main); hover shows the worktree folder; the bottom-bar corner shows the open chat's branch | Sharif 2026-11-16, spec canvas Decision 6 |
 | D15 | Hotkey to open a repo itself in its own Cursor window (proposed Ctrl+Alt+Shift+1–9 by position, Ctrl+Alt+O for the current repo; focuses the existing window if one is open) | Sharif 2026-11-16 |
 | D16 | Claude Code chats stay ordinary Cursor tabs: drag-to-reorder, split and pin keep working; switching repos never closes or rebuilds tabs, so tab order is preserved | Sharif 2026-11-16 |
-| D17 | Brand: dark-first with a light mode; Inter + JetBrains Mono; Pitwall orange #f0883e only for "needs you"; status colors per the brand book (all pairs WCAG-checked) | Sharif 2026-11-16, brand book page |
+| D17 | Brand: dark-first with a light mode; Inter + JetBrains Mono; Pitwall orange #f0883e only for "needs you"; status colors per the brand book (all pairs WCAG-checked); logo = the status row (four dots: working, needs you, finished, idle), one-color with an enlarged needs-you dot at ≤24px | Sharif 2026-11-16, brand book page |
 
 ---
 
