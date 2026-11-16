@@ -59,6 +59,6 @@ Private Market/Companies/_compressed/
 # Derived artifact — regenerate with scripts/zip-for-girlfriend if needed
 For-Girlfriend.zip
 
-Transcripts/
+transcripts/
 .packages/
 .claude/
