@@ -13,7 +13,7 @@
 - **Current phase:** Phase 1 — Import Agntree
 - **Current step:** 1.1 — write the Phase 1 plan (merge Agntree with history via an `upstream` remote)
 - **Last update:** 2026-11-16
-- **Next action:** Decide Q2 (keep or strip Agntree's Codex / opencode / Pi support), then write the Phase 1 plan. Enable Windows long paths first (README), since `node_modules` nests deep.
+- **Next action:** Sharif answers Decisions 2–10 on the spec canvas; then fold them into the Phase 1 plan and start the import.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -43,6 +43,9 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D6 | Extension = TypeScript/npm at the repo root; Python dev tooling = `tools/` via Poetry | [foundation plan](docs/superpowers/plans/2026-11-16-foundation.md) |
 | D7 | Public repo; `.packages/`, `transcripts/`, `.claude/`, `.env` are never tracked | [foundation plan](docs/superpowers/plans/2026-11-16-foundation.md) |
 | D8 | SemVer annotated tags on every version bump; Phase N closes as `v0.(N+1).0`, Phase 5 = `v1.0.0` | Sharif 2026-11-16, [CLAUDE.md](CLAUDE.md) |
+| D9 | Claude Code only for v1; every agent lives in its own `src/harnesses/<id>/` folder, switched on by one `enabled.json` (Codex / opencode / Pi kept dormant) | Sharif 2026-11-16 |
+| D10 | Sidebar = standard VS Code list (TreeView) for v1; the custom card panel is v2 | Sharif 2026-11-16, spec canvas Decision 1 |
+| D11 | Two ways into a chat: click a repo → its open chats come up; click a session → its tab opens and the view switches to its repo | Sharif 2026-11-16, spec canvas "Two ways into a chat" |
 
 ---
 
@@ -142,7 +145,8 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | # | Decision | Deadline / Trigger | Phase impact |
 |---|---|---|---|
 | Q1 | One-window vs jump-to-window | End of Phase 2 | Phase 3 design |
-| Q2 | Keep Agntree's Codex / opencode / Pi support, or strip to Claude Code only | Phase 1 import | Phase 1 scope |
+| Q2 | ~~Keep Agntree's other agents?~~ Resolved → D9 | — | — |
+| Q4 | Spec canvas Decisions 2–10 (repo discovery, which sessions show, Finished→Idle, order, worktrees, extra panels, pop-ups, cross-window click, tabs vs side by side) | Before Phase 1 import | Phase 1 scope + later phases |
 | Q3 | Publish to Open VSX / Marketplace, or `.vsix` only | Phase 5 | 5.4 |
 
 ---
@@ -152,7 +156,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 - [Foundation plan](docs/superpowers/plans/2026-11-16-foundation.md): Phase 0 tasks, smokes, evaluation criteria
 - [CLAUDE.md](CLAUDE.md): project rules, never-track list, versioning and tags
 - [Agntree](https://github.com/subhashkhileri/agntree): upstream (MIT)
-- Wireframe: https://claude.ai/artifact/XhYy9L747DwQzBsQDpaFF2
+- **Spec canvas** (wireframes, buildability, status rules, decisions): https://claude.ai/artifact/XhYy9L747DwQzBsQDpaFF2
 - `transcripts/inital_idea.md`: origin conversation (local only, never committed)
 
 ---
