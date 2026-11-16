@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.4 · 2026-11-16
+> v0.5 · 2026-11-16
 
 ---
 
@@ -13,7 +13,7 @@
 - **Current phase:** Phase 1 — Import Agntree
 - **Current step:** 1.1 — write the Phase 1 plan (merge Agntree with history via an `upstream` remote)
 - **Last update:** 2026-11-16
-- **Next action:** Fold D9–D29 + the reuse survey into the Phase 1 plan (Sharif reviews), run the three Windows spikes, then start the import.
+- **Next action:** Fold D9–D33 + the reuse survey into the Phase 1 plan (Sharif reviews), run the three Windows spikes, then start the import.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -45,7 +45,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D8 | SemVer annotated tags on every version bump; Phase N closes as `v0.(N+1).0`, Phase 5 = `v1.0.0` | Sharif 2026-11-16, [CLAUDE.md](CLAUDE.md) |
 | D9 | Claude Code only for v1; every agent lives in its own `src/harnesses/<id>/` folder, switched on by one `enabled.json` (Codex / opencode / Pi kept dormant) | Sharif 2026-11-16 |
 | D10 | Sidebar = standard VS Code list (TreeView) for v1; the custom card panel is v2 | Sharif 2026-11-16, spec canvas Decision 1 |
-| D11 | Two ways into a chat: click a repo → its open chats come up; click a session → its tab opens and the view switches to its repo | Sharif 2026-11-16, spec canvas "Two ways into a chat" |
+| D11 | Two ways into a chat: click a repo → only its open tabs show; click a session → its tab opens alongside every other open tab (amended by D31) | Sharif 2026-11-16, spec canvas "Two ways into a chat" |
 | D12 | Hotkeys jump to repos by their position in the sidebar (1st, 2nd, 3rd…). Keys are latent: not printed on rows, shown in the hover tooltip (D28). Exact keys + repo order = spec canvas Decisions 11–12 | Sharif 2026-11-16 |
 | D13 | Repos are found automatically (any repo with a Claude session in the last 14 days); any repo can be removed (stays hidden until re-added); repos can be added by hand (title-bar folder icon or "Pitwall: Add Repository") | Sharif 2026-11-16, spec canvas Decision 2 |
 | D14 | No worktree level: sessions sit under the repo, and every row always shows its branch/worktree (even main); hover shows the worktree folder; the bottom-bar corner shows the open chat's branch | Sharif 2026-11-16, spec canvas Decision 6 |
@@ -66,6 +66,9 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D28 | Repo rows: no printed hotkeys; a "+" on each repo starts a new Claude Code chat there; the header keeps only the folder icon (add repo). Right-click → "Dismiss from Pitwall" hides the repo (nothing on disk changes); it returns when re-added or when a new session starts in it | Sharif 2026-11-16, decision log 19 |
 | D29 | Principle: inherit everything Cursor already does (tabs, editor, menus, quick-pick box, keybinding editor, themes); never rebuild it. Canvas board "What Pitwall gets from Cursor" | Sharif 2026-11-16, decision log 20 |
 | D30 | Until contributions open, `main` stays unprotected so Sharif and his Claude push directly. Before the contributor call goes out (5.6), `main` gets a GitHub ruleset: changes only through a pull request with 1 approving review and passing CI, no force-push or deletion; only the repo admin (Sharif, and his Claude using his login) may bypass | Sharif 2026-11-16 |
+| D31 | Tabs from several repos at once: session clicks keep adding tabs from any repo, all on screen and each labelled with its repo; clicking a repo name filters to that repo; an "All open tabs" row brings everything back; switching never closes tabs. Depends on the one-window test (2.6) | Sharif 2026-11-16, decision log 21 |
+| D32 | Pin tabs with Cursor's own Pin Tab (right-click → Pin, Ctrl+K Shift+Enter): pinned tabs sit left and survive "Close Others" | Sharif 2026-11-16, decision log 22 |
+| D33 | Sidebar never scrolls sideways (rows truncate with "…"); its edge drags to resize or hide, and the line above FILES drags to resize it, like any Cursor panel | Sharif 2026-11-16, decision log 23 |
 ---
 
 ## §3 The Checklist — every Phase from start to v1.0.0
@@ -119,6 +122,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | 2.3 | Record the verdict: one-window vs jump-to-window | ⏸ | ⏸ | — | — |
 | 2.4 | Open two sessions from different repos side by side in one window (the "N need you" view) | ⏸ | ⏸ | — | D25 |
 | 2.5 | Can Claude Code chat tabs show their repo (description, tooltip, title)? Record what is possible | ⏸ | ⏸ | — | D26 |
+| 2.6 | Keep tabs from several repos open together, then show only one repo's tabs and switch back without closing any (repo filter over a shared tab set) | ⏸ | ⏸ | — | D31 |
 
 ### Phase 3 — Chat panel by default
 **Goal:** Clicking a session opens the Claude Code chat panel directly, with no terminal step.
@@ -205,3 +209,4 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 - **v0.2 · 2026-11-16.** Phase 0 closed and tagged `v0.1.0`. Public repo at github.com/sharifamlani/pitwall. A whole-branch review found four Important issues, all fixed in `ab838e2`/`cdd42b3`/`0c295ae`: the env check passed with no template, the privacy check only caught top-level exact-case paths, the container's `node_modules` was root-owned, and the container could read the Claude login and `.packages/`. Phase 1 is unblocked. Machine note: Windows long paths are disabled (`LongPathsEnabled=0`), so enable them before Phase 1's npm install.
 - **v0.3 · 2026-11-16.** Spec decisions D9–D29 locked. D22–D29 came from the prototype review: files open as tabs, copying between repos, one search box, clickable bottom-bar counts, repo under each tab, sound switches, repo-row "+" and Dismiss, and inherit-from-Cursor as a rule. New rows 2.4–2.5 (one-window tests for cross-repo side by side and tab labels), 4.4 (sound), and a Phase 6 backlog (6.1 instant in-chat search, 6.2 custom panel).
 - **v0.4 · 2026-11-16.** D30: `main` stays open for Sharif and his Claude for now; row 5.5 protects it (PR + review + CI, admin-only bypass) before the contributor call, which moves to 5.6.
+- **v0.5 · 2026-11-16.** D31–D33: tabs from several repos stay on screen together (repo click filters, "All open tabs" restores; amends D11), Cursor's own tab pinning, resizable sidebar with no sideways scroll. New row 2.6 tests the repo filter over a shared tab set.
