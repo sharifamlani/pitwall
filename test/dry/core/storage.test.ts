@@ -40,6 +40,20 @@ test('chats written before multi-harness support migrate on read, once', async (
   assert.equal(writes, 1, 'an already-migrated list is not rewritten');
 });
 
+test('a created chat is stored once, so a reload lists it once', async () => {
+  const globalState = memento();
+  const storage = makeStorage(globalState);
+  const chat = storage.createChat('wt-1', 'claude', 'Session');
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(
+    globalState.get<{ id: string }[]>(STORAGE_KEYS.CHATS, []).map((stored) => stored.id),
+    [chat.id],
+    'one stored record'
+  );
+  assert.deepEqual(makeStorage(globalState).getChats().map((reloaded) => reloaded.id), [chat.id], 'one row after a reload');
+});
+
 test('repositories reorder past legacy hidden entries, and re-adding a hidden root shows it', async () => {
   const globalState = memento();
   // Older versions soft-removed a root with `hidden`; the flag is still read.
