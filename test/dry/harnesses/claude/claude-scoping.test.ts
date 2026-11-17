@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ClaudeSessionService } from '../../../../src/harnesses/claude/ClaudeSessionService';
 import { claudeProjectDirMatches, encodeClaudeProjectPath } from '../../../../src/harnesses/claude/paths';
+import { ClaudeHarness } from '../../../../src/harnesses/claude/ClaudeHarness';
 import { claudeProfile, entry } from './claudeFixture';
 import { dirLink, setEnv } from '../../support';
 
@@ -92,6 +93,24 @@ test('a session found in two project directories is listed once, newest copy fir
 
   const sessions = await new ClaudeSessionService().findSessionsForWorktree(worktree);
   assert.deepEqual(sessions.map((s) => `${s.sessionId}:${s.summary}`), ['dup-session:New copy']);
+});
+
+test('sessions started from a lowercase drive are listed under their repo', { skip: process.platform !== 'win32' && 'Windows drive letters only' }, async (t) => {
+  const profile = claudeProfile(t, { viaHome: true });
+  // The repo is stored with an upper-case drive (`C:\...`), but the Claude
+  // Code extension in Cursor starts sessions from `c:\...`, so its project
+  // folder is `c--...` and the transcript cwd is `c:\\...`.
+  const repo = profile.dir('repo');
+  const lower = repo[0].toLowerCase() + repo.slice(1);
+  assert.notEqual(lower, repo, 'the fixture needs a drive letter that changes case');
+  writeSession(profile, 'lower-drive-session', lower, 0, {
+    projectDir: path.join(profile.projects, encodeClaudeProjectPath(repo).replace(/^[A-Za-z]/, (c) => c.toLowerCase())),
+  });
+
+  const listed = await new ClaudeHarness().listSessionsForRepository(repo, []);
+
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].sessionId, 'lower-drive-session');
 });
 
 test('CLAUDE_CONFIG_DIR replaces the default root; CLAUDE_CODE_PROJECT_DIR_NAME applies only with it', async (t) => {

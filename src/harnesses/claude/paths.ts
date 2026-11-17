@@ -20,6 +20,13 @@ export function claudeProjectDirMatches(
   encodedPath: string,
   dirName: string
 ): boolean {
+  // Windows paths are case-insensitive, and the Claude Code extension in
+  // Cursor starts sessions from a lower-case drive (`c--Users-...`) while a
+  // repository is stored under `C:\...`. POSIX names stay case-sensitive.
+  if (process.platform === 'win32') {
+    encodedPath = encodedPath.toLowerCase();
+    dirName = dirName.toLowerCase();
+  }
   if (encodedPath.length <= 200) {
     return (
       dirName === encodedPath || dirName.startsWith(`${encodedPath}-`)

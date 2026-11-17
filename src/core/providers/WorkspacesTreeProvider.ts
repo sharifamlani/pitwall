@@ -10,6 +10,7 @@ import { HarnessAdapter, SessionMetadata, TurnState } from '../harness/types';
 import { formatRelativeTime } from '../utils/text';
 import { debounce } from '../utils/debounce';
 import { samePath } from '../utils/paths';
+import { logOperation } from '../services/OperationLog';
 import { ChatTooltipHeader, chatTooltip } from './chatTooltip';
 import { STATUS_WORDS, SessionStatus, statusIconState } from './sessionStatus';
 import { orderRows, rankRepo, rankSession, repoStatus } from './inboxOrder';
@@ -403,7 +404,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       entries.map((entry) => ({ id: entry.repo.id, title: entry.repo.name, ...repoStatus(entry.sessions) })),
       rankRepo
     ).map((row) => row.id);
-    console.log(`[Pitwall] order ${this.repoOrder.join(' ')}`);
+    logOperation(`[Pitwall] order ${this.repoOrder.join(' ')}`);
   }
 
   private sortSessions(entry: RepoEntry): SessionEntry[] {

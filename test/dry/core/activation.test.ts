@@ -12,6 +12,7 @@ import pkg from '../../../package.json';
 import { activate } from '../../../src/extension';
 import { ChatSession, Repository, STORAGE_KEYS } from '../../../src/core/types';
 import { worktreeId } from '../../../src/core/services/GitService';
+import { disposeOperationLog } from '../../../src/core/services/OperationLog';
 import { PROCESS_ID_TIMEOUT_MS } from '../../../src/core/services/terminalEvents';
 import { chatRecord, flush, makeStorage, memento, setEnv, stub, tempDir, waitFor } from '../support';
 
@@ -197,6 +198,8 @@ test("clicking a repo row points FILES at its main worktree; opening a chat poin
   execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd: repoPath });
   execFileSync('git', ['worktree', 'add', '-q', '-b', 'feat/fiu', linkedPath], { cwd: repoPath });
   const repository = { id: 'repo-app', name: 'app', rootPath: repoPath } as Repository;
+  disposeOperationLog();
+  t.after(disposeOperationLog);
   const logged: string[] = [];
   const original = console.log;
   console.log = (...args: unknown[]) => logged.push(args.map(String).join(' '));
@@ -217,6 +220,12 @@ test("clicking a repo row points FILES at its main worktree; opening a chat poin
   const rows = list.options.treeDataProvider!;
   const [repoRow] = (await rows.getChildren()) as WorkspaceRow[];
   await waitFor(() => logged.includes('[Pitwall] first render'), 'the first render log');
+  const operations = stub.__outputChannels.find((channel: { name: string }) => channel.name === 'Pitwall Operations');
+  assert.ok(
+    operations?.lines.some((line: string) => line.includes('[Pitwall] order repo-app')),
+    'the order diagnostic goes to the Pitwall Operations output channel'
+  );
+  assert.ok(!logged.some((line) => line.startsWith('[Pitwall] order')), 'and not to console.log');
 
   list.__select([repoRow]);
   assert.equal(files.description, 'app ⎇ main');
