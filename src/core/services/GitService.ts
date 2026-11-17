@@ -141,81 +141,41 @@ export class GitService {
   }
 
   listWorktrees(repoPath: string, repoId: string): Worktree[] {
-    return this.parseWorktrees(repoPath, repoId) ?? [];
+    const { isGit, worktrees } = this.listRepositoryWorktrees(repoPath, repoId);
+    return isGit ? worktrees : [];
   }
 
   /**
-   * The worktrees sessions can run in for a workspace root. A plain folder is
-   * its own single worktree, so chats can attach before `git init`; the id is
-   * the one `git worktree list` reports for the main worktree afterwards,
-   * which keeps every chat bound across the conversion.
+   * The worktrees sessions can run in for a workspace root (see
+   * `repositoryWorktrees`). Blocks the extension host while git runs: keep it
+   * off startup and the session scan, which use the asynchronous listing.
    */
   listRepositoryWorktrees(repoPath: string, repoId: string): RepositoryWorktrees {
-    const worktrees = this.parseWorktrees(repoPath, repoId);
-    if (worktrees !== null) {
-      return { isGit: true, worktrees };
-    }
-    return {
-      isGit: false,
-      worktrees: [
-        {
-          id: worktreeId(repoId, repoPath),
-          repoId,
-          name: path.basename(repoPath),
-          path: repoPath,
-          isMain: true,
-        },
-      ],
-    };
-  }
-
-  /**
-   * Parse `git worktree list --porcelain`, or null when the path is not a git
-   * working tree root.
-   */
-  private parseWorktrees(repoPath: string, repoId: string): Worktree[] | null {
-    let output: string;
+    let output: string | null;
     try {
       output = this.run(['worktree', 'list', '--porcelain'], repoPath);
     } catch (error) {
-      // A plain folder is an expected answer. Anything else — git missing, or
-      // a root that no longer exists — deserves a diagnostic, though the row
-      // still falls back to a plain folder.
-      if (!String((error as { stderr?: unknown }).stderr ?? '').includes('not a git repository')) {
-        console.error(`Could not list git worktrees in ${repoPath}`, error);
-      }
-      return null;
+      output = null;
+      noteWorktreeListFailure(repoPath, error);
     }
+    return repositoryWorktrees(repoPath, repoId, output);
+  }
 
-    const worktrees: Worktree[] = [];
-    for (const entry of output.trim().split('\n\n')) {
-      const lines = entry.split('\n');
-      // Git emits `bare` only for the repository itself, which has no working
-      // tree to run sessions in.
-      if (lines.includes('bare')) {
-        return [];
-      }
-      const rawPath = lines.find((l) => l.startsWith('worktree '))?.slice('worktree '.length);
-      if (!rawPath) {
-        continue;
-      }
-      const worktreePath = nativePath(rawPath);
-      const branch = lines.find((l) => l.startsWith('branch '))?.slice('branch refs/heads/'.length);
-      worktrees.push({
-        id: worktreeId(repoId, worktreePath),
-        repoId,
-        name: branch || path.basename(worktreePath),
-        branch: branch || undefined,
-        path: worktreePath,
-        // Git reports physical paths, while a folder added through a symlink
-        // keeps the spelling the user picked.
-        isMain: samePath(worktreePath, repoPath),
-      });
+  /**
+   * `listRepositoryWorktrees` without blocking the extension host: git runs
+   * as a child process the caller awaits. Startup and the session scan use
+   * this, so a slow git (a synced folder, a busy disk) never holds up the
+   * list's first render (E16).
+   */
+  async listRepositoryWorktreesAsync(repoPath: string, repoId: string): Promise<RepositoryWorktrees> {
+    let output: string | null;
+    try {
+      ({ stdout: output } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath, encoding: 'utf-8' }));
+    } catch (error) {
+      output = null;
+      noteWorktreeListFailure(repoPath, error);
     }
-
-    // Git also answers from a subdirectory of a repository with the ancestor's
-    // worktrees. That folder is not one of them, so it is a plain folder.
-    return worktrees.some((worktree) => worktree.isMain) ? worktrees : null;
+    return repositoryWorktrees(repoPath, repoId, output);
   }
 
   createWorktree(repoPath: string, branch: string, worktreePath: string): boolean {
@@ -612,6 +572,79 @@ export function recommendedRebaseTarget(remoteBranches: readonly string[]): stri
  * never change; the path is canonical so a folder keeps its id when `git init`
  * starts reporting its physical path.
  */
+/**
+ * The worktrees sessions can run in for a workspace root, from the output of
+ * `git worktree list --porcelain` (null when git failed). A plain folder is
+ * its own single worktree, so chats can attach before `git init`; the id is
+ * the one `git worktree list` reports for the main worktree afterwards,
+ * which keeps every chat bound across the conversion.
+ */
+function repositoryWorktrees(repoPath: string, repoId: string, output: string | null): RepositoryWorktrees {
+  const worktrees = output === null ? null : parseWorktreeList(output, repoPath, repoId);
+  if (worktrees !== null) {
+    return { isGit: true, worktrees };
+  }
+  return {
+    isGit: false,
+    worktrees: [
+      {
+        id: worktreeId(repoId, repoPath),
+        repoId,
+        name: path.basename(repoPath),
+        path: repoPath,
+        isMain: true,
+      },
+    ],
+  };
+}
+
+/**
+ * A plain folder is an expected answer. Anything else (git missing, or a
+ * root that no longer exists) deserves a diagnostic, though the row still
+ * falls back to a plain folder.
+ */
+function noteWorktreeListFailure(repoPath: string, error: unknown): void {
+  if (!String((error as { stderr?: unknown }).stderr ?? '').includes('not a git repository')) {
+    console.error(`Could not list git worktrees in ${repoPath}`, error);
+  }
+}
+
+/**
+ * Parse `git worktree list --porcelain`, or null when the path is not a git
+ * working tree root.
+ */
+function parseWorktreeList(output: string, repoPath: string, repoId: string): Worktree[] | null {
+  const worktrees: Worktree[] = [];
+  for (const entry of output.trim().split('\n\n')) {
+    const lines = entry.split('\n');
+    // Git emits `bare` only for the repository itself, which has no working
+    // tree to run sessions in.
+    if (lines.includes('bare')) {
+      return [];
+    }
+    const rawPath = lines.find((l) => l.startsWith('worktree '))?.slice('worktree '.length);
+    if (!rawPath) {
+      continue;
+    }
+    const worktreePath = nativePath(rawPath);
+    const branch = lines.find((l) => l.startsWith('branch '))?.slice('branch refs/heads/'.length);
+    worktrees.push({
+      id: worktreeId(repoId, worktreePath),
+      repoId,
+      name: branch || path.basename(worktreePath),
+      branch: branch || undefined,
+      path: worktreePath,
+      // Git reports physical paths, while a folder added through a symlink
+      // keeps the spelling the user picked.
+      isMain: samePath(worktreePath, repoPath),
+    });
+  }
+
+  // Git also answers from a subdirectory of a repository with the ancestor's
+  // worktrees. That folder is not one of them, so it is a plain folder.
+  return worktrees.some((worktree) => worktree.isMain) ? worktrees : null;
+}
+
 export function worktreeId(repoId: string, worktreePath: string): string {
   const key = `${repoId}:${canonicalPath(worktreePath)}`;
   let hash = 0;

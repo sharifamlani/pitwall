@@ -59,6 +59,28 @@ test('a plain folder is its own worktree and keeps its id through git init', (t)
   assert.deepEqual(service.listRepositoryWorktrees(bare, 'repo-bare'), { isGit: true, worktrees: [] });
 });
 
+test('the asynchronous worktree listing gives what the synchronous one does, without blocking', async (t) => {
+  const { scratch, root } = makeRepo(t);
+  const linked = path.join(scratch, 'repo-feature');
+  git(root, 'worktree', 'add', '-q', '-b', 'feature', linked);
+  const folder = path.join(scratch, 'notes');
+  fs.mkdirSync(folder);
+  const bare = path.join(scratch, 'bare.git');
+  git(scratch, 'init', '-q', '--bare', bare);
+  const missing = path.join(scratch, 'gone');
+
+  for (const [rootPath, repoId] of [
+    [root, 'repo-git'],
+    [folder, 'repo-notes'],
+    [bare, 'repo-bare'],
+    [missing, 'repo-gone'],
+  ]) {
+    const pending = service.listRepositoryWorktreesAsync(rootPath, repoId);
+    assert.ok(pending instanceof Promise, 'a promise, so the caller never waits on git');
+    assert.deepEqual(await pending, service.listRepositoryWorktrees(rootPath, repoId), rootPath);
+  }
+});
+
 test('change lists classify every status, including renames and non-ASCII names', (t) => {
   const { root } = makeRepo(t);
   const write = (name: string, content: string | Buffer) => fs.writeFileSync(path.join(root, name), content);
