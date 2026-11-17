@@ -1689,11 +1689,7 @@
     "test": "npm run test:dry",
     "test:dry": "node test/dry/run.js",
     "test:integration": "npm run compile && node test/integration/runTest.js",
-    "test:e2e": "npm run compile && node test/e2e/terminal-restore/run.js",
-    "build:site": "node site/build.mjs",
-    "build:social-card": "node site/social-card.mjs",
-    "build:demo-gifs": "node site/demo-gifs.mjs",
-    "build:icon": "node site/app-icon.mjs"
+    "test:e2e": "npm run compile && node test/e2e/terminal-restore/run.js"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

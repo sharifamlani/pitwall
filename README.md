@@ -41,23 +41,6 @@ The container is for building and testing. Pitwall itself runs in Cursor on Wind
 | `docs/` | Plans and design notes; `docs/adr/` holds upstream's decision records |
 | `src/`, `test/`, `package.json` | The extension, imported from Agntree | <!-- credit-allow -->
 
-## Upstream demos
-
-<details>
-<summary>What the imported Agntree code looks like (GIFs from upstream; replaced as Pitwall's own UI lands)</summary> <!-- credit-allow -->
-
-![Agntree demo: sessions](media/demo-sessions.gif) <!-- credit-allow -->
-![Agntree demo: panel](media/demo-panel.gif) <!-- credit-allow -->
-![Agntree demo: changes](media/demo-changes.gif) <!-- credit-allow -->
-![Agntree demo: files](media/demo-files.gif) <!-- credit-allow -->
-![Agntree demo: find](media/demo-find.gif) <!-- credit-allow -->
-![Agntree demo: fork](media/demo-fork.gif) <!-- credit-allow -->
-![Agntree demo: notifications](media/demo-notifications.gif) <!-- credit-allow -->
-![Agntree demo: split](media/demo-split.gif) <!-- credit-allow -->
-![Agntree demo: worktrees](media/demo-worktrees.gif) <!-- credit-allow -->
-
-</details>
-
 ## License
 
 MIT. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

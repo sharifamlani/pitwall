@@ -277,7 +277,6 @@ npm run test:dry                 # plain Node, stubbed vscode, no extension inst
 npm run test:dry -- codex        # only test files whose name contains "codex"
 npm run test:integration         # real VS Code host; commands, settings, menus, activation
 npm run test:e2e                 # optional; real VS Code terminal-restore check
-npm run build:site               # build the website from docs/ into _site/
 npx @vscode/vsce package         # package as .vsix
 code --install-extension *.vsix  # install the packaged extension
 ```
