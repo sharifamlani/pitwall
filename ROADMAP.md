@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.32 · 2026-11-17
+> v0.33 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
-- **Current phase:** Phase 3 — Sidebar v1 (not started). **Development PAUSED by Sharif on 2026-11-17 after v0.3.0.**
-- **Current step:** Phase 2 closed and tagged `v0.3.0`. Paused; no work in flight.
+- **Current phase:** Phase 3 — Sidebar v1 (planning). Development resumed by Sharif on 2026-11-17.
+- **Current step:** writing the Phase 3 plan (`docs/superpowers/plans/2026-11-17-phase3-sidebar-v1.md`), then QA pre-flight.
 - **Last update:** 2026-11-17
-- **Next action (on resume):** write the Phase 3 plan, starting with row 3.0 (finding F3, a live repro first); read docs/progress_reports/phase2-handoff.md.
+- **Next action:** finish the plan and its QA pre-flight; re-brief QA, testing and marketing; start with row 3.0 (F3 live repro).
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -170,8 +170,8 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 **Goal:** The Pitwall list as designed on the canvas: every repo and chat from one window, sorted by who needs you.
 **Entry gate:** Phase 2 ✅ (`v0.3.0`).
 **Exit gate:** Walkthrough of the canvas prototype's sidebar flows passes in real Cursor against Sharif's real repos; tag `v0.4.0`.
-**Status:** ⏸ planned.
-**Plan:** ⏸ to write
+**Status:** ⏳ planning.
+**Plan:** ⏳ [2026-11-17-phase3-sidebar-v1.md](docs/superpowers/plans/2026-11-17-phase3-sidebar-v1.md) (being written)
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
@@ -323,3 +323,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.30 · 2026-11-17.** Sharif: move off the terminal path as fast as possible (the product is Claude's panel). R48: terminal restore stops in Phase 2. Restore with a file in front at quit fails because VS Code itself drops the revived terminals' names (reproduced with no Pitwall) → known issue, Phase 4 row 4.2b. R1(b) is timed from Pitwall's activation (lead, delegated).
 - **v0.31 · 2026-11-17 · Phase 2 closed, tag `v0.3.0`.** Independent evaluator: E1–E13 + E15 PASS (round 2, after R49 updated the packaged count to 49). Windows: 0 dry-test failures (was 12), full suite + `.vsix` build on Windows CI, privacy gate. Restore after quit/reload, needs-you (orange mark, Ctrl+Alt+N, one pop-up per unseen wait). Rulings R20–R50 in the plan. Unblocked: Phase 3. Deferred: 3.0 (F3), 4.2b (F4 + the file-in-front editor race), the opencode Windows spawn (when D9 enables it). Development paused by Sharif after this release.
 - **v0.32 · 2026-11-17.** Phase 2 posts live, approved by Sharif (hook B, orange needs-you image): LinkedIn https://www.linkedin.com/feed/update/urn:li:activity:7528489595731095552/ · X (reply 3 in the thread) https://x.com/SharifAmlani/status/2122724368136442262. Evaluator final: E1–E15 PASS. Development paused.
+- **v0.33 · 2026-11-17.** Sharif resumed development. Phase 3 (Sidebar v1) planning started; plan `docs/superpowers/plans/2026-11-17-phase3-sidebar-v1.md`.
