@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.33 · 2026-11-17
+> v0.34 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 3 — Sidebar v1 (planning). Development resumed by Sharif on 2026-11-17.
-- **Current step:** writing the Phase 3 plan (`docs/superpowers/plans/2026-11-17-phase3-sidebar-v1.md`), then QA pre-flight.
+- **Current step:** Phase 3 plan written and passed QA pre-flight (`e955a7e`); waiting on Sharif's go to start Wave A (T1 storage overlay, T2 sessions-file status, T4 hide extras, T6 brand icons).
 - **Last update:** 2026-11-17
-- **Next action:** finish the plan and its QA pre-flight; re-brief QA, testing and marketing; start with row 3.0 (F3 live repro).
+- **Next action:** on Sharif's go, dispatch Wave A builders and brief testing for S1 (F3 live repro).
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -171,7 +171,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 **Entry gate:** Phase 2 ✅ (`v0.3.0`).
 **Exit gate:** Walkthrough of the canvas prototype's sidebar flows passes in real Cursor against Sharif's real repos; tag `v0.4.0`.
 **Status:** ⏳ planning.
-**Plan:** ⏳ [2026-11-17-phase3-sidebar-v1.md](docs/superpowers/plans/2026-11-17-phase3-sidebar-v1.md) (being written)
+**Plan:** ✅ [2026-11-17-phase3-sidebar-v1.md](docs/superpowers/plans/2026-11-17-phase3-sidebar-v1.md) (QA pre-flight OK `e955a7e`)
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
@@ -324,3 +324,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.31 · 2026-11-17 · Phase 2 closed, tag `v0.3.0`.** Independent evaluator: E1–E13 + E15 PASS (round 2, after R49 updated the packaged count to 49). Windows: 0 dry-test failures (was 12), full suite + `.vsix` build on Windows CI, privacy gate. Restore after quit/reload, needs-you (orange mark, Ctrl+Alt+N, one pop-up per unseen wait). Rulings R20–R50 in the plan. Unblocked: Phase 3. Deferred: 3.0 (F3), 4.2b (F4 + the file-in-front editor race), the opencode Windows spawn (when D9 enables it). Development paused by Sharif after this release.
 - **v0.32 · 2026-11-17.** Phase 2 posts live, approved by Sharif (hook B, orange needs-you image): LinkedIn https://www.linkedin.com/feed/update/urn:li:activity:7528489595731095552/ · X (reply 3 in the thread) https://x.com/SharifAmlani/status/2122724368136442262. Evaluator final: E1–E15 PASS. Development paused.
 - **v0.33 · 2026-11-17.** Sharif resumed development. Phase 3 (Sidebar v1) planning started; plan `docs/superpowers/plans/2026-11-17-phase3-sidebar-v1.md`.
+- **v0.34 · 2026-11-17.** Phase 3 plan passed QA pre-flight after one revision round (7 blocking findings fixed: wait-drop, first-run "finished", duplicate repos, wave conflicts). Rulings P1–P20, criteria E1–E18. Waiting on Sharif's go.
