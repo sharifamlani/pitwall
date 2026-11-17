@@ -17,8 +17,8 @@ const EXTENSION_ID = process.env.PITWALL_E2E_EXTENSION_ID;
  */
 const FRONT = process.env.PITWALL_E2E_FRONT || 'chat';
 const USER_SHELL = 'e2e-user-shell';
-/** Terminals that are not chats: the user's plain shell in the `terminal` case. */
-const OTHER_TERMINALS = FRONT === 'terminal' ? 1 : 0;
+/** Terminals that are not chats: the user's plain shell, opened for the first quit in the `terminal` case. */
+const otherTerminals = () => (FRONT === 'terminal' && stage !== 0 ? 1 : 0);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -141,7 +141,7 @@ function chatTabs(terminals) {
 
 async function isRestored(terminals, expectedRuns, activeName) {
   const chats = chatTabs(terminals);
-  if (chats.length !== 3 || terminals.length !== 3 + OTHER_TERMINALS) {
+  if (chats.length !== 3 || terminals.length !== 3 + otherTerminals()) {
     return false;
   }
   const chatsByShortId = new Map(
@@ -244,8 +244,8 @@ function shortIdsIn(runs) {
 
 function checkRestored(stageIndex, terminals, state) {
   check(
-    `stage ${stageIndex}: three chat tabs are open` + (OTHER_TERMINALS ? `, plus ${OTHER_TERMINALS} other` : ''),
-    chatTabs(terminals).length === 3 && terminals.length === 3 + OTHER_TERMINALS,
+    `stage ${stageIndex}: three chat tabs are open` + (otherTerminals() ? `, plus ${otherTerminals()} other` : ''),
+    chatTabs(terminals).length === 3 && terminals.length === 3 + otherTerminals(),
     JSON.stringify(terminals.map((terminal) => terminal.name))
   );
 
@@ -255,7 +255,7 @@ function checkRestored(stageIndex, terminals, state) {
   // The user's plain shell is the one terminal left out, when there is one
   // and every chat tab kept its title.
   const checked =
-    OTHER_TERMINALS && chatTabs(terminals).length === 3
+    otherTerminals() && chatTabs(terminals).length === 3
       ? chatTabs(terminals)
       : terminals.filter((terminal) => terminal.name !== USER_SHELL);
   for (const terminal of checked) {
