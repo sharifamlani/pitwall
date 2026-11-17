@@ -575,6 +575,17 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     });
   }
 
+  /** The repo row at a 1-based position in inbox order (the number its tooltip names). */
+  repoRowAt(position: number): WorkspaceTreeItem | undefined {
+    return this.rootRows()[position - 1];
+  }
+
+  /** A repo's session rows in the order its row lists them. */
+  chatRowsOf(repo: Repository): WorkspaceTreeItem[] {
+    const entry = this.repoEntry(repo, this.chatsByWorktree());
+    return this.orderedSessions(entry).map((session) => this.getChatTreeItem(session.chat));
+  }
+
   /** A minimal chat row for `reveal()`. */
   getChatTreeItem(chat: ChatSession): WorkspaceTreeItem {
     return new WorkspaceTreeItem(
