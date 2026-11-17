@@ -64,7 +64,7 @@ export function registerSearchCommands(context: vscode.ExtensionContext, deps: S
       if (matches(query, repo.name)) {
         repoPicks.push({
           label: repo.name,
-          description: String(repoRow.description ?? ''),
+          description: `${chatRows.length} ${chatRows.length === 1 ? 'session' : 'sessions'}`,
           alwaysShow: true,
           action: () => run('pitwall.goToRepoRow', repoRow),
         });
@@ -86,7 +86,8 @@ export function registerSearchCommands(context: vscode.ExtensionContext, deps: S
       ...(repoPicks.length > 0 ? repoPicks : [note('No repo matches.')]),
       separator('CHATS · by name or branch'),
       ...(chatPicks.length > 0 ? chatPicks : [note('No chat name matches.')]),
-      separator('INSIDE CHATS · later: instant text search (roadmap)'),
+      separator('INSIDE CHATS'),
+      note('later: instant text search (roadmap)'),
       separator(''),
       {
         label: FOOTER_LABEL,
@@ -102,11 +103,17 @@ export function registerSearchCommands(context: vscode.ExtensionContext, deps: S
     const pick = vscode.window.createQuickPick<SearchPick>();
     pick.placeholder = PLACEHOLDER;
     pick.matchOnDescription = true;
-    pick.items = build(rows, '');
+    // The box orders and filters itself; VS Code's own sort drops the separators.
+    (pick as vscode.QuickPick<SearchPick> & { sortByLabel?: boolean }).sortByLabel = false;
+    /** Show the rows and make Enter pick the first real result, never a note. */
+    const show = (query: string) => {
+      pick.items = build(rows, query);
+      const first = pick.items.find((item) => item.action);
+      pick.activeItems = first ? [first] : [];
+    };
+    show('');
     const listeners = [
-      pick.onDidChangeValue((value) => {
-        pick.items = build(rows, value);
-      }),
+      pick.onDidChangeValue(show),
       pick.onDidAccept(() => {
         const [chosen] = pick.selectedItems.length > 0 ? pick.selectedItems : pick.activeItems;
         const action = chosen?.action;

@@ -128,6 +128,7 @@ class FakeQuickPick {
     this.title = '';
     this.matchOnDescription = false;
     this.matchOnDetail = false;
+    this.sortByLabel = true;
     this.activeItems = [];
     this.selectedItems = [];
     this.shown = false;

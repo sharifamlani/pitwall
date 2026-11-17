@@ -19,7 +19,8 @@ beforeEach(() => stub.__reset());
 const SEPARATOR = vscode.QuickPickItemKind.Separator;
 const REPOS = '--REPOS--';
 const CHATS = '--CHATS · by name or branch--';
-const INSIDE = '--INSIDE CHATS · later: instant text search (roadmap)--';
+const INSIDE = '--INSIDE CHATS--';
+const LATER = 'later: instant text search (roadmap)';
 const labels = (pick: FakeQuickPick) => pick.items.map((item) => (item.kind === SEPARATOR ? `--${item.label}--` : item.label));
 const chatLabels = (pick: FakeQuickPick) => labels(pick).filter((label) => ['Fix login', 'Parser spike'].includes(label));
 
@@ -82,14 +83,15 @@ test('the search box shows the canvas placeholder, groups and footer', async (t)
   assert.deepEqual(labels(pick), [
     REPOS, 'alpha', 'beta',
     CHATS, 'Fix login', 'Parser spike',
-    INSIDE,
+    INSIDE, LATER,
     '----',
     footer(pick).label,
   ]);
   assert.equal(footer(pick).label, "$(sparkle) Can't find it? Describe it and let an agent search your chats");
   assert.equal(footer(pick).description, "Agntree's Find Session");
-  assert.match(pick.items.find((item) => item.label === 'alpha')!.description ?? '', /^1 needs you/);
+  assert.equal(pick.items.find((item) => item.label === 'alpha')!.description, '2 sessions', 'a repo row shows a count, not the sidebar summary');
   assert.equal(pick.items.find((item) => item.label === 'beta')!.description, '0 sessions');
+  assert.equal(pick.sortByLabel, false, 'VS Code must not re-sort the rows or drop the separators');
   assert.match(pick.items.find((item) => item.label === 'Fix login')!.description ?? '', /^alpha · ⎇ main/);
 });
 
@@ -111,7 +113,7 @@ test('empty groups show "No repo matches." / "No chat name matches."', async (t)
   setup(t);
   const pick = await open();
   pick.__type('zzz');
-  assert.deepEqual(labels(pick), [REPOS, 'No repo matches.', CHATS, 'No chat name matches.', INSIDE, '----', footer(pick).label]);
+  assert.deepEqual(labels(pick), [REPOS, 'No repo matches.', CHATS, 'No chat name matches.', INSIDE, LATER, '----', footer(pick).label]);
   pick.__accept(pick.items.find((item) => item.label === 'No repo matches.'));
   assert.equal(pick.hidden, true, 'picking a placeholder row just closes the box');
 });
@@ -146,4 +148,28 @@ test('Ctrl+Alt+R is bound to pitwall.search (Ctrl+Cmd+R on macOS) and the title 
   assert.deepEqual(bound.map((entry) => [entry.command, entry.mac, entry.when]), [['pitwall.search', 'ctrl+cmd+r', undefined]]);
   const command = (pkg.contributes.commands as { command: string; icon?: string }[]).find((entry) => entry.command === 'pitwall.search');
   assert.equal(command?.icon, '$(search)');
+});
+
+test('Enter picks the first result: a repo, else a chat, else the footer', async (t) => {
+  const { calls, login } = setup(t);
+  const pick = await open();
+  assert.equal(pick.activeItems[0]?.label, 'alpha', 'with no text the first repo is active');
+  pick.__type('login');
+  assert.equal(pick.activeItems[0]?.label, 'Fix login', 'only a chat matches, so it is the default row, not "No repo matches."');
+  pick.__accept(pick.activeItems[0]);
+  assert.deepEqual(calls.map((call) => [call.id, ((call.args[0] as WorkspaceTreeItem).data as { id: string }).id]), [['pitwall.openChat', login.id]]);
+  const again = await open();
+  again.__type('zzz');
+  assert.equal(again.activeItems[0], footer(again), 'nothing matches, so the footer is the default row');
+});
+
+test('no two consecutive rows are both separators, however the box is filtered', async (t) => {
+  setup(t);
+  const pick = await open();
+  for (const text of ['', 'alp', 'login', 'zzz', 'main']) {
+    pick.__type(text);
+    pick.items.forEach((item, at) => {
+      assert.ok(!(item.kind === SEPARATOR && pick.items[at + 1]?.kind === SEPARATOR), `"${text}": separators back to back at ${at}`);
+    });
+  }
 });

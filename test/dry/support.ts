@@ -60,6 +60,8 @@ export interface FakeQuickPick {
   items: { label: string; description?: string; kind?: number; alwaysShow?: boolean; [key: string]: unknown }[];
   placeholder: string;
   matchOnDescription: boolean;
+  sortByLabel: boolean;
+  activeItems: FakeQuickPick['items'];
   shown: boolean;
   hidden: boolean;
   __type(value: string): void;
