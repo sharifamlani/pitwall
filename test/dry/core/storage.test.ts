@@ -139,3 +139,97 @@ test('saving a search keeps stored searches of a disabled harness', async () => 
   await storage2.removeSessionSearches(['claude-search']);
   assert.deepEqual(rawIds(g2), ['codex-search'], 'removing a visible search leaves the hidden one');
 });
+
+/**
+ * A memento whose whole value a test can replace with an older snapshot, as
+ * the editor does when a stale storage echo (`$acceptValue`) lands after a
+ * newer write. `saved()` is what the last write would persist: every write
+ * saves the whole value, like the editor's extension memento.
+ */
+function echoingMemento() {
+  const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+  let state: Record<string, unknown> = {};
+  let saved: Record<string, unknown> = {};
+  const snapshots: Record<string, unknown>[] = [];
+  return {
+    get: <T>(key: string, fallback?: T): T => (key in state ? clone(state[key]) : fallback) as T,
+    update: async (key: string, value: unknown): Promise<void> => {
+      if (value === undefined) delete state[key];
+      else state[key] = clone(value);
+      saved = clone(state);
+      snapshots.push(clone(state));
+    },
+    keys: () => Object.keys(state),
+    setKeysForSync: () => undefined,
+    snapshots,
+    saved: () => saved,
+    echo: (snapshot: Record<string, unknown>) => {
+      state = clone(snapshot);
+    },
+  };
+}
+
+const pidRecords = (value: Record<string, unknown>) =>
+  value[STORAGE_KEYS.TERMINAL_PIDS] as Record<string, Record<string, number>>;
+
+test('a stale storage echo cannot drop this window’s PID records or bring back one it removed', async () => {
+  stub.workspace.workspaceFolders = [{ uri: { fsPath: '/workspace/echo' } }];
+  const globalState = echoingMemento();
+  await globalState.update(STORAGE_KEYS.CHATS, [
+    { id: 'chat-1', harness: 'claude', worktreeId: 'wt-1', name: 'One', createdAt: 1, lastAccessedAt: 1, status: 'idle' },
+  ]);
+  // Another window's record, for its own folder.
+  await globalState.update(STORAGE_KEYS.TERMINAL_PIDS, { '/workspace/other': { 'chat-x': 900 } });
+  const storage = makeStorage(globalState as never);
+
+  await storage.rememberTerminalPid('chat-a', 111);
+  await storage.rememberTerminalPid('chat-c', 333);
+  const stale = globalState.snapshots.at(-1)!; // knows a and c, not b
+  await storage.rememberTerminalPid('chat-b', 222);
+  storage.deleteChat('chat-c', { rememberSession: false });
+
+  globalState.echo(stale);
+  assert.deepEqual(storage.getTerminalPids(), { 'chat-a': 111, 'chat-b': 222 }, 'reads see this window’s records');
+
+  // The next unrelated write saves the whole value, PID records included.
+  storage.updateChat('chat-1', { name: 'Renamed' });
+  assert.deepEqual(pidRecords(globalState.saved()), {
+    '/workspace/other': { 'chat-x': 900 },
+    '/workspace/echo': { 'chat-a': 111, 'chat-b': 222 },
+  });
+});
+
+test('two windows over one store keep each other’s PID records through a stale echo', async () => {
+  const globalState = echoingMemento();
+  const inFolder = (folder: string) => {
+    stub.workspace.workspaceFolders = [{ uri: { fsPath: folder } }];
+  };
+  const windowA = makeStorage(globalState as never);
+  const windowB = makeStorage(globalState as never);
+
+  inFolder('/workspace/b');
+  await windowB.rememberTerminalPid('chat-b', 222);
+  const stale = globalState.snapshots.at(-1)!; // B's record, nothing from A
+  inFolder('/workspace/a');
+  await windowA.rememberTerminalPid('chat-a', 111);
+  inFolder('/workspace/b');
+  windowB.deleteChat('chat-b', { rememberSession: false });
+
+  globalState.echo(stale);
+  inFolder('/workspace/a');
+  assert.deepEqual(windowA.getTerminalPids(), { 'chat-a': 111 });
+  inFolder('/workspace/b');
+  assert.deepEqual(windowB.getTerminalPids(), {}, 'B’s removal stays removed in B');
+
+  // Each window writes again; neither restores the other's removal nor
+  // drops the other's record.
+  inFolder('/workspace/a');
+  await windowA.rememberTerminalPid('chat-a2', 112);
+  assert.deepEqual(pidRecords(globalState.saved())['/workspace/a'], { 'chat-a': 111, 'chat-a2': 112 });
+  inFolder('/workspace/b');
+  await windowB.rememberTerminalPid('chat-b2', 223);
+  assert.deepEqual(pidRecords(globalState.saved()), {
+    '/workspace/a': { 'chat-a': 111, 'chat-a2': 112 },
+    '/workspace/b': { 'chat-b2': 223 },
+  });
+});

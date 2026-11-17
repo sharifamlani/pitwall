@@ -30,7 +30,7 @@ const COMMAND_START_TIMEOUT_MS = 2000;
  * background, where a slow shell start (prompt frameworks, version managers)
  * is worth waiting out, and nothing blocks the user.
  */
-const RESTORED_SHELL_TIMEOUT_MS = 10000;
+export const RESTORED_SHELL_TIMEOUT_MS = 10000;
 
 /**
  * Longest a revived tab waits for its shell to report ready before its resume

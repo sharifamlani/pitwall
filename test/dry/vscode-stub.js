@@ -55,6 +55,13 @@ class TabInputTextDiff {
 
 class TabInputTerminal {}
 
+class TabInputNotebook {
+  constructor(uri, notebookType) {
+    this.uri = uri;
+    this.notebookType = notebookType;
+  }
+}
+
 class TabInputCustom {
   constructor(uri, viewType) {
     this.uri = uri;
@@ -274,6 +281,8 @@ const tabChangeListeners = new Set();
 const tabGroupChangeListeners = new Set();
 const configurationChangeListeners = new Set();
 let activeTerminal;
+let activeTextEditor;
+const shownDocuments = [];
 let nextTerminalPid = 4100;
 let silentExecutionEvents = false;
 let defaultPidDelayMs;
@@ -314,6 +323,7 @@ module.exports = {
   TabInputText,
   TabInputTextDiff,
   TabInputTerminal,
+  TabInputNotebook,
   ThemeIcon,
   ThemeColor,
   Uri,
@@ -355,6 +365,20 @@ module.exports = {
     terminals: openTerminals,
     get activeTerminal() {
       return activeTerminal;
+    },
+    get activeTextEditor() {
+      return activeTextEditor;
+    },
+    /** Records each call; the document (or URI) becomes the active text editor. */
+    showTextDocument: async (documentOrUri, options = {}) => {
+      shownDocuments.push({ target: documentOrUri, options });
+      const document = documentOrUri && documentOrUri.uri ? documentOrUri : { uri: documentOrUri };
+      activeTextEditor = { document, viewColumn: options.viewColumn };
+      return activeTextEditor;
+    },
+    /** Test helper: the user focuses a text editor, `{ document, viewColumn }`. */
+    __setActiveTextEditor: (editor) => {
+      activeTextEditor = editor;
     },
     state: { focused: false },
     tabGroups: {
@@ -468,6 +492,10 @@ module.exports = {
         show() {
           this.shown += 1;
           activeTerminal = this;
+          // An editor-area terminal takes the text editor's place in front.
+          if (options.location === 2) {
+            activeTextEditor = undefined;
+          }
           for (const listener of activeTerminalListeners) {
             listener(this);
           }
@@ -588,6 +616,7 @@ module.exports = {
       fileWatchers,
       outputChannels,
       deletedUris,
+      shownDocuments,
     ]) {
       list.length = 0;
     }
@@ -610,6 +639,7 @@ module.exports = {
     quickPickHandler = null;
     clipboardText = '';
     activeTerminal = undefined;
+    activeTextEditor = undefined;
     silentExecutionEvents = false;
     defaultPidDelayMs = undefined;
     lateShellIntegration = false;
@@ -620,6 +650,7 @@ module.exports = {
     module.exports.env.shell = '/bin/bash';
   },
   __deleted: deletedUris,
+  __shownDocuments: shownDocuments,
   __commandHandlers: commandHandlers,
   __outputChannels: outputChannels,
   __fileWatchers: fileWatchers,

@@ -6,7 +6,7 @@
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { REVIVED_SHELL_READY_CAP_MS, TerminalManager } from '../../../src/core/services/TerminalManager';
+import { RESTORED_SHELL_TIMEOUT_MS, REVIVED_SHELL_READY_CAP_MS, TerminalManager } from '../../../src/core/services/TerminalManager';
 import { PROCESS_ID_TIMEOUT_MS, terminalTitle } from '../../../src/core/services/terminalEvents';
 import { quoteShellArgument } from '../../../src/core/harness/cli';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
@@ -545,4 +545,103 @@ test('a revived tab whose shell never reports ready is still resumed, once, when
   t.mock.timers.tick(REVIVED_SHELL_READY_CAP_MS);
   await flush();
   assert.deepEqual(tab.sent, [line], 'and never sent twice');
+});
+
+test('a revived tab whose command starts after the retitle wait still gets its restore title', async (t) => {
+  // The shell reports no command start until the test says so.
+  stub.__setSilentExecutionEvents(true);
+  const f = setup(t, { chats: [{ id: 'a4a4a400-slow-start', name: 'Slow Start', harnessSessionId: 's5', status: 'closed' }] });
+  await f.storage.rememberTerminalPid('a4a4a400-slow-start', 7704);
+  const tab = f.restoredTab('Pitwall: Slow Start [a4a4a4]', 8704);
+  const renames: { name: string; target: unknown }[] = [];
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    renames.push({ name: arg.name, target: stub.window.activeTerminal });
+    if (stub.window.activeTerminal) stub.window.activeTerminal.name = arg.name;
+  });
+
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  t.mock.timers.tick(RESTORED_SHELL_TIMEOUT_MS);
+  await flush();
+  // Under load the command starts after the wait gave up.
+  const before = renames.length;
+  stub.window.__fireDidStartTerminalShellExecution(tab);
+  await flush();
+
+  const title = terminalTitle(f.chat('a4a4a400-slow-start'));
+  assert.ok(
+    renames.slice(before).some((r) => r.target === tab && r.name === title),
+    'the title is applied after the late command start, the rename a quit keeps'
+  );
+});
+
+/** One editor group whose active tab is the user's, as `tabGroups` reports it. */
+function userTabInFront(input: unknown, viewColumn = 1) {
+  const tab = { input, label: 'user tab', isPreview: false, isActive: true };
+  stub.window.tabGroups.all = [{ isActive: true, viewColumn, tabs: [tab], activeTab: tab }];
+  stub.window.__setActiveTerminal(undefined);
+}
+
+/** Open a chat whose shell integrates late, then let the user move on. */
+async function slowChat(f: ReturnType<typeof setup>, id: string) {
+  const tab = (await f.open(id))!;
+  return { tab, title: terminalTitle(f.chat(id)) };
+}
+
+test('a background retitle puts the user’s text editor back in front, without taking focus', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: 'a5a5a500-front', name: 'Front', harnessSessionId: 'linked' }] });
+  const { tab, title } = await slowChat(f, 'a5a5a500-front');
+
+  const uri = vscode.Uri.file('/work/notes.md');
+  userTabInFront(new vscode.TabInputText(uri), 1);
+  stub.window.__setActiveTextEditor({ document: { uri }, viewColumn: 1 });
+  stub.window.__integrateShell(tab);
+
+  await waitFor(() => tab.name === title, 'the late title');
+  await flush();
+  assert.equal(stub.window.activeTextEditor?.document.uri, uri, 'the file is in front again');
+  assert.deepEqual(stub.__shownDocuments.at(-1)?.options, { viewColumn: 1, preserveFocus: true, preview: false });
+});
+
+test('a background retitle brings back a custom or diff tab without focus; a webview tab is left behind it', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, {
+    chats: [
+      { id: 'a6a6a600-custom', name: 'Custom', harnessSessionId: 'c' },
+      { id: 'a7a7a700-diff', name: 'Diff', harnessSessionId: 'd' },
+      { id: 'a8a8a800-webview', name: 'Webview', harnessSessionId: 'w' },
+    ],
+  });
+  const calls: unknown[][] = [];
+  for (const id of ['vscode.openWith', 'vscode.diff']) {
+    vscode.commands.registerCommand(id, (...args: unknown[]) => void calls.push([id, ...args]));
+  }
+
+  const custom = await slowChat(f, 'a6a6a600-custom');
+  const image = vscode.Uri.file('/work/logo.png');
+  userTabInFront(new vscode.TabInputCustom(image, 'imagePreview.previewEditor'), 2);
+  stub.window.__integrateShell(custom.tab);
+  await waitFor(() => custom.tab.name === custom.title, 'the custom-tab case title');
+  await flush();
+  assert.deepEqual(calls.at(-1), ['vscode.openWith', image, 'imagePreview.previewEditor', { viewColumn: 2, preserveFocus: true }]);
+
+  const diff = await slowChat(f, 'a7a7a700-diff');
+  const left = vscode.Uri.file('/work/a.ts');
+  const right = vscode.Uri.file('/work/b.ts');
+  userTabInFront(new vscode.TabInputTextDiff(left, right), 1);
+  stub.window.__integrateShell(diff.tab);
+  await waitFor(() => diff.tab.name === diff.title, 'the diff-tab case title');
+  await flush();
+  assert.deepEqual(calls.at(-1), ['vscode.diff', left, right, 'user tab', { viewColumn: 1, preserveFocus: true, preview: false }]);
+
+  // A webview (such as an extension's chat panel) has no focus-free way back.
+  const webview = await slowChat(f, 'a8a8a800-webview');
+  userTabInFront(new vscode.TabInputWebview('mainThreadWebview-someChat'), 1);
+  const before = calls.length;
+  stub.window.__integrateShell(webview.tab);
+  await waitFor(() => webview.tab.name === webview.title, 'the webview case title');
+  await flush();
+  assert.equal(calls.length, before, 'nothing is reopened for a webview tab');
+  assert.equal(stub.window.activeTerminal, webview.tab, 'the renamed terminal stays in front of it');
 });
