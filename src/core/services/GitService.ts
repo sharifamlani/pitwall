@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
 import { Worktree, FileChange, RepositoryWorktrees } from '../types';
+import { BoundedCache } from '../utils/boundedCache';
 import { canonicalPath, isWithin, nativePath, samePath } from '../utils/paths';
 
 /** Outcome of a git command whose failure message the user should see. */
@@ -16,6 +17,22 @@ const execFileAsync = promisify(execFile);
 /** Large enough for `git diff` of a big worktree when copying changes. */
 const PATCH_MAX_BUFFER = 50 * 1024 * 1024;
 
+/**
+ * Asynchronous worktree listings that start git at once; more wait their
+ * turn. Starting a child process blocks the extension host for a moment
+ * (most on Windows), so a burst of starts is spread out instead of landing
+ * in one task.
+ */
+const CONCURRENT_LISTINGS = 3;
+
+/** How `listRepositoryWorktreesAsync` may answer. */
+export interface WorktreeListingOptions {
+  /** Accept the latest listing (or the one in flight) when it is at most this old. */
+  maxAgeMs?: number;
+  /** Start git now, ahead of waiting listings: a render waits on it. */
+  urgent?: boolean;
+}
+
 /** Preferred rebase targets, in order. */
 const REBASE_TARGETS = ['upstream/main', 'upstream/master', 'origin/main', 'origin/master'];
 
@@ -26,6 +43,12 @@ const REBASE_TARGETS = ['upstream/main', 'upstream/master', 'origin/main', 'orig
  * (clone, fetch) are async so they never block the extension host.
  */
 export class GitService {
+  /** The latest asynchronous worktree listing per repository, for callers that accept a recent one. */
+  private readonly recentListings = new BoundedCache<string, { at: number; listing: RepositoryWorktrees }>(500);
+  private readonly listingsInFlight = new Map<string, Promise<RepositoryWorktrees>>();
+  private listingsRunning = 0;
+  private readonly listingsWaiting: Array<() => void> = [];
+
   private run(
     args: string[],
     cwd: string,
@@ -167,15 +190,52 @@ export class GitService {
    * this, so a slow git (a synced folder, a busy disk) never holds up the
    * list's first render (E16).
    */
-  async listRepositoryWorktreesAsync(repoPath: string, repoId: string): Promise<RepositoryWorktrees> {
-    let output: string | null;
-    try {
-      ({ stdout: output } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath, encoding: 'utf-8' }));
-    } catch (error) {
-      output = null;
-      noteWorktreeListFailure(repoPath, error);
+  async listRepositoryWorktreesAsync(
+    repoPath: string,
+    repoId: string,
+    { maxAgeMs = 0, urgent = false }: WorktreeListingOptions = {}
+  ): Promise<RepositoryWorktrees> {
+    const key = `${repoId}\0${repoPath}`;
+    if (maxAgeMs > 0) {
+      // A caller that accepts a recent answer shares the latest listing or
+      // the one in flight: the list and the session scan both list every
+      // repository at startup, and each git start costs the extension host.
+      const recent = this.recentListings.get(key);
+      if (recent && Date.now() - recent.at < maxAgeMs) {
+        return recent.listing;
+      }
+      const inFlight = this.listingsInFlight.get(key);
+      if (inFlight) {
+        return inFlight;
+      }
     }
-    return repositoryWorktrees(repoPath, repoId, output);
+    const listing = (async () => {
+      while (!urgent && this.listingsRunning >= CONCURRENT_LISTINGS) {
+        await new Promise<void>((resolve) => this.listingsWaiting.push(resolve));
+      }
+      this.listingsRunning += 1;
+      let output: string | null;
+      try {
+        ({ stdout: output } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath, encoding: 'utf-8' }));
+      } catch (error) {
+        output = null;
+        noteWorktreeListFailure(repoPath, error);
+      } finally {
+        this.listingsRunning -= 1;
+        this.listingsWaiting.shift()?.();
+      }
+      return repositoryWorktrees(repoPath, repoId, output);
+    })();
+    this.listingsInFlight.set(key, listing);
+    try {
+      const result = await listing;
+      this.recentListings.set(key, { at: Date.now(), listing: result });
+      return result;
+    } finally {
+      if (this.listingsInFlight.get(key) === listing) {
+        this.listingsInFlight.delete(key);
+      }
+    }
   }
 
   createWorktree(repoPath: string, branch: string, worktreePath: string): boolean {

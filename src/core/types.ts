@@ -154,6 +154,11 @@ export const STORAGE_KEYS = {
    * collection key (see src/core/services/storageOverlay.ts).
    */
   WRITE_STAMPS: 'pitwall.writeStamps',
+  /**
+   * Each repository's last worktree listing, by repository id. The list
+   * draws its first rows from it while git lists them again (E16).
+   */
+  WORKTREE_SNAPSHOT: 'pitwall.worktreeSnapshot',
 } as const;
 
 /** The harness, model, and effort that run a session search. */

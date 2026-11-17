@@ -74,6 +74,7 @@ test('disabled harness records are skipped, not thrown', async (t) => {
     storage,
     {
       listRepositoryWorktrees: () => ({ isGit: true, worktrees: [WORKTREE] }),
+      listRepositoryWorktreesAsync: async () => ({ isGit: true, worktrees: [WORKTREE] }),
       getAheadBehind: () => null,
     } as never,
     { onTerminalStateChange: () => ({ dispose: () => undefined }), isActive: () => false } as never,

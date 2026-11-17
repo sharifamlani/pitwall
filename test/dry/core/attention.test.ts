@@ -468,7 +468,11 @@ async function needsYouFlow(t: { after(fn: () => void): void }) {
 
   const tree = new WorkspacesTreeProvider(
     storage,
-    { listRepositoryWorktrees: () => ({ isGit: true, worktrees: [worktree] }), getAheadBehind: () => null } as never,
+    {
+      listRepositoryWorktrees: () => ({ isGit: true, worktrees: [worktree] }),
+      listRepositoryWorktreesAsync: async () => ({ isGit: true, worktrees: [worktree] }),
+      getAheadBehind: () => null,
+    } as never,
     terminals,
     registry,
     vscode.Uri.file('/extension')

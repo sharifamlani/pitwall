@@ -25,6 +25,8 @@ function provider(
     {
       listRepositoryWorktrees: (_rootPath: string, repoId: string) =>
         listWorktrees(storage.getRepository(repoId)!),
+      listRepositoryWorktreesAsync: async (_rootPath: string, repoId: string) =>
+        listWorktrees(storage.getRepository(repoId)!),
       getAheadBehind: () => null,
     } as never,
     terminals as never,
@@ -358,6 +360,8 @@ test('the activity badge counts needs-you sessions and hides at 0', async (t) =>
   };
   tree.bindView(view as never);
   assert.equal(view.description, 'sorted by who needs you');
+  // Binding never waits on git; the badge follows once the worktrees are listed.
+  await waitFor(() => view.badge, 'the badge');
   assert.deepEqual(view.badge, { value: 1, tooltip: '1 session needs you' });
   statuses.set(networking.id, 'needs', Date.now());
   assert.deepEqual(view.badge, { value: 2, tooltip: '2 sessions need you' });
@@ -416,7 +420,7 @@ test('a window redraws stars, names and dismissals written by another window whe
   assert.ok(keep);
 });
 
-test('worktree lookups list each repository at most once', (t) => {
+test('worktree lookups never wait on git and list each repository at most once', async (t) => {
   const storage = makeStorage();
   storage.addRepository('a', '/work/a');
   storage.addRepository('b', '/work/b');
@@ -426,10 +430,50 @@ test('worktree lookups list each repository at most once', (t) => {
     return { isGit: true, worktrees: [worktreeRecord({ id: `wt-${repo.name}`, repoId: repo.id, path: repo.rootPath })] };
   }, [fakeAdapter('claude')]);
 
+  // Nothing listed or stored yet: the root stands in as a plain folder, and
+  // the lookup starts the listing instead of waiting for it.
+  assert.equal(tree.getWorktreeById('wt-b'), undefined);
+  assert.equal(tree.findWorktreeByPath('/work/a')?.isMain, true);
+  await tree.getChildren();
   assert.equal(tree.getWorktreeById('wt-b')?.path, '/work/b');
   assert.equal(tree.getWorktreeById('wt-b')?.path, '/work/b');
   assert.equal(tree.findWorktreeByPath('/work/a')?.id, 'wt-a');
-  assert.deepEqual(listed, ['a', 'b']);
+  assert.deepEqual(listed.sort(), ['a', 'b']);
+});
+
+test('the first rows come from the stored worktree listing while git lists again; a change redraws', async (t) => {
+  const storage = makeStorage();
+  const repo = storage.addRepository('app', '/work/app');
+  const main = worktreeRecord({ id: 'wt-main', repoId: repo.id, name: 'main', branch: 'main', path: '/work/app' });
+  const linked = worktreeRecord({ id: 'wt-fiu', repoId: repo.id, name: 'feat/fiu', branch: 'feat/fiu', path: '/work/app-fiu', isMain: false });
+  storage.saveWorktreeSnapshot(repo.id, { isGit: true, worktrees: [main, linked] });
+  storage.createChat(linked.id, 'claude', 'Worktree chat', { harnessSessionId: 'fiu' });
+  let answer: ((listing: RepositoryWorktrees) => void) | undefined;
+  const tree = new WorkspacesTreeProvider(
+    storage,
+    {
+      listRepositoryWorktreesAsync: () => new Promise<RepositoryWorktrees>((resolve) => (answer = resolve)),
+      getAheadBehind: () => null,
+    } as never,
+    terminals as never,
+    new HarnessRegistry([fakeAdapter('claude')]),
+    vscode.Uri.file('/extension')
+  );
+  t.after(() => tree.dispose());
+  const changes: unknown[] = [];
+  tree.onDidChangeTreeData((change) => changes.push(change));
+
+  const [first] = await tree.getChildren();
+  assert.equal(first.description, '1 session', 'drawn at once from the snapshot, git still running');
+  assert.equal(tree.getWorktreeById('wt-fiu')?.branch, 'feat/fiu', 'lookups answer from it too');
+
+  // The linked worktree was removed since the last start.
+  await waitFor(() => answer, 'the listing in the background');
+  answer!({ isGit: true, worktrees: [main] });
+  await waitFor(() => changes.length > 0, 'a redraw once git answers');
+  const [second] = await tree.getChildren();
+  assert.equal(second.description, '0 sessions');
+  assert.deepEqual(storage.getWorktreeSnapshot(repo.id), { isGit: true, worktrees: [main] }, 'kept for the next start');
 });
 
 test('a repo row stands for its main worktree; a plain folder follows git init and removal through its watcher', async (t) => {

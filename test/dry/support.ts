@@ -201,7 +201,9 @@ export function makeStorage(
 /** A temp directory removed when the test ends, pass or fail. */
 export function tempDir(t: { after(fn: () => void): void }, prefix = 'pitwall-'): string {
   const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  // Asynchronous and retried: on Windows a background git child (the list and
+  // the scan run git without blocking) can hold a folder until it exits.
+  t.after(() => fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }));
   return dir;
 }
 
