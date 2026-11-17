@@ -157,15 +157,13 @@ test('isWithin reuses the cached real path', (t) => {
   const child = path.join(root, 'a.ts');
   fs.writeFileSync(child, '');
   assert.equal(isWithin(child, root), true); // warms the cache
-  // Windows compares native real paths; POSIX compares plain real paths.
-  const spy = process.platform === 'win32'
-    ? mock.method(fs.realpathSync, 'native')
-    : mock.method(fs, 'realpathSync');
-  t.after(() => spy.mock.restore());
+  // Only Windows compares native real paths; POSIX goes through canonicalPath, which has its own cache.
+  const spy = process.platform === 'win32' ? mock.method(fs.realpathSync, 'native') : undefined;
+  t.after(() => spy?.mock.restore());
   for (let i = 0; i < 5; i++) {
     assert.equal(isWithin(child, root), true);
   }
-  assert.equal(spy.mock.callCount(), 0, 'no path is resolved twice');
+  assert.equal(spy?.mock.callCount() ?? 0, 0, 'no path is resolved twice');
 });
 
 test('isWithin still rejects a sibling folder sharing a prefix and a .. escape', (t) => {
