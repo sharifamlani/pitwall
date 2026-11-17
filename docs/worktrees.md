@@ -1,5 +1,7 @@
 > Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
 
+> **Pitwall v1 hides the worktree and pull request features described here.** Creating, deleting, merging and rebasing worktrees, pull request badges and Check Out Pull Request, the Changes panel, and Fork Session to New Worktree are parked (ROADMAP row 3.6). Add repositories, Files, Find Session and Fork Session Here stay. Where this page covers a hidden feature, it applies again if the feature returns.
+
 # Worktrees and repositories
 
 A git worktree is a second checkout of the same repository in its own directory, on its own branch. Pitwall makes worktrees the unit of agent work: one worktree per task, one or more agent sessions inside it, and no two agents editing the same files. This page covers adding repositories, creating and removing worktrees, and the git actions on them.

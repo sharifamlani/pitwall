@@ -1,5 +1,7 @@
 > Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
 
+> **Pitwall v1 hides the worktree and pull request features described here.** Creating, deleting, merging and rebasing worktrees, pull request badges and Check Out Pull Request, the Changes panel, and Fork Session to New Worktree are parked (ROADMAP row 3.6). Add repositories, Files, Find Session and Fork Session Here stay. Where this page covers a hidden feature, it applies again if the feature returns.
+
 # Frequently asked questions
 
 Short answers to the questions people ask most about Pitwall, the VS Code session and git worktree manager for coding agents. Each answer links to the page with the detail.
