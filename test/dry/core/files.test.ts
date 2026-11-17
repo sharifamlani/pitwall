@@ -4,7 +4,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { FilesTreeProvider, FileTreeItem } from '../../../src/core/providers/FilesTreeProvider';
-import { tempDir, worktreeRecord } from '../support';
+import { registerFileCommands } from '../../../src/core/commands/files';
+import { runCommand, shown, stub, tempDir, worktreeRecord } from '../support';
 
 test('All Files lists folders first in natural order, hides build and VCS output, and keys rows by path', async (t) => {
   const root = tempDir(t);
@@ -29,4 +30,61 @@ test('All Files lists folders first in natural order, hides build and VCS output
   assert.equal(src.contextValue, 'folder');
   const [nested] = (await files.getChildren(src)) as FileTreeItem[];
   assert.equal(nested.tooltip, path.join('src', 'a.ts'), 'rows tooltip their worktree-relative path');
+});
+
+/** Registers the Files commands over a real temp worktree with `README.md` and `src/`. */
+function filesSetup(t: { after(fn: () => void): void }) {
+  stub.__reset();
+  const root = tempDir(t);
+  fs.writeFileSync(path.join(root, 'README.md'), 'hi');
+  fs.mkdirSync(path.join(root, 'src'));
+  const files = new FilesTreeProvider();
+  t.after(() => files.dispose());
+  files.setActiveWorktree(worktreeRecord({ path: root }));
+  const context = { subscriptions: [] as vscode.Disposable[] } as unknown as vscode.ExtensionContext;
+  registerFileCommands(context, files, () => undefined);
+  t.after(() => context.subscriptions.forEach((d) => d.dispose()));
+  /** A row as the editor spells it: on Windows the drive letter is lower case. */
+  const row = (rel: string, type: vscode.FileType) => {
+    const full = path.join(root, rel);
+    const editorSpelling = process.platform === 'win32' ? full[0].toLowerCase() + full.slice(1) : full;
+    return new FileTreeItem(vscode.Uri.file(editorSpelling), type, root);
+  };
+  return { root, files, row };
+}
+
+test('new file with a file selected creates it next to that file, not inside it', async (t) => {
+  const { root, row } = filesSetup(t);
+  stub.__inputResponses.push('notes.txt');
+  await runCommand('pitwall.files.newFile', row('README.md', vscode.FileType.File));
+  assert.equal(shown('outside the active worktree'), false);
+  assert.ok(fs.existsSync(path.join(root, 'notes.txt')), 'created beside README.md');
+
+  stub.__inputResponses.push('more');
+  await runCommand('pitwall.files.newFolder', row('src', vscode.FileType.Directory));
+  assert.ok(fs.statSync(path.join(root, 'src', 'more')).isDirectory(), 'a folder selection is the parent');
+});
+
+test('rename, delete and paste accept a selected row whose fsPath has a lower-case drive', async (t) => {
+  const { root, files, row } = filesSetup(t);
+
+  stub.__inputResponses.push('GUIDE.md');
+  await runCommand('pitwall.files.rename', row('README.md', vscode.FileType.File));
+  assert.equal(shown('Refusing'), false);
+  assert.ok(fs.existsSync(path.join(root, 'GUIDE.md')));
+
+  files.setClipboard(row('GUIDE.md', vscode.FileType.File).uri, false);
+  await runCommand('pitwall.files.paste', row('src', vscode.FileType.Directory));
+  assert.equal(shown('Refusing'), false);
+  assert.ok(fs.existsSync(path.join(root, 'src', 'GUIDE.md')));
+
+  stub.__warningResponses.push('Move to Trash');
+  await runCommand('pitwall.files.delete', row('GUIDE.md', vscode.FileType.File));
+  assert.equal(shown('Refusing'), false);
+  assert.equal(fs.existsSync(path.join(root, 'GUIDE.md')), false);
+
+  // A folder still cannot be pasted into itself, however the drive is spelled.
+  files.setClipboard(row('src', vscode.FileType.Directory).uri, false);
+  await runCommand('pitwall.files.paste', row('src', vscode.FileType.Directory));
+  assert.ok(shown('Cannot paste a folder into itself'));
 });

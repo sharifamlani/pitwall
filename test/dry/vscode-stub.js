@@ -354,6 +354,22 @@ module.exports = {
           entry.isDirectory() ? 2 : 1,
         ]);
       },
+      stat: async (uri) => {
+        const info = fs.statSync(uri.fsPath);
+        return { type: info.isDirectory() ? 2 : 1, size: info.size };
+      },
+      createDirectory: async (uri) => {
+        fs.mkdirSync(uri.fsPath, { recursive: true });
+      },
+      writeFile: async (uri, content) => {
+        fs.writeFileSync(uri.fsPath, content);
+      },
+      rename: async (from, to) => {
+        fs.renameSync(from.fsPath, to.fsPath);
+      },
+      copy: async (from, to) => {
+        fs.cpSync(from.fsPath, to.fsPath, { recursive: true });
+      },
       /** Records the request and removes the path, standing in for the Trash. */
       delete: async (uri, options) => {
         deletedUris.push({ path: uri.fsPath, options });
