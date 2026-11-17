@@ -21,8 +21,9 @@ States:
   plus a green dot.
 - `idle` — the terminal is not open. Claude: a hollow 1.5px grey ring with
   `fill="none"`. Others: the grey mark, no badge.
-- `new` — the brand mark plus a hollow ring for a chat the harness has not
-  linked yet.
+- `new` — a chat the harness has not linked yet. Claude: a dashed hollow ring
+  in the idle grey, `fill="none"` (P24). Others: the brand mark plus a hollow
+  ring.
 
 Themes: `light`, `dark`. The ring behind the needs/finished/new badge is painted in the
 sidebar background color, so each state has a light and a dark file.

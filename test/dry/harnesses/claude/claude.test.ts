@@ -333,3 +333,47 @@ test('a torn sessions file sends sessions it does not list to claude agents', as
   assert.equal(agentCalls(), 1);
   assert.equal(live.waitingFor, 'permission prompt', 'a half-written file never clears a wait by itself');
 });
+
+test('a torn read that hides a session waiting on the previous tick keeps its previous file state for one tick (R45 residual)', async (t) => {
+  // claude agents knows nothing here (as with pitwall.notifications.onNeedsInput off).
+  const { harness, sessionsDir, agentCalls, expireAgentsCache } = liveHarness(t, { agents: [], transcriptWrittenAt: 0 });
+  writeSessionFile(sessionsDir, { pid: 4343, sessionId: 'someone-else', status: 'busy', statusUpdatedAt: 1 });
+  writeSessionFile(sessionsDir, { pid: 4242, sessionId: SESSION_ID, status: 'waiting', waitingFor: 'permission prompt', statusUpdatedAt: 1_000 });
+  assert.equal((await harness.getLiveStates([SESSION_ID])).get(SESSION_ID)!.waitingFor, 'permission prompt');
+
+  fs.writeFileSync(path.join(sessionsDir, '4242.json'), `{"pid": 4242, "sessionId": "${SESSION_ID.slice(0, 8)}`);
+  const carried = (await harness.getLiveStates([SESSION_ID])).get(SESSION_ID)!;
+  assert.equal(carried.waitingFor, 'permission prompt', 'the wait survives one torn read');
+  assert.equal(carried.writtenAt, 1_000, 'with its original start');
+  assert.equal(carried.liveStatus, 'waiting');
+  assert.equal(agentCalls(), 0, 'no CLI call for a carried state');
+
+  expireAgentsCache();
+  const second = (await harness.getLiveStates([SESSION_ID])).get(SESSION_ID)!;
+  assert.equal(second.waitingFor, undefined, 'only one tick: a second torn read falls back as before');
+  assert.equal(agentCalls(), 1);
+});
+
+test('a sessions-file sample carries its statusUpdatedAt, so an idle file can date a turn the transcript leaves open (O1)', async (t) => {
+  const { harness, sessionsDir } = liveHarness(t, { transcriptWrittenAt: 0 });
+  writeSessionFile(sessionsDir, { pid: 4242, sessionId: SESSION_ID, status: 'idle', statusUpdatedAt: 1_700_000_000_500 });
+  const live = (await harness.getLiveStates([SESSION_ID])).get(SESSION_ID)!;
+  assert.equal(live.liveStatus, 'idle');
+  assert.equal(live.statusUpdatedAt, 1_700_000_000_500);
+});
+
+test('liveSessionIds lists the live sessions in the sessions file, and the tick that follows reuses that read', async (t) => {
+  const { harness, sessionsDir } = liveHarness(t, { transcriptWrittenAt: 0 });
+  writeSessionFile(sessionsDir, { pid: 4242, sessionId: SESSION_ID, status: 'busy', statusUpdatedAt: 1 });
+  writeSessionFile(sessionsDir, { pid: 4343, sessionId: 'unknown-status', status: 'compacting', statusUpdatedAt: 1 });
+  assert.deepEqual([...(await harness.liveSessionIds())!].sort(), [SESSION_ID, 'unknown-status'].sort());
+
+  const reads: string[] = [];
+  t.mock.method(fs.promises, 'readFile', async (file: unknown) => {
+    reads.push(String(file));
+    return fs.readFileSync(String(file), 'utf8');
+  });
+  await harness.liveSessionIds();
+  await Promise.all([harness.getLiveStates([SESSION_ID]), harness.getLiveStates([SESSION_ID])]);
+  assert.equal(reads.filter((file) => file.endsWith('.json')).length, 2, 'one folder read (two files) per tick');
+});

@@ -1,6 +1,7 @@
 import * as os from 'os';
 import * as vscode from 'vscode';
 import { ChatSession, Worktree } from './core/types';
+import { HarnessSession } from './core/harness/types';
 import { StorageService } from './core/services/StorageService';
 import { WorktreeCatalog } from './core/services/WorktreeCatalog';
 import { GitService } from './core/services/GitService';
@@ -32,6 +33,8 @@ import { samePath } from './core/utils/paths';
 const FILE_CHANGE_DEBOUNCE_MS = 300;
 
 export async function activate(context: vscode.ExtensionContext) {
+  // Startup timing (E16): this line and the tree's "first render" bracket activation.
+  console.log('[Pitwall] activate');
   const config = () => vscode.workspace.getConfiguration('pitwall');
   const register = commandRegistrar(context);
   const setContext = (key: string, value: unknown) =>
@@ -127,6 +130,8 @@ export async function activate(context: vscode.ExtensionContext) {
     showCollapseAll: true,
   });
   context.subscriptions.push(workspacesTreeView, filesTreeView);
+  // The header description and the needs-you badge.
+  workspacesProvider.bindView(workspacesTreeView);
   const refreshTree = () => workspacesProvider.refresh();
 
   // The worktree the Files panel shows, and one watcher on its files that
@@ -149,13 +154,16 @@ export async function activate(context: vscode.ExtensionContext) {
       }
       filesProvider.setActiveWorktree(worktree);
     }
-    const repoName = worktree && storageService.getRepository(worktree.repoId)?.name;
-    const suffix = !worktree
-      ? ''
-      : repoName && worktree.name !== repoName
-        ? ` (${worktree.name} ~ ${repoName})`
-        : ` (${worktree.name})`;
-    filesTreeView.title = `Files${suffix}`;
+    // The FILES header: "{repo} ⎇ {branch}" (no branch for a plain folder),
+    // and the folder path. A view has no header tooltip, so the path is the
+    // view's message line.
+    const owner = worktree && workspacesProvider.repositoryFor(worktree);
+    filesTreeView.description = !worktree
+      ? undefined
+      : owner?.isGit
+        ? `${owner.repo.name} ⎇ ${worktree.branch ?? worktree.name}`
+        : owner?.repo.name ?? worktree.name;
+    filesTreeView.message = worktree?.path;
   };
 
   /** Close chats' terminals and delete their rows; a removed selection is cleared. */
@@ -239,9 +247,13 @@ export async function activate(context: vscode.ExtensionContext) {
   let deferredReveal: vscode.Disposable | undefined;
   context.subscriptions.push({ dispose: () => deferredReveal?.dispose() });
 
+  /** Set once the attention service exists; the scan's turn states feed closed chats' rows. */
+  let noteSessions: (sessions: HarnessSession[]) => void = () => undefined;
+
   // Native sessions started outside an exact-ID launch: a UI launch, or a
   // session started outside Pitwall. Also ages out quiet auto-imports.
   const sessionImporter = new SessionImportService(storageService, worktreeCatalog, harnessRegistry, {
+    onSessionsListed: (sessions) => noteSessions(sessions),
     // Retention must also keep a chat whose terminal is still resuming.
     isChatOpen: (chat) => isChatOpen(chat) || terminalManager.isResuming(chat.id),
     isVisible: () => workspacesTreeView.visible,
@@ -280,11 +292,12 @@ export async function activate(context: vscode.ExtensionContext) {
     isChatVisible
   );
   markChatSeen = (chatId) => attentionService.markSeen(chatId);
+  noteSessions = (sessions) => attentionService.noteSessions(sessions);
   attentionService.start();
   // Records what the user looks at between ticks, for needs-you toasts; never polls.
   context.subscriptions.push(...chatVisibility.onFrontMayChange(() => attentionService.noteFront()));
-  workspacesProvider.setTurnStateProvider((chatId) => attentionService.getTurnState(chatId));
-  workspacesProvider.setNeedsYouProvider((chatId) => attentionService.needsYou(chatId));
+  // Every row's status and the re-sorts it triggers (rows 3.3, 3.4).
+  workspacesProvider.setStatusSource(attentionService);
 
   // Commands
   registerRepositoryCommands(context, { storageService, gitService, forgetWorktrees, refreshTree });
@@ -412,8 +425,8 @@ export async function activate(context: vscode.ExtensionContext) {
         storageService.setActiveChatId(chat.id);
         worktree = workspacesProvider.getWorktreeById(chat.worktreeId);
       } else {
-        // A plain folder row stands in for its root worktree; a git
-        // repository row has none.
+        // A repo row points FILES at its main worktree (a plain folder's
+        // own folder).
         worktree = workspacesProvider.getWorktreeForItem(selected);
       }
       if (!worktree) {

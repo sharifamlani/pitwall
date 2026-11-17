@@ -4,6 +4,9 @@
  */
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { activate } from '../../../src/extension';
 import { ChatSession, Repository, STORAGE_KEYS } from '../../../src/core/types';
@@ -177,4 +180,50 @@ test('a tab Pitwall shows to rename it never selects or reveals that chat; the u
   stub.window.__focusTerminal(back); // the user clicks it
   await waitFor(() => revealed().includes('d4e5f600-back'), 'the user’s own click reveals it');
   assert.equal(f.activeChatId(), 'd4e5f600-back');
+});
+
+interface WorkspaceRow {
+  description?: string;
+}
+
+test("clicking a repo row points FILES at its main worktree; opening a chat points it at the chat's worktree", async (t) => {
+  stub.__setTreeViewsVisible(true);
+  const scratch = tempDir(t);
+  const repoPath = path.join(scratch, 'app');
+  const linkedPath = path.join(scratch, 'app-fiu');
+  fs.mkdirSync(repoPath);
+  execFileSync('git', ['init', '-q', '-b', 'main', repoPath]);
+  execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd: repoPath });
+  execFileSync('git', ['worktree', 'add', '-q', '-b', 'feat/fiu', linkedPath], { cwd: repoPath });
+  const repository = { id: 'repo-app', name: 'app', rootPath: repoPath } as Repository;
+  const logged: string[] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => logged.push(args.map(String).join(' '));
+  t.after(() => {
+    console.log = original;
+  });
+  const f = await seededActivation(
+    t,
+    [{ id: 'f1u00000-chat', name: 'Worktree chat', harnessSessionId: 'fiu', worktreeId: worktreeId(repository.id, linkedPath) }],
+    {},
+    [repository]
+  );
+  await f.start();
+  assert.equal(logged.filter((line) => line === '[Pitwall] activate').length, 1, 'activation is logged once');
+  const list = stub.__treeViews.find((candidate) => candidate.id === 'pitwall.workspacesView')!;
+  const files = stub.__treeViews.find((candidate) => candidate.id === 'pitwall.filesView')!;
+  assert.equal(list.description, 'sorted by who needs you');
+  const rows = list.options.treeDataProvider!;
+  const [repoRow] = (await rows.getChildren()) as WorkspaceRow[];
+  await waitFor(() => logged.includes('[Pitwall] first render'), 'the first render log');
+
+  list.__select([repoRow]);
+  assert.equal(files.description, 'app ⎇ main');
+  assert.equal(fs.realpathSync(files.message ?? ''), fs.realpathSync(repoPath), 'the folder path');
+
+  const [chatRow] = (await rows.getChildren(repoRow)) as WorkspaceRow[];
+  assert.match(String(chatRow.description), /^⎇ feat\/fiu ⧉ {2}/);
+  await vscode.commands.executeCommand('pitwall.openChat', chatRow);
+  await waitFor(() => files.description === 'app ⎇ feat/fiu', 'FILES follows the opened chat');
+  assert.equal(fs.realpathSync(files.message ?? ''), fs.realpathSync(linkedPath));
 });

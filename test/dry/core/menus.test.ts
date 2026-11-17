@@ -31,8 +31,6 @@ test('the hover row keeps frequent actions and nothing destructive or occasional
     'pitwall.deleteChat',
     'pitwall.removeRepository',
     'pitwall.clearWorktreeSessions',
-    'pitwall.moveRepositoryUp',
-    'pitwall.moveRepositoryDown',
   ]) {
     assert.ok(!inline.has(command), `${command} is not a hover action`);
   }
@@ -52,7 +50,7 @@ test('the hover row keeps frequent actions and nothing destructive or occasional
 
 test('a plain folder row offers shared actions but no git-only ones', () => {
   const folderActions = new Set(rowMenu.filter((entry) => entry.when?.includes('folderRepository')).map(id));
-  for (const shared of ['pitwall.newSession', 'pitwall.openTerminalAtWorktree', 'pitwall.removeRepository', 'pitwall.moveRepositoryUp']) {
+  for (const shared of ['pitwall.newSession', 'pitwall.openTerminalAtWorktree', 'pitwall.removeRepository']) {
     assert.ok(folderActions.has(shared), shared);
   }
 });
@@ -167,10 +165,41 @@ test('dialog commands end in an ellipsis; row-only commands stay out of the pale
   for (const command of ['pitwall.addRepository', 'pitwall.cloneRepository', 'pitwall.importSessions', 'pitwall.renameChat']) {
     assert.match(commands.find((entry) => entry.command === command)?.title ?? '', /…$/, command);
   }
-  for (const command of ['pitwall.moveRepositoryUp', 'pitwall.renameChat', 'pitwall.files.delete', 'pitwall.starChat']) {
+  for (const command of ['pitwall.renameChat', 'pitwall.files.delete', 'pitwall.starChat']) {
     assert.ok(
       (menus.commandPalette ?? []).some((entry) => entry.command === command && entry.when === 'false'),
       `${command} is hidden from the palette`
     );
+  }
+});
+
+test('inbox order replaces the manual repo order: no Move Up / Move Down anywhere (P18)', () => {
+  const everywhere = JSON.stringify(pkg.contributes);
+  assert.ok(!everywhere.includes('pitwall.moveRepositoryUp'), 'no Move Up command or menu entry');
+  assert.ok(!everywhere.includes('pitwall.moveRepositoryDown'), 'no Move Down command or menu entry');
+});
+
+test('the list is named Repos, with the canvas empty state; FILES asks for a repo or session', () => {
+  const views = pkg.contributes.views.pitwall as { id: string; name: string }[];
+  assert.equal(views.find((view) => view.id === 'pitwall.workspacesView')?.name, 'Repos');
+  const welcome = pkg.contributes.viewsWelcome as { view: string; contents: string }[];
+  assert.equal(
+    welcome.find((entry) => entry.view === 'pitwall.workspacesView')?.contents,
+    'No repositories yet.\n[Add repository](command:pitwall.addRepository)'
+  );
+  assert.equal(
+    welcome.find((entry) => entry.view === 'pitwall.filesView')?.contents,
+    'Select a repo or session to browse its files.'
+  );
+  assert.ok(
+    (menus['view/title'] ?? []).some((entry) => entry.command === 'pitwall.cloneRepository' && !entry.group?.startsWith('navigation')),
+    'Clone stays in the overflow menu'
+  );
+});
+
+test('a git repo row offers the session actions of its main worktree now that worktree rows are gone (P8)', () => {
+  const repoActions = new Set(rowMenu.filter((entry) => /\(repository\|/.test(entry.when ?? '')).map(id));
+  for (const command of ['pitwall.newSession', 'pitwall.newDefaultSession', 'pitwall.newSessionContext', 'pitwall.openTerminalAtWorktree', 'pitwall.importSessions']) {
+    assert.ok(repoActions.has(command), command);
   }
 });

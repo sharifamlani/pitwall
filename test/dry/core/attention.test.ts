@@ -915,3 +915,239 @@ test('a transcript older than the last no-wait fetch anchors the wait at that fe
   assert.ok(flow.marks.some((mark) => mark.needs), 'the row shows needs-you');
   assert.equal(toasts().length, 1, 'anchored at the 12 s fetch, after the glance: one toast');
 });
+
+// ---------------------------------------------------------------------------
+// Row status for every chat (rows 3.3, P5, P16, QA S4–S6). Toasts stay limited
+// to open chats; every row gets a status, from the open-chat tick, the live
+// sessions file for closed chats, and the discovery scan for the rest.
+// ---------------------------------------------------------------------------
+
+interface RowFlowOptions {
+  /** Chat ids open in a terminal or tab. */
+  open?: Set<string>;
+  /** Chat ids in front of the user. */
+  visible?: Set<string>;
+  /** Native session ids live in the sessions file. */
+  live?: () => Set<string>;
+  /** Live state per native session id; missing ids are not reported. */
+  states?: () => Record<string, HarnessLiveState>;
+}
+
+/** An attention service over real storage, with toasts through the real notification service. */
+function rowFlow(storage: ReturnType<typeof makeStorage>, options: RowFlowOptions = {}) {
+  const open = options.open ?? new Set<string>();
+  const visible = options.visible ?? new Set<string>();
+  const polled: string[][] = [];
+  const adapter = fakeAdapter('claude', {
+    liveSessionIds: async () => options.live?.() ?? new Set<string>(),
+    getLiveStates: async (sessionIds: string[]) => {
+      polled.push([...sessionIds]);
+      const states = options.states?.() ?? {};
+      return new Map(sessionIds.flatMap((id) => (states[id] ? [[id, states[id]] as [string, HarnessLiveState]] : [])));
+    },
+  });
+  const seenWrites: [string, number][] = [];
+  const markChatSeen = storage.markChatSeen.bind(storage);
+  storage.markChatSeen = (chatId: string, at: number) => {
+    seenWrites.push([chatId, at]);
+    return markChatSeen(chatId, at);
+  };
+  const isVisible = (chatId: string) => visible.has(chatId);
+  const service = new SessionAttentionService(
+    storage,
+    new HarnessRegistry([adapter]),
+    new NotificationService(() => undefined, isVisible),
+    (id) => worktreeRecord({ id, path: `/repo/${id}` }),
+    () => undefined,
+    (chat) => open.has(chat.id),
+    isVisible
+  );
+  const changes: string[][] = [];
+  service.onDidChangeStatus((ids) => changes.push(ids));
+  return { service, polled, seenWrites, changes, open, visible };
+}
+
+test('a closed session gets a status dot from the sessions file', async () => {
+  const storage = makeStorage();
+  const openChat = storage.createChat('wt-1', 'claude', 'Open', { harnessSessionId: 's-open' });
+  const closedLive = storage.createChat('wt-1', 'claude', 'Closed but running', { harnessSessionId: 's-live' });
+  const closedQuiet = storage.createChat('wt-1', 'claude', 'Closed and quiet', { harnessSessionId: 's-quiet' });
+  let liveStatus: HarnessLiveState['liveStatus'] = 'busy';
+  const flow = rowFlow(storage, {
+    open: new Set([openChat.id]),
+    live: () => new Set(['s-live']),
+    states: () => ({
+      's-open': { turnState: 'working', turnEndedAt: null, liveStatus: 'busy' },
+      's-live': { turnState: 'working', turnEndedAt: null, liveStatus, ...(liveStatus === 'waiting' ? { waitingFor: 'permission prompt' } : {}) },
+    }),
+  });
+  await flow.service.poll(true);
+  assert.equal(flow.service.statusOf(closedLive.id).status, 'working', 'the sessions file says busy');
+  assert.equal(flow.service.statusOf(openChat.id).status, 'working');
+  assert.equal(flow.service.statusOf(closedQuiet.id).status, 'idle');
+  assert.ok(flow.changes.flat().includes(closedLive.id), 'the row change is announced');
+
+  liveStatus = 'waiting';
+  flow.changes.length = 0;
+  await flow.service.poll();
+  assert.equal(flow.service.statusOf(closedLive.id).status, 'needs');
+  assert.deepEqual(flow.changes, [[closedLive.id]], 'only the chat whose status changed');
+  assert.deepEqual(toasts(), [], 'a closed chat never toasts (P5)');
+
+  // The discovery scan refreshes the turn state of chats the tick does not poll.
+  flow.changes.length = 0;
+  flow.service.noteSessions([sessionRecord('claude', 's-quiet', { turnState: 'done', turnEndedAt: Date.now() + 60_000 })]);
+  assert.equal(flow.service.statusOf(closedQuiet.id).status, 'finished');
+  assert.deepEqual(flow.changes, [[closedQuiet.id]]);
+});
+
+test('opening a finished chat marks it seen and it turns idle', async () => {
+  const storage = makeStorage();
+  const chat = storage.createChat('wt-1', 'claude', 'Finished elsewhere', { harnessSessionId: 's-1' });
+  storage.updateChat(chat.id, { seenAt: 1_000 });
+  const flow = rowFlow(storage);
+  await flow.service.poll(true);
+  flow.service.noteSessions([sessionRecord('claude', 's-1', { turnState: 'done', turnEndedAt: 5_000 })]);
+  assert.equal(flow.service.statusOf(chat.id).status, 'finished');
+  assert.equal(flow.service.statusOf(chat.id).statusSince, 5_000, 'finished since the turn ended');
+
+  // pitwall.openChat → activateChat → markSeen.
+  const before = Date.now();
+  flow.service.markSeen(chat.id);
+  assert.equal(flow.service.statusOf(chat.id).status, 'idle');
+  assert.equal(flow.seenWrites.length, 1);
+  assert.ok(flow.seenWrites[0][1] >= before);
+  assert.ok((storage.getChat(chat.id)!.seenAt ?? 0) >= before, 'seenAt is stored');
+  flow.service.markSeen(chat.id);
+  assert.equal(flow.seenWrites.length, 1, 'an idle chat writes nothing');
+});
+
+test('a session whose turn ended before it was first listed is idle', async () => {
+  const storage = makeStorage();
+  const chat = storage.createChat('wt-1', 'claude', 'Imported', { harnessSessionId: 's-old' });
+  const listedAt = storage.getChat(chat.id)!.seenAt!;
+  const flow = rowFlow(storage);
+  await flow.service.poll(true);
+  flow.service.noteSessions([sessionRecord('claude', 's-old', { turnState: 'done', turnEndedAt: listedAt - 60_000 })]);
+  assert.equal(flow.service.statusOf(chat.id).status, 'idle', 'not ~500 green dots on first run (QA B2)');
+  assert.deepEqual(flow.seenWrites, []);
+});
+
+test('a chat kept in front writes seenAt at most once per finished turn', async (t) => {
+  const clock = useClock(t);
+  const storage = makeStorage();
+  const chat = storage.createChat('wt-1', 'claude', 'In front', { harnessSessionId: 's-1' });
+  let live: HarnessLiveState = { turnState: 'working', turnEndedAt: null, liveStatus: 'busy' };
+  const flow = rowFlow(storage, { open: new Set([chat.id]), visible: new Set([chat.id]), states: () => ({ 's-1': live }) });
+  await flow.service.poll(true);
+  clock.advance(4_000);
+  live = { turnState: 'done', turnEndedAt: Date.now(), liveStatus: 'idle' };
+  for (let tick = 0; tick < 5; tick++) {
+    clock.advance(4_000);
+    await flow.service.poll();
+  }
+  assert.equal(flow.seenWrites.length, 1, 'one write for the finished turn');
+  assert.equal(flow.service.statusOf(chat.id).status, 'idle', 'a turn that ends in front of you is seen');
+
+  live = { turnState: 'working', turnEndedAt: null, liveStatus: 'busy' };
+  clock.advance(4_000);
+  await flow.service.poll();
+  clock.advance(4_000);
+  live = { turnState: 'done', turnEndedAt: Date.now(), liveStatus: 'idle' };
+  for (let tick = 0; tick < 5; tick++) {
+    clock.advance(4_000);
+    await flow.service.poll();
+  }
+  assert.equal(flow.seenWrites.length, 2, 'the next finished turn writes once more');
+});
+
+test("closing a chat keeps its row status, and reopening it doesn't toast a pre-existing wait", async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  let live: HarnessLiveState = { turnState: 'working', turnEndedAt: null, liveStatus: 'busy' };
+  const flow = rowFlow(storage, { live: () => new Set(['s-1']), states: () => ({ 's-1': live }) });
+  // Launched after activation, so a wait it starts while open may toast (R45 floor).
+  const chat = storage.createChat('wt-1', 'claude', 'Reopened', { harnessSessionId: 's-1' });
+  flow.open.add(chat.id);
+  await flow.service.poll(true);
+  await flow.service.poll();
+  assert.equal(flow.service.statusOf(chat.id).status, 'working');
+
+  flow.open.delete(chat.id);
+  await flow.service.poll();
+  assert.equal(flow.service.statusOf(chat.id).status, 'working', 'closing keeps the row status');
+
+  live = { turnState: 'working', turnEndedAt: null, liveStatus: 'waiting', waitingFor: 'permission prompt', writtenAt: Date.now() };
+  await flow.service.poll();
+  assert.equal(flow.service.statusOf(chat.id).status, 'needs', 'the closed row shows the wait');
+  assert.deepEqual(toasts(), [], 'closed: no toast');
+
+  flow.open.add(chat.id);
+  await flow.service.poll();
+  await flow.service.poll();
+  assert.equal(flow.service.statusOf(chat.id).status, 'needs');
+  assert.deepEqual(flow.service.sessionsNeedingYou(), [chat.id], 'listed for Go to Next');
+  assert.deepEqual(toasts(), [], 'the wait predates the reopen: no toast (R45)');
+
+  // A new wait after the reopen is news again.
+  live = { turnState: 'working', turnEndedAt: null, liveStatus: 'busy' };
+  await flow.service.poll();
+  live = { turnState: 'working', turnEndedAt: null, liveStatus: 'waiting', waitingFor: 'permission prompt', writtenAt: Date.now() + 1 };
+  await flow.service.poll();
+  assert.equal(toasts().length, 1);
+});
+
+test('at 500 chats a tick stats only open and live sessions-file chats', async () => {
+  const chats = Array.from({ length: 500 }, (_, i) =>
+    chatRecord({ id: `chat-${i}`, worktreeId: `wt-${i % 10}`, harnessSessionId: `s-${i}`, seenAt: 1 })
+  );
+  const open = new Set(['chat-3', 'chat-250']);
+  const live = new Set(['s-7', 's-123', 's-499', 's-3']);
+  const polled: string[] = [];
+  const adapter = fakeAdapter('claude', {
+    liveSessionIds: async () => live,
+    getLiveStates: async (sessionIds: string[]) => {
+      polled.push(...sessionIds);
+      return new Map(sessionIds.map((id) => [id, { turnState: 'working' as const, turnEndedAt: null, liveStatus: 'busy' as const }]));
+    },
+  });
+  const service = new SessionAttentionService(
+    { getChats: () => chats, getRepository: () => ({ name: 'repo' }), markChatSeen: async () => undefined } as never,
+    new HarnessRegistry([adapter]),
+    { notify: () => true } as never,
+    (id) => worktreeRecord({ id, path: `/repo/${id}` }),
+    () => undefined,
+    (chat) => open.has(chat.id),
+    () => false
+  );
+  await service.poll(true);
+  assert.deepEqual(polled.sort(), ['s-123', 's-250', 's-3', 's-499', 's-7'], 'open ∪ live, each once; 0 others');
+  polled.length = 0;
+  await service.poll();
+  assert.equal(polled.length, 5);
+  assert.equal(service.statusOf('chat-123').status, 'working');
+  assert.equal(service.statusOf('chat-124').status, 'idle');
+});
+
+test('R36–R45 toasts still fire only for open chats', async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const states: Record<string, HarnessLiveState> = {};
+  const flow = rowFlow(storage, { live: () => new Set(['s-open', 's-closed']), states: () => states });
+  const openChat = storage.createChat('wt-1', 'claude', 'Open chat', { harnessSessionId: 's-open' });
+  const closedChat = storage.createChat('wt-2', 'claude', 'Closed chat', { harnessSessionId: 's-closed' });
+  flow.open.add(openChat.id);
+  states['s-open'] = { turnState: 'working', turnEndedAt: null, liveStatus: 'busy' };
+  states['s-closed'] = { turnState: 'working', turnEndedAt: null, liveStatus: 'busy' };
+  await flow.service.poll(true);
+  await flow.service.poll();
+
+  const waiting: HarnessLiveState = { turnState: 'working', turnEndedAt: null, liveStatus: 'waiting', waitingFor: 'permission prompt', writtenAt: Date.now() };
+  states['s-open'] = waiting;
+  states['s-closed'] = waiting;
+  await flow.service.poll();
+  assert.equal(toasts().length, 1, 'one toast, for the open chat');
+  assert.match(toasts()[0], /Open chat/);
+  assert.equal(flow.service.statusOf(closedChat.id).status, 'needs', 'the closed row still shows needs you');
+  assert.deepEqual(flow.service.sessionsNeedingYou(), [openChat.id], 'Go to Next stays open chats (P5)');
+});

@@ -67,7 +67,12 @@ files, which are not Pitwall's to read.
   10 s cache.
 - Older CLIs without the folder, and containers where it is not mounted, behave as before.
 - Needs-you marks no longer depend on `pitwall.notifications.onNeedsInput`. The setting
-  still gates the toast, and the fallback call is still skipped when it is off.
+  still gates the toast, and the fallback call is still skipped when it is off. With the
+  setting off and the sessions folder unavailable, the `claude agents` fallback stays
+  disabled, so no needs-you mark shows: the mark then depends on which source answered.
+- A torn read (a file caught mid-write) that hides a session waiting on the previous tick
+  keeps that session's previous file state for one tick, so the wait neither ends nor
+  restarts (an R45 residual). A second torn read in a row falls back as above.
 - `pidDomain` mirrors Claude Code 2.1.326: `win32:<lower-case hostname>` on Windows,
   `linux:<machine-id>:<pid namespace>` on Linux, the platform name elsewhere. If a future CLI
   changes it, every file is ignored and the fallback takes over: a cost, never a wrong

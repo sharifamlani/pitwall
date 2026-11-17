@@ -63,6 +63,12 @@ export interface HarnessLiveState {
    * when the session is not running or the harness does not say.
    */
   liveStatus?: 'busy' | 'waiting' | 'idle';
+  /**
+   * When the harness last changed `liveStatus` (Claude: the sessions file's
+   * `statusUpdatedAt`). An idle status with a transcript that looks mid-turn
+   * (a denied prompt) dates the turn's end from this.
+   */
+  statusUpdatedAt?: number;
 }
 
 /**
@@ -348,6 +354,14 @@ export interface HarnessAdapter {
     sessionIds: string[],
     cwd?: string
   ): Promise<Map<string, HarnessLiveState>>;
+
+  /**
+   * Native sessions running right now by the harness's own live record
+   * (Claude: `~/.claude/sessions`), cheap enough for every attention tick.
+   * The tick polls these besides the open chats, so a closed chat's row
+   * still gets a live status. Undefined when the harness has no such record.
+   */
+  liveSessionIds?(): Promise<Set<string> | undefined>;
 
   /**
    * Metadata for a chat row. Implementations should prefer cached data and

@@ -12,7 +12,7 @@
     "pitwall": [
       {
         "id": "pitwall.workspacesView",
-        "name": "Workspaces",
+        "name": "Repos",
         "size": 4
       },
       {
@@ -33,11 +33,11 @@
   "viewsWelcome": [
     {
       "view": "pitwall.workspacesView",
-      "contents": "Every Claude Code session across your repos, in one sidebar.\n\n[Add Local Folder or Repository](command:pitwall.addRepository)\n[Clone from GitHub](command:pitwall.cloneRepository)\n\nAdd any local folder, or clone a repository from GitHub to get started."
+      "contents": "No repositories yet.\n[Add repository](command:pitwall.addRepository)"
     },
     {
       "view": "pitwall.filesView",
-      "contents": "Select a worktree, folder, or session to browse its files."
+      "contents": "Select a repo or session to browse its files."
     },
     {
       "view": "pitwall.sessionSearchView",
@@ -137,18 +137,6 @@
       "title": "Remove from Pitwall…",
       "category": "Pitwall",
       "icon": "$(close)"
-    },
-    {
-      "command": "pitwall.moveRepositoryUp",
-      "title": "Move Up",
-      "category": "Pitwall",
-      "icon": "$(arrow-up)"
-    },
-    {
-      "command": "pitwall.moveRepositoryDown",
-      "title": "Move Down",
-      "category": "Pitwall",
-      "icon": "$(arrow-down)"
     },
     {
       "command": "pitwall.newDefaultSession",
@@ -736,63 +724,53 @@
     ],
     "view/item/context": [
       {
-        "command": "pitwall.moveRepositoryUp",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
-        "group": "5_move@1"
-      },
-      {
-        "command": "pitwall.moveRepositoryDown",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
-        "group": "5_move@2"
-      },
-      {
         "command": "pitwall.removeRepository",
         "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
         "group": "9_destructive@9"
       },
       {
         "submenu": "pitwall.newSession",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && (pitwall.anyHarnessInstalled || pitwall.anyNativeUiInstalled) && !config.pitwall.defaultHarness",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/ && (pitwall.anyHarnessInstalled || pitwall.anyNativeUiInstalled) && !config.pitwall.defaultHarness",
         "group": "inline@1"
       },
       {
         "command": "pitwall.newDefaultSession",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && (pitwall.anyHarnessInstalled || pitwall.anyNativeUiInstalled) && config.pitwall.defaultHarness",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/ && (pitwall.anyHarnessInstalled || pitwall.anyNativeUiInstalled) && config.pitwall.defaultHarness",
         "group": "inline@1"
       },
       {
         "command": "pitwall.openTerminalAtWorktree",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/",
         "group": "inline@2"
       },
       {
         "submenu": "pitwall.newSessionContext",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && (pitwall.anyHarnessInstalled || pitwall.anyNativeUiInstalled)",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/ && (pitwall.anyHarnessInstalled || pitwall.anyNativeUiInstalled)",
         "group": "1_session@1"
       },
       {
         "command": "pitwall.importSessions",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/",
         "group": "1_session@2"
       },
       {
         "command": "pitwall.switchToWorkspace",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && !config.pitwall.autoSwitchWorkspaceFolder",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/ && !config.pitwall.autoSwitchWorkspaceFolder",
         "group": "2_open@1"
       },
       {
         "command": "pitwall.openInNewWindow",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/",
         "group": "2_open@2"
       },
       {
         "command": "pitwall.openTerminalAtWorktree",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/",
         "group": "2_open@3"
       },
       {
         "command": "pitwall.copyWorktreePath",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/",
         "group": "2_open@5"
       },
       {
@@ -1036,14 +1014,6 @@
       },
       {
         "command": "pitwall.files.delete",
-        "when": "false"
-      },
-      {
-        "command": "pitwall.moveRepositoryUp",
-        "when": "false"
-      },
-      {
-        "command": "pitwall.moveRepositoryDown",
         "when": "false"
       },
       {
