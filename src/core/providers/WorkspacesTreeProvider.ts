@@ -54,6 +54,9 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   private repoWatchers: vscode.Disposable[] = [];
   private watchedRepoIds = '';
   private pendingCacheClear = false;
+  /** True from a refresh until the next top-level render; nothing has rendered yet at construction. */
+  private renderPending = true;
+  private settleWaiters: Array<() => void> = [];
   private readonly disposables: vscode.Disposable[] = [];
   private readonly prRefreshTimer: NodeJS.Timeout;
 
@@ -64,6 +67,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       this.gitHubService.clearCache();
     }
     this.updateRepoWatchers();
+    this.renderPending = true;
     this.changeEmitter.fire();
   }, REFRESH_DEBOUNCE_MS);
 
@@ -111,19 +115,28 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     this.chatOpenProvider = provider;
   }
 
-  /** Stub: the real implementation arrives in the green commit. */
+  /**
+   * Resolves after the first `getChildren(undefined)` that completes after the
+   * latest `refresh()` or `softRefresh()`, and at once when no render is
+   * pending. Reveals wait on this so they never name a row not yet rendered.
+   */
   whenSettled(): Promise<void> {
-    return Promise.resolve();
+    if (!this.renderPending) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => this.settleWaiters.push(resolve));
   }
 
   /** Re-render and re-list worktrees and PRs (debounced). */
   refresh(): void {
+    this.renderPending = true;
     this.pendingCacheClear = true;
     this.scheduledRefresh();
   }
 
   /** Re-render rows whose content changed, keeping the worktree and PR caches. */
   softRefresh(): void {
+    this.renderPending = true;
     this.scheduledRefresh();
   }
 
@@ -210,7 +223,12 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
 
   async getChildren(element?: WorkspaceTreeItem): Promise<WorkspaceTreeItem[]> {
     if (!element) {
-      return this.storageService.getRepositories().map((repo) => this.repositoryRow(repo));
+      const rows = this.storageService.getRepositories().map((repo) => this.repositoryRow(repo));
+      this.renderPending = false;
+      const waiters = this.settleWaiters;
+      this.settleWaiters = [];
+      waiters.forEach((resolve) => resolve());
+      return rows;
     }
     if (element.itemType === 'repository') {
       const repo = element.data as Repository;
