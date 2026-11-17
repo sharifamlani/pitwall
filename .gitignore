@@ -35,8 +35,11 @@ desktop.ini
 /Transcripts/
 # .packages: local connector scripts; may hold local credentials
 /.packages/
-# .claude: per-machine Claude Code settings, skills and locks
-/.claude/
+# .claude: per-machine Claude Code settings, skills and locks; only the extension's own pitwall-* skills are tracked
+/.claude/*
+!/.claude/skills/
+/.claude/skills/*
+!/.claude/skills/pitwall-*/
 # .superpowers: plan-execution scratch (ledgers, briefs, review packages)
 /.superpowers/
 # Playwright MCP runtime dumps

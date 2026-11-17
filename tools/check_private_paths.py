@@ -25,10 +25,12 @@ _PRIVATE = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 _TEMPLATE = re.compile(r"(^|/)\.env\.example$", re.IGNORECASE)
+# The one tracked exception under .claude/: the extension's own skills, at the repo root only.
+_ALLOWED = re.compile(r"^\.claude/skills/pitwall-[^/]+/", re.IGNORECASE)
 
 
 def leaked_paths(paths: Iterable[str]) -> list[str]:
-    return [p for p in paths if _PRIVATE.search(p) and not _TEMPLATE.search(p)]
+    return [p for p in paths if _PRIVATE.search(p) and not _TEMPLATE.search(p) and not _ALLOWED.search(p)]
 
 
 def main(argv: list[str] | None = None) -> int:

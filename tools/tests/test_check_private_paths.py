@@ -67,3 +67,12 @@ def test_main_clean_repo_exits_0(tmp_path, capsys):
     _git(tmp_path, "add", ".env.example")
     assert main(["--repo", str(tmp_path)]) == 0
     assert "OK" in capsys.readouterr().out
+
+
+def test_pitwall_skill_folder_allowed():
+    assert leaked_paths([".claude/skills/pitwall-add-feature/SKILL.md"]) == []
+
+
+def test_other_claude_skill_still_flagged():
+    path = ".claude/skills/account-recovery/SKILL.md"
+    assert leaked_paths([path]) == [path]
