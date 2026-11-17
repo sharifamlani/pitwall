@@ -43,6 +43,8 @@ function filesSetup(t: { after(fn: () => void): void }) {
   files.setActiveWorktree(worktreeRecord({ path: root }));
   const context = { subscriptions: [] as vscode.Disposable[] } as unknown as vscode.ExtensionContext;
   registerFileCommands(context, files, () => undefined);
+  const opener = vscode.commands.registerCommand('vscode.open', () => undefined);
+  t.after(() => opener.dispose());
   t.after(() => context.subscriptions.forEach((d) => d.dispose()));
   /** A row as the editor spells it: on Windows the drive letter is lower case. */
   const row = (rel: string, type: vscode.FileType) => {

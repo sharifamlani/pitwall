@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { FileTreeItem, FilesTreeProvider } from '../providers/FilesTreeProvider';
 import { logOperation } from '../services/OperationLog';
-import { isStrictlyWithin, isWithin } from '../utils/paths';
+import { isStrictlyWithin, isWithin, samePath } from '../utils/paths';
 
 /** Resolve a user-entered name, refusing anything that is not one segment. */
 function validateName(name: string): string | undefined {
@@ -27,7 +27,10 @@ async function createEntry(
 ): Promise<void> {
   const worktree = filesProvider.getActiveWorktree();
   if (!worktree) { return; }
-  const parentPath = item ? item.uri.fsPath : worktree.path;
+  // A file row is not a parent: create beside it, in its folder.
+  const parentPath = item
+    ? ((item.fileType & vscode.FileType.Directory) !== 0 ? item.uri.fsPath : path.dirname(item.uri.fsPath))
+    : worktree.path;
   if (!isWithin(parentPath, worktree.path)) {
     vscode.window.showErrorMessage(`Refusing to create a ${kind} outside the active worktree.`);
     logOperation(`Refused new ${kind} outside worktree: ${parentPath}`);
@@ -270,7 +273,7 @@ export function registerFileCommands(
       // Cutting into the same folder is a no-op, not a rename to "<name> copy".
       if (
         clipboard.isCut &&
-        path.resolve(path.dirname(sourcePath)) === path.resolve(targetDir)
+        samePath(path.dirname(sourcePath), targetDir)
       ) {
         vscode.window.showInformationMessage('The item is already in this folder.');
         return;
