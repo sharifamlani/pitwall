@@ -23,8 +23,8 @@ Rows below: 12 fail + 17 skipped = **29**, which equals `fail + skipped`.
 | Class | Meaning | Fail | Skip | Total |
 |---|---|---|---|---|
 | env-limit | Windows or this machine cannot do it (symlink EPERM, `"` in a filename, POSIX fake CLIs, `/proc`) | 2 | 17 | 19 |
-| POSIX-assumption | Test expects POSIX quoting, paths or line endings | 9 | 0 | 9 |
-| real-bug | Product behavior is wrong on Windows | 1 | 0 | 1 |
+| POSIX-assumption | Test expects POSIX quoting, paths or line endings | 5 | 0 | 5 |
+| real-bug | Product behavior is wrong on Windows (rows 2, 9-12 suspected) | 5 | 0 | 5 |
 | flaky | Passed on rerun | 0 | 0 | 0 |
 | **Total** | | **12** | **17** | **29** |
 
@@ -41,11 +41,11 @@ Reruns: each of the 12 failing files was rerun alone (`npm test -- <name>`). All
 | 5 | copying uncommitted work carries binary edits and unusual untracked names, never overwriting | test/dry/git.test.ts:106 | fail | POSIX-assumption | `'original\r\nedited\r\n'` expected `'original\nedited\n'` | Same CRLF cause as row 4; same fix in the shared test repo setup. |
 | 6 | the discard summary counts tracked changes and lists exactly what git clean deletes | test/dry/git.test.ts:128 | fail | env-limit | `ENOENT ... repo\notes "draft".txt` | NTFS forbids `"` in filenames. Drop the quoted-name case on win32 and keep other unusual names (spaces, unicode). |
 | 7 | launch commands choose the new ID, resume by record path, and fork under a chosen ID | test/dry/pi.test.ts:158 | fail | POSIX-assumption | command is `pi --session 'C:\...jsonl'` (single-quoted), expected unquoted | The product quotes a path that contains backslashes. Decide the Windows shell quoting (PowerShell vs cmd) and assert it; single quotes break in cmd.exe. |
-| 8 | a found session outside every root resumes in a terminal at its folder, and its command copies with that folder | test/dry/session-search-commands.test.ts:113 | fail | POSIX-assumption | `cd 'C:\...\elsewhere' && claude --resume s2` expected without quotes | Same quoting rule as row 7; fix both together. |
-| 9 | Create Worktree puts a new branch under <repo>-worktrees and hides branches already checked out | test/dry/worktree-commands.test.ts:50 | fail | POSIX-assumption | `worktreeAt(created)?.branch` is `undefined` | `git worktree list` returns forward-slash paths and the test compares to `path.join` backslash paths. Normalize both sides (`path.resolve` or a slash helper). Not yet confirmed. |
-| 10 | Delete Worktree closes its sessions before removing the directory, and a detached worktree never deletes a branch | test/dry/worktree-commands.test.ts:67 | fail | POSIX-assumption | `TypeError: Cannot read properties of undefined (reading 'name')` | Same path-separator lookup returns `undefined`; fixed by the row 9 normalization. |
-| 11 | Delete Worktree & Branch removes the worktree and its branch | test/dry/worktree-commands.test.ts:87 | fail | POSIX-assumption | `true !== false` (the worktree still existed when it was forgotten) | Same path mismatch makes the delete skip the right worktree; fixed with row 9. |
-| 12 | Rebase offers the remote branches, recommended main first, but not the branch's own remote copy | test/dry/worktree-commands.test.ts:99 | fail | POSIX-assumption | `actual [] expected ['origin/main','origin/zeta']` | Probably the same path mismatch (remote or worktree lookup). Confirm after row 9; if it still fails, reclassify as real-bug. |
+| 8 | a found session outside every root resumes in a terminal at its folder, and its command copies with that folder | test/dry/session-search-commands.test.ts:113 | fail | POSIX-assumption | `cd 'C:\...\elsewhere' && claude --resume s2` expected without quotes | Same quoting rule as row 7; fix both together. Also: this string is the clipboard copy text, and `&&` is a parse error in Windows PowerShell 5.1, so the copied command does not paste into the default Windows shell either. |
+| 9 | Create Worktree puts a new branch under <repo>-worktrees and hides branches already checked out | test/dry/worktree-commands.test.ts:50 | fail | real-bug (suspected) | `worktreeAt(created)?.branch` is `undefined` | Product-side: canonicalize the path in GitService.parseWorktrees (:162, and the id at :158), so every consumer sees native paths. `git worktree list --porcelain` prints `C:/...`; GitService.ts:162 stores it raw as `path` (id at :158), then WorkspacesTreeProvider.ts:402 (`worktree.path === targetPath`) and SessionImportService.ts:407 (`candidate.path === expectation.worktreePath`) compare raw strings against native backslash paths. Confirm after the fix.
+| 10 | Delete Worktree closes its sessions before removing the directory, and a detached worktree never deletes a branch | test/dry/worktree-commands.test.ts:67 | fail | real-bug (suspected) | `TypeError: Cannot read properties of undefined (reading 'name')` | Same product-side cause as row 9; expected to clear with the parseWorktrees fix.
+| 11 | Delete Worktree & Branch removes the worktree and its branch | test/dry/worktree-commands.test.ts:87 | fail | real-bug (suspected) | `true !== false` (the worktree still existed when it was forgotten) | Same product-side cause as row 9; expected to clear with the parseWorktrees fix.
+| 12 | Rebase offers the remote branches, recommended main first, but not the branch’s own remote copy | test/dry/worktree-commands.test.ts:99 | fail | real-bug (suspected) | `actual [] expected ['origin/main','origin/zeta']` | Probably the same cause; confirm whether row 12 clears once parseWorktrees canonicalizes (if not, investigate separately). See row 9.
 
 ## Skips (17)
 
@@ -71,6 +71,6 @@ Reruns: each of the 12 failing files was rerun alone (`npm test -- <name>`). All
 
 ## Notes
 
-- 8 of 12 failures share three root causes (CRLF checkout, shell quoting of Windows paths, forward-slash vs backslash paths), so Phase 2 fixes are far fewer than 12.
-- Row 2 is the only suspected product bug and needs real investigation before Phase 2 commits to a fix.
+- 4 of 12 failures share two test-side causes (CRLF checkout, shell quoting of Windows paths); 4 more (rows 9-12) share one product-side cause, forward-slash worktree paths from git.
+- Suspected product bugs: row 2 (needs real investigation) and rows 9-12 (one shared cause in GitService.parseWorktrees; confirm row 12 clears with it).
 - `core.autocrlf=true` here is this machine's Git setting; a CI Windows runner may differ.
