@@ -389,6 +389,15 @@ module.exports = {
     __setActiveTextEditor: (editor) => {
       activeTextEditor = editor;
     },
+    /**
+     * Test helper: the user clicks into a text editor. It becomes the active
+     * editor and takes keyboard focus from any terminal; the window's active
+     * terminal stays what it was, as in the editor.
+     */
+    __focusTextEditor: (editor) => {
+      activeTextEditor = editor;
+      focusedTerminal = undefined;
+    },
     state: { focused: false },
     onDidChangeWindowState: (listener) => {
       windowStateListeners.add(listener);

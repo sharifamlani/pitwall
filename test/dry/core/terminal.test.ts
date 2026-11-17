@@ -892,3 +892,78 @@ test('after a quit, a chat whose stored PID belongs to no live terminal is left 
   assert.equal(stub.window.terminals.length, 3);
   assert.deepEqual([first.disposed, second.disposed], [false, false]);
 });
+
+/**
+ * One editor group holding the chat's terminal tab and a file the user is
+ * reading in front of it, as `tabGroups` reports it.
+ */
+function fileInFrontOfChatTab(chatTab: FakeTerminal, uri: unknown) {
+  const terminalTab = { input: new vscode.TabInputTerminal(), label: chatTab.name, isPreview: false, isActive: false };
+  const fileTab = { input: new vscode.TabInputText(uri as never), label: 'README.md', isPreview: false, isActive: true };
+  stub.window.tabGroups.all = [{ isActive: true, viewColumn: 1, tabs: [terminalTab, fileTab], activeTab: fileTab }];
+  const editor = { document: { uri }, viewColumn: 1 };
+  stub.window.__focusTextEditor(editor);
+  return editor;
+}
+
+/** Record every `show()` call on a terminal, with its `preserveFocus` argument. */
+function recordShows(terminal: FakeTerminal): (boolean | undefined)[] {
+  const calls: (boolean | undefined)[] = [];
+  const show = terminal.show.bind(terminal);
+  terminal.show = (preserveFocus?: boolean) => {
+    calls.push(preserveFocus);
+    show(preserveFocus);
+  };
+  return calls;
+}
+
+test('R39 addendum: a command start while the user reads a file in the chat tab’s group never brings the tab to the front or takes focus', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab' }] });
+  const renames = focusFirstRename();
+  const tab = (await f.open('40de4f00-lab'))!;
+  tab.name = 'Windows PowerShell';
+  // The user worked in another terminal last, then clicked a file in the
+  // group that also holds the chat's tab.
+  const other = f.restoredTab('the user’s shell', 9400);
+  stub.window.__focusTerminal(other);
+  const readme = vscode.Uri.file('/work/README.md');
+  const editor = fileInFrontOfChatTab(tab, readme);
+  const shows = recordShows(tab);
+
+  // The chat tab's command starts (for example, a late PowerShell start).
+  stub.window.__integrateShell(tab);
+  for (let i = 0; i < 5; i++) await flush();
+  assert.deepEqual(shows, [], 'the chat tab is not shown at all, so it cannot replace the file');
+  assert.equal(stub.window.activeTextEditor, editor, 'the file is still the active editor');
+  assert.equal(stub.window.__focusedTerminal, undefined, 'and keyboard focus is still in it');
+  assert.ok(renames.every((r) => r.target !== other), 'the user’s other terminal is never renamed');
+
+  // Once the user comes back to the chat tab, its title lands there.
+  stub.window.__focusTerminal(tab);
+  const title = terminalTitle(f.chat('40de4f00-lab'));
+  await waitFor(() => tab.name === title, 'the title once the user is back in the chat tab');
+});
+
+test('R39 addendum: a command start in the active terminal while the user reads a file renames it in place, with no show', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab' }] });
+  const renames = focusFirstRename();
+  const tab = (await f.open('40de4f00-lab'))!;
+  tab.name = 'Windows PowerShell';
+  // The user typed in the chat tab, then clicked a file: the chat tab is
+  // still the window's active terminal.
+  const readme = vscode.Uri.file('/work/README.md');
+  const editor = fileInFrontOfChatTab(tab, readme);
+  const shows = recordShows(tab);
+  const before = renames.length;
+
+  stub.window.__integrateShell(tab);
+  const title = terminalTitle(f.chat('40de4f00-lab'));
+  await waitFor(() => renames.length > before, 'the rename');
+  await flush();
+  assert.deepEqual(shows, [], 'no show');
+  assert.equal(tab.name, title, 'renamed in place');
+  assert.equal(stub.window.activeTextEditor, editor);
+  assert.equal(stub.window.__focusedTerminal, undefined);
+});

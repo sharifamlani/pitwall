@@ -97,6 +97,7 @@ interface StubControls {
     __focusTerminal(terminal: unknown): void;
     readonly __focusedTerminal: FakeTerminal | undefined;
     __setActiveTextEditor(editor: { document: { uri: unknown }; viewColumn?: number } | undefined): void;
+    __focusTextEditor(editor: { document: { uri: unknown }; viewColumn?: number }): void;
     __integrateShell(terminal: unknown): void;
     __fireWindowState(focused: boolean): void;
   };
