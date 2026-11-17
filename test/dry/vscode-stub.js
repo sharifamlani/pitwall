@@ -55,6 +55,13 @@ class TabInputTextDiff {
 
 class TabInputTerminal {}
 
+class TabInputNotebook {
+  constructor(uri, notebookType) {
+    this.uri = uri;
+    this.notebookType = notebookType;
+  }
+}
+
 class TabInputCustom {
   constructor(uri, viewType) {
     this.uri = uri;
@@ -274,8 +281,13 @@ const tabChangeListeners = new Set();
 const tabGroupChangeListeners = new Set();
 const configurationChangeListeners = new Set();
 let activeTerminal;
+let activeTextEditor;
+const shownDocuments = [];
 let nextTerminalPid = 4100;
 let silentExecutionEvents = false;
+let defaultPidDelayMs;
+let lateShellIntegration = false;
+const shellIntegrationListeners = new Set();
 const warningResponses = [];
 const quickPickResponses = [];
 const inputResponses = [];
@@ -311,6 +323,7 @@ module.exports = {
   TabInputText,
   TabInputTextDiff,
   TabInputTerminal,
+  TabInputNotebook,
   ThemeIcon,
   ThemeColor,
   Uri,
@@ -353,6 +366,20 @@ module.exports = {
     get activeTerminal() {
       return activeTerminal;
     },
+    get activeTextEditor() {
+      return activeTextEditor;
+    },
+    /** Records each call; the document (or URI) becomes the active text editor. */
+    showTextDocument: async (documentOrUri, options = {}) => {
+      shownDocuments.push({ target: documentOrUri, options });
+      const document = documentOrUri && documentOrUri.uri ? documentOrUri : { uri: documentOrUri };
+      activeTextEditor = { document, viewColumn: options.viewColumn };
+      return activeTextEditor;
+    },
+    /** Test helper: the user focuses a text editor, `{ document, viewColumn }`. */
+    __setActiveTextEditor: (editor) => {
+      activeTextEditor = editor;
+    },
     state: { focused: false },
     tabGroups: {
       all: [],
@@ -391,7 +418,10 @@ module.exports = {
       activeTerminalListeners.add(listener);
       return { dispose: () => activeTerminalListeners.delete(listener) };
     },
-    onDidChangeTerminalShellIntegration: () => ({ dispose: () => undefined }),
+    onDidChangeTerminalShellIntegration: (listener) => {
+      shellIntegrationListeners.add(listener);
+      return { dispose: () => shellIntegrationListeners.delete(listener) };
+    },
     onDidStartTerminalShellExecution: (listener) => {
       executionStartListeners.add(listener);
       return { dispose: () => executionStartListeners.delete(listener) };
@@ -411,6 +441,22 @@ module.exports = {
         listener({ terminal, execution: { commandLine } });
       }
     },
+    /**
+     * Test helper: a slow shell reports integration now, then runs the text
+     * typed into it before, reporting each as a command start.
+     */
+    __integrateShell: (terminal) => {
+      terminal.shellIntegration = {};
+      terminal.__awaitingIntegration = false;
+      for (const listener of [...shellIntegrationListeners]) {
+        listener({ terminal, shellIntegration: terminal.shellIntegration });
+      }
+      for (const text of terminal.sent) {
+        for (const listener of [...executionStartListeners]) {
+          listener({ terminal, execution: { commandLine: text } });
+        }
+      }
+    },
     __setActiveTerminal: (terminal) => {
       activeTerminal = terminal;
       for (const listener of activeTerminalListeners) {
@@ -426,13 +472,17 @@ module.exports = {
         disposed: false,
         __pid: options.__pid ?? nextTerminalPid++,
         exitStatus: options.__exitStatus,
-        shellIntegration: {},
+        shellIntegration: lateShellIntegration ? undefined : {},
+        __awaitingIntegration: lateShellIntegration,
+        __pidReads: 0,
         get processId() {
-          return Promise.resolve(this.__pid);
+          this.__pidReads += 1;
+          return pidPromise ?? Promise.resolve(this.__pid);
         },
         sendText(text) {
           this.sent.push(text);
-          if (silentExecutionEvents) {
+          // A shell that has not integrated yet runs typed-ahead text later.
+          if (silentExecutionEvents || this.__awaitingIntegration) {
             return;
           }
           for (const listener of executionStartListeners) {
@@ -442,6 +492,10 @@ module.exports = {
         show() {
           this.shown += 1;
           activeTerminal = this;
+          // An editor-area terminal takes the text editor's place in front.
+          if (options.location === 2) {
+            activeTextEditor = undefined;
+          }
           for (const listener of activeTerminalListeners) {
             listener(this);
           }
@@ -460,6 +514,15 @@ module.exports = {
           }
         },
       };
+      // `__pidDelayMs` models a pty that reports its PID late (Windows):
+      // one promise per terminal, like VS Code; Infinity never resolves.
+      const delay = options.__pidDelayMs ?? defaultPidDelayMs;
+      const pidPromise =
+        delay === undefined
+          ? undefined
+          : delay === Infinity
+            ? new Promise(() => undefined)
+            : new Promise((resolve) => setTimeout(() => resolve(terminal.__pid), delay));
       openTerminals.push(terminal);
       return terminal;
     },
@@ -515,6 +578,8 @@ module.exports = {
       openExternalCalls.push(uri);
       return openExternalResult;
     },
+    /** The default terminal profile's shell; tests switch it with `__setShell`. */
+    shell: '/bin/bash',
   },
   commands: {
     registerCommand: (id, handler) => {
@@ -551,6 +616,7 @@ module.exports = {
       fileWatchers,
       outputChannels,
       deletedUris,
+      shownDocuments,
     ]) {
       list.length = 0;
     }
@@ -559,6 +625,7 @@ module.exports = {
       openTerminalListeners,
       activeTerminalListeners,
       executionStartListeners,
+      shellIntegrationListeners,
       tabChangeListeners,
       tabGroupChangeListeners,
       configurationChangeListeners,
@@ -572,13 +639,18 @@ module.exports = {
     quickPickHandler = null;
     clipboardText = '';
     activeTerminal = undefined;
+    activeTextEditor = undefined;
     silentExecutionEvents = false;
+    defaultPidDelayMs = undefined;
+    lateShellIntegration = false;
     openExternalResult = true;
     nextTerminalPid = 4100;
     module.exports.workspace.workspaceFolders = [];
     module.exports.window.tabGroups.all = [];
+    module.exports.env.shell = '/bin/bash';
   },
   __deleted: deletedUris,
+  __shownDocuments: shownDocuments,
   __commandHandlers: commandHandlers,
   __outputChannels: outputChannels,
   __fileWatchers: fileWatchers,
@@ -615,6 +687,18 @@ module.exports = {
           changed === section || changed.startsWith(`${section}.`),
       });
     }
+  },
+  /** Test helper: terminals created from now on report their PID after `ms`. */
+  __setPidDelayMs: (ms) => {
+    defaultPidDelayMs = ms;
+  },
+  /** Test helper: terminals created from now on integrate only on `window.__integrateShell`. */
+  __setLateShellIntegration: (value) => {
+    lateShellIntegration = Boolean(value);
+  },
+  /** Test helper: change the default terminal shell (`vscode.env.shell`). */
+  __setShell: (shellPath) => {
+    module.exports.env.shell = shellPath;
   },
   /** Test helper: model a shell that never reports a command start. */
   __setSilentExecutionEvents: (value) => {

@@ -17,7 +17,7 @@ import {
 import { DEFAULT_CHAT_NAME, chatPrimarySessionId } from '../harness/sessionUtils';
 import { errorMessage, formatRelativeTime, nextForkName } from '../utils/text';
 import { canonicalPath } from '../utils/paths';
-import { quoteShellArgument } from '../harness/cli';
+import { commandInDirectory } from '../services/terminalEvents';
 import {
   commandRegistrar,
   defaultWorktreePath,
@@ -884,7 +884,7 @@ export function registerChatCommands(
       const resume = harnessRegistry
         .get(chat.harness)
         .buildLaunchCommand({ worktreePath: worktree.path, sessionId: chat.harnessSessionId });
-      const command = `cd ${quoteShellArgument(worktree.path)} && ${resume}`;
+      const command = commandInDirectory(worktree.path, resume);
       await vscode.env.clipboard.writeText(command);
       vscode.window.showInformationMessage(`Copied: ${command}`);
     }

@@ -1,9 +1,10 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { ChatSession } from '../types';
 import { quoteShellArgument } from '../harness/cli';
 
 /** How long to wait for a terminal's pty before giving up on its PID. */
-const PROCESS_ID_TIMEOUT_MS = 2000;
+export const PROCESS_ID_TIMEOUT_MS = 2000;
 /** How long to let `show()` settle before renaming the active terminal. */
 const ACTIVE_TERMINAL_TIMEOUT_MS = 1000;
 
@@ -34,13 +35,68 @@ export function isLiveTerminal(terminal: vscode.Terminal): boolean {
   return vscode.window.terminals.includes(terminal) && terminal.exitStatus === undefined;
 }
 
+/** The shell syntax a terminal line has to parse in. */
+export type ShellKind = 'posix' | 'powershell' | 'cmd';
+
+/**
+ * Which syntax a shell executable reads. No shell path means VS Code's own
+ * default: PowerShell on Windows, a POSIX shell elsewhere.
+ */
+export function shellKind(shellPath: string | undefined): ShellKind {
+  if (!shellPath) {
+    return process.platform === 'win32' ? 'powershell' : 'posix';
+  }
+  const name = path.win32.basename(shellPath).toLowerCase();
+  if (['powershell.exe', 'powershell', 'pwsh.exe', 'pwsh'].includes(name)) {
+    return 'powershell';
+  }
+  if (name === 'cmd.exe' || name === 'cmd') {
+    return 'cmd';
+  }
+  return 'posix';
+}
+
+/**
+ * PowerShell reads a line that starts with a quoted string (a quoted full
+ * path to the CLI) as a value, not a command; the call operator runs it.
+ */
+function withCallOperator(command: string): string {
+  return /^['"]/.test(command) ? `& ${command}` : command;
+}
+
+/**
+ * A launch command as a terminal line for the given shell. Only PowerShell
+ * needs a change; bash and cmd.exe run it as built.
+ */
+export function launchLine(
+  command: string,
+  // The default profile's shell, as for `commandInDirectory` below.
+  shellPath: string | undefined = vscode.env.shell
+): string {
+  return shellKind(shellPath) === 'powershell' ? withCallOperator(command) : command;
+}
+
 /**
  * Change directory and launch as one shell line: a revived tab's shell starts
  * in the workspace root, the command-start event then covers the launch, and
- * a failed `cd` cannot start an agent in the wrong worktree.
+ * a failed `cd` cannot start an agent in the wrong worktree. The line is
+ * written for the shell it lands in: Windows PowerShell 5.1, the default
+ * terminal on Windows, cannot parse `&&`.
  */
-export function commandInDirectory(directory: string, command: string): string {
-  return `cd ${quoteShellArgument(directory)} && ${command}`;
+export function commandInDirectory(
+  directory: string,
+  command: string,
+  // A revived tab keeps the shell it was created with; this uses the current default profile because Pitwall creates its tabs with it (a default changed between sessions is out of scope for v1).
+  shellPath: string | undefined = vscode.env.shell
+): string {
+  switch (shellKind(shellPath)) {
+    case 'powershell':
+      return `Set-Location -LiteralPath '${directory.replace(/'/g, "''")}'; if ($?) { ${withCallOperator(command)} }`;
+    case 'cmd':
+      return `cd /d "${directory}" && ${command}`;
+    default:
+      return `cd ${quoteShellArgument(directory)} && ${command}`;
+  }
 }
 
 /**
@@ -71,9 +127,23 @@ export function waitForEvent<T>(
 }
 
 /** A terminal's pty PID, bounded so activation cannot hang on one that never reports. */
-export function readProcessId(terminal: vscode.Terminal): Promise<number | undefined> {
-  return waitForEvent<number | undefined>(PROCESS_ID_TIMEOUT_MS, undefined, (done) => {
-    Promise.resolve(terminal.processId).then(done, () => done(undefined));
+export function readProcessId(
+  terminal: vscode.Terminal,
+  timeoutMs = PROCESS_ID_TIMEOUT_MS
+): Promise<number | undefined> {
+  return waitForProcessId(terminal.processId, timeoutMs);
+}
+
+/**
+ * Wait, bounded, on a PID read that is already under way. A caller that gave
+ * up on a read can keep waiting on the same one instead of reading again.
+ */
+export function waitForProcessId(
+  processId: Thenable<number | undefined>,
+  timeoutMs = PROCESS_ID_TIMEOUT_MS
+): Promise<number | undefined> {
+  return waitForEvent<number | undefined>(timeoutMs, undefined, (done) => {
+    Promise.resolve(processId).then(done, () => done(undefined));
     return { dispose: () => undefined };
   });
 }
@@ -97,14 +167,49 @@ export function waitForCommandStart(terminal: vscode.Terminal, timeoutMs: number
 }
 
 /**
+ * Wait, with no time limit, for the first command to start in a terminal:
+ * true when one starts, false once the terminal closes or the watch is
+ * cancelled. For background work that must happen however late a slow shell
+ * starts. Create it before sending the command, which can start at once.
+ */
+export function watchCommandStart(terminal: vscode.Terminal): { started: Promise<boolean>; cancel(): void } {
+  const subscriptions: vscode.Disposable[] = [];
+  let finish: (value: boolean) => void = () => undefined;
+  const started = new Promise<boolean>((resolve) => {
+    finish = (value) => {
+      subscriptions.forEach((subscription) => subscription.dispose());
+      subscriptions.length = 0;
+      resolve(value);
+    };
+  });
+  subscriptions.push(
+    vscode.window.onDidStartTerminalShellExecution((event) => {
+      if (event.terminal === terminal) {
+        finish(true);
+      }
+    }),
+    vscode.window.onDidCloseTerminal((closed) => {
+      if (closed === terminal) {
+        finish(false);
+      }
+    })
+  );
+  return { started, cancel: () => finish(false) };
+}
+
+/** Whether VS Code's shell integration setting is on. */
+export function shellIntegrationEnabled(): boolean {
+  return vscode.workspace
+    .getConfiguration('terminal.integrated')
+    .get<boolean>('shellIntegration.enabled', true);
+}
+
+/**
  * Wait until a terminal's shell reports integration, or give up. Only an
  * integrated shell makes VS Code re-tag the title from a cwd report.
  */
 export function waitForShellIntegration(terminal: vscode.Terminal, timeoutMs: number): Promise<boolean> {
-  const enabled = vscode.workspace
-    .getConfiguration('terminal.integrated')
-    .get<boolean>('shellIntegration.enabled', true);
-  if (!enabled) {
+  if (!shellIntegrationEnabled()) {
     return Promise.resolve(false);
   }
   if (terminal.shellIntegration) {
@@ -117,6 +222,60 @@ export function waitForShellIntegration(terminal: vscode.Terminal, timeoutMs: nu
       }
     })
   );
+}
+
+/** How a wait for a shell to be ready to read a typed line ended. */
+export type ShellReadiness = 'ready' | 'off' | 'cap' | 'closed';
+
+/**
+ * Wait until a terminal's shell can read a typed line: its shell integration
+ * has activated. A line typed into a shell that is still starting can be lost
+ * (a revived Windows PowerShell 5.1 can take many seconds to start).
+ * - `ready`: integration is active, now or later.
+ * - `off`: at once, because the setting turns integration off, so there is
+ *   nothing to wait for.
+ * - `cap`: integration never arrived within `capMs` (a broken shell, or a
+ *   policy that blocks the integration script).
+ * - `closed`: the tab closed or the watch was cancelled.
+ */
+export function watchShellReady(
+  terminal: vscode.Terminal,
+  capMs: number
+): { ready: Promise<ShellReadiness>; cancel(): void } {
+  if (!shellIntegrationEnabled()) {
+    return { ready: Promise.resolve('off'), cancel: () => undefined };
+  }
+  // Revived tabs report integration restored from the previous session, so this passes at once for them.
+  if (terminal.shellIntegration) {
+    return { ready: Promise.resolve('ready'), cancel: () => undefined };
+  }
+  const subscriptions: vscode.Disposable[] = [];
+  let finish: (value: ShellReadiness) => void = () => undefined;
+  const ready = new Promise<ShellReadiness>((resolve) => {
+    let settled = false;
+    finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      subscriptions.forEach((subscription) => subscription.dispose());
+      subscriptions.length = 0;
+      resolve(value);
+    };
+  });
+  const timer = setTimeout(() => finish('cap'), capMs);
+  subscriptions.push(
+    vscode.window.onDidChangeTerminalShellIntegration((event) => {
+      if (event.terminal === terminal) {
+        finish('ready');
+      }
+    }),
+    vscode.window.onDidCloseTerminal((closed) => {
+      if (closed === terminal) {
+        finish('closed');
+      }
+    })
+  );
+  return { ready, cancel: () => finish('closed') };
 }
 
 /**

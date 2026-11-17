@@ -54,8 +54,23 @@ export class StorageService {
     return this.context.globalState.get<T>(key, fallback);
   }
 
+  /**
+   * Every write saves the whole of Pitwall's global state, so a write of any
+   * key also saves the PID records as last read. When a stale storage echo
+   * has replaced them (see `ownPids`), put this window's own entries back
+   * first, so the write cannot persist the stale copy.
+   */
   private set(key: string, value: unknown): Thenable<void> {
-    return this.context.globalState.update(key, value);
+    const writes: Thenable<void>[] = [];
+    if (key !== STORAGE_KEYS.TERMINAL_PIDS && this.ownPids.size > 0) {
+      const stored = this.storedPidRecords();
+      const merged = this.withOwnPids(stored);
+      if (JSON.stringify(merged) !== JSON.stringify(stored)) {
+        writes.push(this.context.globalState.update(STORAGE_KEYS.TERMINAL_PIDS, merged));
+      }
+    }
+    writes.push(this.context.globalState.update(key, value));
+    return Promise.all(writes).then(() => undefined);
   }
 
   // Repositories. The stored array order is the tree order.
@@ -399,7 +414,51 @@ export class StorageService {
    * left running.
    */
   private getTerminalPidRecords(): Record<string, Record<string, number>> {
+    return this.withOwnPids(this.storedPidRecords());
+  }
+
+  /**
+   * The PID records this window itself wrote (a PID) or removed (`null`), by
+   * workspace folder, then chat ID. Under load the editor can replace
+   * Pitwall's whole stored state with an older copy: it echoes each storage
+   * change back to the extension host, and a stale echo can land after a newer
+   * write. These entries are merged into every read of the PID records and
+   * every write, so a stale copy can neither drop a record this window wrote
+   * nor bring back one it removed. Other windows' records pass through as
+   * stored. Kept in memory only, for this window.
+   */
+  private readonly ownPids = new Map<string, Map<string, number | null>>();
+
+  private storedPidRecords(): Record<string, Record<string, number>> {
     return this.get<Record<string, Record<string, number>>>(STORAGE_KEYS.TERMINAL_PIDS, {});
+  }
+
+  private ownPidsIn(workspace: string): Map<string, number | null> {
+    let own = this.ownPids.get(workspace);
+    if (!own) {
+      own = new Map();
+      this.ownPids.set(workspace, own);
+    }
+    return own;
+  }
+
+  /** Stored PID records with this window's own writes and removals applied. */
+  private withOwnPids(
+    stored: Record<string, Record<string, number>>
+  ): Record<string, Record<string, number>> {
+    const records = { ...stored };
+    for (const [workspace, own] of this.ownPids) {
+      const pids = { ...(records[workspace] ?? {}) };
+      for (const [chatId, pid] of own) {
+        if (pid === null) {
+          delete pids[chatId];
+        } else {
+          pids[chatId] = pid;
+        }
+      }
+      records[workspace] = pids;
+    }
+    return records;
   }
 
   /**
@@ -432,29 +491,31 @@ export class StorageService {
    * the old PID as proof that a revived shell is not the live agent.
    */
   async rememberTerminalPid(chatId: string, pid: number): Promise<void> {
+    // Read first: this also moves a legacy workspace-scoped record over.
     const pids = this.getTerminalPids();
-    if (pids[chatId] === pid) {
+    const workspace = this.workspaceKey();
+    this.ownPidsIn(workspace).set(chatId, pid);
+    if (pids[chatId] === pid && this.storedPidRecords()[workspace]?.[chatId] === pid) {
       return;
     }
-    await this.set(STORAGE_KEYS.TERMINAL_PIDS, {
-      ...this.getTerminalPidRecords(),
-      [this.workspaceKey()]: { ...pids, [chatId]: pid },
-    });
+    await this.set(STORAGE_KEYS.TERMINAL_PIDS, this.getTerminalPidRecords());
   }
 
   /** Drop terminal identity for deleted chats, in every workspace. */
   private forgetTerminalPids(chatIds: Set<string>): void {
     const records = this.getTerminalPidRecords();
     let changed = false;
-    const pruned = Object.fromEntries(
-      Object.entries(records).map(([workspace, pids]) => {
-        const kept = Object.fromEntries(Object.entries(pids).filter(([chatId]) => !chatIds.has(chatId)));
-        changed ||= Object.keys(kept).length !== Object.keys(pids).length;
-        return [workspace, kept];
-      })
-    );
+    for (const [workspace, pids] of Object.entries(records)) {
+      for (const chatId of Object.keys(pids)) {
+        if (chatIds.has(chatId)) {
+          // Kept as a removal, so a stale copy cannot bring the record back.
+          this.ownPidsIn(workspace).set(chatId, null);
+          changed = true;
+        }
+      }
+    }
     if (changed) {
-      void this.set(STORAGE_KEYS.TERMINAL_PIDS, pruned);
+      void this.set(STORAGE_KEYS.TERMINAL_PIDS, this.getTerminalPidRecords());
     }
   }
 

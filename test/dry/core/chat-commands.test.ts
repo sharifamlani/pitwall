@@ -10,6 +10,7 @@ import * as vscode from 'vscode';
 import { StorageService } from '../../../src/core/services/StorageService';
 import { TerminalManager } from '../../../src/core/services/TerminalManager';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
+import { quoteShellArgument } from '../../../src/core/harness/cli';
 import { WorktreeCatalog } from '../../../src/core/services/WorktreeCatalog';
 import { SessionImportService } from '../../../src/core/services/SessionImportService';
 import { WorkspaceTreeItem } from '../../../src/core/providers/WorkspacesTreeProvider';
@@ -465,7 +466,14 @@ test('Copy Resume Command and Copy Session ID copy a linked session; an unstarte
   const f = setup(t);
   const linked = f.chat('claude', 'Linked', 'claude-1');
   await runCommand('pitwall.copyResumeCommand', f.row(linked));
-  assert.equal(await vscode.env.clipboard.readText(), `cd ${f.main.path} && claude --resume claude-1`);
+  assert.equal(await vscode.env.clipboard.readText(), `cd ${quoteShellArgument(f.main.path)} && claude --resume claude-1`);
+  // Windows' default terminal is PowerShell, where `&&` does not parse.
+  stub.__setShell('C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+  await runCommand('pitwall.copyResumeCommand', f.row(linked));
+  assert.equal(
+    await vscode.env.clipboard.readText(),
+    `Set-Location -LiteralPath '${f.main.path.replace(/'/g, "''")}'; if ($?) { claude --resume claude-1 }`
+  );
   await runCommand('pitwall.copySessionId', f.row(linked));
   assert.equal(await vscode.env.clipboard.readText(), 'claude-1');
 

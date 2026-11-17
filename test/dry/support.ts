@@ -23,11 +23,20 @@ import { HARNESS_IDS } from '../../src/harnesses';
 /** A terminal created by the stub. */
 export interface FakeTerminal {
   name: string;
-  options: { name?: string; cwd?: string; iconPath?: { id: string }; __pid?: number; __exitStatus?: unknown };
+  options: {
+    name?: string;
+    cwd?: string;
+    iconPath?: { id: string };
+    __pid?: number;
+    __pidDelayMs?: number;
+    __exitStatus?: unknown;
+  };
   sent: string[];
   shown: number;
   disposed: boolean;
   __pid: number;
+  /** How many times `processId` was read. */
+  __pidReads: number;
   exitStatus: unknown;
   shellIntegration: unknown;
   readonly processId: Promise<number>;
@@ -67,16 +76,23 @@ interface StubControls {
   __setOpenExternalResult(value: boolean): void;
   __openExternalCalls: { toString(): string }[];
   __setSilentExecutionEvents(value: boolean): void;
+  __setShell(shellPath: string | undefined): void;
+  __setPidDelayMs(ms: number | undefined): void;
+  __setLateShellIntegration(value: boolean): void;
+  __shownDocuments: { target: unknown; options: Record<string, unknown> }[];
   workspace: { workspaceFolders: { uri: { fsPath: string } }[] };
   window: {
     terminals: FakeTerminal[];
     activeTerminal: FakeTerminal | undefined;
+    activeTextEditor: { document: { uri: unknown }; viewColumn?: number } | undefined;
     tabGroups: { all: unknown[] };
     createTerminal(options: FakeTerminal['options']): FakeTerminal;
     __fireDidCloseTerminal(terminal: unknown): void;
     __fireDidOpenTerminal(terminal: unknown): void;
     __fireDidStartTerminalShellExecution(terminal: unknown, commandLine?: string): void;
     __setActiveTerminal(terminal: unknown): void;
+    __setActiveTextEditor(editor: { document: { uri: unknown }; viewColumn?: number } | undefined): void;
+    __integrateShell(terminal: unknown): void;
   };
 }
 
