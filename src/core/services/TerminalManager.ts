@@ -630,21 +630,30 @@ export class TerminalManager {
     }
     const tab = group?.activeTab;
     return {
-      terminal: tab?.input instanceof vscode.TabInputTerminal ? this.terminalShowing(tab) : vscode.window.activeTerminal,
+      terminal: group && tab?.input instanceof vscode.TabInputTerminal ? this.terminalShowing(group, tab) : vscode.window.activeTerminal,
       tab,
       viewColumn: group?.viewColumn,
     };
   }
 
   /**
-   * The terminal a terminal tab shows, by its title. The extension host's
-   * active terminal is not always the tab in front: Cursor reports a revived
-   * window's last revived tab (or none) while another tab is in front (R1-x).
+   * The terminal a group's front terminal tab shows. Usually the active
+   * terminal; but Cursor can report a revived window's last revived tab as
+   * active while another tab is in front, or report none (R1-x). Only then,
+   * when no terminal is reported or the reported one's tab sits behind the
+   * front tab, is the front tab's terminal found by its title, and only when
+   * exactly one terminal carries it. A tab label can lag a rename, so a
+   * mismatch alone is not taken as evidence.
    */
-  private terminalShowing(tab: vscode.Tab): vscode.Terminal | undefined {
+  private terminalShowing(group: vscode.TabGroup, tab: vscode.Tab): vscode.Terminal | undefined {
     const active = vscode.window.activeTerminal;
-    if (active?.name === tab.label) {
-      return active;
+    if (active) {
+      const behind = group.tabs.some(
+        (other) => other !== tab && other.input instanceof vscode.TabInputTerminal && other.label === active.name
+      );
+      if (active.name === tab.label || !behind) {
+        return active;
+      }
     }
     const named = vscode.window.terminals.filter((terminal) => terminal.name === tab.label);
     return named.length === 1 ? named[0] : active;

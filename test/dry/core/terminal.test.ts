@@ -1400,3 +1400,38 @@ for (const [what, arrange] of [
     assert.equal(stub.window.__focusedTerminal, undefined, 'and keyboard focus never moved');
   });
 }
+
+test('after a quit, New Session’s late title (its slow shell ran the line after the pass’s wait) puts Lab ready back when no active terminal is reported (R1-x)', async (t) => {
+  stub.__setSilentExecutionEvents(true);
+  const f = setup(t, {
+    chats: [
+      { id: '06be7b00-lab', name: 'Lab ready', harnessSessionId: 'lab-transcript', status: 'closed' },
+      { id: '590a3400-new', name: 'New Session', pendingHarnessSessionId: 'new-pending', status: 'closed' },
+    ],
+    adapter: { isSessionResumable: async (id) => id === 'lab-transcript' },
+  });
+  await f.storage.rememberTerminalPid('06be7b00-lab', 7071);
+  await f.storage.rememberTerminalPid('590a3400-new', 7072);
+  const lab = f.restoredTab('Pitwall: Lab ready [06be7b]', 8071);
+  const fresh = f.restoredTab('Pitwall: New Session [590a34]', 8072);
+  terminalTabsWithFront(lab);
+  stub.window.__setActiveTerminal(undefined);
+  tabsFollowActiveTerminal(t);
+  const realSetTimeout = global.setTimeout;
+  // The pass's command-start wait runs out at once: neither shell has run its line yet.
+  global.setTimeout = ((fn: () => void, ms?: number) =>
+    realSetTimeout(fn, ms === RESTORED_SHELL_TIMEOUT_MS ? 0 : ms)) as typeof setTimeout;
+  t.after(() => (global.setTimeout = realSetTimeout));
+
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  await waitFor(() => fresh.sent.length > 0, 'New Session’s line sent');
+  for (let i = 0; i < 10; i++) await flush();
+  assert.equal(frontTabLabel(), 'Pitwall: Lab ready [06be7b]', 'nothing was shown yet');
+
+  // New Session's slow shell finally runs its line: the late retitle shows it.
+  stub.window.__fireDidStartTerminalShellExecution(fresh, String(fresh.sent[0]));
+  await waitFor(() => fresh.shown > 0, 'the late retitle’s show');
+  for (let i = 0; i < 10; i++) await flush();
+  assert.equal(frontTabLabel(), 'Pitwall: Lab ready [06be7b]', 'Lab ready is in front again');
+  assert.equal(stub.window.__focusedTerminal, undefined, 'and keyboard focus never moved');
+});
