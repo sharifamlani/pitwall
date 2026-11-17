@@ -1461,3 +1461,25 @@ test('a tab list that lags the active terminal for a moment is waited out, so th
   for (let i = 0; i < 5; i++) await flush();
   assert.equal(stub.window.activeTerminal, next);
 });
+
+test('a duplicated chat record is not ambiguous and its revived tab is resumed once', async (t) => {
+  // createChat before its fix stored a chat twice under one id; the restore
+  // pass must see one chat, not two sharing a short ID (testing O2).
+  const f = setup(t, {
+    chats: [
+      { id: 'aabbcc00-doubled', harnessSessionId: 'linked', status: 'closed' },
+      { id: 'aabbcc00-doubled', harnessSessionId: 'linked', status: 'closed' },
+    ],
+  });
+  await f.storage.rememberTerminalPid('aabbcc00-doubled', 7001);
+  const revived = f.restoredTab('Pitwall: Doubled [aabbcc]', 8001);
+
+  const restore = f.manager.beginRestoreSync(() => WORKTREE);
+  await restore.adopted;
+  await restore.complete;
+
+  const cd = ` cd '${WORKTREE.path}' && `;
+  assert.deepEqual(revived.sent, [`${cd}claude --resume linked`], 'resumed once');
+  assert.equal(f.manager.getTerminal('aabbcc00-doubled'), revived as unknown as vscode.Terminal);
+  assert.equal(stub.window.terminals.length, 1, 'no second tab');
+});

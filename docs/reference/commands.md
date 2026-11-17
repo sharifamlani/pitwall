@@ -14,7 +14,8 @@ Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pit
 | --- | --- |
 | **Pitwall: Add Local Folder or Repository…** | Add a folder or a git repository to the sidebar |
 | **Pitwall: Clone from GitHub…** | Clone a repository and add it |
-| **Pitwall: Remove from Pitwall…** | Remove a folder or repository from the sidebar. Files and conversations are kept |
+| **Pitwall: Remove from Pitwall…** | Remove a folder or repository from the sidebar. Files and conversations are kept. Like Dismiss, it stays off the list until a new session starts in it or you add it again |
+| **Pitwall: Dismiss from Pitwall** | Hide a repository from the sidebar until a new Claude Code session starts in it, or you add it again. Nothing on disk changes |
 
 ### Sessions
 
@@ -78,7 +79,7 @@ The view's title bar has **Add Local Folder or Repository…**. Its `…` menu h
 | Action | Where | Notes |
 | --- | --- | --- |
 | **Move Up**, **Move Down** | Right-click | Reorder the list |
-| **Remove from Pitwall…** | Right-click | Removes the row only |
+| **Dismiss from Pitwall** | Right-click | Hides the repo until a new session starts in it; nothing on disk changes |
 
 A plain folder row also has every action of a worktree row except the git ones, because sessions run directly in it.
 

@@ -4,18 +4,21 @@ import { StorageService } from '../services/StorageService';
 import { GitService } from '../services/GitService';
 import { WorkspaceTreeItem } from '../providers/WorkspacesTreeProvider';
 import { Repository, Worktree } from '../types';
-import { canonicalPath } from '../utils/paths';
+import { canonicalPath, canonicalRoot, samePath } from '../utils/paths';
 import { commandRegistrar, withProgress } from './common';
 
 export interface RepositoryCommandDeps {
   storageService: StorageService;
   gitService: GitService;
-  /** Remove a forgotten root's chats and clear the panels if they show it. */
-  forgetWorktrees: (worktrees: Worktree[]) => void;
+  /**
+   * Remove a forgotten root's chats and clear the panels if they show it.
+   * Their terminals close unless `closeTerminals` is false.
+   */
+  forgetWorktrees: (worktrees: Worktree[], options?: { closeTerminals?: boolean }) => void;
   refreshTree: () => void;
 }
 
-/** Workspace-root commands: add, clone, remove, refresh. */
+/** Workspace-root commands: add, clone, dismiss, remove, refresh. */
 export function registerRepositoryCommands(context: vscode.ExtensionContext, deps: RepositoryCommandDeps): void {
   const { storageService, gitService, refreshTree } = deps;
   const register = commandRegistrar(context);
@@ -42,29 +45,59 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
       );
       return;
     }
-    const rootPath = repoRoot ?? folderPath;
+    // One spelling per root, git repository or plain folder.
+    const rootPath = canonicalRoot(repoRoot ?? folderPath);
+    // Adding a dismissed root by hand brings it back for good (P2).
+    if (Object.keys(storageService.getDismissedRepos()).some((dismissed) => samePath(dismissed, rootPath))) {
+      await storageService.setDismissed(rootPath, null);
+    }
     const repo = storageService.addRepository(path.basename(rootPath), rootPath);
     vscode.window.showInformationMessage(repoRoot ? `Added repository: ${repo.name}` : `Added folder: ${repo.name}`);
     refreshTree();
   });
 
-  register('pitwall.removeRepository', async (item?: WorkspaceTreeItem) => {
-    let repo = item?.itemType === 'repository' ? (item.data as Repository) : undefined;
+  /** The row's repository, or one picked from a list when run from the palette. */
+  const repositoryFor = async (item: WorkspaceTreeItem | undefined, verb: string): Promise<Repository | undefined> => {
+    if (item?.itemType === 'repository') {
+      return item.data as Repository;
+    }
+    const repos = storageService.getRepositories();
+    if (repos.length === 0) {
+      vscode.window.showInformationMessage(`No repositories to ${verb}.`);
+      return undefined;
+    }
+    return (
+      await vscode.window.showQuickPick(
+        repos.map((r) => ({ label: r.name, description: r.rootPath, repo: r })),
+        { placeHolder: `Select repository to ${verb} from extension` }
+      )
+    )?.repo;
+  };
+
+  /**
+   * Dismiss from Pitwall (§3c, §3d): the repo and its rows leave the list and
+   * discovery skips it until a session starts there after now, or it is added
+   * by hand (P2). Nothing on disk changes and running terminals stay open.
+   * Its chats go without tombstones, so they import again when it returns.
+   */
+  register('pitwall.dismissRepository', async (item?: WorkspaceTreeItem) => {
+    const repo = await repositoryFor(item, 'dismiss');
     if (!repo) {
-      const repos = storageService.getRepositories();
-      if (repos.length === 0) {
-        vscode.window.showInformationMessage('No repositories to remove.');
-        return;
-      }
-      repo = (
-        await vscode.window.showQuickPick(
-          repos.map((r) => ({ label: r.name, description: r.rootPath, repo: r })),
-          { placeHolder: 'Select repository to remove from extension' }
-        )
-      )?.repo;
-      if (!repo) {
-        return;
-      }
+      return;
+    }
+    await storageService.setDismissed(repo.rootPath, Date.now());
+    deps.forgetWorktrees(gitService.listRepositoryWorktrees(repo.rootPath, repo.id).worktrees, { closeTerminals: false });
+    storageService.removeRepository(repo.id);
+    vscode.window.showInformationMessage(
+      `Dismissed ${repo.name} from Pitwall. Nothing changed on disk: the repo, its files and its chats are untouched. It comes back if you add it with the folder icon, or when a new Claude Code session starts in it.`
+    );
+    refreshTree();
+  });
+
+  register('pitwall.removeRepository', async (item?: WorkspaceTreeItem) => {
+    const repo = await repositoryFor(item, 'remove');
+    if (!repo) {
+      return;
     }
 
     const confirm = await vscode.window.showWarningMessage(
@@ -75,11 +108,14 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     if (confirm !== 'Remove') {
       return;
     }
+    // Discovery would otherwise add it straight back; like a dismissal, it
+    // returns with a new session or when added by hand (ADR 0019).
+    await storageService.setDismissed(repo.rootPath, Date.now());
     // Its chats would otherwise linger unseen and keep their sessions from
     // being imported when the folder is added again.
     deps.forgetWorktrees(gitService.listRepositoryWorktrees(repo.rootPath, repo.id).worktrees);
     storageService.removeRepository(repo.id);
-    vscode.window.showInformationMessage(`Removed "${repo.name}" from extension`);
+    vscode.window.showInformationMessage(`Removed "${repo.name}" from Pitwall`);
     refreshTree();
   });
 

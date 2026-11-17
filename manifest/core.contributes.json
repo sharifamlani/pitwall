@@ -139,6 +139,11 @@
       "icon": "$(close)"
     },
     {
+      "command": "pitwall.dismissRepository",
+      "title": "Dismiss from Pitwall",
+      "category": "Pitwall"
+    },
+    {
       "command": "pitwall.newDefaultSession",
       "title": "New Session",
       "category": "Pitwall",
@@ -488,10 +493,16 @@
         },
         "pitwall.autoImport.retentionDays": {
           "type": "integer",
-          "default": 15,
+          "default": 14,
           "minimum": 1,
-          "markdownDescription": "Session rows leave the tree after this many days without activity, whether they were imported or started in Pitwall. Starred sessions always stay. Only the row is removed: the agent keeps the conversation, and **Import Existing Sessions…** or **Find Session…** brings it back.",
+          "markdownDescription": "Session rows leave the tree after this many days without activity, whether they were imported or started in Pitwall, and repos with a session in this many days are found automatically. Starred sessions always stay. Only the row is removed: the agent keeps the conversation, and **Import Existing Sessions…** or **Find Session…** brings it back.",
           "order": 4
+        },
+        "pitwall.discovery.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "List every repo with a Claude Code session in the last `#pitwall.autoImport.retentionDays#` days, found from `~/.claude/projects/`, without adding it by hand. **Dismiss from Pitwall** on a repo hides it until a new session starts in it.",
+          "order": 5
         }
       }
     },
@@ -724,7 +735,7 @@
     ],
     "view/item/context": [
       {
-        "command": "pitwall.removeRepository",
+        "command": "pitwall.dismissRepository",
         "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
         "group": "9_destructive@9"
       },

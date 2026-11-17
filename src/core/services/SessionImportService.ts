@@ -106,6 +106,8 @@ export class SessionImportService implements vscode.Disposable {
   private timerIntervalMs: number | undefined;
   private started = false;
   private scanning = false;
+  /** A wake that arrived mid-scan; the scan runs again when it ends. */
+  private wakeQueued = false;
   private disposed = false;
 
   constructor(
@@ -126,7 +128,7 @@ export class SessionImportService implements vscode.Disposable {
       options.readSettings ??
       (() => {
         const config = vscode.workspace.getConfiguration('pitwall');
-        const days = Number(config.get<number>('autoImport.retentionDays', 15));
+        const days = Number(config.get<number>('autoImport.retentionDays', 14));
         return {
           enabled: config.get<boolean>('autoImport.enabled', true),
           retentionDays:
@@ -236,12 +238,17 @@ export class SessionImportService implements vscode.Disposable {
     }
   }
 
-  /** Scan immediately, e.g. after a UI launch or a settings change. */
+  /**
+   * Scan immediately, e.g. after a UI launch, a settings change or a newly
+   * discovered repo. A wake during a scan runs one more scan after it, which
+   * sees what changed meanwhile.
+   */
   wake(): void {
     if (this.disposed) {
       return;
     }
     if (this.scanning) {
+      this.wakeQueued = true;
       return;
     }
     void this.scan().catch((error) => {
@@ -361,6 +368,10 @@ export class SessionImportService implements vscode.Disposable {
         this.onChatsChanged(event);
       }
       this.schedule();
+      if (this.wakeQueued) {
+        this.wakeQueued = false;
+        this.wake();
+      }
     }
   }
 

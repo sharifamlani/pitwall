@@ -8,6 +8,7 @@ import { GitService } from './core/services/GitService';
 import { TerminalManager } from './core/services/TerminalManager';
 import { HarnessWatcherRegistry } from './core/harness/HarnessWatcherRegistry';
 import { SessionImportService } from './core/services/SessionImportService';
+import { RepoDiscoveryService } from './core/services/RepoDiscoveryService';
 import { NotificationService } from './core/services/NotificationService';
 import { SessionAttentionService } from './core/services/SessionAttentionService';
 import { SessionSearchService } from './core/services/SessionSearchService';
@@ -167,9 +168,11 @@ export async function activate(context: vscode.ExtensionContext) {
   };
 
   /** Close chats' terminals and delete their rows; a removed selection is cleared. */
-  const removeChats = (chatIds: string[], options?: { rememberSession?: boolean }): string[] => {
-    chatIds.forEach((id) => terminalManager.closeChat(id));
-    const removed = storageService.deleteChats(chatIds, options);
+  const removeChats = (chatIds: string[], options?: { rememberSession?: boolean; closeTerminals?: boolean }): string[] => {
+    if (options?.closeTerminals !== false) {
+      chatIds.forEach((id) => terminalManager.closeChat(id));
+    }
+    const removed = storageService.deleteChats(chatIds, { rememberSession: options?.rememberSession });
     const activeId = storageService.getActiveChatId();
     if (activeId && removed.includes(activeId)) {
       storageService.setActiveChatId(undefined);
@@ -182,11 +185,11 @@ export async function activate(context: vscode.ExtensionContext) {
    * Forget worktrees that are gone from Pitwall. Their chats are removed
    * without tombstones, so the sessions can be imported again later.
    */
-  const forgetWorktrees = (worktrees: Worktree[]): void => {
+  const forgetWorktrees = (worktrees: Worktree[], options?: { closeTerminals?: boolean }): void => {
     const ids = new Set(worktrees.map((worktree) => worktree.id));
     removeChats(
       storageService.getChats().filter((chat) => ids.has(chat.worktreeId)).map((chat) => chat.id),
-      { rememberSession: false }
+      { rememberSession: false, closeTerminals: options?.closeTerminals }
     );
     if (shownWorktree && ids.has(shownWorktree.id)) {
       showWorktree(undefined);
@@ -268,6 +271,18 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(sessionImporter);
   sessionImporter.start();
+
+  // Repos found from the agents' sessions (ADR 0019), after the list first
+  // renders; activation never waits for a pass.
+  const repoDiscovery = new RepoDiscoveryService(storageService, gitService, () => harnessRegistry.all(), {
+    onAdded: () => {
+      worktreeCatalog.scopes(true);
+      refreshTree();
+      sessionImporter.wake();
+    },
+  });
+  context.subscriptions.push(repoDiscovery);
+  repoDiscovery.start(workspacesProvider.whenSettled());
 
   /** Whether the chat's terminal or native-UI tab is the one in front of the user. */
   const isChatVisible = (chatId: string): boolean => chatVisibility.isChatVisible(visibilitySources, chatId);

@@ -6,13 +6,18 @@ import * as readline from 'readline';
  * Read a JSONL file from the start, one line at a time, until `visit`
  * returns true. The file is closed before this settles, on every exit:
  * closing the line reader alone leaves it open after an early stop. A read
- * error rejects.
+ * error rejects. With `maxBytes`, nothing past that many bytes is read; a
+ * line cut at the limit arrives as a fragment.
  */
 export async function scanJsonlLines(
   filePath: string,
-  visit: (line: string) => boolean | void
+  visit: (line: string) => boolean | void,
+  options: { maxBytes?: number } = {}
 ): Promise<void> {
-  const stream = fs.createReadStream(filePath, 'utf-8');
+  const stream = fs.createReadStream(filePath, {
+    encoding: 'utf-8',
+    ...(options.maxBytes !== undefined ? { start: 0, end: options.maxBytes - 1 } : {}),
+  });
   const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
   try {
     for await (const line of lines) {

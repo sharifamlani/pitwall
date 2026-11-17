@@ -56,7 +56,7 @@ Yes. Pitwall adds recent sessions that the agents hold for your folders and work
 
 ### Why did a session disappear from the list?
 
-A session row leaves the list after 15 days without activity, unless it is starred or open. The conversation is not deleted. Bring it back with **Import Existing Sessions…** on its worktree, star sessions you want to keep, or change `pitwall.autoImport.retentionDays`. See [Sessions](sessions.md#rows-age-out-by-themselves).
+A session row leaves the list after 14 days without activity, unless it is starred or open. The conversation is not deleted. Bring it back with **Import Existing Sessions…** on its worktree, star sessions you want to keep, or change `pitwall.autoImport.retentionDays`. See [Sessions](sessions.md#rows-age-out-by-themselves).
 
 ### Does removing a session delete the conversation?
 

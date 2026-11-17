@@ -82,6 +82,11 @@ view-box`), which Chromium plays in tree-icon `background-image`; honor
   them) each tick: status, `waitingFor` and `statusUpdatedAt` for live sessions whose
   `pidDomain` is this machine's and whose pid is alive. The live source for `getLiveStates`
   ([ADR 0018](docs/adr/0018-live-status-from-sessions-file.md)).
+- **ClaudeRepoDiscovery** + **RepoDiscoveryService** - Repos found from the sessions: the
+  folder each recent transcript names in its head, mapped to its main repo root through the
+  git common dir (`GitService.getMainRepoRoot`), stored with `origin: 'discovered'`; a
+  dismissed root returns only when a session starts after the dismissal
+  ([ADR 0019](docs/adr/0019-repos-discovered-and-dismissed.md)).
 - **ClaudeAgentsService** - The per-session fallback. Caches `claude agents --json` for 10s (sharing one in-flight
   call), merges duplicate session IDs, and supplies `waitingFor` to the attention path.
   Disabled when `pitwall.notifications.onNeedsInput` is off; a failure logs once and

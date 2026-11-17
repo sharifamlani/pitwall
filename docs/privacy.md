@@ -17,7 +17,7 @@ To list and watch sessions, Pitwall reads what each agent already keeps on your 
 
 | Agent | What is read |
 | --- | --- |
-| Claude Code | Session transcripts under `~/.claude/projects/`; the live-status files `~/.claude/sessions/*.json` (only those: the `.key` files in that folder are never opened, read or logged); and the output of `claude agents --json` when those files are missing |
+| Claude Code | Session transcripts under `~/.claude/projects/`, also to find the repos your sessions ran in (only the first lines of transcripts from the retention window, up to the folder they name; only counts are logged); the live-status files `~/.claude/sessions/*.json` (only those: the `.key` files in that folder are never opened, read or logged); and the output of `claude agents --json` when those files are missing |
 | Codex | Threads through a local `codex app-server`, and rollout files under `~/.codex/sessions/` |
 | opencode | Sessions through the `opencode` CLI and API. Its database is never opened |
 | Pi | Session records under `~/.pi/agent/sessions/` |
@@ -28,7 +28,7 @@ It also runs `git` in the folders you add, and `gh` for pull requests. All of th
 
 Pitwall keeps a small amount of state in VS Code's extension storage:
 
-- the folders and repositories you added,
+- the folders and repositories you added or it found from your sessions, and the ones you dismissed,
 - the session list: for each row, its name, its agent, and the agent's session ID,
 - your stars, and which sessions you removed,
 - which worktrees came from a pull request,

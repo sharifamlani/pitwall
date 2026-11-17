@@ -259,15 +259,24 @@ export class StorageService {
     idOf: (record: T) => unknown,
     newFirst = false
   ): { value: T[]; stamped: Stamped<T> } {
+    // A record stored twice under one id (createChat before its fix) reads as
+    // its first copy: every update rewrote the first copy, so a later one is
+    // stale. Stamps are per id, so they then merge onto that copy (P25). The
+    // collapsed list is persisted by the collection's next write, not here.
     const records: Record<string, T> = {};
+    let duplicated = false;
     for (const record of stored) {
       const id = idOf(record);
-      if (typeof id === 'string' && !Object.prototype.hasOwnProperty.call(records, id)) {
-        records[id] = record;
+      if (typeof id === 'string') {
+        if (Object.prototype.hasOwnProperty.call(records, id)) {
+          duplicated = true;
+        } else {
+          records[id] = record;
+        }
       }
     }
     const stamped = this.stamped(key, overlay, records);
-    if (stamped.records === records) {
+    if (stamped.records === records && !duplicated) {
       return { value: [...stored], stamped };
     }
     return { value: orderedList(stored, stamped.records, idOf, newFirst), stamped };
@@ -574,8 +583,11 @@ export class StorageService {
       status: 'idle',
       ...withoutUndefined(fields),
     };
+    // Read before noting: the merged list includes noted records, and the
+    // chat would then be written twice.
+    const chats = this.getChats();
     this.chatOverlay.note(chat.id, chat);
-    void this.set(STORAGE_KEYS.CHATS, [...this.getChats(), chat]);
+    void this.set(STORAGE_KEYS.CHATS, [...chats, chat]);
     return chat;
   }
 
