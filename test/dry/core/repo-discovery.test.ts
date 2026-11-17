@@ -207,6 +207,44 @@ test('adding a dismissed repo by hand clears the dismissal', async (t) => {
   assert.equal(f.storage.getRepositories().length, 1);
 });
 
+test('a plain folder root is stored in the one native spelling a git repo gets, added or discovered', async (t) => {
+  const scratch = tempDir(t);
+  const added = path.join(scratch, 'added-notes');
+  const found = path.join(scratch, 'found-notes');
+  const repo = makeRepo(scratch, 'repo');
+  fs.mkdirSync(added);
+  fs.mkdirSync(found);
+  // How the folder picker or a transcript may spell it: lower-case drive, forward slashes.
+  const loose = (p: string) => (process.platform === 'win32' ? p[0].toLowerCase() + p.slice(1).replace(/\\/g, '/') : p);
+  const native = (p: string) => (process.platform === 'win32' ? p[0].toUpperCase() + p.slice(1) : p);
+  const f = setup(t);
+
+  stub.__openDialogResponses.push([{ fsPath: loose(added) }]);
+  await runCommand('pitwall.addRepository');
+  stub.__openDialogResponses.push([{ fsPath: loose(repo) }]);
+  await runCommand('pitwall.addRepository');
+  f.session(loose(found));
+  await f.service.scan();
+
+  assert.deepEqual(f.roots().sort(), [native(added), native(found), native(repo)].sort());
+  for (const root of f.roots()) {
+    assert.equal(root, path.normalize(root), `${root} uses native separators`);
+  }
+});
+
+test('Remove from Pitwall names Pitwall in its message', async (t) => {
+  const plain = path.join(tempDir(t), 'uj-lab-b');
+  fs.mkdirSync(plain);
+  const f = setup(t);
+  const repo = f.storage.addRepository('uj-lab-b', plain);
+
+  stub.__warningResponses.push('Remove');
+  await runCommand('pitwall.removeRepository', { itemType: 'repository', data: repo });
+
+  assert.equal(shownMessages().at(-1), 'Removed "uj-lab-b" from Pitwall');
+  assert.deepEqual(f.roots(), []);
+});
+
 test('a returned repo gets its chats back', async (t) => {
   const profile = claudeProfile(t);
   const repo = makeRepo(profile.root, 'lab');
