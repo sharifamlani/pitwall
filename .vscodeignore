@@ -38,3 +38,8 @@ poetry.toml
 .superpowers/**
 dist/**
 .gitleaksignore
+transcripts/**
+.packages/**
+public/**
+.claude/**
+.superpowers/**
