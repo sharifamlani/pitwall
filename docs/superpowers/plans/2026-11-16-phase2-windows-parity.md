@@ -645,6 +645,13 @@ Waves (independent work runs in parallel; QA tests every open PR merged together
 
 **Interfaces — Consumes:** `harnessInvocation(command: string, args: string[]): { command: string; args: string[]; shell: boolean }` from `src/core/harness/cli.ts` (win32: cmd-quoted, `shell: true`; elsewhere unchanged), and `fakeCli(dir, name, fixture, env)` from `test/dry/support.ts`. **Produces:** no API change.
 
+**Reopened after live S1 FAIL (ruling R36):** the poll and the session-id mapping work on Windows, but `SessionAttentionService` flagged needs-you only on the tick where a wait first appeared, and skipped it if `isChatVisible`, which used `window.activeTerminal` (focused or last-focused). So the common flow never flagged it, toasts were suppressed, and a reload primed existing waits as seen. This came inherited from Agntree and is cross-platform. Fix (branch `phase2/task-12b-needs-you`):
+- visible = `window.state.focused` and the chat's tab (terminal or Claude panel surface) is active in the active editor group;
+- needs-you is re-evaluated every tick, including the first pass after a reload, and a chat is listed until answered or visible;
+- a toast fires only for a wait that begins while the chat isn't visible; a suppressed toast doesn't start the cooldown;
+- known limitation: a terminal moved to the bottom panel counts as not visible (no stable panel-visibility API).
+Tests pin the panel-surface, panel-terminal and reload-without-toast cases, plus a dry replay that asserts the row state and `openNextSessionNeedingYou`. Live: Smoke 12 S1.
+
 - [ ] **Step 1: Write the failing tests** in `claude-agents.test.ts`, using the service's REAL default exec (no injected `exec`):
   - `test('the agents poll runs a real claude CLI on this platform, by full path', …)`: a fixture that prints the agents JSON shape the existing tests feed the parser; `cli = fakeCli(dir, 'claude', fixture, {})`; the service's command is `cli`. Assert the poll resolves and parses to the fixture's agents.
   - `test('the agents poll runs a real claude CLI on this platform, by bare name on PATH', …)`: the same fixture, command `'claude'`, and `dir` prepended to `PATH` in the exec options' `env`. Assert the same.
