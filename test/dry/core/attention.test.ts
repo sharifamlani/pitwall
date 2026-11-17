@@ -1,4 +1,4 @@
-import { beforeEach, test } from 'node:test';
+import { beforeEach, test, TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -430,6 +430,7 @@ async function needsYouFlow(t: { after(fn: () => void): void }) {
   const transcripts = {
     getSessionFilePath: () => '/fake/transcript.jsonl',
     readTurnState: async () => ({ turnState: 'working' as const, turnEndedAt: null }),
+    transcriptWrittenAt: async () => null,
     isSessionResumable: async () => true,
     getSessionById: async () => null,
     getProjectsDirectory: () => '/fake/projects',
@@ -561,4 +562,237 @@ test('after a reload, an existing wait is listed and Go to Next Session That Nee
   assert.deepEqual(flow.activated, [flow.chatId], 'Go to Next finds it');
   assert.ok(!shown('No session is waiting for you.'));
   assert.deepEqual(toasts(), [], 'zero toasts, even past the cooldown');
+});
+
+// ---------------------------------------------------------------------------
+// R40: the live S1 timelines on fake timers. Everything runs on the clock:
+// the real 4 s attention timer (start()), the real 10 s agents cache with a
+// 1.5 s fetch, the real harness join and the real visibility module. Unless a
+// test says otherwise, no focus, tab or terminal event reaches the service;
+// the tabs change under it and it only learns of that on its own ticks.
+// ---------------------------------------------------------------------------
+
+const T0 = 1_790_000_000_000;
+const FETCH_MS = 1_500;
+
+interface TimedOptions {
+  /** When Claude reports a wait, in ms after activation: [start, end). */
+  waits: [number, number][];
+  /** When the session's transcript is written, in ms after activation. */
+  writes: number[];
+}
+
+/**
+ * The attention pipeline on mocked setInterval/setTimeout/Date. `claude
+ * agents --json` takes 1.5 s and reports the state at the END of the call,
+ * the adversarial case for the transcript rule: its sample is later than the
+ * fetch start it is stamped with.
+ */
+function timedFlow(t: TestContext, options: TimedOptions) {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: T0 });
+  const elapsed = () => Date.now() - T0;
+  const waitingAt = (at: number) => options.waits.some(([start, end]) => at >= start && at < end);
+  const agentsJson = (waiting: boolean) =>
+    JSON.stringify([
+      {
+        pid: 41003,
+        cwd: '/repo',
+        kind: 'interactive',
+        startedAt: T0 - 60_000,
+        sessionId: 'session-1',
+        name: 'Session',
+        ...(waiting ? { status: 'waiting', waitingFor: 'permission prompt' } : { status: 'busy' }),
+      },
+    ]);
+  let fetches = 0;
+  const agents = new ClaudeAgentsService({
+    command: () => 'claude',
+    enabled: () => true,
+    exec: () =>
+      new Promise((resolve) => {
+        fetches++;
+        setTimeout(() => resolve(agentsJson(waitingAt(elapsed()))), FETCH_MS);
+      }),
+  });
+  const transcripts = {
+    getSessionFilePath: () => '/fake/transcript.jsonl',
+    readTurnState: async () => ({ turnState: 'working' as const, turnEndedAt: null }),
+    transcriptWrittenAt: async () => {
+      const past = options.writes.filter((at) => at <= elapsed());
+      return past.length ? T0 + Math.max(...past) : null;
+    },
+    isSessionResumable: async () => true,
+    getSessionById: async () => null,
+    getProjectsDirectory: () => '/fake/projects',
+  };
+  const harness = new ClaudeHarness({
+    agentsService: agents,
+    sessionService: transcripts as never,
+    nativeUi: fakeNativeUi('Claude Code UI').nativeUi,
+  });
+  const chat = linkedChat();
+  const terminal = { name: 'Pitwall: Session [chat-1]' };
+  const isVisible = visibilityOf([chat], { [chat.id]: terminal });
+  const service = new SessionAttentionService(
+    { getChats: () => [chat], getRepository: () => ({ name: 'repo' }) } as never,
+    { get: () => harness } as never,
+    new NotificationService(() => undefined, isVisible),
+    () => worktreeRecord(),
+    () => undefined,
+    () => true,
+    isVisible
+  );
+  t.after(() => service.dispose());
+
+  const marks: { at: number; listed: boolean; needs: boolean; toasts: number }[] = [];
+  /** Run the clock to `until` ms after activation in 100 ms steps, applying `actions` on time. */
+  const runTo = async (until: number, actions: [number, () => void][] = []) => {
+    while (elapsed() < until) {
+      for (const [at, action] of actions) {
+        if (at === elapsed()) {
+          action();
+        }
+      }
+      t.mock.timers.tick(100);
+      await new Promise((resolve) => setImmediate(resolve));
+      marks.push({
+        at: elapsed(),
+        listed: service.sessionsNeedingYou().includes(chat.id),
+        needs: service.needsYou(chat.id),
+        toasts: toasts().length,
+      });
+    }
+  };
+  return {
+    service,
+    chat,
+    marks,
+    runTo,
+    fetches: () => fetches,
+    front: () => showTabs(terminalTab(terminal.name), settingsTab()),
+    away: () => showTabs(settingsTab(), terminalTab(terminal.name)),
+  };
+}
+
+test('the attention poll runs on the timer with no focus or terminal events', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: T0 });
+  let calls = 0;
+  const adapter = fakeAdapter('claude', {
+    getLiveStates: async () => {
+      calls++;
+      return new Map([['session-1', { turnState: 'working' as const, turnEndedAt: null }]]);
+    },
+  });
+  const { service } = attention(linkedChat(), adapter);
+  t.after(() => service.dispose());
+  service.start();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1, 'start() primes at once');
+  for (let tick = 1; tick <= 5; tick++) {
+    t.mock.timers.tick(4_000);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(calls, 1 + tick, `tick ${tick} ran on the 4 s timer alone`);
+  }
+});
+
+test('a wait that began in front, then the user looked away before the first sighting, marks and lists but does not toast', async (t) => {
+  windowState().state = { focused: true };
+  // The live S1-a timeline: the tool call is written just before the prompt
+  // shows at +8.0 s; the user switches to a file at +8.4 s.
+  const flow = timedFlow(t, { waits: [[8_000, 120_000]], writes: [7_999] });
+  flow.front(); // typing the request into the chat
+  flow.service.start();
+  await flow.runTo(40_000, [[8_400, flow.away]]);
+
+  const firstNeeds = flow.marks.find((mark) => mark.needs);
+  assert.ok(firstNeeds, 'the row shows needs-you');
+  assert.ok(firstNeeds.at <= 8_000 + 10_000 + 4_000 + FETCH_MS, `marked within one cache cycle and tick (at ${firstNeeds.at})`);
+  assert.deepEqual(flow.service.sessionsNeedingYou(), [flow.chat.id], 'listed for Go to Next');
+  assert.deepEqual(toasts(), [], 'the wait could have begun while the chat was in front: no toast');
+});
+
+test('a wait that begins genuinely unseen marks, lists and toasts exactly once', async (t) => {
+  windowState().state = { focused: true };
+  // The user types the request, leaves at +0.5 s, and the prompt shows at
+  // +20 s, after a no-wait sample taken while the chat was already behind.
+  const flow = timedFlow(t, { waits: [[20_000, 120_000]], writes: [19_999] });
+  flow.front();
+  flow.service.start();
+  await flow.runTo(90_000, [[500, flow.away]]);
+
+  const firstNeeds = flow.marks.find((mark) => mark.needs);
+  assert.ok(firstNeeds && firstNeeds.at <= 20_000 + 10_000 + 4_000 + FETCH_MS, 'marked within one cache cycle and tick');
+  assert.deepEqual(flow.service.sessionsNeedingYou(), [flow.chat.id]);
+  assert.equal(toasts().length, 1, 'one toast, and only one, past the cooldown');
+  assert.match(toasts()[0], /Session needs your input .*permission prompt/);
+});
+
+test('a wait whose first sample was fetched just before its tool call was written still marks on the next fetch', async (t) => {
+  windowState().state = { focused: true };
+  // Fetches start at 0, 12 and 24 s. The one at 12 s reports the prompt that
+  // shows at 12.5 s, but its stamp predates the tool-call write at 12.499 s,
+  // so it is held back; the 24 s fetch is newer than the write and counts.
+  const flow = timedFlow(t, { waits: [[12_500, 120_000]], writes: [12_499] });
+  flow.away();
+  flow.service.start();
+  await flow.runTo(40_000);
+
+  assert.ok(!flow.marks.some((mark) => mark.needs && mark.at < 24_000), 'the straddling sample is not trusted');
+  const firstNeeds = flow.marks.find((mark) => mark.needs);
+  assert.ok(firstNeeds && firstNeeds.at <= 24_000 + FETCH_MS + 100, `marked by the next fetch (at ${firstNeeds?.at})`);
+  assert.equal(toasts().length, 1, 'it began unseen');
+});
+
+test('after a deny, a stale cached waiting result does not re-mark the chat', async (t) => {
+  windowState().state = { focused: true };
+  // The prompt shows at +8 s in front of the user and is sighted by the 12 s
+  // fetch. The user denies at +14 s (a transcript write) and switches to a
+  // file at +15 s, while the cache still holds the 12 s "waiting" sample.
+  const flow = timedFlow(t, { waits: [[8_000, 14_000]], writes: [7_999, 14_000] });
+  flow.front();
+  flow.service.start();
+  await flow.runTo(40_000, [[15_000, flow.away]]);
+
+  const stale = flow.marks.filter((mark) => mark.at > 15_000 && (mark.needs || mark.listed));
+  assert.deepEqual(stale.map((mark) => mark.at).slice(0, 3), [], 'no re-mark or listing from the stale sample');
+  assert.deepEqual(toasts(), []);
+  assert.ok(flow.fetches() >= 3, 'the cache did refresh during the run');
+});
+
+test('a one-second look strictly between two ticks counts as seen: no toast', async (t) => {
+  windowState().state = { focused: true };
+  // Ticks run at 0, 4, 8, 12 s. The prompt shows unseen at +8.0 s; the user
+  // looks at the chat from +9.0 s to +10.0 s, and the first sample to report
+  // the wait lands at +13.5 s. The tab events record the look; they never poll.
+  const flow = timedFlow(t, { waits: [[8_000, 120_000]], writes: [7_999] });
+  const subscriptions = chatVisibility.onFrontMayChange(() => flow.service.noteFront());
+  t.after(() => subscriptions.forEach((subscription) => subscription.dispose()));
+  const tabsChanged = () => (stub.window as unknown as { __fireTabsChanged(): void }).__fireTabsChanged();
+  flow.away();
+  flow.service.start();
+  await flow.runTo(40_000, [
+    [9_000, () => (flow.front(), tabsChanged())],
+    [10_000, () => (flow.away(), tabsChanged())],
+  ]);
+
+  assert.ok(flow.marks.some((mark) => mark.needs), 'the row still shows needs-you');
+  assert.deepEqual(flow.service.sessionsNeedingYou(), [flow.chat.id], 'and it is listed');
+  assert.deepEqual(toasts(), [], 'the user saw the prompt between ticks: no toast');
+});
+
+test('the front-change events are the active terminal, tabs, tab groups and window focus; they only notify', () => {
+  let notes = 0;
+  const subscriptions = chatVisibility.onFrontMayChange(() => notes++);
+  const window = stub.window as unknown as {
+    __fireTabsChanged(): void;
+    __setWindowState(state: { focused: boolean }): void;
+  };
+  window.__fireTabsChanged();
+  window.__setWindowState({ focused: false });
+  setActiveTerminal({ name: 'Pitwall: Session [chat-1]' });
+  assert.equal(notes, 3);
+  assert.equal(subscriptions.length, 4, 'tab groups too');
+  subscriptions.forEach((subscription) => subscription.dispose());
+  window.__fireTabsChanged();
+  assert.equal(notes, 3, 'disposed with the extension');
 });

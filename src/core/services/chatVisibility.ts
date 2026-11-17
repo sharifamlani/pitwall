@@ -58,3 +58,8 @@ export function chatIdInFront(sources: ChatVisibilitySources): string | undefine
 export function isChatVisible(sources: ChatVisibilitySources, chatId: string): boolean {
   return chatIdInFront(sources) === chatId;
 }
+
+/** R40 red stub: replaced in the fix commit. */
+export function onFrontMayChange(_listener: () => void): vscode.Disposable[] {
+  return [];
+}

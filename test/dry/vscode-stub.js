@@ -279,6 +279,7 @@ const activeTerminalListeners = new Set();
 const executionStartListeners = new Set();
 const tabChangeListeners = new Set();
 const tabGroupChangeListeners = new Set();
+const windowStateListeners = new Set();
 const configurationChangeListeners = new Set();
 let activeTerminal;
 let activeTextEditor;
@@ -381,6 +382,23 @@ module.exports = {
       activeTextEditor = editor;
     },
     state: { focused: false },
+    onDidChangeWindowState: (listener) => {
+      windowStateListeners.add(listener);
+      return { dispose: () => windowStateListeners.delete(listener) };
+    },
+    /** Test helper: the window gains or loses focus; `window.state` changes before listeners run. */
+    __setWindowState: (state) => {
+      module.exports.window.state = state;
+      for (const listener of [...windowStateListeners]) {
+        listener(state);
+      }
+    },
+    /** Test helper: announce a tab change after a test rearranged `tabGroups.all`. */
+    __fireTabsChanged: () => {
+      for (const listener of [...tabChangeListeners]) {
+        listener({ opened: [], closed: [], changed: [] });
+      }
+    },
     tabGroups: {
       all: [],
       get activeTabGroup() {
@@ -628,6 +646,7 @@ module.exports = {
       shellIntegrationListeners,
       tabChangeListeners,
       tabGroupChangeListeners,
+      windowStateListeners,
       configurationChangeListeners,
       extensionChangeListeners,
       installedExtensions,

@@ -143,6 +143,9 @@ export class SessionAttentionService {
     }
   }
 
+  /** R40 red stub: replaced in the fix commit. */
+  noteFront(): void {}
+
   private flagNeedsYou(chatId: string): void {
     if (!this.needsYouSince.has(chatId) && !this.isChatVisible(chatId)) {
       this.needsYouSince.set(chatId, Date.now());
