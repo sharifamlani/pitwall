@@ -40,3 +40,20 @@ def test_nested_resource_dir_is_stray(tmp_path, capsys):
     listing.write_text("\n".join(GOOD + [path]) + "\n", encoding="utf-8")
     assert main(["--from-file", str(listing)]) == 1
     assert f"STRAY {path}" in capsys.readouterr().out
+
+
+def test_empty_listing_fails(tmp_path, capsys):
+    listing = tmp_path / "ls.txt"
+    listing.write_text("", encoding="utf-8")
+    assert main(["--from-file", str(listing)]) == 1
+    assert "MISSING out/extension.js" in capsys.readouterr().out
+
+
+def test_missing_extension_js_fails(tmp_path, capsys):
+    paths = [p for p in GOOD if p != "out/extension.js"]
+    listing = tmp_path / "ls.txt"
+    listing.write_text("\n".join(paths) + "\n", encoding="utf-8")
+    assert main(["--from-file", str(listing)]) == 1
+    out = capsys.readouterr().out
+    assert "MISSING out/extension.js" in out
+    assert "OK:" not in out
