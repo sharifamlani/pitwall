@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.8 · 2026-11-16
+> v0.8.1 · 2026-11-16
 
 ---
 
@@ -45,7 +45,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D8 | SemVer annotated tags on every version bump; Phase N closes as `v0.(N+1).0`, Phase 5 = `v1.0.0` | Sharif 2026-11-16, [CLAUDE.md](CLAUDE.md) |
 | D9 | Claude Code only for v1; every agent lives in its own `src/harnesses/<id>/` folder, switched on by one `enabled.json` (Codex / opencode / Pi kept dormant) | Sharif 2026-11-16 |
 | D10 | Sidebar = standard VS Code list (TreeView) for v1; the custom card panel is v2 | Sharif 2026-11-16, spec canvas Decision 1 |
-| D11 | Two ways into a chat: click a repo → only its open tabs show; click a session → its tab opens alongside every other open tab (amended by D31) | Sharif 2026-11-16, spec canvas "Two ways into a chat" |
+| D11 | Two ways into a chat: click a repo → **all** of that repo's chats open as tabs in its window (close any you don't need); click a session → its tab is **added** to its window's tabs, never replacing them. Worktree chats open in their own window (D35) | Sharif 2026-11-16, spec canvas "Two ways into a chat" |
 | D12 | Hotkeys jump to repos by their position in the sidebar (1st, 2nd, 3rd…). Keys are latent: not printed on rows, shown in the hover tooltip (D28). Exact keys + repo order = spec canvas Decisions 11–12 | Sharif 2026-11-16 |
 | D13 | Repos are found automatically (any repo with a Claude session in the last 14 days); any repo can be removed (stays hidden until re-added); repos can be added by hand (title-bar folder icon or "Pitwall: Add Repository") | Sharif 2026-11-16, spec canvas Decision 2 |
 | D14 | No worktree level: sessions sit under the repo, and every row always shows its branch/worktree (even main); hover shows the worktree folder; the bottom-bar corner shows the open chat's branch | Sharif 2026-11-16, spec canvas Decision 6 |
@@ -217,3 +217,4 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 - **v0.6 · 2026-11-16.** Assumption tests round 1. PASS: status files show "waiting" (T1), hooks fire in the panel (T11), maximize/restore editor groups in Cursor (T3), no duplicate tabs (T6), US keyboard (T4). FAIL: one window can't resume another repo's chat (T5) → Q1 reopened for Sharif. Blocked: pop-ups (Windows notifications off on this machine, T2/T12). Risk confirmed: tab-to-chat matching by title (T10). D34: session-history button per repo.
 - **v0.7 · 2026-11-16.** Q1 resolved → D35: one window per folder, worktrees included (T17 also FAILED: a worktree chat won't open in the main repo window). D25 amended to a jump list; D31 superseded. Code recon recorded in the tests doc.
 - **v0.8 · 2026-11-16.** D36: no repo needs to be open; Pitwall opens folder windows on demand (option A; terminal-mode single window rejected). Prototype rebuilt for one window per folder (canvas v36): window title + taskbar strip, worktree chats in their own windows, session-history button, bottom-bar jump list, no mixed tabs.
+- **v0.8.1 · 2026-11-16.** D11 clarified by Sharif: a repo click opens all its chats as tabs; session clicks add tabs. Prototype demo data moved to main (matches Sharif's real usage); one worktree example kept.
