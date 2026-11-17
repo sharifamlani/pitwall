@@ -36,23 +36,24 @@ export class NotificationService {
     private readonly isChatVisible: (chatId: string) => boolean
   ) {}
 
-  notify(kind: AttentionKind, target: NotificationTarget): void {
+  /** Show the notification; false when settings or focus held it back. */
+  notify(kind: AttentionKind, target: NotificationTarget): boolean {
     const config = vscode.workspace.getConfiguration('pitwall');
     if (!config.get<boolean>('notifications.enabled', true)) {
-      return;
+      return false;
     }
     const toggle =
       kind === 'finished'
         ? 'notifications.onTurnEnd'
         : 'notifications.onNeedsInput';
     if (!config.get<boolean>(toggle, true)) {
-      return;
+      return false;
     }
 
     const windowFocused = vscode.window.state.focused;
     // Never interrupt someone who is already typing in this session.
     if (windowFocused && this.isChatVisible(target.chat.id)) {
-      return;
+      return false;
     }
 
     const name = target.chat.name;
@@ -72,6 +73,7 @@ export class NotificationService {
     if (!windowFocused) {
       this.showNativeBanner(title, target, detail, config);
     }
+    return true;
   }
 
   private showNativeBanner(

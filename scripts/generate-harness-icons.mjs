@@ -9,6 +9,8 @@
  *   It pulses from full size and full brightness down to 78% size and 72%
  *   opacity and back; a contraction never clips, and the resting frame stays
  *   the same size as every other row.
+ * - `needs`: the mark plus an orange dot (#f0883e, Pitwall orange, which
+ *   ROADMAP D17 reserves for "needs you"): the agent is waiting on the user.
  * - `done`: the mark plus a green dot, so a finished turn gains a badge.
  * - `closed`: the mark recolored grey, no badge.
  * - `new`: the mark plus a hollow ring for a session that has not started.
@@ -25,7 +27,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const baseDir = path.join(root, 'resources', 'icons', 'harness', 'base');
 const outDir = path.join(root, 'resources', 'icons', 'harness');
 
-const STATES = ['working', 'done', 'closed', 'new'];
+const STATES = ['working', 'needs', 'done', 'closed', 'new'];
 const THEMES = ['light', 'dark'];
 const RING = { light: '#f3f3f3', dark: '#252526' };
 const HARNESSES = [
@@ -77,6 +79,10 @@ function badge(state, theme) {
 
   if (state === 'done') {
     return `${ring}<circle cx="${CX}" cy="${CY}" r="${BADGE_R}" fill="#2f9e44"/>`;
+  }
+
+  if (state === 'needs') {
+    return `${ring}<circle cx="${CX}" cy="${CY}" r="${BADGE_R}" fill="#f0883e"/>`;
   }
 
   // "new": a hollow ring, so it reads as an empty session.

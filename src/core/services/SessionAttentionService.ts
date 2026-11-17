@@ -12,8 +12,9 @@ const TICK_MS = 4_000;
 export const NEEDS_INPUT_COOLDOWN_MS = 60_000;
 
 /**
- * A changed reason is news immediately; the same reason re-notifies at most
- * once per cooldown so a long wait is not repeated every tick.
+ * A changed reason is news immediately; a toast retried under the same reason
+ * (one the settings held back) waits out the cooldown since the chat's last
+ * toast. Each wait still toasts at most once.
  */
 export function shouldNotifyNeedsInput(
   previous: string | undefined,
@@ -50,9 +51,19 @@ export class SessionAttentionService {
    * also means the chat has been seen, so a new one is seeded silently.
    */
   private readonly lastTurn = new Map<string, number | null>();
+  /** When the last needs-input toast was actually shown, per chat. */
   private readonly lastNeedsInputAt = new Map<string, number>();
   /** Last waiting reason per chat, so a repeat is not treated as new. */
   private readonly lastWaitingFor = new Map<string, string>();
+  /** When each chat's current wait was first seen; gone when the wait ends. */
+  private readonly waitingSince = new Map<string, number>();
+  /**
+   * Chats whose current wait may still toast: it began after activation
+   * while the user was looking elsewhere, has not toasted, and has not been
+   * in front of the user since. A wait first seen in front of the user, or
+   * already there at activation, is left to the row and the list.
+   */
+  private readonly toastableWaits = new Set<string>();
 
   /**
    * Latest turn state per chat with an open terminal. The tree reads this to
@@ -62,10 +73,11 @@ export class SessionAttentionService {
   private readonly turnStates = new Map<string, TurnState>();
 
   /**
-   * When each open chat last finished a turn or began waiting while the user
-   * was looking elsewhere. An entry goes when the user visits the chat, the
-   * agent starts working again, or the chat closes, so the map is bounded by
-   * the open chats.
+   * Open chats that need the user, with the time each first did. A finished
+   * turn is listed once, when it ends unseen, until the user visits the chat,
+   * the agent works again, or the chat closes. A wait is re-judged on every
+   * tick: listed whenever the chat is not in front, under the time the wait
+   * was first seen, until the wait ends. The map is bounded by the open chats.
    */
   private readonly needsYouSince = new Map<string, number>();
 
@@ -74,7 +86,7 @@ export class SessionAttentionService {
     private readonly registry: HarnessRegistry,
     private readonly notifications: NotificationService,
     private readonly getWorktree: (id: string) => Worktree | undefined,
-    /** Called after a tick changes any chat's turn state (redraw row icons). */
+    /** Called when any chat's turn state or needs-you state changes (redraw row marks). */
     private readonly onTurnStateChanged: () => void,
     /**
      * Whether a chat is open in a terminal or a native-UI tab. UI sessions
@@ -107,14 +119,28 @@ export class SessionAttentionService {
     return this.turnStates.get(chatId);
   }
 
-  /** Open chats that finished or began waiting unseen, longest-waiting first. */
+  /** Open chats that need the user, longest-waiting first. */
   sessionsNeedingYou(): string[] {
     return [...this.needsYouSince].sort(([, a], [, b]) => a - b).map(([chatId]) => chatId);
   }
 
-  /** The user is looking at this chat; it no longer needs them. */
+  /**
+   * Whether the chat's row shows the needs-you mark: it is listed and its
+   * agent is waiting on the user. A turn that merely finished unseen keeps
+   * the finished mark.
+   */
+  needsYou(chatId: string): boolean {
+    return this.needsYouSince.has(chatId) && this.waitingSince.has(chatId);
+  }
+
+  /**
+   * The user is looking at this chat. A finished turn no longer needs them;
+   * a wait is listed again on the next tick the chat is not in front.
+   */
   markSeen(chatId: string): void {
-    this.needsYouSince.delete(chatId);
+    if (this.needsYouSince.delete(chatId)) {
+      this.onTurnStateChanged();
+    }
   }
 
   private flagNeedsYou(chatId: string): void {
@@ -146,6 +172,7 @@ export class SessionAttentionService {
     const chats = this.activeChats();
     const activeIds = new Set(chats.map((chat) => chat.id));
     let turnStatesChanged = false;
+    const rowMarksBefore = this.rowMarkKey();
 
     // Forget chats whose terminal is gone; if one comes back it is seeded
     // again instead of notifying about history.
@@ -154,6 +181,8 @@ export class SessionAttentionService {
         this.lastTurn.delete(chatId);
         this.lastNeedsInputAt.delete(chatId);
         this.lastWaitingFor.delete(chatId);
+        this.waitingSince.delete(chatId);
+        this.toastableWaits.delete(chatId);
         this.needsYouSince.delete(chatId);
         if (this.turnStates.delete(chatId)) {
           turnStatesChanged = true;
@@ -230,9 +259,14 @@ export class SessionAttentionService {
       }
     }
 
-    if (turnStatesChanged) {
+    if (turnStatesChanged || this.rowMarkKey() !== rowMarksBefore) {
       this.onTurnStateChanged();
     }
+  }
+
+  /** The needs-you rows, as a comparable key. */
+  private rowMarkKey(): string {
+    return [...this.needsYouSince.keys()].filter((chatId) => this.needsYou(chatId)).sort().join(',');
   }
 
   /**
@@ -277,42 +311,60 @@ export class SessionAttentionService {
     prime: boolean
   ): void {
     if (!waitingFor) {
-      // Re-arm the next wait.
+      // The wait ended: it leaves the list, and the next wait is new.
       this.lastWaitingFor.delete(chat.id);
+      this.toastableWaits.delete(chat.id);
+      if (this.waitingSince.delete(chat.id)) {
+        this.needsYouSince.delete(chat.id);
+      }
       return;
     }
 
-    if (prime) {
-      // The wait began before this extension host started; seed it so the
-      // next tick does not replay it as news.
-      this.lastWaitingFor.set(chat.id, waitingFor);
-      this.lastNeedsInputAt.set(chat.id, Date.now());
-      return;
-    }
-
-    const previous = this.lastWaitingFor.get(chat.id);
     const now = Date.now();
-    const shouldNotify = shouldNotifyNeedsInput(
-      previous,
-      waitingFor,
-      this.lastNeedsInputAt.get(chat.id),
-      now
-    );
+    const visible = this.isChatVisible(chat.id);
+    const previous = this.lastWaitingFor.get(chat.id);
     this.lastWaitingFor.set(chat.id, waitingFor);
-    if (waitingFor !== previous) {
-      this.flagNeedsYou(chat.id);
+    const since = this.waitingSince.get(chat.id) ?? now;
+    this.waitingSince.set(chat.id, since);
+
+    // Re-judged every tick, including the first pass after activation: a
+    // waiting chat is listed whenever it is not in front.
+    if (visible) {
+      this.needsYouSince.delete(chat.id);
+    } else if (!this.needsYouSince.has(chat.id)) {
+      this.needsYouSince.set(chat.id, since);
     }
 
-    if (!shouldNotify) {
+    // A wait starts on the first tick that sees its reason, so a changed
+    // reason is a new wait. Each wait toasts at most once: only if it began
+    // unseen after activation, and never once it has toasted or been seen.
+    if (waitingFor !== previous) {
+      if (prime || visible) {
+        this.toastableWaits.delete(chat.id);
+      } else {
+        this.toastableWaits.add(chat.id);
+      }
+    }
+    if (visible) {
+      this.toastableWaits.delete(chat.id);
+    }
+    // A toast held back by the settings does not start the cooldown, so it
+    // fires on the first tick the settings allow it.
+    if (
+      !this.toastableWaits.has(chat.id) ||
+      !shouldNotifyNeedsInput(previous, waitingFor, this.lastNeedsInputAt.get(chat.id), now)
+    ) {
       return;
     }
-
-    this.lastNeedsInputAt.set(chat.id, now);
-    this.notifications.notify('needs-input', {
+    const shown = this.notifications.notify('needs-input', {
       chat,
       context: this.contextFor(chat),
       detail: waitingFor,
     });
+    if (shown) {
+      this.lastNeedsInputAt.set(chat.id, now);
+      this.toastableWaits.delete(chat.id);
+    }
   }
 
   private groupByWorktree(chats: ChatSession[]): Map<string, WorktreeGroup> {

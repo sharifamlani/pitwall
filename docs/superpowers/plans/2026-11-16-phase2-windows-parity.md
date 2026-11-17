@@ -205,7 +205,7 @@ pitwall/
 
 ## 3. UI wireframes
 
-Phase 2 adds no screens, buttons, settings or new copy. Five existing surfaces behave differently on Windows because the bugs are fixed. Each is shown on Windows; Linux is unchanged in every case.
+Phase 2 adds no screens, buttons, settings or new copy, with one exception by lead ruling R38: the needs-you row mark (wireframe F), pulled forward from ROADMAP 3.3. Five existing surfaces behave differently on Windows because the bugs are fixed. Each is shown on Windows; Linux is unchanged in every case.
 
 **A. Worktree row in the Pitwall list (window opened on `uj-lab-a`)**
 ```
@@ -268,6 +268,20 @@ AFTER (Windows, default shell cmd.exe)
 AFTER (Git Bash / Linux / macOS): unchanged  cd '<path>' && claude --resume <id>
 ```
 
+**F. Needs-you row mark (row 2.14, lead ruling R38: pulled forward from ROADMAP 3.3, D17 colour)**
+```
+BEFORE (all platforms; upstream had no needs-you row state)    AFTER (all platforms)
+Claude asks permission in "Lab ready"; you look elsewhere     same moment
++------------------------------------+                        +------------------------------------+
+| ▾ uj-lab-a                         |                        | ▾ uj-lab-a                         |
+|   ⎇ main                    ●      |                        |   ⎇ main                    ●      |
+|     ◐ Lab ready now                |  ← still "working"     |     ◉ Lab ready now                |  ← orange (#f0883e) needs mark
++------------------------------------+                        +------------------------------------+
+ Ctrl+Alt+N → "No session is waiting for you."                  Ctrl+Alt+N → opens "Lab ready"
+ no toast                                                       one toast, only if the wait began unseen
+```
+Only WAITING chats get the orange mark. A chat that finished while unseen keeps the existing "done" mark (D17 keeps finished and needs-you as separate statuses). The mark goes back to working or done when the wait ends.
+
 | UI piece | BEFORE (Windows) | AFTER (Windows) |
 |---|---|---|
 | Active-worktree `●` + "Active workspace" tooltip | missing | shown on the window's own worktree |
@@ -278,6 +292,8 @@ AFTER (Git Bash / Linux / macOS): unchanged  cd '<path>' && claude --resume <id>
 | Row click after restore | duplicate tab | focuses the revived tab |
 | Remove from Pitwall, unresumable restored tab | tab stays | tab closes |
 | Copied resume command (toast + clipboard) | POSIX `&&` line | line for the default shell |
+| Chat row while Claude waits for you | working mark | orange needs mark (R38) |
+| "Go to Next Session That Needs You" with a waiting chat | "No session is waiting for you." | opens it |
 | Toast / dialog wording | — | unchanged |
 
 ## 4. Derisking (run in order; don't start N+1 until N passes)
@@ -360,7 +376,7 @@ All commands run in Git Bash on Windows unless marked *Linux*. `W=/c/Users/Shari
 - What it proves: the fixed behaviour holds in real Cursor, in the testing agent's separate profile, on the merged main.
 - Command (testing agent, never Sharif's Cursor): `cd $W && git switch --detach origin/main && npm ci --no-audit --no-fund >/dev/null && npm run compile && npm run package -- -o "dist/pitwall-$(git rev-parse --short HEAD).vsix" && bash scripts/cursor-cli.sh --user-data-dir "$LOCALAPPDATA/pitwall-uj/profile/user-data" --extensions-dir "$LOCALAPPDATA/pitwall-uj/profile/extensions" --install-extension "dist/pitwall-$(git rev-parse --short HEAD).vsix" --force && bash "$LOCALAPPDATA/pitwall-uj/harness/launch.sh" uj-lab-a`. Then walk these scenarios, pinning every CUA step to the printed test-Cursor pid:
   - **W1 worktree paths (triage 9–12):** Pitwall list → right-click `uj-lab-a` → Create Worktree → New branch → base `main` → name `uj/wt-p2`. Expect the row `⎇ uj/wt-p2` within 5 s. Its tooltip path starts `C:\Users\Shari\AppData\Local\pitwall-uj\lab\uj-lab-a-worktrees\uj-wt-p2`, and row `⎇ main` shows `●` with "Active workspace" in its tooltip. Then right-click `uj/wt-p2` → Delete Worktree → "Delete Worktree & Branch". Expect the row gone, `test -d "$LOCALAPPDATA/pitwall-uj/lab/uj-lab-a-worktrees/uj-wt-p2" || echo GONE` → `GONE`, and `git -C "$LOCALAPPDATA/pitwall-uj/lab/uj-lab-a" branch --list uj/wt-p2 | wc -l` → `0`.
-  - **R1 quit/restore with a live chat (2.11):** click row "Lab ready" (session `7f3d3bef-3632-4027-99a7-42fba6529521`) and wait for the Claude banner in its terminal tab. Count terminal tabs (`T0`). Quit the test Cursor (File → Exit), relaunch with `launch.sh uj-lab-a`. Expect (a) the exthost log line `Extension activated success: sharifamlani.pitwall — <N>ms` with N < 3000; (b) within 15 s the revived tab shows Claude resumed (its prior "lab ready" turn visible) and the tab has no `is not a valid statement separator` text; (c) click row "Lab ready": terminal tab count stays `T0` and the revived tab is focused; (d) Developer: Reload Window: tab count still `T0`. (e) R33c: with a file open in front, start a new chat whose shell is slow, or watch the startup retitle. A momentary flash of the terminal tab is expected, but within 2 s the file is back in front with keyboard focus unchanged. (f) The same with a Claude Code chat panel tab in front (R34): side by side with the terminal, the chat stays visible throughout. If it shares the terminal's editor group, the terminal may stay in front until clicked. Either way keyboard focus never moves (the cursor stays where the user typed). PASS = focus unchanged, and the chat is visible or one click away, with no error.
+  - **R1 quit/restore with a live chat (2.11):** click row "Lab ready" (session `7f3d3bef-3632-4027-99a7-42fba6529521`) and wait for the Claude banner in its terminal tab. Count terminal tabs (`T0`). Quit the test Cursor (File → Exit), relaunch with `launch.sh uj-lab-a`. Expect (a) the exthost log line `Extension activated success: sharifamlani.pitwall — <N>ms` with N < 3000; (b) [timing basis PENDING SHARIF: from relaunch or from Pitwall activation; see SHARIF_ACTION_ITEMS 2026-11-17] within 15 s the revived tab shows Claude resumed (its prior "lab ready" turn visible) and the tab has no `is not a valid statement separator` text; (c) click row "Lab ready": terminal tab count stays `T0` and the revived tab is focused; (d) Developer: Reload Window: tab count still `T0`. (e) R33c: with a file open in front, start a new chat whose shell is slow, or watch the startup retitle. A momentary flash of the terminal tab is expected, but within 2 s the file is back in front with keyboard focus unchanged. (f) The same with a Claude Code chat panel tab in front (R34): side by side with the terminal, the chat stays visible throughout. If it shares the terminal's editor group, the terminal may stay in front until clicked. Either way keyboard focus never moves (the cursor stays where the user typed). PASS = focus unchanged, and the chat is visible or one click away, with no error.
   - **R2 orphan on Remove (2.6):** "+" on `uj-lab-a` → New Claude Code Session (terminal), type nothing. Quit and relaunch as in R1. Then right-click that chat's row → Remove from Pitwall → confirm. Expect the terminal tab count to drop by exactly 1 within 3 s, and the row to be gone.
   - **R3 copied command (row 8 note):** right-click "Lab ready" → Copy Resume Command. Expect the clipboard to equal `Set-Location -LiteralPath '<uj-lab-a path>'; if ($?) { claude --resume 7f3d3bef-3632-4027-99a7-42fba6529521 }`. Paste it into a new PowerShell terminal in the test Cursor: Claude resumes, with no parse error.
   - **N1 full-path Claude command (2.13, F1):** in the test profile's user `settings.json`, set `"pitwall.harnessCommands.claude"` to a full path to the claude executable (`claude.exe`, or npm's `claude.cmd`): the first line of `where.exe claude | tr -d '\r' | grep -iE '\.(exe|cmd)$' | head -1`. Expect a non-empty path ending in `.exe` or `.cmd` before writing the setting (an empty value would test the default `claude` and prove nothing). Never the extensionless npm shim, which PowerShell cannot run. A quoted `.cmd` path is still the F1 case: it needs `&` just like an `.exe`. "+" on `uj-lab-a` → New Claude Code Session (terminal). Expect the Claude banner in the new tab within 15 s, and none of `Unexpected token`, `is not recognized`, `is not a valid statement separator` in that tab. Then remove the setting again.
