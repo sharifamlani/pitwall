@@ -36,12 +36,22 @@ export class SessionSearchTreeProvider implements vscode.TreeDataProvider<Sessio
     this.subscription = sessionSearch.onDidChange(this.refresh);
   }
 
+  /**
+   * Searches and matches of a harness this build has switched off are left
+   * out, so every row below names a registered harness.
+   */
   getChildren(node?: SessionSearchNode): SessionSearchNode[] {
+    const enabled = (harness: string) => this.harnessRegistry.has(harness);
     if (!node) {
-      return this.sessionSearch.searches().map((search) => ({ kind: 'search', search }));
+      return this.sessionSearch
+        .searches()
+        .filter((search) => enabled(search.engine.harness))
+        .map((search) => ({ kind: 'search', search }));
     }
     if (node.kind === 'search') {
-      return node.search.matches.map((match) => ({ kind: 'match', search: node.search, match }));
+      return node.search.matches
+        .filter((match) => enabled(match.harness))
+        .map((match) => ({ kind: 'match', search: node.search, match }));
     }
     return [];
   }

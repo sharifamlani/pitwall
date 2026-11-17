@@ -149,7 +149,13 @@ test('global shortcuts use Ctrl+Alt (Ctrl+Cmd on macOS); plain keys work only in
 });
 
 test('Open in UI stays in the context menu without its extension and is a hover action only with it', () => {
-  for (const [command, ui] of [['pitwall.openClaudeUi', 'claude'], ['pitwall.openCodexUi', 'codex']]) {
+  // One Open in UI command per enabled harness that has a VS Code UI.
+  const openUi = [...new Set(rowMenu.map(id))].flatMap((command) => {
+    const name = /^pitwall\.open(\w+)Ui$/.exec(command)?.[1];
+    return name ? [[command, name.toLowerCase()]] : [];
+  });
+  assert.ok(openUi.some(([command]) => command === 'pitwall.openClaudeUi'), 'Claude Code has Open in UI');
+  for (const [command, ui] of openUi) {
     const entries = rowMenu.filter((entry) => entry.command === command);
     const context = entries.filter((entry) => !isInline(entry));
     const inline = entries.filter(isInline);

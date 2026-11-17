@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { Repository, ChatSession, HARNESS_IDS, HarnessId, SessionSearchEngine, SessionSearchRecord, STORAGE_KEYS, generateId } from '../types';
+import { Repository, ChatSession, HarnessId, SessionSearchEngine, SessionSearchRecord, STORAGE_KEYS, generateId } from '../types';
 import { harnessSessionKey } from '../harness/sessionUtils';
 
 /** How long a user removal keeps a session out of auto-import. */
@@ -40,7 +40,15 @@ export type NewChatFields = Partial<
  * never in callers.
  */
 export class StorageService {
-  constructor(private context: vscode.ExtensionContext) {}
+  /**
+   * @param isKnownHarness Whether a stored harness id is enabled in this
+   *   build (registry membership). Records naming any other harness are
+   *   skipped where a shape is validated.
+   */
+  constructor(
+    private context: vscode.ExtensionContext,
+    private readonly isKnownHarness: (id: string) => boolean
+  ) {}
 
   private get<T>(key: string, fallback: T): T {
     return this.context.globalState.get<T>(key, fallback);
@@ -333,8 +341,8 @@ export class StorageService {
     }
     // A newer build may have stored a harness this one does not know; its
     // sessions cannot be shown or resumed here, so they are left out.
-    return stored.filter(isSessionSearchRecord).map((search) => {
-      const matches = search.matches.filter((match) => isHarnessId(match.harness));
+    return stored.filter((value) => isSessionSearchRecord(value, this.isHarnessId)).map((search) => {
+      const matches = search.matches.filter((match) => this.isHarnessId(match.harness));
       return matches.length === search.matches.length ? search : { ...search, matches };
     });
   }
@@ -356,7 +364,7 @@ export class StorageService {
   /** The harness a saved model/effort choice belongs to. */
   getSessionSearchEngineChoice(): SessionSearchEngine | undefined {
     const stored = this.get<unknown>(STORAGE_KEYS.SESSION_SEARCH_ENGINE_CHOICE, undefined);
-    return isSessionSearchEngine(stored) ? stored : undefined;
+    return isSessionSearchEngine(stored, this.isHarnessId) ? stored : undefined;
   }
 
   saveSessionSearchEngineChoice(engine: SessionSearchEngine): Thenable<void> {
@@ -439,13 +447,19 @@ export class StorageService {
       void this.set(STORAGE_KEYS.TERMINAL_PIDS, pruned);
     }
   }
+
+  /** A stored harness id this build has enabled; see the constructor. */
+  private readonly isHarnessId = (value: unknown): value is HarnessId =>
+    typeof value === 'string' && this.isKnownHarness(value);
 }
 
 function withoutUndefined<T extends object>(fields: T): Partial<T> {
   return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) as Partial<T>;
 }
 
-function isSessionSearchRecord(value: unknown): value is SessionSearchRecord {
+type HarnessCheck = (value: unknown) => value is HarnessId;
+
+function isSessionSearchRecord(value: unknown, isHarnessId: HarnessCheck): value is SessionSearchRecord {
   const record = value as Partial<SessionSearchRecord> | null;
   return (
     typeof record?.id === 'string' &&
@@ -456,15 +470,11 @@ function isSessionSearchRecord(value: unknown): value is SessionSearchRecord {
   );
 }
 
-function isSessionSearchEngine(value: unknown): value is SessionSearchEngine {
+function isSessionSearchEngine(value: unknown, isHarnessId: HarnessCheck): value is SessionSearchEngine {
   const engine = value as Partial<SessionSearchEngine> | null;
   return (
     isHarnessId(engine?.harness) &&
     typeof engine.model === 'string' &&
     typeof engine.effort === 'string'
   );
-}
-
-function isHarnessId(value: unknown): value is HarnessId {
-  return (HARNESS_IDS as readonly unknown[]).includes(value);
 }

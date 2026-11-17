@@ -1,0 +1,1406 @@
+{
+  "viewsContainers": {
+    "activitybar": [
+      {
+        "id": "pitwall",
+        "title": "Pitwall",
+        "icon": "resources/icons/pitwall-activitybar.svg"
+      }
+    ]
+  },
+  "views": {
+    "pitwall": [
+      {
+        "id": "pitwall.workspacesView",
+        "name": "Workspaces",
+        "size": 4
+      },
+      {
+        "id": "pitwall.sessionSearchView",
+        "name": "Find Session",
+        "when": "config.pitwall.sessionSearch.alwaysShowView || pitwall.hasSessionSearches",
+        "size": 2,
+        "visibility": "collapsed"
+      },
+      {
+        "id": "pitwall.changesView",
+        "name": "Changes",
+        "size": 2
+      },
+      {
+        "id": "pitwall.filesView",
+        "name": "All Files",
+        "size": 3
+      }
+    ]
+  },
+  "viewsWelcome": [
+    {
+      "view": "pitwall.workspacesView",
+      "contents": "Every Claude Code session across your repos, in one sidebar.\n\n[Add Local Folder or Repository](command:pitwall.addRepository)\n[Clone from GitHub](command:pitwall.cloneRepository)\n\nAdd any local folder, or clone a repository from GitHub to get started."
+    },
+    {
+      "view": "pitwall.changesView",
+      "contents": "Select a worktree, folder, or session to view uncommitted changes.\n\nClick the diff icon on any file to view side-by-side comparison."
+    },
+    {
+      "view": "pitwall.filesView",
+      "contents": "Select a worktree, folder, or session to browse its files."
+    },
+    {
+      "view": "pitwall.sessionSearchView",
+      "contents": "Describe what you worked on and a coding agent finds the session among your past ones, in any folder.\n\n[Find Session](command:pitwall.findSession)\n\nThe agent reads your session transcripts, so what it reads goes to its model provider."
+    }
+  ],
+  "commands": [
+    {
+      "command": "pitwall.files.search",
+      "title": "Search in Files",
+      "category": "Pitwall",
+      "icon": "$(search)"
+    },
+    {
+      "command": "pitwall.files.refresh",
+      "title": "Refresh",
+      "category": "Pitwall",
+      "icon": "$(refresh)"
+    },
+    {
+      "command": "pitwall.files.newFile",
+      "title": "New File...",
+      "category": "Pitwall",
+      "icon": "$(new-file)"
+    },
+    {
+      "command": "pitwall.files.newFolder",
+      "title": "New Folder...",
+      "category": "Pitwall",
+      "icon": "$(new-folder)"
+    },
+    {
+      "command": "pitwall.files.openToSide",
+      "title": "Open to the Side",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.files.revealInFinder",
+      "title": "Reveal in File Manager",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.files.openInTerminal",
+      "title": "Open in Integrated Terminal",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.files.copyPath",
+      "title": "Copy Path",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.files.copyRelativePath",
+      "title": "Copy Relative Path",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.files.copy",
+      "title": "Copy",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.files.cut",
+      "title": "Cut",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.files.paste",
+      "title": "Paste",
+      "category": "Pitwall",
+      "icon": "$(clippy)"
+    },
+    {
+      "command": "pitwall.files.rename",
+      "title": "Rename...",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.files.delete",
+      "title": "Delete",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.addRepository",
+      "title": "Add Local Folder or Repository…",
+      "category": "Pitwall",
+      "icon": "$(folder)"
+    },
+    {
+      "command": "pitwall.cloneRepository",
+      "title": "Clone from GitHub…",
+      "category": "Pitwall",
+      "icon": "$(cloud-download)"
+    },
+    {
+      "command": "pitwall.removeRepository",
+      "title": "Remove from Pitwall…",
+      "category": "Pitwall",
+      "icon": "$(close)"
+    },
+    {
+      "command": "pitwall.moveRepositoryUp",
+      "title": "Move Up",
+      "category": "Pitwall",
+      "icon": "$(arrow-up)"
+    },
+    {
+      "command": "pitwall.moveRepositoryDown",
+      "title": "Move Down",
+      "category": "Pitwall",
+      "icon": "$(arrow-down)"
+    },
+    {
+      "command": "pitwall.addWorktree",
+      "title": "Create Worktree…",
+      "category": "Pitwall",
+      "icon": "$(add)"
+    },
+    {
+      "command": "pitwall.deleteWorktree",
+      "title": "Delete Worktree…",
+      "category": "Pitwall",
+      "icon": "$(trash)"
+    },
+    {
+      "command": "pitwall.mergeWorktree",
+      "title": "Merge Branch into This Worktree…",
+      "category": "Pitwall",
+      "icon": "$(git-merge)"
+    },
+    {
+      "command": "pitwall.newDefaultSession",
+      "title": "New Session",
+      "category": "Pitwall",
+      "icon": "$(comment-add)"
+    },
+    {
+      "command": "pitwall.setDefaultHarness",
+      "title": "Set Default Agent…",
+      "category": "Pitwall",
+      "icon": "$(settings-gear)"
+    },
+    {
+      "command": "pitwall.openChat",
+      "title": "Open Session",
+      "category": "Pitwall",
+      "icon": "$(terminal)"
+    },
+    {
+      "command": "pitwall.openChatInTerminal",
+      "title": "Open Session in Terminal",
+      "category": "Pitwall",
+      "icon": "$(terminal)"
+    },
+    {
+      "command": "pitwall.renameChat",
+      "title": "Rename Session…",
+      "category": "Pitwall",
+      "icon": "$(edit)"
+    },
+    {
+      "command": "pitwall.deleteChat",
+      "title": "Remove Session from List…",
+      "category": "Pitwall",
+      "icon": "$(trash)"
+    },
+    {
+      "command": "pitwall.forkChat",
+      "title": "Fork Session Here",
+      "category": "Pitwall",
+      "icon": "$(repo-forked)"
+    },
+    {
+      "command": "pitwall.forkChatWithChanges",
+      "title": "Fork Session to New Worktree…",
+      "category": "Pitwall",
+      "icon": "$(repo-forked)"
+    },
+    {
+      "command": "pitwall.refreshWorkspaces",
+      "title": "Refresh",
+      "category": "Pitwall",
+      "icon": "$(refresh)"
+    },
+    {
+      "command": "pitwall.refreshChanges",
+      "title": "Refresh",
+      "category": "Pitwall",
+      "icon": "$(refresh)"
+    },
+    {
+      "command": "pitwall.openDiff",
+      "title": "Open Diff",
+      "category": "Pitwall",
+      "icon": "$(diff)"
+    },
+    {
+      "command": "pitwall.openInNewWindow",
+      "title": "Open in New Window",
+      "category": "Pitwall",
+      "icon": "$(multiple-windows)"
+    },
+    {
+      "command": "pitwall.switchToWorkspace",
+      "title": "Open in This Window",
+      "category": "Pitwall",
+      "icon": "$(target)"
+    },
+    {
+      "command": "pitwall.importSessions",
+      "title": "Import Existing Sessions…",
+      "category": "Pitwall",
+      "icon": "$(cloud-download)"
+    },
+    {
+      "command": "pitwall.openSettings",
+      "title": "Pitwall Settings…",
+      "category": "Pitwall",
+      "icon": "$(settings-gear)"
+    },
+    {
+      "command": "pitwall.openKeybindings",
+      "title": "Pitwall Keyboard Shortcuts…",
+      "category": "Pitwall",
+      "icon": "$(keyboard)"
+    },
+    {
+      "command": "pitwall.disableAutoSwitch",
+      "title": "Turn Off Auto-Switch Workspace Folder",
+      "category": "Pitwall",
+      "icon": "$(sync)"
+    },
+    {
+      "command": "pitwall.enableAutoSwitch",
+      "title": "Turn On Auto-Switch Workspace Folder",
+      "category": "Pitwall",
+      "icon": "$(sync-ignored)"
+    },
+    {
+      "command": "pitwall.disableFocusOnStartup",
+      "title": "Turn Off Focus on Startup",
+      "category": "Pitwall",
+      "icon": "$(eye)"
+    },
+    {
+      "command": "pitwall.enableFocusOnStartup",
+      "title": "Turn On Focus on Startup",
+      "category": "Pitwall",
+      "icon": "$(eye-closed)"
+    },
+    {
+      "command": "pitwall.stageFile",
+      "title": "Stage File",
+      "category": "Pitwall",
+      "icon": "$(add)"
+    },
+    {
+      "command": "pitwall.unstageFile",
+      "title": "Unstage File",
+      "category": "Pitwall",
+      "icon": "$(remove)"
+    },
+    {
+      "command": "pitwall.discardFile",
+      "title": "Discard Changes",
+      "category": "Pitwall",
+      "icon": "$(discard)"
+    },
+    {
+      "command": "pitwall.stageAll",
+      "title": "Stage All Changes",
+      "category": "Pitwall",
+      "icon": "$(add)"
+    },
+    {
+      "command": "pitwall.unstageAll",
+      "title": "Unstage All Changes",
+      "category": "Pitwall",
+      "icon": "$(remove)"
+    },
+    {
+      "command": "pitwall.discardAll",
+      "title": "Discard All Changes",
+      "category": "Pitwall",
+      "icon": "$(discard)"
+    },
+    {
+      "command": "pitwall.rebaseWorktree",
+      "title": "Rebase onto Upstream…",
+      "category": "Pitwall",
+      "icon": "$(repo-sync)"
+    },
+    {
+      "command": "pitwall.rebaseContinue",
+      "title": "Continue Rebase",
+      "category": "Pitwall",
+      "icon": "$(check)"
+    },
+    {
+      "command": "pitwall.rebaseAbort",
+      "title": "Abort Rebase",
+      "category": "Pitwall",
+      "icon": "$(close)"
+    },
+    {
+      "command": "pitwall.rebaseSkip",
+      "title": "Skip Commit",
+      "category": "Pitwall",
+      "icon": "$(debug-step-over)"
+    },
+    {
+      "command": "pitwall.clearWorktreeSessions",
+      "title": "Remove All Sessions from List…",
+      "category": "Pitwall",
+      "icon": "$(clear-all)"
+    },
+    {
+      "command": "pitwall.copyWorktreePath",
+      "title": "Copy Path",
+      "category": "Pitwall",
+      "icon": "$(copy)"
+    },
+    {
+      "command": "pitwall.openTerminalAtWorktree",
+      "title": "Open Terminal Here",
+      "category": "Pitwall",
+      "icon": "$(terminal)"
+    },
+    {
+      "command": "pitwall.openPRInBrowser",
+      "title": "Open Pull Request in Browser",
+      "category": "Pitwall",
+      "icon": "$(link-external)"
+    },
+    {
+      "command": "pitwall.checkoutPR",
+      "title": "Check Out Pull Request…",
+      "category": "Pitwall",
+      "icon": "$(git-pull-request)"
+    },
+    {
+      "command": "pitwall.findSession",
+      "title": "Find Session…",
+      "category": "Pitwall",
+      "icon": "$(sparkle)"
+    },
+    {
+      "command": "pitwall.askSessionSearchAgain",
+      "title": "Ask Again…",
+      "category": "Pitwall",
+      "icon": "$(refresh)"
+    },
+    {
+      "command": "pitwall.configureSessionSearch",
+      "title": "Find Session Settings…",
+      "category": "Pitwall",
+      "icon": "$(settings-gear)"
+    },
+    {
+      "command": "pitwall.cancelSessionSearch",
+      "title": "Stop Search",
+      "category": "Pitwall",
+      "icon": "$(debug-stop)"
+    },
+    {
+      "command": "pitwall.removeSessionSearch",
+      "title": "Remove Search",
+      "category": "Pitwall",
+      "icon": "$(close)"
+    },
+    {
+      "command": "pitwall.clearSessionSearches",
+      "title": "Clear Searches…",
+      "category": "Pitwall",
+      "icon": "$(clear-all)"
+    },
+    {
+      "command": "pitwall.resumeSearchMatch",
+      "title": "Resume",
+      "category": "Pitwall",
+      "icon": "$(play)"
+    },
+    {
+      "command": "pitwall.revealSearchMatch",
+      "title": "Show in Workspaces",
+      "category": "Pitwall",
+      "icon": "$(list-tree)"
+    },
+    {
+      "command": "pitwall.copySearchMatchCommand",
+      "title": "Copy Resume Command",
+      "category": "Pitwall",
+      "icon": "$(copy)"
+    },
+    {
+      "command": "pitwall.closeChat",
+      "title": "Close Session",
+      "category": "Pitwall",
+      "icon": "$(stop-circle)"
+    },
+    {
+      "command": "pitwall.starChat",
+      "title": "Star Session",
+      "category": "Pitwall",
+      "icon": "$(star-empty)"
+    },
+    {
+      "command": "pitwall.unstarChat",
+      "title": "Unstar Session",
+      "category": "Pitwall",
+      "icon": "$(star-full)"
+    },
+    {
+      "command": "pitwall.copyResumeCommand",
+      "title": "Copy Resume Command",
+      "icon": "$(copy)",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.copySessionId",
+      "title": "Copy Session ID",
+      "icon": "$(copy)",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.showStarredSessions",
+      "title": "Starred Sessions…",
+      "category": "Pitwall",
+      "icon": "$(star-full)"
+    },
+    {
+      "command": "pitwall.openNextSessionNeedingYou",
+      "title": "Go to Next Session That Needs You",
+      "icon": "$(bell-dot)",
+      "category": "Pitwall"
+    }
+  ],
+  "submenus": [
+    {
+      "id": "pitwall.newSession",
+      "label": "New Session",
+      "icon": "$(comment-add)"
+    },
+    {
+      "id": "pitwall.newSessionContext",
+      "label": "New Session",
+      "icon": "$(comment-add)"
+    }
+  ],
+  "keybindings": [
+    {
+      "command": "pitwall.openNextSessionNeedingYou",
+      "key": "ctrl+alt+n",
+      "mac": "ctrl+cmd+n"
+    },
+    {
+      "command": "pitwall.showStarredSessions",
+      "key": "ctrl+alt+s",
+      "mac": "ctrl+cmd+s"
+    },
+    {
+      "command": "pitwall.newDefaultSession",
+      "key": "ctrl+alt+enter",
+      "mac": "ctrl+cmd+enter"
+    },
+    {
+      "command": "pitwall.findSession",
+      "key": "ctrl+alt+f",
+      "mac": "ctrl+cmd+f"
+    },
+    {
+      "command": "workbench.view.extension.pitwall",
+      "key": "ctrl+alt+a",
+      "mac": "ctrl+cmd+a"
+    },
+    {
+      "command": "pitwall.renameChat",
+      "key": "f2",
+      "when": "focusedView == 'pitwall.workspacesView' && !inputFocus"
+    },
+    {
+      "command": "pitwall.deleteChat",
+      "key": "delete",
+      "mac": "cmd+backspace",
+      "when": "focusedView == 'pitwall.workspacesView' && !inputFocus"
+    },
+    {
+      "command": "pitwall.copyResumeCommand",
+      "key": "ctrl+c",
+      "mac": "cmd+c",
+      "when": "focusedView == 'pitwall.workspacesView' && !inputFocus"
+    },
+    {
+      "command": "pitwall.files.rename",
+      "key": "f2",
+      "when": "focusedView == 'pitwall.filesView' && !inputFocus"
+    },
+    {
+      "command": "pitwall.files.delete",
+      "key": "delete",
+      "mac": "cmd+backspace",
+      "when": "focusedView == 'pitwall.filesView' && !inputFocus"
+    },
+    {
+      "command": "pitwall.files.copy",
+      "key": "ctrl+c",
+      "mac": "cmd+c",
+      "when": "focusedView == 'pitwall.filesView' && !inputFocus"
+    },
+    {
+      "command": "pitwall.files.cut",
+      "key": "ctrl+x",
+      "mac": "cmd+x",
+      "when": "focusedView == 'pitwall.filesView' && !inputFocus"
+    },
+    {
+      "command": "pitwall.files.paste",
+      "key": "ctrl+v",
+      "mac": "cmd+v",
+      "when": "focusedView == 'pitwall.filesView' && !inputFocus && pitwall.hasFileClipboard"
+    }
+  ],
+  "configuration": [
+    {
+      "id": "pitwall.sessions",
+      "title": "Sessions",
+      "order": 1,
+      "properties": {
+        "pitwall.defaultHarness": {
+          "type": "string",
+          "enum": [
+            ""
+          ],
+          "enumItemLabels": [
+            "Ask every time"
+          ],
+          "enumDescriptions": [
+            "The New Session button opens a menu of every installed agent."
+          ],
+          "default": "",
+          "markdownDescription": "The agent the **New Session** button (`+`) on a worktree or folder starts with one click. Every agent stays in the row's right-click **New Session** menu, and New Session asks which agent to use when the default one is not installed. Where the session opens is set by `#pitwall.defaultSessionSurface#`.",
+          "order": 1,
+          "x-harness-enum": true
+        },
+        "pitwall.defaultSessionSurface": {
+          "type": "string",
+          "enum": [
+            "terminal",
+            "ui"
+          ],
+          "enumDescriptions": [
+            "Sessions open in a terminal running the agent CLI.",
+            "Sessions open in the agent's own VS Code extension panel, when it has one. Agents without one, and sessions the panel cannot open, use the terminal."
+          ],
+          "default": "terminal",
+          "enumItemLabels": [
+            "Terminal",
+            "Agent's VS Code panel"
+          ],
+          "markdownDescription": "Where a session opens when you click its row or start a new one. The **In Terminal** and **In UI** commands in the New Session menu always override this.",
+          "order": 2
+        },
+        "pitwall.autoImport.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show sessions you started outside Pitwall — in a plain terminal or in an agent's VS Code panel — as rows under their worktree. Turn off to list only sessions started from Pitwall; **Import Existing Sessions…** still adds others by hand.",
+          "order": 3
+        },
+        "pitwall.autoImport.retentionDays": {
+          "type": "integer",
+          "default": 15,
+          "minimum": 1,
+          "markdownDescription": "Session rows leave the tree after this many days without activity, whether they were imported or started in Pitwall. Starred sessions always stay. Only the row is removed: the agent keeps the conversation, and **Import Existing Sessions…** or **Find Session…** brings it back.",
+          "order": 4
+        }
+      }
+    },
+    {
+      "id": "pitwall.notifications",
+      "title": "Notifications",
+      "order": 2,
+      "properties": {
+        "pitwall.notifications.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Notify you about sessions you are not looking at. This is the main switch: turn it off and the settings below have no effect.",
+          "order": 1
+        },
+        "pitwall.notifications.onTurnEnd": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Notify when an agent finishes responding. Works for every agent. Needs `#pitwall.notifications.enabled#`.",
+          "order": 2
+        },
+        "pitwall.notifications.onNeedsInput": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Notify when a Claude Code session is waiting on you, for example at a permission prompt. Claude Code only. Needs `#pitwall.notifications.enabled#`.",
+          "order": 3
+        },
+        "pitwall.notifications.nativeBanner": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "macOS only: also show a system banner while VS Code is in the background. The banner cannot be clicked; the notification inside VS Code has the **Open** button. Needs `#pitwall.notifications.enabled#`.",
+          "order": 4
+        }
+      }
+    },
+    {
+      "id": "pitwall.findSession",
+      "title": "Find Session",
+      "order": 3,
+      "properties": {
+        "pitwall.sessionSearch.harness": {
+          "type": "string",
+          "enum": [],
+          "enumDescriptions": [],
+          "default": "claude",
+          "enumItemLabels": [],
+          "markdownDescription": "The agent that runs **Find Session…**. It must be installed. Sessions from every installed agent are searched whichever one runs the search. Changing this clears `#pitwall.sessionSearch.model#` and `#pitwall.sessionSearch.effort#`.",
+          "order": 1,
+          "x-harness-enum": true
+        },
+        "pitwall.sessionSearch.model": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The model **Find Session…** uses, written the way that agent's CLI names it (for example `sonnet` for Claude Code). Leave empty to use the model the agent is already configured with. **Find Session Settings…** offers a list to pick from.",
+          "order": 2
+        },
+        "pitwall.sessionSearch.effort": {
+          "type": "string",
+          "enum": [
+            "",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "enumItemLabels": [
+            "Use the agent's setting",
+            "Minimal",
+            "Low",
+            "Medium",
+            "High",
+            "Extra high",
+            "Max"
+          ],
+          "enumDescriptions": [
+            "Use the reasoning effort the agent is already configured with.",
+            "Only some agents support this level.",
+            "Fastest and cheapest search.",
+            "",
+            "Slower, more thorough search.",
+            "",
+            "Only some agents support this level."
+          ],
+          "default": "",
+          "markdownDescription": "How hard the agent thinks during **Find Session…**. Higher is slower and costs more. A level the chosen agent does not support is ignored.",
+          "order": 3
+        },
+        "pitwall.sessionSearch.alwaysShowView": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show the **Find Session** view in the Pitwall sidebar all the time. Turn off to show it only after your first search.",
+          "order": 4
+        }
+      }
+    },
+    {
+      "id": "pitwall.window",
+      "title": "Window",
+      "order": 4,
+      "properties": {
+        "pitwall.autoSwitchWorkspaceFolder": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "When you select a worktree or session in another repository, make that folder the one VS Code has open, so the Explorer, search, and source control follow it. VS Code restarts its extensions on each switch, which shows as a brief flicker. With this off, use **Open in This Window** on a worktree's right-click menu.",
+          "order": 1
+        },
+        "pitwall.focusOnStartup": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Open the Pitwall sidebar when VS Code starts, instead of the File Explorer.",
+          "order": 2
+        }
+      }
+    },
+    {
+      "id": "pitwall.agentCommands",
+      "title": "Agent Commands",
+      "order": 5,
+      "properties": {}
+    }
+  ],
+  "menus": {
+    "view/title": [
+      {
+        "command": "pitwall.addRepository",
+        "when": "view == pitwall.workspacesView",
+        "group": "navigation@1"
+      },
+      {
+        "command": "pitwall.cloneRepository",
+        "when": "view == pitwall.workspacesView",
+        "group": "0_add@1"
+      },
+      {
+        "command": "pitwall.showStarredSessions",
+        "when": "view == pitwall.workspacesView",
+        "group": "1_sessions@3"
+      },
+      {
+        "command": "pitwall.setDefaultHarness",
+        "when": "view == pitwall.workspacesView",
+        "group": "2_settings@0"
+      },
+      {
+        "command": "pitwall.disableAutoSwitch",
+        "when": "view == pitwall.workspacesView && config.pitwall.autoSwitchWorkspaceFolder",
+        "group": "2_settings@1"
+      },
+      {
+        "command": "pitwall.enableAutoSwitch",
+        "when": "view == pitwall.workspacesView && !config.pitwall.autoSwitchWorkspaceFolder",
+        "group": "2_settings@1"
+      },
+      {
+        "command": "pitwall.disableFocusOnStartup",
+        "when": "view == pitwall.workspacesView && config.pitwall.focusOnStartup",
+        "group": "2_settings@2"
+      },
+      {
+        "command": "pitwall.enableFocusOnStartup",
+        "when": "view == pitwall.workspacesView && !config.pitwall.focusOnStartup",
+        "group": "2_settings@2"
+      },
+      {
+        "command": "pitwall.openSettings",
+        "when": "view == pitwall.workspacesView",
+        "group": "2_settings@90"
+      },
+      {
+        "command": "pitwall.openKeybindings",
+        "when": "view == pitwall.workspacesView",
+        "group": "2_settings@91"
+      },
+      {
+        "command": "pitwall.refreshWorkspaces",
+        "when": "view == pitwall.workspacesView",
+        "group": "3_refresh@1"
+      },
+      {
+        "command": "pitwall.refreshChanges",
+        "when": "view == pitwall.changesView",
+        "group": "navigation"
+      },
+      {
+        "command": "pitwall.files.search",
+        "when": "view == pitwall.filesView",
+        "group": "navigation@0"
+      },
+      {
+        "command": "pitwall.files.newFile",
+        "when": "view == pitwall.filesView",
+        "group": "navigation@1"
+      },
+      {
+        "command": "pitwall.files.newFolder",
+        "when": "view == pitwall.filesView",
+        "group": "navigation@2"
+      },
+      {
+        "command": "pitwall.files.paste",
+        "when": "view == pitwall.filesView && pitwall.hasFileClipboard",
+        "group": "navigation@3"
+      },
+      {
+        "command": "pitwall.files.refresh",
+        "when": "view == pitwall.filesView",
+        "group": "navigation@4"
+      },
+      {
+        "command": "pitwall.findSession",
+        "when": "view == pitwall.workspacesView",
+        "group": "1_sessions@2"
+      },
+      {
+        "command": "pitwall.findSession",
+        "when": "view == pitwall.sessionSearchView",
+        "group": "navigation@1"
+      },
+      {
+        "command": "pitwall.clearSessionSearches",
+        "when": "view == pitwall.sessionSearchView",
+        "group": "navigation@2"
+      },
+      {
+        "command": "pitwall.configureSessionSearch",
+        "when": "view == pitwall.sessionSearchView",
+        "group": "1_actions@1"
+      },
+      {
+        "command": "pitwall.checkoutPR",
+        "when": "view == pitwall.workspacesView",
+        "group": "0_add@2"
+      },
+      {
+        "command": "pitwall.openNextSessionNeedingYou",
+        "when": "view == pitwall.workspacesView",
+        "group": "1_sessions@1"
+      }
+    ],
+    "view/item/context": [
+      {
+        "command": "pitwall.addWorktree",
+        "when": "view == pitwall.workspacesView && viewItem == repository",
+        "group": "inline@1"
+      },
+      {
+        "command": "pitwall.addWorktree",
+        "when": "view == pitwall.workspacesView && viewItem == repository",
+        "group": "1_create@1"
+      },
+      {
+        "command": "pitwall.checkoutPR",
+        "when": "view == pitwall.workspacesView && viewItem == repository",
+        "group": "1_create@2"
+      },
+      {
+        "command": "pitwall.moveRepositoryUp",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+        "group": "5_move@1"
+      },
+      {
+        "command": "pitwall.moveRepositoryDown",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+        "group": "5_move@2"
+      },
+      {
+        "command": "pitwall.removeRepository",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+        "group": "9_destructive@9"
+      },
+      {
+        "submenu": "pitwall.newSession",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && (pitwall.anyHarnessInstalled || pitwall.anyNativeUiInstalled) && !config.pitwall.defaultHarness",
+        "group": "inline@1"
+      },
+      {
+        "command": "pitwall.newDefaultSession",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && (pitwall.anyHarnessInstalled || pitwall.anyNativeUiInstalled) && config.pitwall.defaultHarness",
+        "group": "inline@1"
+      },
+      {
+        "command": "pitwall.openTerminalAtWorktree",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+        "group": "inline@2"
+      },
+      {
+        "submenu": "pitwall.newSessionContext",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && (pitwall.anyHarnessInstalled || pitwall.anyNativeUiInstalled)",
+        "group": "1_session@1"
+      },
+      {
+        "command": "pitwall.importSessions",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+        "group": "1_session@2"
+      },
+      {
+        "command": "pitwall.switchToWorkspace",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && !config.pitwall.autoSwitchWorkspaceFolder",
+        "group": "2_open@1"
+      },
+      {
+        "command": "pitwall.openInNewWindow",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+        "group": "2_open@2"
+      },
+      {
+        "command": "pitwall.openTerminalAtWorktree",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+        "group": "2_open@3"
+      },
+      {
+        "command": "pitwall.openPRInBrowser",
+        "when": "view == pitwall.workspacesView && viewItem == worktree",
+        "group": "2_open@4"
+      },
+      {
+        "command": "pitwall.copyWorktreePath",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+        "group": "2_open@5"
+      },
+      {
+        "command": "pitwall.mergeWorktree",
+        "when": "view == pitwall.workspacesView && viewItem == worktree",
+        "group": "3_git@1"
+      },
+      {
+        "command": "pitwall.rebaseWorktree",
+        "when": "view == pitwall.workspacesView && viewItem == worktree",
+        "group": "3_git@2"
+      },
+      {
+        "command": "pitwall.clearWorktreeSessions",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+        "group": "9_destructive@1"
+      },
+      {
+        "command": "pitwall.deleteWorktree",
+        "when": "view == pitwall.workspacesView && viewItem == worktree",
+        "group": "9_destructive@2"
+      },
+      {
+        "command": "pitwall.starChat",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|runningChat)(\\w+Ui)?$/",
+        "group": "inline@0"
+      },
+      {
+        "command": "pitwall.unstarChat",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(starredChat|runningStarredChat)(\\w+Ui)?$/",
+        "group": "inline@0"
+      },
+      {
+        "command": "pitwall.renameChat",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/",
+        "group": "inline@1"
+      },
+      {
+        "command": "pitwall.openChatInTerminal",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat)(\\w+Ui)?$/",
+        "group": "inline@2"
+      },
+      {
+        "command": "pitwall.closeChat",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(runningChat|runningStarredChat)(\\w+Ui)?$/",
+        "group": "inline@4"
+      },
+      {
+        "command": "pitwall.openChat",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
+        "group": "1_open@1"
+      },
+      {
+        "command": "pitwall.openChatInTerminal",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
+        "group": "1_open@2"
+      },
+      {
+        "command": "pitwall.renameChat",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
+        "group": "2_edit@1"
+      },
+      {
+        "command": "pitwall.starChat",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|runningChat)(\\w+Ui)?$/",
+        "group": "2_edit@2"
+      },
+      {
+        "command": "pitwall.unstarChat",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(starredChat|runningStarredChat)(\\w+Ui)?$/",
+        "group": "2_edit@2"
+      },
+      {
+        "command": "pitwall.forkChat",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
+        "group": "3_fork@1"
+      },
+      {
+        "command": "pitwall.forkChatWithChanges",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
+        "group": "3_fork@2"
+      },
+      {
+        "command": "pitwall.copyResumeCommand",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
+        "group": "4_copy@1"
+      },
+      {
+        "command": "pitwall.copySessionId",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
+        "group": "4_copy@2"
+      },
+      {
+        "command": "pitwall.closeChat",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(runningChat|runningStarredChat)(\\w+Ui)?$/",
+        "group": "9_destructive@1"
+      },
+      {
+        "command": "pitwall.deleteChat",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/",
+        "group": "9_destructive@2"
+      },
+      {
+        "command": "pitwall.openDiff",
+        "when": "view == pitwall.workspacesView && viewItem == changedFile",
+        "group": "navigation"
+      },
+      {
+        "command": "pitwall.rebaseContinue",
+        "when": "view == pitwall.changesView && viewItem == rebaseSection",
+        "group": "inline@1"
+      },
+      {
+        "command": "pitwall.rebaseSkip",
+        "when": "view == pitwall.changesView && viewItem == rebaseSection",
+        "group": "inline@2"
+      },
+      {
+        "command": "pitwall.rebaseAbort",
+        "when": "view == pitwall.changesView && viewItem == rebaseSection",
+        "group": "inline@3"
+      },
+      {
+        "command": "pitwall.discardAll",
+        "when": "view == pitwall.changesView && viewItem == unstagedSection",
+        "group": "inline"
+      },
+      {
+        "command": "pitwall.stageAll",
+        "when": "view == pitwall.changesView && viewItem == unstagedSection",
+        "group": "inline"
+      },
+      {
+        "command": "pitwall.unstageAll",
+        "when": "view == pitwall.changesView && viewItem == stagedSection",
+        "group": "inline"
+      },
+      {
+        "command": "pitwall.stageFile",
+        "when": "view == pitwall.changesView && viewItem == unstagedFile",
+        "group": "inline@1"
+      },
+      {
+        "command": "pitwall.discardFile",
+        "when": "view == pitwall.changesView && viewItem == unstagedFile",
+        "group": "inline@2"
+      },
+      {
+        "command": "pitwall.unstageFile",
+        "when": "view == pitwall.changesView && viewItem == stagedFile",
+        "group": "inline"
+      },
+      {
+        "command": "pitwall.stageFile",
+        "when": "view == pitwall.changesView && viewItem == unstagedFile",
+        "group": "navigation"
+      },
+      {
+        "command": "pitwall.discardFile",
+        "when": "view == pitwall.changesView && viewItem == unstagedFile",
+        "group": "destructive"
+      },
+      {
+        "command": "pitwall.unstageFile",
+        "when": "view == pitwall.changesView && viewItem == stagedFile",
+        "group": "navigation"
+      },
+      {
+        "command": "pitwall.files.openToSide",
+        "when": "view == pitwall.filesView && viewItem == file",
+        "group": "1_open@1"
+      },
+      {
+        "command": "pitwall.files.revealInFinder",
+        "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
+        "group": "2_reveal@1"
+      },
+      {
+        "command": "pitwall.files.openInTerminal",
+        "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
+        "group": "2_reveal@2"
+      },
+      {
+        "command": "pitwall.files.copyPath",
+        "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
+        "group": "3_path@1"
+      },
+      {
+        "command": "pitwall.files.copyRelativePath",
+        "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
+        "group": "3_path@2"
+      },
+      {
+        "command": "pitwall.files.copy",
+        "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
+        "group": "4_clipboard@1"
+      },
+      {
+        "command": "pitwall.files.cut",
+        "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
+        "group": "4_clipboard@2"
+      },
+      {
+        "command": "pitwall.files.paste",
+        "when": "view == pitwall.filesView && (viewItem == folder || viewItem == file) && pitwall.hasFileClipboard",
+        "group": "4_clipboard@3"
+      },
+      {
+        "command": "pitwall.files.newFile",
+        "when": "view == pitwall.filesView && viewItem == folder",
+        "group": "5_create@1"
+      },
+      {
+        "command": "pitwall.files.newFolder",
+        "when": "view == pitwall.filesView && viewItem == folder",
+        "group": "5_create@2"
+      },
+      {
+        "command": "pitwall.files.rename",
+        "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
+        "group": "6_edit@1"
+      },
+      {
+        "command": "pitwall.files.delete",
+        "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
+        "group": "6_edit@2"
+      },
+      {
+        "command": "pitwall.cancelSessionSearch",
+        "when": "view == pitwall.sessionSearchView && viewItem == sessionSearchRunning",
+        "group": "inline@1"
+      },
+      {
+        "command": "pitwall.askSessionSearchAgain",
+        "when": "view == pitwall.sessionSearchView && viewItem == sessionSearch",
+        "group": "inline@1"
+      },
+      {
+        "command": "pitwall.askSessionSearchAgain",
+        "when": "view == pitwall.sessionSearchView && viewItem == sessionSearch",
+        "group": "navigation@1"
+      },
+      {
+        "command": "pitwall.removeSessionSearch",
+        "when": "view == pitwall.sessionSearchView && viewItem == sessionSearch",
+        "group": "3_destructive"
+      },
+      {
+        "command": "pitwall.resumeSearchMatch",
+        "when": "view == pitwall.sessionSearchView && viewItem == sessionSearchMatch",
+        "group": "inline@1"
+      },
+      {
+        "command": "pitwall.revealSearchMatch",
+        "when": "view == pitwall.sessionSearchView && viewItem == sessionSearchMatch",
+        "group": "inline@2"
+      },
+      {
+        "command": "pitwall.resumeSearchMatch",
+        "when": "view == pitwall.sessionSearchView && viewItem == sessionSearchMatch",
+        "group": "navigation@1"
+      },
+      {
+        "command": "pitwall.revealSearchMatch",
+        "when": "view == pitwall.sessionSearchView && viewItem == sessionSearchMatch",
+        "group": "navigation@2"
+      },
+      {
+        "command": "pitwall.copySearchMatchCommand",
+        "when": "view == pitwall.sessionSearchView && viewItem == sessionSearchMatch",
+        "group": "navigation@3"
+      }
+    ],
+    "pitwall.newSession": [
+      {
+        "command": "pitwall.setDefaultHarness",
+        "group": "9_default"
+      }
+    ],
+    "pitwall.newSessionContext": [
+      {
+        "command": "pitwall.setDefaultHarness",
+        "group": "9_default"
+      }
+    ],
+    "commandPalette": [
+      {
+        "command": "pitwall.copySessionId",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.copyResumeCommand",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.files.openToSide",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.files.revealInFinder",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.files.openInTerminal",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.files.copyPath",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.files.copyRelativePath",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.files.copy",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.files.cut",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.files.rename",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.files.delete",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.moveRepositoryUp",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.moveRepositoryDown",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.deleteWorktree",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.mergeWorktree",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.rebaseWorktree",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openPRInBrowser",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openInNewWindow",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.switchToWorkspace",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.copyWorktreePath",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openTerminalAtWorktree",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.clearWorktreeSessions",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openChat",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.renameChat",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.closeChat",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.deleteChat",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.forkChat",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.forkChatWithChanges",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.starChat",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.unstarChat",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.stageFile",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.unstageFile",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.discardFile",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openDiff",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.askSessionSearchAgain",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.cancelSessionSearch",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.removeSessionSearch",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.resumeSearchMatch",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.revealSearchMatch",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.copySearchMatchCommand",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.disableAutoSwitch",
+        "when": "config.pitwall.autoSwitchWorkspaceFolder"
+      },
+      {
+        "command": "pitwall.enableAutoSwitch",
+        "when": "!config.pitwall.autoSwitchWorkspaceFolder"
+      },
+      {
+        "command": "pitwall.disableFocusOnStartup",
+        "when": "config.pitwall.focusOnStartup"
+      },
+      {
+        "command": "pitwall.enableFocusOnStartup",
+        "when": "!config.pitwall.focusOnStartup"
+      }
+    ]
+  }
+}

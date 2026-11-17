@@ -19,6 +19,7 @@ const os = require('os');
 const path = require('path');
 const { runTests } = require('@vscode/test-electron');
 const { resolveVSCodeExecutable } = require('../vscodeExecutable');
+const enabledHarnesses = require('../../src/harnesses/enabled.json');
 
 async function main() {
   const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pitwall-vscode-test-'));
@@ -26,11 +27,13 @@ async function main() {
   const extensionsDir = path.join(profileRoot, 'extensions');
 
   // A command override saved as one object by an earlier version; the suite
-  // checks it still applies now that each harness has its own setting.
+  // checks it still applies now that each harness has its own setting. It
+  // targets the last enabled harness (pi when all four are on).
+  const legacyHarness = enabledHarnesses[enabledHarnesses.length - 1];
   fs.mkdirSync(path.join(userDataDir, 'User'), { recursive: true });
   fs.writeFileSync(
     path.join(userDataDir, 'User', 'settings.json'),
-    JSON.stringify({ 'pitwall.harnessCommands': { pi: 'pi-legacy' } })
+    JSON.stringify({ 'pitwall.harnessCommands': { [legacyHarness]: `${legacyHarness}-legacy` } })
   );
 
   console.log(`VS Code:      ${resolveVSCodeExecutable()}`);

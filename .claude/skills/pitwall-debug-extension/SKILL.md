@@ -227,7 +227,7 @@ sqlite3 "$DB" "INSERT OR REPLACE INTO ItemTable(key, value) VALUES('sharifamlani
 ```
 
 Escape single quotes in the JSON (`value.replace(/'/g, "''")`) before embedding it. Read the
-stored shape from `src/types.ts` (`STORAGE_KEYS`) and seed the minimum: repositories, chats,
+stored shape from `src/core/types.ts` (`STORAGE_KEYS`) and seed the minimum: repositories, chats,
 active chat, active worktree. Include every field the code path reads; a missing field usually
 fails silently. Seed chats with the worktree id Pitwall computes for that repository (copy it
 from a real state dump or let Pitwall add the repository once, then inspect) — a guessed id

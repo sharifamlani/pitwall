@@ -13,12 +13,21 @@ file describes what the code does today, the ADR explains why.
 
 This is a VS Code extension that manages CLI coding-agent sessions (Claude Code,
 opencode, Codex, and Pi) across git repositories and worktrees. Harness-specific behavior
-lives behind the adapter seam in `src/harnesses/`.
+lives behind the adapter seam: the contract and registries are in `src/core/harness/`, and
+each agent is one folder, `src/harnesses/<id>/`, exporting a `HarnessModule` and a
+`contributes.json` manifest fragment. Core (`src/core/`) never imports a harness folder.
 
-### Harness Adapters (`src/harnesses/`)
+`src/harnesses/enabled.json` is the one switch (shipped: `["claude"]`). Activation builds only
+the enabled modules, so a disabled harness is never constructed or polled, and
+`scripts/build-manifest.mjs` merges `manifest/core.contributes.json` with the enabled fragments
+into `package.json`. Stored chats and searches of a disabled harness stay in storage and are
+skipped where they are read (`HarnessRegistry.has()`). Codex, opencode, and Pi are dormant;
+see `src/harnesses/README.md`.
 
-- **types.ts** - `HarnessAdapter`, `HarnessSession`, `SessionMetadata`, `NativeUiCapability`, and the Find Session capabilities `SessionSearchSource` / `SessionSearchRunner`
-- **HarnessRegistry** - installed detection (cached, one shared probe) and lookup
+### Harness Adapters (`src/core/harness/`, `src/harnesses/<id>/`)
+
+- **types.ts** (`src/core/harness/`) - `HarnessAdapter`, `HarnessSession`, `SessionMetadata`, `NativeUiCapability`, and the Find Session capabilities `SessionSearchSource` / `SessionSearchRunner`
+- **HarnessRegistry** - the enabled adapters: installed detection (cached, one shared probe), lookup (`get()` throws on an unknown id), and `has()` for ids read from stored data
 - **ClaudeHarness** - wraps `ClaudeSessionService` and `ClaudeAgentsService`; new chats
   choose their session ID up front, forks use `--resume … --fork-session --session-id …`,
   and live turn state comes from a transcript tail
@@ -57,7 +66,7 @@ generated files. The working animation uses CSS inside the SVG (`transform-box:
 view-box`), which Chromium plays in tree-icon `background-image`; honor
 `prefers-reduced-motion`.
 
-### Core Services (`src/services/`)
+### Core Services (`src/core/services/`)
 
 - **StorageService** - Persists repositories, chats, stars, PR checkouts, removal tombstones, terminal PIDs, the last observed Find Session engine choice, and the last ten Find Session searches in `globalState`; migrates legacy `claudeSessionId` records on read
 - **GitService** - Git through argument arrays: worktrees, the Changes panel listing, discards, merges, and rebases. Local commands run synchronously; clone and fetch are async so the network never blocks the extension host
@@ -110,7 +119,7 @@ view-box`), which Chromium plays in tree-icon `background-image`; honor
 - **HarnessWatcherRegistry** - Dispatches pending-chat registration and name events by `chat.harness`
 - **SessionSearchService** - Find Session: runs one harness's CLI as a read-only agent over every searchable harness's records, lets a source prepare records it cannot expose as files, checks each reply against the answer's JSON Schema and sends a broken one back to the agent, confirms each match with its harness, and keeps finished searches (see [Find Session](#find-session))
 
-### Tree Providers (`src/providers/`)
+### Tree Providers (`src/core/providers/`)
 
 - **WorkspacesTreeProvider** - Main sidebar tree: Repository → Worktree → Session hierarchy, with a plain folder standing in for a repository that has no worktrees of its own. Quiet by design: session rows show only a short relative time (`16m`, `2h`, `3d`) or `new`, a star, and the harness mark; the tooltip carries the session brief (last exchange, then message count/model/agent, skipping fields the harness does not provide — Claude supplies only summary, last exchange, and last activity). A harness whose previews are `lazy` (opencode) gets no tooltip at render time; `resolveTreeItem` fetches its preview when the row is hovered, so a render never starts an export and the adapter's own cache keeps hovering cheap. Session rows keep one stable order: newest first by `createdAt`. Opening, resuming, or starring a chat changes its mark and description but never its position, so the list does not jump under the cursor. Repository icons are neutral — `repo` for a git repository, `folder` for a plain folder; worktree color marks state only — amber for the open workspace, blue for a PR checkout, green for the main worktree, neutral otherwise. Worktrees show `↑n`/`↓n` ahead/behind from `GitService.getAheadBehind()` (15s cache). Repository rows follow the stored array order; **Move Up** / **Move Down** swap a row with its nearest visible neighbor, so the order needs no field of its own.
 The Changes and All Files panels show one worktree at a time. `extension.ts` owns that
@@ -121,7 +130,7 @@ panels.
 - **SessionSearchTreeProvider** - The Find Session view: a row per question whose plain-text tooltip holds the agent's answer, the engine, and the steps it took, and a row per confirmed session beneath it. The view is listed collapsed; with `pitwall.sessionSearch.alwaysShowView` off it appears only once a search exists (`pitwall.hasSessionSearches`).
 - **FilesTreeProvider** - All Files browser for the active worktree. Directories sort first, names sort naturally, rows tooltip their worktree-relative path, and an unselected panel returns a placeholder row.
 
-### Commands (`src/commands/`)
+### Commands (`src/core/commands/`)
 
 Commands are registered in `package.json` under `contributes.commands` and implemented in:
 - `repository.ts` - Add/remove/clone workspace roots (plain folders or git repositories)
@@ -141,12 +150,12 @@ Commands are registered in `package.json` under `contributes.commands` and imple
 4. The watcher links the chat to the native session ID when the harness creates it; Claude and Pi already know the expected ID and wait for that exact record
 5. Resume, fork, and previews dispatch through `registry.get(chat.harness)`
 
-Forks are named with numeric suffixes by `nextForkName()` in `src/utils/text.ts`:
+Forks are named with numeric suffixes by `nextForkName()` in `src/core/utils/text.ts`:
 forking `Fix icons` creates `Fix icons (1)`, and forking that creates
 `Fix icons (1) (1)`; sibling forks increment until the name is unique in the target
 worktree. There is no `Fork of …` prefix.
 
-### Key Types (`src/types.ts`)
+### Key Types (`src/core/types.ts`)
 
 - `Repository` - Workspace root (a git repository or a plain folder) with name and root path
 - `Worktree` - Branch checked out in a directory
@@ -241,7 +250,7 @@ host starts silently.
 
 ### Opening in the Claude Code extension UI
 
-`pitwall.openClaudeUi` is an explicit handoff for an existing Claude session. It resolves the native ID, verifies the transcript exists, and calls `ClaudeHarness.nativeUi.openSession()` (`ClaudeUi` in `src/harnesses/claudeUi.ts`). The extension UI runs in the first VS Code workspace folder, so the service refuses a session from another worktree (`workspace-mismatch`) and the command offers to open that worktree in a new window. The extension and folder are checked before a running terminal is touched; only then is the terminal disposed after confirmation, and the command waits for its close event before handing over, so two processes never share one session.
+`pitwall.openClaudeUi` is an explicit handoff for an existing Claude session. It resolves the native ID, verifies the transcript exists, and calls `ClaudeHarness.nativeUi.openSession()` (`ClaudeUi` in `src/harnesses/claude/claudeUi.ts`). The extension UI runs in the first VS Code workspace folder, so the service refuses a session from another worktree (`workspace-mismatch`) and the command offers to open that worktree in a new window. The extension and folder are checked before a running terminal is touched; only then is the terminal disposed after confirmation, and the command waits for its close event before handing over, so two processes never share one session.
 
 The service prefers the extension command `claude-vscode.editor.open` with `ViewColumn.Active` and `{ programmatic: 'honor-preferred-location' }`, which respects `claudeCode.preferredLocation` and opens where the session's terminal or the user's files are. Without a column, the extension creates a new right-hand editor group and may lock it. If the command is not registered it uses the documented `vscode://anthropic.claude-code/open?session=…` URI. A failing command is reported rather than falling back, because the URI starts a fresh conversation when the session is not found.
 
@@ -346,7 +355,7 @@ The transport is newline-delimited JSON-RPC with per-request timeouts.
 extension's conversation panel. The extension's sidebar deep link does not create an
 editor tab, so it carries neither an exact thread identity nor the active-group placement;
 the panel is the surface its own `chatgpt.newCodexPanel` command opens. `CodexUi`
-(`src/harnesses/codexUi.ts`) opens `openai-codex://route/local/<threadId>` with `vscode.openWith` and the
+(`src/harnesses/codex/codexUi.ts`) opens `openai-codex://route/local/<threadId>` with `vscode.openWith` and the
 `chatgpt.conversationEditor` view type, in `ViewColumn.Active`, focused and without
 preview. That URI is the resource the extension's chat-session provider uses for a
 thread and the route its `resolveCustomEditor` turns into the thread's `initialRoute`. A

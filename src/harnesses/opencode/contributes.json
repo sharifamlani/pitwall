@@ -1,0 +1,45 @@
+{
+  "commands": [
+    {
+      "command": "pitwall.newOpencodeChat",
+      "title": "New opencode Session",
+      "category": "Pitwall",
+      "icon": "$(code)"
+    }
+  ],
+  "configuration": [
+    {
+      "title": "Agent Commands",
+      "properties": {
+        "pitwall.harnessCommands.opencode": {
+          "type": "string",
+          "default": "opencode",
+          "markdownDescription": "The command that starts opencode. Change it when `opencode` is not on your PATH (use the full path) or you launch it through a wrapper. Reload the window after changing it.",
+          "order": 2
+        }
+      }
+    }
+  ],
+  "menus": {
+    "pitwall.newSession": [
+      {
+        "command": "pitwall.newOpencodeChat",
+        "when": "pitwall.opencodeInstalled",
+        "group": "1_harness@4"
+      }
+    ],
+    "pitwall.newSessionContext": [
+      {
+        "command": "pitwall.newOpencodeChat",
+        "when": "pitwall.opencodeInstalled",
+        "group": "1_harness@4"
+      }
+    ]
+  },
+  "x-harness-enum": {
+    "pitwall.defaultHarness": {
+      "label": "opencode",
+      "description": "The New Session button starts an opencode session."
+    }
+  }
+}

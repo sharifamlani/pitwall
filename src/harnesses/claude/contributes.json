@@ -1,0 +1,99 @@
+{
+  "commands": [
+    {
+      "command": "pitwall.newClaudeChat",
+      "title": "New Claude Code Session",
+      "category": "Pitwall",
+      "icon": "$(sparkle)"
+    },
+    {
+      "command": "pitwall.newClaudeChatInTerminal",
+      "title": "New Claude Code Session in Terminal",
+      "category": "Pitwall",
+      "icon": "$(terminal)"
+    },
+    {
+      "command": "pitwall.newClaudeChatInUi",
+      "title": "New Claude Code Session in Claude Code UI",
+      "category": "Pitwall",
+      "icon": "$(comment-discussion)"
+    },
+    {
+      "command": "pitwall.openClaudeUi",
+      "title": "Open in Claude Code UI",
+      "category": "Pitwall",
+      "icon": "$(comment-discussion)"
+    }
+  ],
+  "configuration": [
+    {
+      "title": "Agent Commands",
+      "properties": {
+        "pitwall.harnessCommands.claude": {
+          "type": "string",
+          "default": "claude",
+          "markdownDescription": "The command that starts Claude Code. Change it when `claude` is not on your PATH (use the full path) or you launch it through a wrapper. Reload the window after changing it.",
+          "order": 1
+        }
+      }
+    }
+  ],
+  "menus": {
+    "view/item/context": [
+      {
+        "command": "pitwall.openClaudeUi",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)ClaudeUi$/ && pitwall.claudeUiInstalled",
+        "group": "inline@3"
+      },
+      {
+        "command": "pitwall.openClaudeUi",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)ClaudeUi$/ && !listMultiSelection",
+        "group": "1_open@3"
+      }
+    ],
+    "pitwall.newSession": [
+      {
+        "command": "pitwall.newClaudeChat",
+        "when": "(config.pitwall.defaultSessionSurface == 'ui' && pitwall.claudeUiInstalled) || (config.pitwall.defaultSessionSurface != 'ui' && pitwall.claudeInstalled)",
+        "group": "1_harness@1"
+      },
+      {
+        "command": "pitwall.newClaudeChatInTerminal",
+        "when": "config.pitwall.defaultSessionSurface == 'ui' && pitwall.claudeInstalled",
+        "group": "1_harness@2"
+      },
+      {
+        "command": "pitwall.newClaudeChatInUi",
+        "when": "config.pitwall.defaultSessionSurface != 'ui'",
+        "group": "1_harness@3"
+      }
+    ],
+    "pitwall.newSessionContext": [
+      {
+        "command": "pitwall.newClaudeChat",
+        "when": "(config.pitwall.defaultSessionSurface == 'ui' && pitwall.claudeUiInstalled) || (config.pitwall.defaultSessionSurface != 'ui' && pitwall.claudeInstalled)",
+        "group": "1_harness@1"
+      },
+      {
+        "command": "pitwall.newClaudeChatInTerminal",
+        "when": "config.pitwall.defaultSessionSurface == 'ui' && pitwall.claudeInstalled",
+        "group": "1_harness@2"
+      },
+      {
+        "command": "pitwall.newClaudeChatInUi",
+        "when": "config.pitwall.defaultSessionSurface != 'ui'",
+        "group": "1_harness@3"
+      }
+    ]
+  },
+  "x-harness-enum": {
+    "pitwall.defaultHarness": {
+      "label": "Claude Code",
+      "description": "The New Session button starts a Claude Code session."
+    },
+    "pitwall.sessionSearch.harness": {
+      "label": "Claude Code",
+      "description": "Claude Code runs the search with read-only file tools."
+    }
+  }
+}

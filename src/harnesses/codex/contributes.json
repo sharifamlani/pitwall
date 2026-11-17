@@ -1,0 +1,99 @@
+{
+  "commands": [
+    {
+      "command": "pitwall.newCodexChat",
+      "title": "New Codex Session",
+      "category": "Pitwall",
+      "icon": "$(terminal)"
+    },
+    {
+      "command": "pitwall.newCodexChatInTerminal",
+      "title": "New Codex Session in Terminal",
+      "category": "Pitwall",
+      "icon": "$(terminal)"
+    },
+    {
+      "command": "pitwall.newCodexChatInUi",
+      "title": "New Codex Session in Codex UI",
+      "category": "Pitwall",
+      "icon": "$(comment-discussion)"
+    },
+    {
+      "command": "pitwall.openCodexUi",
+      "title": "Open in Codex UI",
+      "category": "Pitwall",
+      "icon": "$(comment-discussion)"
+    }
+  ],
+  "configuration": [
+    {
+      "title": "Agent Commands",
+      "properties": {
+        "pitwall.harnessCommands.codex": {
+          "type": "string",
+          "default": "codex",
+          "markdownDescription": "The command that starts Codex. Change it when `codex` is not on your PATH (use the full path) or you launch it through a wrapper. Reload the window after changing it.",
+          "order": 3
+        }
+      }
+    }
+  ],
+  "menus": {
+    "view/item/context": [
+      {
+        "command": "pitwall.openCodexUi",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)CodexUi$/ && pitwall.codexUiInstalled",
+        "group": "inline@3"
+      },
+      {
+        "command": "pitwall.openCodexUi",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)CodexUi$/ && !listMultiSelection",
+        "group": "1_open@3"
+      }
+    ],
+    "pitwall.newSession": [
+      {
+        "command": "pitwall.newCodexChat",
+        "when": "(config.pitwall.defaultSessionSurface == 'ui' && pitwall.codexUiInstalled) || (config.pitwall.defaultSessionSurface != 'ui' && pitwall.codexInstalled)",
+        "group": "1_harness@5"
+      },
+      {
+        "command": "pitwall.newCodexChatInTerminal",
+        "when": "config.pitwall.defaultSessionSurface == 'ui' && pitwall.codexInstalled",
+        "group": "1_harness@6"
+      },
+      {
+        "command": "pitwall.newCodexChatInUi",
+        "when": "config.pitwall.defaultSessionSurface != 'ui'",
+        "group": "1_harness@7"
+      }
+    ],
+    "pitwall.newSessionContext": [
+      {
+        "command": "pitwall.newCodexChat",
+        "when": "(config.pitwall.defaultSessionSurface == 'ui' && pitwall.codexUiInstalled) || (config.pitwall.defaultSessionSurface != 'ui' && pitwall.codexInstalled)",
+        "group": "1_harness@5"
+      },
+      {
+        "command": "pitwall.newCodexChatInTerminal",
+        "when": "config.pitwall.defaultSessionSurface == 'ui' && pitwall.codexInstalled",
+        "group": "1_harness@6"
+      },
+      {
+        "command": "pitwall.newCodexChatInUi",
+        "when": "config.pitwall.defaultSessionSurface != 'ui'",
+        "group": "1_harness@7"
+      }
+    ]
+  },
+  "x-harness-enum": {
+    "pitwall.defaultHarness": {
+      "label": "Codex",
+      "description": "The New Session button starts a Codex session."
+    },
+    "pitwall.sessionSearch.harness": {
+      "label": "Codex",
+      "description": "Codex runs the search in its read-only sandbox."
+    }
+  }
+}

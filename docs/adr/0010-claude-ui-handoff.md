@@ -64,7 +64,7 @@ global profile; per-chat profiles remain a terminal-only feature.
 Ship a narrow, explicit handoff for an **existing** Claude session:
 
 - Add an optional `NativeUiCapability` to `HarnessAdapter`, with `openSession()`
-  on the capability. `ClaudeHarness` implements it with `ClaudeUi` (`src/harnesses/claudeUi.ts`);
+  on the capability. `ClaudeHarness` implements it with `ClaudeUi` (`src/harnesses/claude/claudeUi.ts`);
   commands and providers stay harness-agnostic.
 - Contribute `pitwall.openClaudeUi` (**Open in Claude Code UI**) for Claude chat
   rows. The row's context value gets a `ClaudeUi` suffix from the adapter, and the

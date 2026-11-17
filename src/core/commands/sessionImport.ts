@@ -70,7 +70,8 @@ export function registerSessionImportCommands(
 
     const imported = importedKeys([worktree]);
     const available = sessions.filter(
-      ({ harness, session }) => !imported.has(harnessSessionKey(harness, session.sessionId))
+      ({ harness, session }) =>
+        harnessRegistry.has(harness) && !imported.has(harnessSessionKey(harness, session.sessionId))
     );
     if (available.length === 0) {
       vscode.window.showInformationMessage('All existing sessions have already been imported.');

@@ -18,6 +18,7 @@ import {
   SessionSearchRunner,
 } from '../../src/core/harness/types';
 import { ChatSession, HarnessId, Worktree } from '../../src/core/types';
+import { HARNESS_IDS } from '../../src/harnesses';
 
 /** A terminal created by the stub. */
 export interface FakeTerminal {
@@ -119,11 +120,17 @@ export function memento() {
   };
 }
 
+/**
+ * Storage over in-memory mementos. By default every harness in the repo is
+ * known; pass `isKnownHarness` (usually registry membership) to model a build
+ * with some switched off.
+ */
 export function makeStorage(
   globalState = memento(),
-  workspaceState = memento()
+  workspaceState = memento(),
+  isKnownHarness: (id: string) => boolean = (id) => HARNESS_IDS.includes(id)
 ): StorageService {
-  return new StorageService({ globalState, workspaceState } as unknown as vscode.ExtensionContext);
+  return new StorageService({ globalState, workspaceState } as unknown as vscode.ExtensionContext, isKnownHarness);
 }
 
 /** A temp directory removed when the test ends, pass or fail. */

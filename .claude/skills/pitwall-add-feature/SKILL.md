@@ -35,25 +35,25 @@ Do not start with a file. Start with these answers:
 
 | Change | Home |
 | --- | --- |
-| Differs per harness | `src/harnesses/<Harness>Harness.ts` (add a method or capability first) |
-| New-session linkage | `src/services/<Harness>SessionWatcher.ts` + `HarnessWatcherRegistry` |
-| User action or flow | `src/commands/*.ts` + `package.json` |
-| Tree row, tooltip, icon state | `src/providers/*.ts`, `src/harnesses/sessionUtils.ts` |
-| Persistence | `src/services/StorageService.ts` (migrate on read) |
-| Git or paths | `src/services/GitService.ts`, `src/utils/paths.ts` |
-| External process/protocol | A service in `src/services/` |
-| Command/menu/setting/context key | `package.json` + `src/extension.ts` |
+| Differs per harness | `src/harnesses/<id>/<Harness>Harness.ts` (add a method or capability first) |
+| New-session linkage | `src/harnesses/<id>/<Harness>SessionWatcher.ts` + `HarnessWatcherRegistry` |
+| User action or flow | `src/core/commands/*.ts` + manifest fragment |
+| Tree row, tooltip, icon state | `src/core/providers/*.ts`, `src/core/harness/sessionUtils.ts` |
+| Persistence | `src/core/services/StorageService.ts` (migrate on read) |
+| Git or paths | `src/core/services/GitService.ts`, `src/core/utils/paths.ts` |
+| External process/protocol | A service in `src/core/services/` (or `src/harnesses/<id>/` when only one harness uses it) |
+| Command/menu/setting/context key | `manifest/core.contributes.json` or `src/harnesses/<id>/contributes.json` (then `node scripts/build-manifest.mjs`) + `src/extension.ts` |
 
 Never put `if (chat.harness === ...)` in a command, provider, or shared service. Put the
 difference behind `HarnessAdapter` or a capability flag.
 
 ## 3. Implement in order
 
-1. **Seam first, only if needed.** Change `src/harnesses/types.ts` or `src/types.ts` before
+1. **Seam first, only if needed.** Change `src/core/harness/types.ts` or `src/core/types.ts` before
    the implementation, and keep the interface as small as the feature allows.
 2. **Lower layer next.** External I/O and parsing in a service; harness behavior in the
    adapter. Accept injected dependencies so tests can fake the boundary.
-3. **Wire the user path.** Register in `src/extension.ts`, contribute in `package.json`, and
+3. **Wire the user path.** Register in `src/extension.ts`, contribute in the manifest fragment (`manifest/core.contributes.json`, or `src/harnesses/<id>/contributes.json` when it names one harness) and run `node scripts/build-manifest.mjs`, and
    pick the right surface: inline only for the primary action; everything else in the `…`
    or context menu. Dialog titles end in `…`. Gate harness entries on
    `pitwall.<harness>Installed`.
@@ -71,9 +71,9 @@ difference behind `HarnessAdapter` or a capability flag.
 
 ### A new command
 
-- Add it to `contributes.commands` in `package.json` with a title and codicon.
+- Add it to `commands` in the manifest fragment (`manifest/core.contributes.json`, or `src/harnesses/<id>/contributes.json` when it names one harness) and run `node scripts/build-manifest.mjs`; `package.json` is generated. Give it a title and codicon.
 - Add menu entries with the correct `when` clause and group. Dialog commands end in `…`.
-- Register it in the matching `src/commands/*.ts` file and make sure the register function
+- Register it in the matching `src/core/commands/*.ts` file and make sure the register function
   is called from `extension.ts`.
 - Test it in `test/dry/chat-commands.test.ts` (or the relevant command test): register on
   the stub, fake storage/terminals, execute the command, assert the result.
