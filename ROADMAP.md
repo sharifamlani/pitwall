@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.26 · 2026-11-17
+> v0.27 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 2 — Windows parity
-- **Current step:** Phase 2: Task 11 Steps 1–3 merged (row 2.3 ✅; Windows CI runs the full suite and packages the .vsix). Open: row 2.14 reopened (live needs-you failure, root cause in progress); testing walk of Smoke 12 in progress.
+- **Current step:** Phase 2: every build PR merged (incl. Task 6b restore identity, needs-you R36–R41). Next: testing agent's live re-walk (S1, R1(a–f), L1, F-a) on `68ad3d2` → independent evaluator → Sharif's R1(b) timing decision → v0.3.0.
 - **Last update:** 2026-11-17
-- **Next action:** rule on the needs-you root cause → fix PR → full Smoke 12 → independent evaluator → v0.3.0.
+- **Next action:** live re-walk on `68ad3d2`.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -161,7 +161,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 2.8 | `build-manifest.mjs`: fail on duplicate command ids, setting keys or keybindings between core and harness fragments (final review I2) | ✅ | ✅ | 2026-11-17 · PR #9 `2a5bef8` → merge `1830558` | final review |
 | 2.9 | `package.json` `files` allowlist so any `vsce package` (not only verify.sh) ships only out/, resources/, the manifest and licence docs; must land before the first public `.vsix` (final review I3) | ✅ | ✅ | 2026-11-17 · PR #7 `186a384` → merge `131a2d5` | final review |
 | 2.10 | CI runs the privacy gate, gitleaks and the vsix allowlist check (final review I4) | ✅ | ✅ | 2026-11-17 · PR #7 `186a384` → merge `131a2d5`; probe PR #14 run `44025011704`: privacy failure at path gate | final review |
-| 2.11 | Windows quit/restore with a live chat: ~4 s activation wait, revived tab not resumed, row click opens a duplicate tab, reload then loses the duplicate (testing UJ run 6) | ✅ (one PID wait, late PIDs/titles recorded, shell-aware resume line, readiness wait, stale-echo-safe PID records; Smoke 7 15/15 incl. under load) | ✅ | 2026-11-17 · PR #18 `8cac588` → merge `1914f21` | testing UJ run 6 |
+| 2.11 | Windows quit/restore with a live chat: ~4 s activation wait, revived tab not resumed, row click opens a duplicate tab, reload then loses the duplicate (testing UJ run 6) | ✅ (one PID wait, late PIDs/titles recorded, shell-aware resume line, readiness wait, stale-echo-safe PID records; Smoke 7 15/15 incl. under load); follow-up Task 6b (R37/R39/R42/R43): one terminal per chat across reloads, activation never waits, renames check-and-undo, resume line guarded; live re-walk pending | ✅ | 2026-11-17 · PR #18 `8cac588` → merge `1914f21` · PR #22 `cd8ebd3` → merge `68ad3d2` | testing UJ run 6 |
 | 2.12 | 9 Minor findings from the Phase 1 final review (`docs/progress_reports/phase1-final-review.md`) and the "No tree item with id" log line after reload | ✅ (M1–M3, M5 PR #13; M4 PR #9; M6–M8 PR #7; M9 + log line PR #12, live-verified UJ run 8: 0 "No tree item" in 5 starts + hidden-view start) | ✅ | 2026-11-17 · merges `1830558`, `0d520bb`, `131a2d5`, `0095508` | final review, UJ run 6 |
 | 2.13 | New-chat launch with a custom full-path Claude command (`C:\...\claude.exe`) fails in PowerShell (a single-quoted path needs the call operator `&`); finding F1 from the Phase 2 plan | ✅ (`& ` before a quoted command in PowerShell, for new chats and Find Session resume) | ✅ | 2026-11-17 · PR #18 `8cac588` → merge `1914f21` | Phase 2 plan F1 |
 | 2.14 | The Claude agents poll (`claude agents --json`, behind "needs you", ADR 0006) runs on Windows: `ClaudeAgentsService` calls `execFile` directly, so an npm `claude.cmd` fails (ENOENT / EINVAL); route it through `harnessInvocation` (finding F2, QA). Ruling R31: already routed through `harnessInvocation` at `fetchStates`; F2 did not reproduce through the service, so guards only | ~ fixes merged (R36, R38, R40, R41); live S1 re-walk pending, after Task 6b merges | ✅ | 2026-11-17 · PR #16 `d255e13` → `34003bd` (guards) · PR #20 `655e1aa` → merge `a82f0f5` (R36/R38) · PR #21 `f4c5df5` → merge `3d0bd98` (R40/R41) | QA wave B, rulings R30, R31 |
@@ -317,3 +317,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.24 · 2026-11-17.** Needs-you fix merged → `a82f0f5` (R36 + R38): a waiting chat is listed until answered or truly in front, including after a reload; one toast per wait; orange row mark. Row 2.14 closes after the testing agent re-walks S1 live.
 - **v0.25 · 2026-11-17.** Finding F4 is placed as Phase 4 row 4.2b: terminal identity rests on tab titles, and the editor renames the focused terminal rather than the target, so Phase 2 contains it with check-and-undo (R39) and Phase 4 spikes a title-free identity.
 - **v0.26 · 2026-11-17.** Needs-you timing fix merged → `3d0bd98` (R40/R41): a toast fires only if the chat was not in front after the prompt appeared (anchored on the transcript write, clamped to the last no-wait poll); no stale re-mark after a deny. Row 2.14 closes after the live S1 re-walk, which waits for Task 6b.
+- **v0.27 · 2026-11-17.** Task 6b merged → `68ad3d2`. Root cause: `renameWithArg` renames the keyboard-focused terminal, not the target. Fixes: check-and-undo renames with event-triggered retries; no second terminal per chat; activation never waits on terminals; the hidden-view reveal is deferred; a leading space guards resume lines typed into revived tabs (R42); Pitwall's own background shows don't count as the user looking (R43). Smoke 7 15/15 plus QA 5/5. Finding F4 (title-free identity) is row 4.2b.
