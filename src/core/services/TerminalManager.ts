@@ -791,6 +791,10 @@ export class TerminalManager {
    * focus is handled normally. The tree uses this to ignore selection changes
    * caused by the background retitle pass.
    */
+  isPitwallActivation(_chatId: string): boolean {
+    throw new Error('not implemented');
+  }
+
   consumeBackgroundActivation(terminal: vscode.Terminal): boolean {
     if (this.backgroundActivation !== terminal) {
       return false;

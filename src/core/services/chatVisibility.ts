@@ -10,6 +10,8 @@ export interface ChatVisibilitySources {
   adapters(): readonly HarnessAdapter[];
   /** The chat an editor terminal tab belongs to, by the tab's title. */
   chatIdForTerminalName(name: string): string | undefined;
+  /** Whether the chat's tab is in front only because Pitwall showed it (R43). */
+  isPitwallActivation?(chatId: string): boolean;
 }
 
 /** The chat whose native-UI tab is the active editor tab, if any. */

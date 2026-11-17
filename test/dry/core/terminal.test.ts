@@ -11,8 +11,11 @@ import { PROCESS_ID_TIMEOUT_MS, terminalTitle } from '../../../src/core/services
 import { quoteShellArgument } from '../../../src/core/harness/cli';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { ClaudeHarness } from '../../../src/harnesses/claude/ClaudeHarness';
-import { HarnessAdapter } from '../../../src/core/harness/types';
+import { HarnessAdapter, HarnessLiveState } from '../../../src/core/harness/types';
 import { ChatSession, STORAGE_KEYS } from '../../../src/core/types';
+import { SessionAttentionService } from '../../../src/core/services/SessionAttentionService';
+import { NotificationService } from '../../../src/core/services/NotificationService';
+import * as chatVisibility from '../../../src/core/services/chatVisibility';
 import { chatRecord, fakeAdapter, FakeTerminal, flush, makeStorage, memento, shown, stub, waitFor, worktreeRecord } from '../support';
 
 beforeEach(() => stub.__reset());
@@ -1050,4 +1053,122 @@ test('R39 addendum: a command start in the active terminal while the user reads 
   assert.equal(tab.name, title, 'renamed in place');
   assert.equal(stub.window.activeTextEditor, editor);
   assert.equal(stub.window.__focusedTerminal, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// R43: Pitwall's own background shows are not the user looking at a chat.
+// The attention pipeline runs over the real TerminalManager, wired as in
+// extension.ts (visibility sources and onFrontMayChange → noteFront).
+// ---------------------------------------------------------------------------
+
+/**
+ * Needs-you attention over chat `chatId` with the extension's wiring. Every
+ * active-terminal change puts that terminal's tab in front of the one editor
+ * group, as the workbench does for an editor terminal, before the front-change
+ * listener reads it.
+ */
+function attentionOverTerminals(t: { after(fn: () => void): void }, f: ReturnType<typeof setup>, chatId: string) {
+  stub.window.__setWindowState({ focused: true });
+  const realNow = Date.now;
+  let offset = 0;
+  Date.now = () => realNow() + offset;
+  t.after(() => (Date.now = realNow));
+
+  const tabFor = (terminal: vscode.Terminal, isActive: boolean) => ({
+    get label() {
+      return terminal.name;
+    },
+    input: new vscode.TabInputTerminal(),
+    isPreview: false,
+    isActive,
+  });
+  const putInFront = (front: vscode.Terminal | undefined) => {
+    if (!front) return;
+    const tabs = stub.window.terminals.map((terminal) => tabFor(terminal as never, terminal === front));
+    stub.window.tabGroups.all = [{ isActive: true, viewColumn: 1, tabs, activeTab: tabs.find((tab) => tab.isActive) }] as never;
+  };
+  const tabs = vscode.window.onDidChangeActiveTerminal(putInFront);
+
+  let live: HarnessLiveState = { turnState: 'working', turnEndedAt: null };
+  const sessionId = f.chat(chatId).harnessSessionId!;
+  const adapter = fakeAdapter('claude', { getLiveStates: async () => new Map([[sessionId, live]]) });
+  const sources = {
+    getChats: () => f.storage.getChats(),
+    adapters: () => [],
+    chatIdForTerminalName: (name: string) => f.manager.getChatIdForTerminalName(name),
+    isPitwallActivation: (id: string) => f.manager.isPitwallActivation(id),
+  };
+  const isChatVisible = (id: string) => chatVisibility.isChatVisible(sources, id);
+  const service = new SessionAttentionService(
+    f.storage,
+    { get: () => adapter } as never,
+    new NotificationService(() => undefined, isChatVisible),
+    () => WORKTREE,
+    () => undefined,
+    () => true,
+    isChatVisible
+  );
+  const fronts = chatVisibility.onFrontMayChange(() => service.noteFront());
+  t.after(() => {
+    tabs.dispose();
+    fronts.forEach((subscription) => subscription.dispose());
+    service.dispose();
+  });
+  return {
+    service,
+    putInFront,
+    wait: () => (live = { turnState: 'working', turnEndedAt: null, waitingFor: 'permission prompt' }),
+    /** Poll on a 4 s tick, like the service's timer. */
+    ticks: async (count: number) => {
+      for (let i = 0; i < count; i++) {
+        offset += 4_000;
+        await service.poll();
+      }
+    },
+  };
+}
+
+const needsYouToasts = () => stub.__messages.map((args) => String(args[0])).filter((text) => text.includes('needs your input'));
+
+test('a background retitle of a waiting chat is not the user looking at it: its toast still fires, once (R43)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: 'c43c4300-wait', name: 'Waiting', harnessSessionId: 'wait-1' }] });
+  const { tab, title } = await slowChat(f, 'c43c4300-wait');
+  tab.name = 'Windows PowerShell'; // the shell's title, so the late start retitles it
+  const other = f.restoredTab('the user’s shell', 9431);
+  const a = attentionOverTerminals(t, f, 'c43c4300-wait');
+  stub.window.__setActiveTerminal(other);
+  assert.equal(stub.window.tabGroups.activeTabGroup?.activeTab?.label, 'the user’s shell', 'another terminal is in front');
+  await a.service.poll(true);
+
+  a.wait(); // the prompt appears while the user looks at their own shell
+  const shows = recordShows(tab);
+  stub.window.__integrateShell(tab); // its late command start retitles it in the background
+  await waitFor(() => tab.name === title && stub.window.activeTerminal === other, 'the retitle and the return to the user’s shell');
+  assert.deepEqual(shows, [true], 'Pitwall showed the chat tab once, without focus');
+
+  await a.ticks(10);
+  assert.equal(needsYouToasts().length, 1, 'the wait began unseen, so it toasts exactly once');
+  assert.ok(a.service.needsYou('c43c4300-wait'), 'still marked needs-you');
+  assert.deepEqual(a.service.sessionsNeedingYou(), ['c43c4300-wait']);
+});
+
+test('guard: the user activating a waiting chat during the wait still holds its toast back (R43)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: 'c43c4300-seen', name: 'Seen', harnessSessionId: 'seen-1' }] });
+  const { tab } = await slowChat(f, 'c43c4300-seen');
+  const other = f.restoredTab('the user’s shell', 9432);
+  const a = attentionOverTerminals(t, f, 'c43c4300-seen');
+  stub.window.__setActiveTerminal(other);
+  await a.service.poll(true);
+
+  a.wait();
+  stub.window.__focusTerminal(tab); // the user clicks the chat's tab and reads the prompt
+  await flush();
+  stub.window.__focusTerminal(other); // and goes back to their shell without answering
+  await flush();
+
+  await a.ticks(10);
+  assert.deepEqual(needsYouToasts(), [], 'the user saw the prompt: no toast');
+  assert.deepEqual(a.service.sessionsNeedingYou(), ['c43c4300-seen'], 'still listed for Go to Next');
 });
