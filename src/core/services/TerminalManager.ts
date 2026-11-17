@@ -78,6 +78,12 @@ interface FrontView {
 }
 
 /** The two phases of terminal restore. Activation awaits neither. */
+/**
+ * A chat's worktree by id. It may wait: on a first start the list knows a
+ * repository's linked worktrees only once git has listed them.
+ */
+export type WorktreeLookup = (worktreeId: string) => Worktree | undefined | PromiseLike<Worktree | undefined>;
+
 export interface RestoreSync {
   /**
    * Every PID read has arrived or waited one bounded PID wait. A terminal
@@ -117,7 +123,7 @@ export class TerminalManager {
    * Resolves a worktree for a restored chat. Set by the restore pass so a
    * terminal that appears later can register its chat with the harness watcher.
    */
-  private getWorktreeById?: (worktreeId: string) => Worktree | undefined;
+  private getWorktreeById?: WorktreeLookup;
 
   /**
    * Chats whose restored tab is being resumed. The harness resumability check
@@ -809,7 +815,7 @@ export class TerminalManager {
     terminal: vscode.Terminal,
     read: Thenable<number | undefined>,
     recordedPids: () => Record<string, number>,
-    getWorktree?: (worktreeId: string) => Worktree | undefined
+    getWorktree?: WorktreeLookup
   ): void {
     this.pendingAdoptions.add(terminal);
     void Promise.resolve(read)
@@ -1114,9 +1120,7 @@ export class TerminalManager {
    * Until it finishes, `openChat` treats a candidate tab as the chat's
    * terminal, so a click cannot launch a second agent.
    */
-  beginRestoreSync(
-    getWorktree: (worktreeId: string) => Worktree | undefined
-  ): RestoreSync {
+  beginRestoreSync(getWorktree: WorktreeLookup): RestoreSync {
     this.getWorktreeById = getWorktree;
     const chats = this.storageService.getChats();
     const recordedPids = this.storageService.getTerminalPids();
@@ -1127,14 +1131,17 @@ export class TerminalManager {
     // read rather than a second one.
     const pidReads = new Map<vscode.Terminal, Thenable<number | undefined>>();
 
-    // Resolve each worktree once. The provider caches what it lists, so a
-    // cold lookup loads each repository at most once.
-    const worktrees = new Map<string, Worktree | undefined>();
-    const resolveWorktree = (worktreeId: string): Worktree | undefined => {
-      if (!worktrees.has(worktreeId)) {
-        worktrees.set(worktreeId, getWorktree(worktreeId));
+    // Resolve each worktree once. The lookup may wait for git (a first
+    // start lists linked worktrees in the background), so each answer is
+    // kept as the promise of it, and an answer is the listed one.
+    const worktrees = new Map<string, Promise<Worktree | undefined>>();
+    const resolveWorktree = (worktreeId: string): Promise<Worktree | undefined> => {
+      let worktree = worktrees.get(worktreeId);
+      if (!worktree) {
+        worktree = Promise.resolve(getWorktree(worktreeId));
+        worktrees.set(worktreeId, worktree);
       }
-      return worktrees.get(worktreeId);
+      return worktree;
     };
 
     // Only terminals that can be adopted or resumed need their PID.
@@ -1196,7 +1203,7 @@ export class TerminalManager {
     terminal: vscode.Terminal,
     recordedPids: Record<string, number>,
     pid: number,
-    getWorktree?: (worktreeId: string) => Worktree | undefined
+    getWorktree?: WorktreeLookup
   ): Promise<void> {
     if (
       terminal.exitStatus !== undefined ||
@@ -1221,7 +1228,7 @@ export class TerminalManager {
       this.storageService.updateChat(chatId, { status: 'active' });
     }
     if (chat && !chat.harnessSessionId && getWorktree) {
-      const worktree = getWorktree(chat.worktreeId);
+      const worktree = await getWorktree(chat.worktreeId);
       if (worktree) {
         this.registerPendingChat(chat, worktree.path);
       }
@@ -1245,7 +1252,7 @@ export class TerminalManager {
     recordedPids: Record<string, number>,
     pids: Map<vscode.Terminal, number | undefined>,
     pidReads: Map<vscode.Terminal, Thenable<number | undefined>>,
-    getWorktree: (worktreeId: string) => Worktree | undefined
+    getWorktree: WorktreeLookup
   ): Promise<void> {
     const chatsByShortId = new Map<string, ChatSession>();
     const ambiguous = new Set<string>();
@@ -1379,7 +1386,7 @@ export class TerminalManager {
         // The chat may have changed since the restore candidates were
         // collected (for example, a click minted a pending session id).
         const latest = this.storageService.getChat(chat.id) ?? chat;
-        const worktree = getWorktree(latest.worktreeId);
+        const worktree = await getWorktree(latest.worktreeId);
         if (!worktree) {
           this.restoringChats.delete(chat.id);
           return undefined;

@@ -119,7 +119,9 @@ export async function activate(context: vscode.ExtensionContext) {
   // background: activation never waits for a PID. A click on a chat whose
   // surviving tab is still waiting for its PID waits for that adoption in
   // openChat instead, so it cannot start a second agent.
-  const restore = terminalManager.beginRestoreSync((id) => workspacesProvider.getWorktreeById(id));
+  // A revived tab's worktree may be one git has not listed yet (a first
+  // start): the lookup waits for it, taking its turn behind the list's.
+  const restore = terminalManager.beginRestoreSync((id) => workspacesProvider.getWorktreeByIdAsync(id, { urgent: false }));
   void restore.complete.catch((error) => console.error('Pitwall: restoring terminals failed', error));
 
   const filesProvider = new FilesTreeProvider();
@@ -471,11 +473,14 @@ export async function activate(context: vscode.ExtensionContext) {
     }
   }
 
-  // Start on the worktree that matches the open workspace folder. Reveal is
-  // best-effort: the row may not have rendered yet.
+  // Start on the worktree that matches the open workspace folder, which may
+  // be a linked worktree git has not listed yet. Reveal is best-effort: the
+  // row may not have rendered yet.
   const folderPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  const startWorktree = folderPath ? workspacesProvider.findWorktreeByPath(folderPath) : undefined;
-  if (startWorktree) {
+  const showStartWorktree = (startWorktree: Worktree | undefined) => {
+    if (!startWorktree) {
+      return;
+    }
     showWorktree(startWorktree);
     const reveal = () =>
       setTimeout(() => {
@@ -497,6 +502,17 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       });
       context.subscriptions.push(once);
+    }
+  };
+  if (folderPath) {
+    const known = workspacesProvider.findWorktreeByPath(folderPath);
+    if (known) {
+      showStartWorktree(known);
+    } else {
+      // Not known until git lists it; a selection made meanwhile wins.
+      void workspacesProvider
+        .findWorktreeByPathAsync(folderPath, { urgent: false })
+        .then((listed) => (shownWorktree ? undefined : showStartWorktree(listed)));
     }
   }
 

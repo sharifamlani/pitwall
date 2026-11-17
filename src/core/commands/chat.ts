@@ -35,7 +35,7 @@ export interface ChatCommandDeps {
   terminalManager: TerminalManager;
   workspacesProvider: Pick<
     WorkspacesTreeProvider,
-    'getWorktreeById' | 'getWorktreeForItem' | 'isGitWorktree'
+    'getWorktreeById' | 'getWorktreeByIdAsync' | 'getWorktreeForItem' | 'isGitWorktree'
   >;
   harnessRegistry: HarnessRegistry;
   harnessWatcherRegistry: Pick<HarnessWatcherRegistry, 'registerPendingChat'>;
@@ -134,9 +134,13 @@ export function registerChatCommands(
     return active;
   };
 
-  /** The worktree a chat runs in, or an error when it no longer exists. */
-  const chatWorktree = (chat: ChatSession): Worktree | undefined => {
-    const worktree = workspacesProvider.getWorktreeById(chat.worktreeId);
+  /**
+   * The worktree a chat runs in, or an error when it no longer exists. Waits
+   * for git when the worktree is not known yet (a first start lists linked
+   * worktrees in the background).
+   */
+  const chatWorktree = async (chat: ChatSession): Promise<Worktree | undefined> => {
+    const worktree = await workspacesProvider.getWorktreeByIdAsync(chat.worktreeId);
     if (!worktree) {
       vscode.window.showErrorMessage('Could not find worktree for this session.');
     }
@@ -445,7 +449,7 @@ export function registerChatCommands(
       );
       return;
     }
-    const worktree = chatWorktree(chat);
+    const worktree = await chatWorktree(chat);
     if (worktree) {
       await openChatInNativeUi(chat, worktree, nativeUi);
     }
@@ -476,9 +480,9 @@ export function registerChatCommands(
   };
 
   /** A row's chat that has a native session to fork, and its worktree. */
-  const forkSource = (
+  const forkSource = async (
     item?: WorkspaceTreeItem
-  ): { chat: LinkedChat; worktree: Worktree } | undefined => {
+  ): Promise<{ chat: LinkedChat; worktree: Worktree } | undefined> => {
     const chat = rowChat(item);
     if (!chat) {
       return undefined;
@@ -489,7 +493,7 @@ export function registerChatCommands(
       );
       return undefined;
     }
-    const worktree = chatWorktree(chat);
+    const worktree = await chatWorktree(chat);
     return worktree ? { chat: chat as LinkedChat, worktree } : undefined;
   };
 
@@ -602,7 +606,7 @@ export function registerChatCommands(
 
   register('pitwall.openChat', async (item?: WorkspaceTreeItem) => {
     const chat = rowChat(item);
-    const worktree = chat && chatWorktree(chat);
+    const worktree = chat && (await chatWorktree(chat));
     if (chat && worktree) {
       await openChatPrimary(chat, worktree);
     }
@@ -618,7 +622,7 @@ export function registerChatCommands(
   // UI, close that tab first so two agent processes cannot run.
   register('pitwall.openChatInTerminal', async (item?: WorkspaceTreeItem) => {
     const chat = resolveChat(item);
-    const worktree = chat && chatWorktree(chat);
+    const worktree = chat && (await chatWorktree(chat));
     if (!chat || !worktree) {
       return;
     }
@@ -740,7 +744,7 @@ export function registerChatCommands(
   });
 
   register('pitwall.forkChat', async (item?: WorkspaceTreeItem) => {
-    const source = forkSource(item);
+    const source = await forkSource(item);
     if (!source) {
       return;
     }
@@ -763,7 +767,7 @@ export function registerChatCommands(
   // Fork into a new worktree that starts from the source's HEAD and carries
   // its uncommitted changes.
   register('pitwall.forkChatWithChanges', async (item?: WorkspaceTreeItem) => {
-    const source = forkSource(item);
+    const source = await forkSource(item);
     if (!source) {
       return;
     }
@@ -886,7 +890,7 @@ export function registerChatCommands(
   // The command that resumes the session from any terminal.
   register('pitwall.copyResumeCommand', async (item?: WorkspaceTreeItem) => {
     const chat = linkedRowChat(item);
-    const worktree = chat && chatWorktree(chat);
+    const worktree = chat && (await chatWorktree(chat));
     if (chat && worktree) {
       const resume = harnessRegistry
         .get(chat.harness)
@@ -903,7 +907,7 @@ export function registerChatCommands(
   register('pitwall.openNextSessionNeedingYou', async () => {
     for (const chatId of sessionsNeedingYou()) {
       const chat = storageService.getChat(chatId);
-      const worktree = chat && harnessRegistry.has(chat.harness) && workspacesProvider.getWorktreeById(chat.worktreeId);
+      const worktree = chat && harnessRegistry.has(chat.harness) && (await workspacesProvider.getWorktreeByIdAsync(chat.worktreeId));
       if (chat && worktree) {
         await openChatPrimary(chat, worktree);
         activateChat(chat);
@@ -962,7 +966,7 @@ export function registerChatCommands(
     if (!chat || !harnessRegistry.has(chat.harness)) {
       return;
     }
-    const worktree = chatWorktree(chat);
+    const worktree = await chatWorktree(chat);
     if (worktree) {
       await openChatPrimary(chat, worktree);
     }

@@ -88,6 +88,7 @@ function setup(t: { after(fn: () => void): void }, options: { notInstalled?: Har
   };
   const workspaces = {
     getWorktreeById: (id: string) => [...worktrees, folder].find((worktree) => worktree.id === id),
+    getWorktreeByIdAsync: async (id: string) => [...worktrees, folder].find((worktree) => worktree.id === id),
     getWorktreeForItem: (item?: WorkspaceTreeItem) =>
       item?.itemType === 'worktree'
         ? (item.data as Worktree)

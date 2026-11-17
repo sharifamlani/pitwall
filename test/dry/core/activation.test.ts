@@ -233,6 +233,9 @@ test("clicking a repo row points FILES at its main worktree; opening a chat poin
   const files = stub.__treeViews.find((candidate) => candidate.id === 'pitwall.filesView')!;
   assert.equal(list.description, 'sorted by who needs you');
   const rows = list.options.treeDataProvider!;
+  await rows.getChildren();
+  // Rows drawn once git has listed the repo, not from its plain-folder stand-in.
+  await (rows as unknown as { whenListed(): Promise<void> }).whenListed();
   const [repoRow] = (await rows.getChildren()) as WorkspaceRow[];
   const operations = stub.__outputChannels.find((channel: { name: string }) => channel.name === 'Pitwall Operations');
   assert.ok(
@@ -487,7 +490,7 @@ async function linkedWorktreeChat(t: { after(fn: () => unknown): void }, pids: R
   execFileSync('git', ['worktree', 'add', '-q', '-b', 'feat/fiu', linkedPath], { cwd: appPath });
   const app = { id: 'repo-app', name: 'app', rootPath: appPath } as Repository;
   const chat: Partial<ChatSession> = {
-    id: 'f1u00000-chat',
+    id: 'f1a00000-chat',
     name: 'Worktree chat',
     harnessSessionId: 'fiu',
     worktreeId: worktreeId(app.id, linkedPath),
@@ -517,9 +520,9 @@ test('a chat on a linked worktree opens on the first click of a first start, bef
 });
 
 test('a revived tab of a chat on a linked worktree is resumed on the first reload after upgrading (B1)', async (t) => {
-  const { f, linkedPath } = await linkedWorktreeChat(t, { 'f1u00000-chat': 7701 });
+  const { f, linkedPath } = await linkedWorktreeChat(t, { 'f1a00000-chat': 7701 });
   // A quit revived the tab as a new shell (its PID is not the recorded one).
-  const tab = stub.window.createTerminal({ name: 'Pitwall: Worktree chat [f1u000]', __pid: 8701 });
+  const tab = stub.window.createTerminal({ name: 'Pitwall: Worktree chat [f1a000]', __pid: 8701 });
   await f.start();
 
   await waitFor(() => tab.sent.length > 0, 'the resume line in the revived tab', 5_000);
