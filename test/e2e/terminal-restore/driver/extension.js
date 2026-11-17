@@ -326,10 +326,13 @@ async function renameProbe() {
   await rename('');
   check('stage 0: an empty name is refused, so a title cannot be reset to dynamic', panel.name === before, panel.name);
 
-  // A brand-new terminal takes focus only once its view is ready; show it
-  // again so the keyboard is really in it for the next probe.
-  panel.show(false);
+  // Opening an editor terminal can itself take focus, so open it first,
+  // then put the keyboard back in the panel, then show it without focus.
   const plain = vscode.window.createTerminal({ name: 'e2e-plain', location: vscode.TerminalLocation.Editor });
+  plain.show(true);
+  await waitFor(() => vscode.window.activeTerminal === plain, 'the plain tab to open');
+  panel.show(false);
+  await waitFor(() => vscode.window.activeTerminal === panel, 'the panel to be active again');
   plain.show(true);
   await waitFor(() => vscode.window.activeTerminal === plain, 'the plain tab to be active without focus');
   await rename('e2e-focus-probe');
