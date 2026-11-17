@@ -574,8 +574,11 @@ export class StorageService {
       status: 'idle',
       ...withoutUndefined(fields),
     };
+    // Read before noting: the merged list includes noted records, and the
+    // chat would then be written twice.
+    const chats = this.getChats();
     this.chatOverlay.note(chat.id, chat);
-    void this.set(STORAGE_KEYS.CHATS, [...this.getChats(), chat]);
+    void this.set(STORAGE_KEYS.CHATS, [...chats, chat]);
     return chat;
   }
 
