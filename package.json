@@ -1485,9 +1485,10 @@
           "when": "!config.pitwall.focusOnStartup"
         },
         {
-<<<<<<< HEAD
           "command": "pitwall.openNeedsYouChat",
-=======
+          "when": "false"
+        },
+        {
           "command": "pitwall.goToRepo1",
           "when": "false"
         },
@@ -1565,7 +1566,6 @@
         },
         {
           "command": "pitwall.list.moveUpAndOpen",
->>>>>>> 6bee01a... manifest: add hotkey and list-keyboard commands and bindings
           "when": "false"
         }
       ]
