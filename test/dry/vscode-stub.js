@@ -280,6 +280,9 @@ const executionStartListeners = new Set();
 const tabChangeListeners = new Set();
 const tabGroupChangeListeners = new Set();
 const configurationChangeListeners = new Set();
+const windowStateListeners = new Set();
+const treeViews = [];
+let treeViewsVisible = false;
 let activeTerminal;
 /**
  * The terminal holding keyboard focus, if any. The workbench's rename command
@@ -387,6 +390,46 @@ module.exports = {
       activeTextEditor = editor;
     },
     state: { focused: false },
+    onDidChangeWindowState: (listener) => {
+      windowStateListeners.add(listener);
+      return { dispose: () => windowStateListeners.delete(listener) };
+    },
+    /** Test helper: the window gains or loses focus. */
+    __fireWindowState: (focused) => {
+      module.exports.window.state = { focused };
+      for (const listener of [...windowStateListeners]) {
+        listener({ focused });
+      }
+    },
+    /**
+     * A tree view that records reveals. Views start hidden unless
+     * `__setTreeViewsVisible(true)` was called; `__setVisible` on a view
+     * fires its visibility event.
+     */
+    createTreeView: (id, options) => {
+      const visibility = new EventEmitter();
+      const selection = new EventEmitter();
+      const view = {
+        id,
+        options,
+        visible: treeViewsVisible,
+        title: '',
+        selection: [],
+        reveals: [],
+        reveal: async (item, revealOptions) => {
+          view.reveals.push({ item, options: revealOptions });
+        },
+        onDidChangeVisibility: visibility.event,
+        onDidChangeSelection: selection.event,
+        __setVisible: (visible) => {
+          view.visible = visible;
+          visibility.fire({ visible });
+        },
+        dispose: () => undefined,
+      };
+      treeViews.push(view);
+      return view;
+    },
     tabGroups: {
       all: [],
       get activeTabGroup() {
@@ -641,6 +684,7 @@ module.exports = {
       outputChannels,
       deletedUris,
       shownDocuments,
+      treeViews,
     ]) {
       list.length = 0;
     }
@@ -655,6 +699,7 @@ module.exports = {
       configurationChangeListeners,
       extensionChangeListeners,
       installedExtensions,
+      windowStateListeners,
     ]) {
       set.clear();
     }
@@ -664,6 +709,8 @@ module.exports = {
     clipboardText = '';
     activeTerminal = undefined;
     focusedTerminal = undefined;
+    treeViewsVisible = false;
+    module.exports.window.state = { focused: false };
     activeTextEditor = undefined;
     silentExecutionEvents = false;
     defaultPidDelayMs = undefined;
@@ -676,6 +723,11 @@ module.exports = {
     module.exports.env.shell = '/bin/bash';
   },
   __deleted: deletedUris,
+  __treeViews: treeViews,
+  /** Test helper: tree views created from now on start visible (or hidden). */
+  __setTreeViewsVisible: (visible) => {
+    treeViewsVisible = Boolean(visible);
+  },
   __shownDocuments: shownDocuments,
   __commandHandlers: commandHandlers,
   __outputChannels: outputChannels,

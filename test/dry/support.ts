@@ -81,6 +81,8 @@ interface StubControls {
   __setPidDelayMs(ms: number | undefined): void;
   __setLateShellIntegration(value: boolean): void;
   __shownDocuments: { target: unknown; options: Record<string, unknown> }[];
+  __treeViews: FakeTreeView[];
+  __setTreeViewsVisible(visible: boolean): void;
   workspace: { workspaceFolders: { uri: { fsPath: string } }[] };
   window: {
     terminals: FakeTerminal[];
@@ -96,7 +98,16 @@ interface StubControls {
     readonly __focusedTerminal: FakeTerminal | undefined;
     __setActiveTextEditor(editor: { document: { uri: unknown }; viewColumn?: number } | undefined): void;
     __integrateShell(terminal: unknown): void;
+    __fireWindowState(focused: boolean): void;
   };
+}
+
+/** A stub tree view (`window.createTreeView`) that records reveals. */
+export interface FakeTreeView {
+  id: string;
+  visible: boolean;
+  reveals: { item: unknown; options: unknown }[];
+  __setVisible(visible: boolean): void;
 }
 
 /** The `vscode` stub's test controls. */
