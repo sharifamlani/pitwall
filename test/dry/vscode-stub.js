@@ -427,8 +427,10 @@ module.exports = {
         __pid: options.__pid ?? nextTerminalPid++,
         exitStatus: options.__exitStatus,
         shellIntegration: {},
+        __pidReads: 0,
         get processId() {
-          return Promise.resolve(this.__pid);
+          this.__pidReads += 1;
+          return pidPromise ?? Promise.resolve(this.__pid);
         },
         sendText(text) {
           this.sent.push(text);
@@ -460,6 +462,15 @@ module.exports = {
           }
         },
       };
+      // `__pidDelayMs` models a pty that reports its PID late (Windows):
+      // one promise per terminal, like VS Code; Infinity never resolves.
+      const delay = options.__pidDelayMs;
+      const pidPromise =
+        delay === undefined
+          ? undefined
+          : delay === Infinity
+            ? new Promise(() => undefined)
+            : new Promise((resolve) => setTimeout(() => resolve(terminal.__pid), delay));
       openTerminals.push(terminal);
       return terminal;
     },
@@ -515,6 +526,8 @@ module.exports = {
       openExternalCalls.push(uri);
       return openExternalResult;
     },
+    /** The default terminal profile's shell; tests switch it with `__setShell`. */
+    shell: '/bin/bash',
   },
   commands: {
     registerCommand: (id, handler) => {
@@ -577,6 +590,7 @@ module.exports = {
     nextTerminalPid = 4100;
     module.exports.workspace.workspaceFolders = [];
     module.exports.window.tabGroups.all = [];
+    module.exports.env.shell = '/bin/bash';
   },
   __deleted: deletedUris,
   __commandHandlers: commandHandlers,
@@ -615,6 +629,10 @@ module.exports = {
           changed === section || changed.startsWith(`${section}.`),
       });
     }
+  },
+  /** Test helper: change the default terminal shell (`vscode.env.shell`). */
+  __setShell: (shellPath) => {
+    module.exports.env.shell = shellPath;
   },
   /** Test helper: model a shell that never reports a command start. */
   __setSilentExecutionEvents: (value) => {

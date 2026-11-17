@@ -8,7 +8,9 @@ import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { TerminalManager } from '../../../src/core/services/TerminalManager';
 import { terminalTitle } from '../../../src/core/services/terminalEvents';
+import { quoteShellArgument } from '../../../src/core/harness/cli';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
+import { ClaudeHarness } from '../../../src/harnesses/claude/ClaudeHarness';
 import { HarnessAdapter } from '../../../src/core/harness/types';
 import { ChatSession, STORAGE_KEYS } from '../../../src/core/types';
 import { chatRecord, fakeAdapter, FakeTerminal, flush, makeStorage, memento, shown, stub, waitFor, worktreeRecord } from '../support';
@@ -317,4 +319,85 @@ test('a storage failure while adopting a late tab stays contained', async (t) =>
   await flush();
   await flush();
   assert.deepEqual(unhandled, []);
+});
+
+test('a new chat with a full-path Claude command runs in PowerShell through the call operator; bash and cmd keep today’s line', async (t) => {
+  stub.__setConfiguration('harnessCommands', { claude: 'C:\\Program Files\\Claude\\claude.exe' });
+  const claude = new ClaudeHarness();
+  const f = setup(t, {
+    chats: [{ id: 'new-ps' }, { id: 'new-bash' }, { id: 'new-cmd' }],
+    adapter: { buildLaunchCommand: (options) => claude.buildLaunchCommand(options) },
+  });
+  const quoted = "'C:\\Program Files\\Claude\\claude.exe'";
+
+  stub.__setShell('C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+  const powershell = (await f.open('new-ps'))!.sent[0];
+  assert.ok(powershell.startsWith("& '"), powershell);
+  assert.equal(powershell, `& ${quoted}`);
+
+  stub.__setShell('/bin/bash');
+  assert.equal((await f.open('new-bash'))!.sent[0], quoted);
+  stub.__setShell('C:\\WINDOWS\\system32\\cmd.exe');
+  assert.equal((await f.open('new-cmd'))!.sent[0], quoted);
+});
+
+test('after a quit, activation waits at most one PID timeout however many revived tabs never report a PID', async (t) => {
+  const f = setup(t, {
+    chats: [
+      { id: 'a0a0a000-mute', harnessSessionId: 'mute-a', status: 'closed' },
+      { id: 'b0b0b000-mute', harnessSessionId: 'mute-b', status: 'closed' },
+    ],
+  });
+  await f.storage.rememberTerminalPid('a0a0a000-mute', 7401);
+  await f.storage.rememberTerminalPid('b0b0b000-mute', 7402);
+  const tabs = [
+    stub.window.createTerminal({ name: 'Pitwall: Mute A [a0a0a0]', __pidDelayMs: Infinity }),
+    stub.window.createTerminal({ name: 'Pitwall: Mute B [b0b0b0]', __pidDelayMs: Infinity }),
+  ];
+
+  await f.manager.beginRestoreSync(() => WORKTREE).adopted;
+  // Each PID was awaited once, in the shared parallel read. A second read per
+  // tab would hold activation for another timeout each.
+  assert.deepEqual(tabs.map((tab) => tab.__pidReads), [1, 1]);
+});
+
+test('a revived tab whose PID arrives late is still resumed in the background, and a click focuses it', async (t) => {
+  const f = setup(t, { chats: [{ id: 'c0c0c000-late', harnessSessionId: 's1', status: 'closed' }] });
+  await f.storage.rememberTerminalPid('c0c0c000-late', 7501);
+  const tab = stub.window.createTerminal({ name: 'Pitwall: Late [c0c0c0]', __pid: 8501, __pidDelayMs: 2_500 });
+
+  const restore = f.manager.beginRestoreSync(() => WORKTREE);
+  await restore.adopted;
+  assert.equal(await f.open('c0c0c000-late'), tab, 'a click while the PID is pending focuses the revived tab');
+  await restore.complete;
+  assert.deepEqual(tab.sent, [`cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s1`]);
+  assert.ok(f.manager.isActive('c0c0c000-late'));
+  assert.equal(f.storage.getTerminalPids()['c0c0c000-late'], 8501, 'the late PID is recorded for a reload');
+
+  const count = stub.window.terminals.length;
+  await f.manager.openChat(f.chat('c0c0c000-late'), WORKTREE);
+  assert.equal(stub.window.terminals.length, count, 'a click focuses the resumed tab instead of opening another');
+});
+
+test('Remove closes a restored tab Pitwall could not resume, and only that tab', async (t) => {
+  const f = setup(t, {
+    chats: [
+      { id: 'd0d0d000-fork', forkedFromSessionId: 'source', status: 'closed' },
+      { id: 'e0e0e000-other', harnessSessionId: 'other', status: 'closed' },
+      { id: 'f0f0f000-twin-a', harnessSessionId: 'twin-a', status: 'closed' },
+      { id: 'f0f0f000-twin-b', harnessSessionId: 'twin-b', status: 'closed' },
+    ],
+  });
+  await f.storage.rememberTerminalPid('d0d0d000-fork', 7601);
+  await f.storage.rememberTerminalPid('f0f0f000-twin-a', 7603);
+  const fork = f.restoredTab('Pitwall: Fork [d0d0d0]', 8601);
+  const other = f.restoredTab('Pitwall: Other [e0e0e0]', 8602);
+  const twin = f.restoredTab('Pitwall: Twin [f0f0f0]', 8603);
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  assert.deepEqual([fork, other, twin].map((tab) => tab.sent.length), [0, 0, 0], 'restore resumed none of them');
+
+  f.manager.closeChat('d0d0d000-fork');
+  // Two stored chats share this short ID, so the tab is not provably theirs.
+  f.manager.closeChat('f0f0f000-twin-a');
+  assert.deepEqual([fork, other, twin].map((tab) => tab.disposed), [true, false, false]);
 });

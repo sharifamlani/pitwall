@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { registerSessionSearchCommands } from '../../../src/core/commands/sessionSearch';
+import { quoteShellArgument } from '../../../src/core/harness/cli';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { HarnessAdapter, SessionSearchRunRequest } from '../../../src/core/harness/types';
 import { SessionSearchNode } from '../../../src/core/providers/SessionSearchTreeProvider';
@@ -120,8 +121,16 @@ test('a found session outside every root resumes in a terminal at its folder, an
   const [terminal] = stub.window.terminals;
   assert.equal(terminal.options.cwd, outside);
   assert.deepEqual(terminal.sent, ['claude --resume s2']);
-  assert.equal(await vscode.env.clipboard.readText(), `cd ${outside} && claude --resume s2`);
+  assert.equal(await vscode.env.clipboard.readText(), `cd ${quoteShellArgument(outside)} && claude --resume s2`);
   assert.deepEqual(storage.getChats(), [], 'nothing is added to the tree');
+
+  // Windows' default terminal is PowerShell, where `&&` does not parse.
+  stub.__setShell('C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+  await runCommand('pitwall.copySearchMatchCommand', node);
+  assert.equal(
+    await vscode.env.clipboard.readText(),
+    `Set-Location -LiteralPath '${outside.replace(/'/g, "''")}'; if ($?) { claude --resume s2 }`
+  );
 });
 
 /** The finder over a fake harness whose agent replies `answer` and whose record confirms with `verify`. */

@@ -39,7 +39,11 @@ export function isLiveTerminal(terminal: vscode.Terminal): boolean {
  * in the workspace root, the command-start event then covers the launch, and
  * a failed `cd` cannot start an agent in the wrong worktree.
  */
-export function commandInDirectory(directory: string, command: string): string {
+export function commandInDirectory(
+  directory: string,
+  command: string,
+  _shellPath: string | undefined = vscode.env.shell
+): string {
   return `cd ${quoteShellArgument(directory)} && ${command}`;
 }
 
