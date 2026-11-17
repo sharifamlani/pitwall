@@ -29,8 +29,64 @@ const CONCURRENT_LISTINGS = 3;
 export interface WorktreeListingOptions {
   /** Accept the latest listing (or the one in flight) when it is at most this old. */
   maxAgeMs?: number;
-  /** Start git now, ahead of waiting listings: a render waits on it. */
+  /** Start git now, ahead of waiting listings: someone waits on the answer. */
   urgent?: boolean;
+}
+
+/**
+ * Turns for starting child processes: at most `limit` hold one at a time,
+ * the rest wait in order. An urgent caller, or a waiting one that is
+ * expedited, starts at once whatever the count.
+ */
+export class StartQueue {
+  private running = 0;
+  private readonly waiting: Array<{ key: string; start: () => void }> = [];
+
+  constructor(private readonly limit: number) {}
+
+  /** Wait for a turn; the result gives it back. */
+  async acquire(key: string, urgent = false): Promise<() => void> {
+    if (urgent || this.running < this.limit) {
+      this.running += 1;
+    } else {
+      // The turn is counted by whoever starts this caller.
+      await new Promise<void>((start) => this.waiting.push({ key, start }));
+    }
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      this.running -= 1;
+      while (this.running < this.limit && this.waiting.length > 0) {
+        this.running += 1;
+        this.waiting.shift()!.start();
+      }
+    };
+  }
+
+  /** Start the callers waiting under `key` now, ahead of the others. */
+  expedite(key: string): void {
+    for (let i = this.waiting.length - 1; i >= 0; i--) {
+      if (this.waiting[i].key === key) {
+        const [entry] = this.waiting.splice(i, 1);
+        this.running += 1;
+        entry.start();
+      }
+    }
+  }
+}
+
+/**
+ * Options for every git child process: no console window flashes up on
+ * Windows while git runs.
+ */
+const SPAWN_OPTIONS = { windowsHide: true } as const;
+
+/** One repository root's key among worktree listings. */
+function listingKey(repoPath: string, repoId: string): string {
+  return `${repoId}\0${repoPath}`;
 }
 
 /** Preferred rebase targets, in order. */
@@ -46,8 +102,7 @@ export class GitService {
   /** The latest asynchronous worktree listing per repository, for callers that accept a recent one. */
   private readonly recentListings = new BoundedCache<string, { at: number; listing: RepositoryWorktrees }>(500);
   private readonly listingsInFlight = new Map<string, Promise<RepositoryWorktrees>>();
-  private listingsRunning = 0;
-  private readonly listingsWaiting: Array<() => void> = [];
+  private readonly listingTurns = new StartQueue(CONCURRENT_LISTINGS);
 
   private run(
     args: string[],
@@ -55,6 +110,7 @@ export class GitService {
     options: { input?: string; maxBuffer?: number } = {}
   ): string {
     return execFileSync('git', args, {
+      ...SPAWN_OPTIONS,
       cwd,
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -100,7 +156,7 @@ export class GitService {
   /** Run a network command for its effect, logging a failure under `label`. */
   private async attemptAsync(args: string[], cwd: string, label: string): Promise<GitOutcome> {
     try {
-      await execFileAsync('git', args, { cwd });
+      await execFileAsync('git', args, { ...SPAWN_OPTIONS, cwd });
       return { success: true };
     } catch (error) {
       const message = gitErrorMessage(error);
@@ -131,7 +187,7 @@ export class GitService {
   async getMainRepoRoot(cwd: string): Promise<string | null> {
     const lines = async (args: string[], dir: string): Promise<string[] | null> => {
       try {
-        const { stdout } = await execFileAsync('git', args, { cwd: dir, encoding: 'utf-8' });
+        const { stdout } = await execFileAsync('git', args, { ...SPAWN_OPTIONS, cwd: dir, encoding: 'utf-8' });
         return stdout.split('\n').map((line) => line.trim()).filter(Boolean);
       } catch {
         return null;
@@ -195,7 +251,7 @@ export class GitService {
     repoId: string,
     { maxAgeMs = 0, urgent = false }: WorktreeListingOptions = {}
   ): Promise<RepositoryWorktrees> {
-    const key = `${repoId}\0${repoPath}`;
+    const key = listingKey(repoPath, repoId);
     if (maxAgeMs > 0) {
       // A caller that accepts a recent answer shares the latest listing or
       // the one in flight: the list and the session scan both list every
@@ -210,19 +266,19 @@ export class GitService {
       }
     }
     const listing = (async () => {
-      while (!urgent && this.listingsRunning >= CONCURRENT_LISTINGS) {
-        await new Promise<void>((resolve) => this.listingsWaiting.push(resolve));
-      }
-      this.listingsRunning += 1;
+      const release = await this.listingTurns.acquire(key, urgent);
       let output: string | null;
       try {
-        ({ stdout: output } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath, encoding: 'utf-8' }));
+        ({ stdout: output } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], {
+          ...SPAWN_OPTIONS,
+          cwd: repoPath,
+          encoding: 'utf-8',
+        }));
       } catch (error) {
         output = null;
         noteWorktreeListFailure(repoPath, error);
       } finally {
-        this.listingsRunning -= 1;
-        this.listingsWaiting.shift()?.();
+        release();
       }
       return repositoryWorktrees(repoPath, repoId, output);
     })();
@@ -236,6 +292,14 @@ export class GitService {
         this.listingsInFlight.delete(key);
       }
     }
+  }
+
+  /**
+   * Start a worktree listing of this repository that is waiting for its
+   * turn now: someone came to wait on its answer.
+   */
+  expediteWorktreeListing(repoPath: string, repoId: string): void {
+    this.listingTurns.expedite(listingKey(repoPath, repoId));
   }
 
   createWorktree(repoPath: string, branch: string, worktreePath: string): boolean {
