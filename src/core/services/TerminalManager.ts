@@ -392,9 +392,7 @@ export class TerminalManager {
   /**
    * Apply a launched tab's title once its command starts, however late. A
    * shell that integrates after the launch wait re-tags the title when its
-   * command starts, so only a rename after that survives a quit. A tab that
-   * is not active is renamed the way revived tabs are: shown without taking
-   * focus, then the previously active tab is shown again.
+   * command starts, so only a rename after that survives a quit.
    */
   private retitleOnLateStart(
     terminal: vscode.Terminal,
@@ -404,18 +402,39 @@ export class TerminalManager {
     void watch.started
       .then(async (started) => {
         this.lateStarts.delete(watch.cancel);
-        if (!started || this.isDisposed || !this.terminalToChatId.has(terminal)) {
-          return;
+        if (started) {
+          await this.retitleInBackground(terminal);
         }
-        if (vscode.window.activeTerminal === terminal) {
-          await this.applyTitle(terminal);
-          return;
-        }
-        this.retitleRevivedTerminals([
-          { terminal, integrated: Promise.resolve(true), started: Promise.resolve(true) },
-        ]);
       })
       .catch(() => undefined);
+  }
+
+  /**
+   * Rename one mapped tab wherever focus is, with the same steps as revived
+   * tabs: a tab that is not active is shown without taking focus, renamed,
+   * and the tab that was active is shown again. Which tab is active is read
+   * when the queued work runs, so another tab opening meanwhile is restored
+   * rather than skipping the rename.
+   */
+  private retitleInBackground(terminal: vscode.Terminal): Promise<void> {
+    return this.queueTitleWork(async () => {
+      if (this.isDisposed || !this.terminalToChatId.has(terminal) || !isLiveTerminal(terminal)) {
+        return;
+      }
+      const previous = vscode.window.activeTerminal;
+      if (previous !== terminal) {
+        await this.showForRetitle(terminal);
+      }
+      await this.writeTitle(terminal);
+      if (
+        previous &&
+        previous !== terminal &&
+        vscode.window.activeTerminal === terminal &&
+        vscode.window.terminals.includes(previous)
+      ) {
+        await this.showForRetitle(previous);
+      }
+    });
   }
 
   /**
