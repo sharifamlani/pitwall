@@ -102,7 +102,7 @@ export class SessionSearchTreeProvider implements vscode.TreeDataProvider<Sessio
     const item = new vscode.TreeItem(match.title, vscode.TreeItemCollapsibleState.None);
     item.id = `search:${search.id}:${search.state}:${match.harness}:${match.sessionId}`;
     item.contextValue = 'sessionSearchMatch';
-    item.iconPath = harnessIconPath(this.extensionUri, this.harnessRegistry.get(match.harness), 'closed');
+    item.iconPath = harnessIconPath(this.extensionUri, this.harnessRegistry.get(match.harness), 'idle');
     const when = match.prompt?.timestamp ?? match.lastUpdated;
     item.description = [displayPath(match.cwd), when ? formatRelativeTime(when, { absoluteAfterDays: 7 }) : '']
       .filter(Boolean)

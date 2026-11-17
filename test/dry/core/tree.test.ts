@@ -91,18 +91,18 @@ test('rows keep creation order and show only what changes: time or "new", a star
   assert.deepEqual(items.order, ['new', 'opencode', 'claude'], 'newest first; stars and activity never reorder');
   assert.deepEqual(
     items.order.map((label) => `${items.get(label)!.description} ${mark(items.get(label)!)} ${items.get(label)!.contextValue}`),
-    ['new opencode-light-new.svg chat', '33m opencode-light-closed.svg chat', '★ 16m claude-light-closed.svg starredChatClaudeUi']
+    ['new opencode-light-new.svg chat', '33m opencode-light-idle.svg chat', '★ 16m claude-light-idle.svg starredChatClaudeUi']
   );
 });
 
-test('an open chat, by terminal or native UI, shows the done mark and running context in place', async (t) => {
+test('an open chat, by terminal or native UI, shows the finished mark and running context in place', async (t) => {
   const { tree, rows, claude } = sessionRows(t);
   tree.setChatOpenProvider((chat) => chat.id === claude.id);
   const items = await rows();
   assert.deepEqual(items.order, ['new', 'opencode', 'claude']);
   const row = items.get('claude')!;
   assert.equal(row.contextValue, 'runningStarredChatClaudeUi');
-  assert.equal(mark(row), 'claude-light-done.svg');
+  assert.equal(mark(row), 'claude-light-finished.svg');
 
   tree.setTurnStateProvider(() => 'working');
   assert.equal(mark((await rows()).get('claude')!), 'claude-light-working.svg');

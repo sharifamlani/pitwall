@@ -150,12 +150,12 @@ export function selectHarnessIconState(
   needsYou = false
 ): HarnessIconState {
   if (!isActive) {
-    return chat.harnessSessionId ? 'closed' : 'new';
+    return chat.harnessSessionId ? 'idle' : 'new';
   }
   if (needsYou) {
     return 'needs';
   }
-  return turnState === 'working' ? 'working' : 'done';
+  return turnState === 'working' ? 'working' : 'finished';
 }
 
 /** Display name for a session, falling back to its prefix plus a short ID. */
