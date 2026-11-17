@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.37 · 2026-11-17
+> v0.38 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 3 — Sidebar v1 (planning). Development resumed by Sharif on 2026-11-17.
-- **Current step:** Phase 3 Wave A in flight (Sharif GO 2026-11-17): T1 storage overlay (3.0), T2 sessions-file status (3.3), T4 hide extras (3.6), T6 brand icons (3.10); testing agent running S1 (F3 live repro).
+- **Current step:** Phase 3 Wave A merged (3.0, 3.6, 3.3 source, 3.10 icons); Wave B in flight: T3 repo discovery (3.1), T5 rows + status + inbox order (3.2/3.3/3.4). Fix PR #30 (Files actions on Windows) in review.
 - **Last update:** 2026-11-17
-- **Next action:** QA each Wave A PR at its exact sha, merge on green CI, then Wave B (T3 discovery after T1+T4; T5 rows after T1+T2+T6).
+- **Next action:** QA + merge T3 before T5; then Wave C (T7 repo row, T8 keys).
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -170,12 +170,12 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 **Goal:** The Pitwall list as designed on the canvas: every repo and chat from one window, sorted by who needs you.
 **Entry gate:** Phase 2 ✅ (`v0.3.0`).
 **Exit gate:** Walkthrough of the canvas prototype's sidebar flows passes in real Cursor against Sharif's real repos; tag `v0.4.0`.
-**Status:** ⏳ in flight (Wave A).
+**Status:** ⏳ in flight (Wave B).
 **Plan:** ✅ [2026-11-17-phase3-sidebar-v1.md](docs/superpowers/plans/2026-11-17-phase3-sidebar-v1.md) (QA pre-flight OK `e955a7e`)
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
-| 3.0 | Every `globalState` record survives Cursor's stale storage echo (finding F3, Task 6 build): first reproduce it live on a non-PID key (chats, stars, repos, dismissals, searches), then generalize the R33a in-memory overlay across `StorageService` keys, with two-window tests | ⏸ | ⏸ | — | Phase 2 Task 6 report, ruling R34 |
+| 3.0 | Every `globalState` record survives Cursor's stale storage echo (finding F3, Task 6 build): first reproduce it live on a non-PID key (chats, stars, repos, dismissals, searches), then generalize the R33a in-memory overlay across `StorageService` keys, with two-window tests | ✅ (live repro S1: not reproduced on non-PID keys; overlay generalised with write stamps, P25) | ✅ | 2026-11-17 · PR #28 `bd6dfeb` → merge `d12c906` (QA APPROVE after 3 rounds; main CI green; 4/4 QA two-window probes pass) | Phase 2 Task 6 report, ruling R34 |
 | 3.1 | Repos found from `~/.claude` (sessions in the last 14 days), added by folder icon, dismissed by right-click; no repo needs to be open | ⏸ | ⏸ | — | D13, D28, D36 |
 | 3.2 | Sessions from the last 14 days (incl. the Cursor panel's); branch on every row; ⧉ on worktree chats | ⏸ | ⏸ | — | D14, D18, D35 |
 | 3.3 | Status dots from `~/.claude/sessions` (busy / waiting / idle) + finished → seen when opened. Note: the needs-you (waiting) mark, orange #f0883e, landed early in Phase 2 (row 2.14, ruling R38); 3.3 adds the rest | ~ (source ✅ Task 2; dots for every row in Task 5) | ✅ | 2026-11-17 · PR #29 `0d36976` → merge `03e4313` (QA APPROVE; main CI green; ADR 0018; real data 10/10 agree with `claude agents`) | D4, D18, T1 |
@@ -328,3 +328,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.35 · 2026-11-17.** Row 3.6 ✅ (PR #26 → `16a2d12`): Changes view, worktree create/delete/merge/rebase, PR badges and fork-with-changes hidden; FILES collapsed; docs marked "hidden in v1". S1: F3 not reproduced live on non-PID keys (overlay generalised anyway); new finding P23 (other window's list doesn't redraw) → Task 5.
 - **v0.36 · 2026-11-17.** Row 3.10 icons merged (PR #27 → `c0814b0`): D17 status dots (circles only), "new" is a dashed grey ring (P24, brand book), four-dot activity icon. PR #28 (T1) reworked to write stamps (P25) after QA caught a lost-write race.
 - **v0.37 · 2026-11-17.** Row 3.3 source merged (PR #29 → `03e4313`): live status read from `~/.claude/sessions/*.json` (2–3 ms vs ~0.7 s for the CLI), `claude agents` kept as fallback (ADR 0018). Wave B (T3 discovery, T5 rows) waits on T1 (PR #28).
+- **v0.38 · 2026-11-17.** Row 3.0 ✅ (PR #28 → `d12c906`): every storage collection protected by write stamps; newest change wins, outdated copies can't revert it (3 QA rounds). Wave B started (T3, T5). Testing found an inherited Windows bug (Files actions refused, drive-letter case) → fix PR #30.
