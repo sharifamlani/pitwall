@@ -580,6 +580,10 @@ interface TimedOptions {
   waits: [number, number][];
   /** When the session's transcript is written, in ms after activation. */
   writes: number[];
+  /** The chat counts as open (a restored terminal or tab) only from this many ms after activation. */
+  openAt?: number;
+  /** The chat record's createdAt, in ms after activation. Default: long before. */
+  createdAt?: number;
 }
 
 /**
@@ -630,7 +634,7 @@ function timedFlow(t: TestContext, options: TimedOptions) {
     sessionService: transcripts as never,
     nativeUi: fakeNativeUi('Claude Code UI').nativeUi,
   });
-  const chat = linkedChat();
+  const chat = linkedChat(options.createdAt === undefined ? {} : { createdAt: T0 + options.createdAt });
   const terminal = { name: 'Pitwall: Session [chat-1]' };
   const isVisible = visibilityOf([chat], { [chat.id]: terminal });
   const service = new SessionAttentionService(
@@ -639,7 +643,7 @@ function timedFlow(t: TestContext, options: TimedOptions) {
     new NotificationService(() => undefined, isVisible),
     () => worktreeRecord(),
     () => undefined,
-    () => true,
+    () => elapsed() >= (options.openAt ?? 0),
     isVisible
   );
   t.after(() => service.dispose());
@@ -778,6 +782,48 @@ test('a one-second look strictly between two ticks counts as seen: no toast', as
   assert.ok(flow.marks.some((mark) => mark.needs), 'the row still shows needs-you');
   assert.deepEqual(flow.service.sessionsNeedingYou(), [flow.chat.id], 'and it is listed');
   assert.deepEqual(toasts(), [], 'the user saw the prompt between ticks: no toast');
+});
+
+// R45: a wait already pending at activation is pre-existing. R41's transcript
+// anchor must not turn it into a "new" wait just because the mtime is known.
+test('after a reload, a pending wait with a known transcript time is listed and marked but never toasts (R45)', async (t) => {
+  windowState().state = { focused: true };
+  // The prompt showed at -30 s, before this service started, and the
+  // transcript was written then. The chat is not in front, and its
+  // terminal restores after the baseline pass, so the wait is first seen on a
+  // tick after it.
+  const flow = timedFlow(t, { waits: [[-30_000, 600_000]], writes: [-30_001], openAt: 2_000 });
+  flow.away();
+  flow.service.start();
+  await flow.runTo(60_000);
+
+  assert.ok(flow.marks.some((mark) => mark.needs), 'the row shows needs-you');
+  assert.deepEqual(flow.service.sessionsNeedingYou(), [flow.chat.id], 'listed for Go to Next');
+  assert.deepEqual(toasts(), [], 'present at activation: never a toast, even after 60 s of ticks');
+});
+
+test('a wait that begins after a no-wait observation since activation can still toast (R45 guard)', async (t) => {
+  windowState().state = { focused: true };
+  const flow = timedFlow(t, { waits: [[20_000, 600_000]], writes: [19_999] });
+  flow.away();
+  flow.service.start();
+  await flow.runTo(60_000);
+
+  assert.ok(flow.marks.some((mark) => mark.needs), 'the row shows needs-you');
+  assert.equal(toasts().length, 1, 'observed clear after activation, then a wait: it toasts once');
+});
+
+test('a chat launched after activation whose very first agents result is waiting, with the user elsewhere, toasts once (R45)', async (t) => {
+  windowState().state = { focused: true };
+  // "+" at +5 s, the user switches to a file at once, and the prompt shows
+  // 1 s later. The chat's first poll already reports the wait.
+  const flow = timedFlow(t, { waits: [[6_000, 600_000]], writes: [5_999], openAt: 5_000, createdAt: 5_000 });
+  flow.away();
+  flow.service.start();
+  await flow.runTo(60_000);
+
+  assert.ok(flow.marks.some((mark) => mark.needs), 'the row shows needs-you');
+  assert.equal(toasts().length, 1, 'it began unseen, after activation: one toast');
 });
 
 test('the front-change events are the active terminal, tabs, tab groups and window focus; they only notify', () => {
