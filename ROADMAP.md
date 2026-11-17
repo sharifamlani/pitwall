@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.18 · 2026-11-17
+> v0.19 · 2026-11-17
 
 ---
 
@@ -157,7 +157,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 2.4 | Script launches of Cursor clear `ELECTRON_RUN_AS_NODE` (inherited from the extension host) | ✅ | ✅ | 2026-11-17 · PR #12 `61dd65e` → merge `0095508` | tests doc side notes |
 | 2.5 | (Reviewer: looks already handled; add a regression test and close) Find Session with an off-enum stored setting (e.g. `pitwall.sessionSearch.harness: "codex"`) falls back to the first enabled harness instead of throwing (QA PR #5 note) | ✅ (pinned: already fixed; regression test added) | ✅ | 2026-11-17 · PR #13 `36efa55` → merge `0d520bb` | D9 |
 | 2.6 | After a Cursor restart, a restored chat terminal whose session never wrote a transcript is orphaned: "Remove from Pitwall" leaves it open although the dialog says terminals close (testing UJ run 5; inherited) — re-adopt or close restored tabs | ⏸ | ⏸ | — | testing UJ run 5 |
-| 2.7 | De-flake timing tests seen under load: "stopping an opencode snapshot ends the session listing…", "the opencode snapshot stops at its byte budget…", "server errors keep their JSON-RPC code, and a hung request times out", and (found in wave A) "stopping a search ends the agent and everything it started, and keeps nothing" (`Unexpected end of JSON input`: a JSON file read mid-write) | ⏸ | ✅ | Phase 2 plan Task 5 | R9, QA PR #6, QA wave A |
+| 2.7 | De-flake timing tests seen under load: "stopping an opencode snapshot ends the session listing…", "the opencode snapshot stops at its byte budget…", "server errors keep their JSON-RPC code, and a hung request times out", and (found in wave A) "stopping a search ends the agent and everything it started, and keeps nothing" (`Unexpected end of JSON input`: a JSON file read mid-write) | ✅ (atomic fixture writes, SIGTERM-handler order, explicit budget; repeat-tests.sh fails closed on zero matches) | ✅ | 2026-11-17 · PR #17 `82a6860` → merge `dd0e1ea` | R9, QA PR #6, QA wave A |
 | 2.8 | `build-manifest.mjs`: fail on duplicate command ids, setting keys or keybindings between core and harness fragments (final review I2) | ✅ | ✅ | 2026-11-17 · PR #9 `2a5bef8` → merge `1830558` | final review |
 | 2.9 | `package.json` `files` allowlist so any `vsce package` (not only verify.sh) ships only out/, resources/, the manifest and licence docs; must land before the first public `.vsix` (final review I3) | ✅ | ✅ | 2026-11-17 · PR #7 `186a384` → merge `131a2d5` | final review |
 | 2.10 | CI runs the privacy gate, gitleaks and the vsix allowlist check (final review I4) | ✅ | ✅ | 2026-11-17 · PR #7 `186a384` → merge `131a2d5`; probe PR #14 run `44025011704`: privacy failure at path gate | final review |
@@ -307,3 +307,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.16 · 2026-11-17.** Row 2.12 closed: UJ run 8 on `6adf95e` showed 0 "No tree item with id" lines across 5 starts (view hidden and visible) and a hidden-view start that reveals when the view opens; `ELECTRON_RUN_AS_NODE=1 scripts/cursor-cli.sh --version` → Cursor 3.14.27. Note for Phase 3 (D36): Cursor opens on the Explorer unless `pitwall.focusOnStartup` is on.
 - **v0.17 · 2026-11-17.** Task 4 (Windows fake CLIs; triage rows 13–25, 27–29) merged → `b4c85bb`. Windows skips 17 → 9 (8 dormant opencode, 1 `/proc`), each with a reason. QA finding F2 becomes row 2.14 (ruling R30): the "needs you" poll never runs on Windows. Backlog for when D9 enables opencode: its spawns hit the same EINVAL.
 - **v0.18 · 2026-11-17.** Task 12 merged: row 2.14 closed as a regression guard (R31; F2 did not reproduce through `ClaudeAgentsService`, whose poll already runs through `harnessInvocation`). Left in Phase 2: Task 6 (restore), Task 5 (de-flake), Task 11 (close).
+- **v0.19 · 2026-11-17.** Task 5 merged → `dd0e1ea`, closing row 2.7: the four flaky tests were fixture races (two non-atomic writes, a SIGTERM handler registered late) and a default time budget; no product change. `scripts/repeat-tests.sh` gives 100-run proofs and fails closed when a pattern matches no test. Left in Phase 2: Task 6 (restore), Task 11 (close).
