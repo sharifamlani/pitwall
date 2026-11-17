@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.8.4 · 2026-11-16
+> v0.8.5 · 2026-11-16
 
 ---
 
@@ -73,7 +73,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D35 | **One window per folder (v1)** — the "one-repo-per-window rule". Claude's panel only resumes chats from its window's folder, and a git worktree counts as its own folder (tests T5, T17). Every window runs the same Pitwall sidebar; clicking a chat from another repo or worktree brings that folder's window forward (opening it if needed) with the chat open. A window's tabs only ever hold its own folder's chats. Supersedes the cross-repo parts of D15, D25, D26 (chat tabs), D31 | Sharif 2026-11-16 · [tests](docs/research/2026-11-16-assumption-tests.md) |
 | D36 | **No repo needs to be open.** You open one Cursor window; Pitwall reads Claude Code's own files (`~/.claude/sessions`, `~/.claude/projects`) to show every repo, chat, status, history and pop-up. Windows for other folders are opened by Pitwall on demand (D35), never by hand. Option "everything in one window via terminal mode" rejected (that is what a switchboard does) | Sharif 2026-11-16 |
 | D37 | Keyboard in the Pitwall list (only while the list has focus): ↓/↑ move the highlight without opening; Ctrl+↓/Ctrl+↑ move and open (chat → added tab; repo → all its chats); Enter opens the highlighted row. Side by side stays Cursor's own split (split button, Split Right, drag a tab) | Sharif 2026-11-16 |
-| D38 | Remote Control per chat: right-click a Claude chat tab ("Claude: Turn on Remote Control") or a chat row, or press Ctrl+Alt+M on the highlighted row / the chat in front. Rows and tabs show 📡 while on (read from `bridgeSessionId` in the sessions file). Claude Code has no public command for it; route = its own `/remote-control` sent through the link's `prompt` (test 2.8) | Sharif 2026-11-16 |
+| D38 | **Later (backlog 6.3, Sharif: not needed right away).** Remote Control per chat: right-click a Claude chat tab ("Claude: Turn on Remote Control") or a chat row, or press Ctrl+Alt+M on the highlighted row / the chat in front. Rows and tabs show 📡 while on (read from `bridgeSessionId` in the sessions file). Claude Code has no public command for it; route = its own `/remote-control` sent through the link's `prompt` (test 2.8) | Sharif 2026-11-16 |
 ---
 
 ## §3 The Checklist — every Phase from start to v1.0.0
@@ -129,7 +129,6 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | 2.5 | Can Claude Code chat tabs show their repo (description, tooltip, title)? Record what is possible | ⏸ | ⏸ | — | D26 |
 | 2.6 | Keep tabs from several repos open together, then show only one repo's tabs and switch back without closing any (repo filter over a shared tab set) | ⏸ | ⏸ | — | D31 |
 | 2.7 | T18: a chat started in the main folder that creates or enters a worktree mid-chat (Claude's own worktree feature) still opens in the main window | ⏸ | ⏸ | — | D35 |
-| 2.8 | T19: `cursor://anthropic.claude-code/open?session=<id>&prompt=/remote-control` turns Remote Control on for that chat (and `bridgeSessionId` appears in its sessions file); also check a tab context-menu item can target a Claude chat tab | ⏸ | ⏸ | — | D38 |
 
 ### Phase 3 — Chat panel by default
 **Goal:** Clicking a session opens the Claude Code chat panel directly, with no terminal step.
@@ -185,6 +184,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 |---|---|---|---|---|---|
 | 6.1 | Instant search of the text inside chats (index the transcripts; results in the Ctrl+Alt+R box) | ⏸ | ⏸ | — | D24 |
 | 6.2 | Custom card panel for the sidebar (v2 look) | ⏸ | ⏸ | — | D10 |
+| 6.3 | Remote Control per chat (D38) + its test T19: link `prompt=/remote-control` turns it on; tab context menu can target a Claude chat tab | ⏸ | ⏸ | — | D38 |
 
 ---
 
@@ -225,3 +225,4 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 - **v0.8.2 · 2026-11-16.** D26 restored (Sharif keeps "repo · ⎇ branch" under every tab; Claude tabs need test 2.5, fallback window title + bottom bar). New test row 2.7 (T18).
 - **v0.8.3 · 2026-11-16.** D37: list keyboard (↓/↑ highlight, Ctrl+↓/↑ open, Enter). Prototype: split button and Split Right inside the window; outer toggle removed; bigger tab close button.
 - **v0.8.4 · 2026-11-16.** D38: Remote Control per chat (tab/row right-click, Ctrl+Alt+M, 📡 mark). Test row 2.8 (T19) for the route.
+- **v0.8.5 · 2026-11-16.** Remote Control (D38) moved to backlog row 6.3 per Sharif; test T19 moved with it.
