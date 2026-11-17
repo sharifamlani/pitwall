@@ -12,7 +12,7 @@ import {
 /**
  * Links a chat's chosen pending session ID to the Pi record written on the
  * first prompt. Pi accepts `--session-id`, so the record is named with the ID
- * Agntree chose; there is no claim-the-newest step.
+ * Pitwall chose; there is no claim-the-newest step.
  *
  * The worktree catalog lets restored chats be looked up in their worktree's
  * `sessionDir` override instead of every Pi profile directory.

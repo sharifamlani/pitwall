@@ -5,9 +5,9 @@
 
 ## Context
 
-"Needs you" — a permission prompt or a pending question — was delivered by hooks that Agntree
+"Needs you" — a permission prompt or a pending question — was delivered by hooks that Pitwall
 installed into `~/.claude/settings.json`. That required an install command, a matching removal
-command, a context key, menu entries, and writing a file Agntree does not own. Nothing worked
+command, a context key, menu entries, and writing a file Pitwall does not own. Nothing worked
 without the install.
 
 Claude 2.1.310 exposes `claude agents --json`: active interactive and background sessions with
@@ -41,7 +41,7 @@ outlives the parent turn, and slash commands briefly report `busy`.
 
 ## Consequences
 
-- Agntree hook entries installed earlier remain in `~/.claude/settings.json` but are inert; users
+- Pitwall hook entries installed earlier remain in `~/.claude/settings.json` but are inert; users
   remove them by hand.
 - Without the CLI — missing, failing, or disabled — there is no needs-you; finished-turn notices
   still work.

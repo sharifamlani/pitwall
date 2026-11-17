@@ -6,7 +6,7 @@ const CACHE_TTL_MS = 10_000;
 const TIMEOUT_MS = 5_000;
 const MAX_BUFFER = 2 * 1024 * 1024;
 
-/** The fields Agntree reads from one `claude agents --json` row. */
+/** The fields Pitwall reads from one `claude agents --json` row. */
 export interface ClaudeAgentState {
   sessionId: string;
   /** Raw waiting reason; "input needed" when Claude reports waiting without one. */
@@ -22,7 +22,7 @@ export type ClaudeAgentsExec = (
 
 export interface ClaudeAgentsServiceOptions {
   command?: () => string;
-  /** Read `agntree.notifications.onNeedsInput` without spawning when off. */
+  /** Read `pitwall.notifications.onNeedsInput` without spawning when off. */
   enabled?: () => boolean;
   exec?: ClaudeAgentsExec;
   env?: NodeJS.ProcessEnv;
@@ -136,7 +136,7 @@ export class ClaudeAgentsService {
       options.enabled ??
       (() =>
         vscode.workspace
-          .getConfiguration('agntree')
+          .getConfiguration('pitwall')
           .get<boolean>('notifications.onNeedsInput', true));
     this.exec = options.exec ?? execClaudeAgents;
     this.env = options.env ?? process.env;
@@ -181,7 +181,7 @@ export class ClaudeAgentsService {
       // Log once; retrying a missing/broken CLI on every tick is noise.
       this.unavailable = true;
       console.error(
-        '[Agntree] Could not read `claude agents --json`; needs-you notifications are off until the extension restarts:',
+        '[Pitwall] Could not read `claude agents --json`; needs-you notifications are off until the extension restarts:',
         error
       );
       return new Map();

@@ -51,7 +51,7 @@ const MAX_LIST_PAGES = 20;
  *
  * Threads, previews, metadata, and forks all come from the app-server. The
  * one exception is live turn state: the app-server does not execute the
- * `codex` processes Agntree starts, so it cannot report whether a TUI-owned
+ * `codex` processes Pitwall starts, so it cannot report whether a TUI-owned
  * thread is working. That comes from the tail of the thread's rollout file.
  */
 export class CodexHarness implements HarnessAdapter {

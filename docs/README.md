@@ -1,14 +1,14 @@
-# Agntree documentation
+# Pitwall documentation
 
-Agntree is a free, open-source extension for VS Code and Cursor that manages coding-agent sessions. It puts every [Claude Code](agents/claude-code.md), [Codex](agents/codex.md), [opencode](agents/opencode.md), and [Pi](agents/pi.md) session in one sidebar, grouped by repository and git worktree, so you can start, resume, fork, find, and review agent work without juggling terminals or session IDs.
+Pitwall is a free, open-source extension for VS Code and Cursor that manages coding-agent sessions. It puts every [Claude Code](agents/claude-code.md), [Codex](agents/codex.md), [opencode](agents/opencode.md), and [Pi](agents/pi.md) session in one sidebar, grouped by repository and git worktree, so you can start, resume, fork, find, and review agent work without juggling terminals or session IDs.
 
-New here? [Install Agntree and start your first session](getting-started.md). It takes about two minutes.
+New here? [Install Pitwall and start your first session](getting-started.md). It takes about two minutes.
 
 ## What you can do
 
 | I want to… | Read |
 | --- | --- |
-| Install Agntree and start a session | [Getting started](getting-started.md) |
+| Install Pitwall and start a session | [Getting started](getting-started.md) |
 | Start, resume, rename, star, and clean up sessions | [Sessions](sessions.md) |
 | Give each task its own branch and directory | [Worktrees and repositories](worktrees.md) |
 | Try a second approach without losing the first | [Fork a session](fork-sessions.md) |
@@ -19,7 +19,7 @@ New here? [Install Agntree and start your first session](getting-started.md). It
 
 ## Agents
 
-Each agent has a page with its requirements, the commands Agntree runs for it, and what is and is not supported.
+Each agent has a page with its requirements, the commands Pitwall runs for it, and what is and is not supported.
 
 | Agent | Start and resume | Fork | Auto-import | Find Session | Notifications | VS Code panel |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -47,11 +47,11 @@ Each agent has a page with its requirements, the commands Agntree runs for it, a
 - [Privacy](privacy.md)
 - [Changelog](../CHANGELOG.md)
 
-## How Agntree thinks
+## How Pitwall thinks
 
-Three ideas explain most of how Agntree behaves:
+Three ideas explain most of how Pitwall behaves:
 
-- **Sessions belong to the agent.** Agntree never copies a conversation into a format of its own. A row in the sidebar points at the agent's native session, so the session still resumes from the command line, and removing a row never deletes a conversation.
+- **Sessions belong to the agent.** Pitwall never copies a conversation into a format of its own. A row in the sidebar points at the agent's native session, so the session still resumes from the command line, and removing a row never deletes a conversation.
 - **Sessions live where the code lives.** A session is listed under the repository and worktree it runs in. Selecting it points the Changes and All Files panels at that worktree.
 - **The sidebar stays quiet.** A row shows a name, a short time, a star, and the agent's mark. Everything else is in the tooltip or the right-click menu.
 

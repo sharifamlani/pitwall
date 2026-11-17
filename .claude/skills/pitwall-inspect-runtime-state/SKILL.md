@@ -1,6 +1,6 @@
 ---
 name: pitwall-inspect-runtime-state
-description: Read Agntree's live state from a running VS Code editor — installed bundle, extension-host logs, globalState database, and harness session files. Use when a symptom in the running extension does not match the code, a session or chat row behaves oddly, or a freshly installed build still seems stale.
+description: Read Pitwall's live state from a running VS Code editor — installed bundle, extension-host logs, globalState database, and harness session files. Use when a symptom in the running extension does not match the code, a session or chat row behaves oddly, or a freshly installed build still seems stale.
 allowed-tools:
   - Bash
   - Read
@@ -31,7 +31,7 @@ An open window keeps the code it activated with; a new VSIX changes nothing unti
 **Developer: Reload Window**.
 
 ```bash
-code --list-extensions --show-versions | grep -i agntree
+code --list-extensions --show-versions | grep -i pitwall
 ```
 
 The installed folder is `<extensions-dir>/<publisher>.<name>-<version>` — normally
@@ -51,13 +51,13 @@ the fix is a reload, not a code change.
 ls -dt "<user-data-dir>/logs"/*/window*/exthost/exthost.log 2>/dev/null | head -3
 ```
 
-Search the newest file for a subsystem prefix (`[ClaudeSessionWatcher]`, `[Agntree]`) rather
-than for the symptom's wording. The Agntree Operations output channel (`logOperation`) holds
+Search the newest file for a subsystem prefix (`[ClaudeSessionWatcher]`, `[Pitwall]`) rather
+than for the symptom's wording. The Pitwall Operations output channel (`logOperation`) holds
 destructive actions and refusals.
 
 ## 3. Stored chats and worktrees
 
-Agntree keeps everything in one `globalState` entry. Copy the database first so a running
+Pitwall keeps everything in one `globalState` entry. Copy the database first so a running
 editor cannot lock it and so any WAL content is included:
 
 ```bash
@@ -65,11 +65,11 @@ DB="<user-data-dir>/globalStorage/state.vscdb"
 TMP=$(mktemp -d)
 cp "$DB" "$DB"-wal "$DB"-shm "$TMP"/ 2>/dev/null
 sqlite3 "$TMP/state.vscdb" \
-  "select value from ItemTable where key='subhashkhileri.agntree';" \
+  "select value from ItemTable where key='sharifamlani.pitwall';" \
 | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
-for c in d.get("agntree.chats") or []:
+for c in d.get("pitwall.chats") or []:
     print({k: c.get(k) for k in (
         "name", "harness", "harnessSessionId", "pendingHarnessSessionId",
         "forkedFromSessionId", "status", "createdAt")})
@@ -102,7 +102,7 @@ assume a field exists.
 ## 5. Terminals
 
 Terminals outlive their mapping and their process. Names are
-`Agntree: <chat name> [<first 6 of chat id>]`. A terminal can still be listed in
+`Pitwall: <chat name> [<first 6 of chat id>]`. A terminal can still be listed in
 `window.terminals` with no running process (`exitStatus !== undefined`), so when a row claims
 to be open, compare the chat record with the live terminals before blaming linkage.
 

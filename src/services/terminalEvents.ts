@@ -7,17 +7,17 @@ const PROCESS_ID_TIMEOUT_MS = 2000;
 /** How long to let `show()` settle before renaming the active terminal. */
 const ACTIVE_TERMINAL_TIMEOUT_MS = 1000;
 
-const TITLE_PREFIX = 'Agntree: ';
+const TITLE_PREFIX = 'Pitwall: ';
 
 /**
- * A chat terminal's title, `Agntree: <name> [<shortId>]`. The short ID is the
+ * A chat terminal's title, `Pitwall: <name> [<shortId>]`. The short ID is the
  * identity that survives a quit (ADR 0009).
  */
 export function terminalTitle(chat: ChatSession): string {
   return `${TITLE_PREFIX}${chat.name} [${chat.id.substring(0, 6)}]`;
 }
 
-/** The chat short ID in an Agntree title; null for a terminal Agntree does not own. */
+/** The chat short ID in a Pitwall title; null for a terminal Pitwall does not own. */
 export function titleShortId(terminalName: string): string | null {
   if (!terminalName.startsWith(TITLE_PREFIX)) {
     return null;

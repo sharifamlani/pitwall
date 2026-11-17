@@ -33,7 +33,7 @@ const DEFAULT_POLL_INTERVAL_MS = 3_000;
 const PENDING_TTL_MS = 5 * 60_000;
 
 /**
- * Links newly launched native sessions to their Agntree chat.
+ * Links newly launched native sessions to their Pitwall chat.
  *
  * Harnesses that assign session IDs in a separate process cannot create a
  * resumable chat up front. The chat launches the TUI in a terminal, and this

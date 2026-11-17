@@ -1,9 +1,9 @@
 {
-  "name": "agntree",
-  "displayName": "Agntree — Session & Git Worktree Manager for Claude Code, Codex, opencode, Pi",
-  "description": "Manage Claude Code, Codex, opencode, and Pi sessions in one sidebar, in VS Code and Cursor. Run AI coding agents in parallel on git worktrees, then resume, fork, and find any session, and get notified when an agent needs you.",
-  "version": "4.0.0",
-  "publisher": "subhashkhileri",
+  "name": "pitwall",
+  "displayName": "Pitwall",
+  "description": "Every Claude Code session across your repos, in one sidebar.",
+  "version": "0.2.0",
+  "publisher": "sharifamlani",
   "author": {
     "name": "Subhash Khileri",
     "url": "https://github.com/subhashkhileri"
@@ -11,12 +11,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/subhashkhileri/agntree.git"
+    "url": "https://github.com/sharifamlani/pitwall.git"
   },
   "bugs": {
-    "url": "https://github.com/subhashkhileri/agntree/issues"
+    "url": "https://github.com/sharifamlani/pitwall/issues"
   },
-  "homepage": "https://subhashkhileri.github.io/agntree",
+  "homepage": "https://sharifamlani.github.io/pitwall",
   "qna": "marketplace",
   "engines": {
     "vscode": "^1.93.0"
@@ -28,37 +28,21 @@
   ],
   "keywords": [
     "claude code",
-    "claude",
-    "codex",
-    "openai codex",
-    "opencode",
-    "pi coding agent",
-    "anthropic",
-    "ai agent",
-    "ai coding agent",
-    "coding agent",
-    "agent",
-    "agents",
-    "parallel agents",
-    "multi-agent",
-    "agent orchestration",
-    "session manager",
-    "claude code session",
     "claude code sessions",
+    "session manager",
     "resume session",
     "fork session",
     "session history",
     "git worktree",
-    "git worktrees",
     "worktree",
-    "worktree manager",
-    "claude code worktree",
     "cursor",
-    "ai",
-    "pull request",
+    "vs code",
+    "status",
+    "notifications",
+    "ai agent",
     "terminal"
   ],
-  "icon": "resources/icons/agntree.png",
+  "icon": "resources/icons/pitwall.png",
   "galleryBanner": {
     "color": "#1e1e1e",
     "theme": "dark"
@@ -71,33 +55,33 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "agntree",
-          "title": "Agntree",
-          "icon": "resources/icons/agntree-activitybar.svg"
+          "id": "pitwall",
+          "title": "Pitwall",
+          "icon": "resources/icons/pitwall-activitybar.svg"
         }
       ]
     },
     "views": {
-      "agntree": [
+      "pitwall": [
         {
-          "id": "agntree.workspacesView",
+          "id": "pitwall.workspacesView",
           "name": "Workspaces",
           "size": 4
         },
         {
-          "id": "agntree.sessionSearchView",
+          "id": "pitwall.sessionSearchView",
           "name": "Find Session",
-          "when": "config.agntree.sessionSearch.alwaysShowView || agntree.hasSessionSearches",
+          "when": "config.pitwall.sessionSearch.alwaysShowView || pitwall.hasSessionSearches",
           "size": 2,
           "visibility": "collapsed"
         },
         {
-          "id": "agntree.changesView",
+          "id": "pitwall.changesView",
           "name": "Changes",
           "size": 2
         },
         {
-          "id": "agntree.filesView",
+          "id": "pitwall.filesView",
           "name": "All Files",
           "size": 3
         }
@@ -105,605 +89,605 @@
     },
     "viewsWelcome": [
       {
-        "view": "agntree.workspacesView",
-        "contents": "Start managing your Claude Code, opencode, Codex, and Pi sessions across folders, repositories, and worktrees.\n\n[Add Local Folder or Repository](command:agntree.addRepository)\n[Clone from GitHub](command:agntree.cloneRepository)\n\nAdd any local folder, or clone a repository from GitHub to get started."
+        "view": "pitwall.workspacesView",
+        "contents": "Start managing your Claude Code, opencode, Codex, and Pi sessions across folders, repositories, and worktrees.\n\n[Add Local Folder or Repository](command:pitwall.addRepository)\n[Clone from GitHub](command:pitwall.cloneRepository)\n\nAdd any local folder, or clone a repository from GitHub to get started."
       },
       {
-        "view": "agntree.changesView",
+        "view": "pitwall.changesView",
         "contents": "Select a worktree, folder, or session to view uncommitted changes.\n\nClick the diff icon on any file to view side-by-side comparison."
       },
       {
-        "view": "agntree.filesView",
+        "view": "pitwall.filesView",
         "contents": "Select a worktree, folder, or session to browse its files."
       },
       {
-        "view": "agntree.sessionSearchView",
-        "contents": "Describe what you worked on and a coding agent finds the session among your past ones, in any folder.\n\n[Find Session](command:agntree.findSession)\n\nThe agent reads your session transcripts, so what it reads goes to its model provider."
+        "view": "pitwall.sessionSearchView",
+        "contents": "Describe what you worked on and a coding agent finds the session among your past ones, in any folder.\n\n[Find Session](command:pitwall.findSession)\n\nThe agent reads your session transcripts, so what it reads goes to its model provider."
       }
     ],
     "commands": [
       {
-        "command": "agntree.files.search",
+        "command": "pitwall.files.search",
         "title": "Search in Files",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(search)"
       },
       {
-        "command": "agntree.files.refresh",
+        "command": "pitwall.files.refresh",
         "title": "Refresh",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(refresh)"
       },
       {
-        "command": "agntree.files.newFile",
+        "command": "pitwall.files.newFile",
         "title": "New File...",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(new-file)"
       },
       {
-        "command": "agntree.files.newFolder",
+        "command": "pitwall.files.newFolder",
         "title": "New Folder...",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(new-folder)"
       },
       {
-        "command": "agntree.files.openToSide",
+        "command": "pitwall.files.openToSide",
         "title": "Open to the Side",
-        "category": "Agntree"
+        "category": "Pitwall"
       },
       {
-        "command": "agntree.files.revealInFinder",
+        "command": "pitwall.files.revealInFinder",
         "title": "Reveal in File Manager",
-        "category": "Agntree"
+        "category": "Pitwall"
       },
       {
-        "command": "agntree.files.openInTerminal",
+        "command": "pitwall.files.openInTerminal",
         "title": "Open in Integrated Terminal",
-        "category": "Agntree"
+        "category": "Pitwall"
       },
       {
-        "command": "agntree.files.copyPath",
+        "command": "pitwall.files.copyPath",
         "title": "Copy Path",
-        "category": "Agntree"
+        "category": "Pitwall"
       },
       {
-        "command": "agntree.files.copyRelativePath",
+        "command": "pitwall.files.copyRelativePath",
         "title": "Copy Relative Path",
-        "category": "Agntree"
+        "category": "Pitwall"
       },
       {
-        "command": "agntree.files.copy",
+        "command": "pitwall.files.copy",
         "title": "Copy",
-        "category": "Agntree"
+        "category": "Pitwall"
       },
       {
-        "command": "agntree.files.cut",
+        "command": "pitwall.files.cut",
         "title": "Cut",
-        "category": "Agntree"
+        "category": "Pitwall"
       },
       {
-        "command": "agntree.files.paste",
+        "command": "pitwall.files.paste",
         "title": "Paste",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(clippy)"
       },
       {
-        "command": "agntree.files.rename",
+        "command": "pitwall.files.rename",
         "title": "Rename...",
-        "category": "Agntree"
+        "category": "Pitwall"
       },
       {
-        "command": "agntree.files.delete",
+        "command": "pitwall.files.delete",
         "title": "Delete",
-        "category": "Agntree"
+        "category": "Pitwall"
       },
       {
-        "command": "agntree.addRepository",
+        "command": "pitwall.addRepository",
         "title": "Add Local Folder or Repository…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(folder)"
       },
       {
-        "command": "agntree.cloneRepository",
+        "command": "pitwall.cloneRepository",
         "title": "Clone from GitHub…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(cloud-download)"
       },
       {
-        "command": "agntree.removeRepository",
-        "title": "Remove from Agntree…",
-        "category": "Agntree",
+        "command": "pitwall.removeRepository",
+        "title": "Remove from Pitwall…",
+        "category": "Pitwall",
         "icon": "$(close)"
       },
       {
-        "command": "agntree.moveRepositoryUp",
+        "command": "pitwall.moveRepositoryUp",
         "title": "Move Up",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(arrow-up)"
       },
       {
-        "command": "agntree.moveRepositoryDown",
+        "command": "pitwall.moveRepositoryDown",
         "title": "Move Down",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(arrow-down)"
       },
       {
-        "command": "agntree.addWorktree",
+        "command": "pitwall.addWorktree",
         "title": "Create Worktree…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(add)"
       },
       {
-        "command": "agntree.deleteWorktree",
+        "command": "pitwall.deleteWorktree",
         "title": "Delete Worktree…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(trash)"
       },
       {
-        "command": "agntree.mergeWorktree",
+        "command": "pitwall.mergeWorktree",
         "title": "Merge Branch into This Worktree…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(git-merge)"
       },
       {
-        "command": "agntree.newDefaultSession",
+        "command": "pitwall.newDefaultSession",
         "title": "New Session",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(comment-add)"
       },
       {
-        "command": "agntree.setDefaultHarness",
+        "command": "pitwall.setDefaultHarness",
         "title": "Set Default Agent…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(settings-gear)"
       },
       {
-        "command": "agntree.newClaudeChat",
+        "command": "pitwall.newClaudeChat",
         "title": "New Claude Code Session",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(sparkle)"
       },
       {
-        "command": "agntree.newClaudeChatInTerminal",
+        "command": "pitwall.newClaudeChatInTerminal",
         "title": "New Claude Code Session in Terminal",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(terminal)"
       },
       {
-        "command": "agntree.newClaudeChatInUi",
+        "command": "pitwall.newClaudeChatInUi",
         "title": "New Claude Code Session in Claude Code UI",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(comment-discussion)"
       },
       {
-        "command": "agntree.newOpencodeChat",
+        "command": "pitwall.newOpencodeChat",
         "title": "New opencode Session",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(code)"
       },
       {
-        "command": "agntree.newCodexChat",
+        "command": "pitwall.newCodexChat",
         "title": "New Codex Session",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(terminal)"
       },
       {
-        "command": "agntree.newCodexChatInTerminal",
+        "command": "pitwall.newCodexChatInTerminal",
         "title": "New Codex Session in Terminal",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(terminal)"
       },
       {
-        "command": "agntree.newCodexChatInUi",
+        "command": "pitwall.newCodexChatInUi",
         "title": "New Codex Session in Codex UI",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(comment-discussion)"
       },
       {
-        "command": "agntree.newPiChat",
+        "command": "pitwall.newPiChat",
         "title": "New Pi Session",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(terminal)"
       },
       {
-        "command": "agntree.openChat",
+        "command": "pitwall.openChat",
         "title": "Open Session",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(terminal)"
       },
       {
-        "command": "agntree.openChatInTerminal",
+        "command": "pitwall.openChatInTerminal",
         "title": "Open Session in Terminal",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(terminal)"
       },
       {
-        "command": "agntree.openClaudeUi",
+        "command": "pitwall.openClaudeUi",
         "title": "Open in Claude Code UI",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(comment-discussion)"
       },
       {
-        "command": "agntree.openCodexUi",
+        "command": "pitwall.openCodexUi",
         "title": "Open in Codex UI",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(comment-discussion)"
       },
       {
-        "command": "agntree.renameChat",
+        "command": "pitwall.renameChat",
         "title": "Rename Session…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(edit)"
       },
       {
-        "command": "agntree.deleteChat",
+        "command": "pitwall.deleteChat",
         "title": "Remove Session from List…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(trash)"
       },
       {
-        "command": "agntree.forkChat",
+        "command": "pitwall.forkChat",
         "title": "Fork Session Here",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(repo-forked)"
       },
       {
-        "command": "agntree.forkChatWithChanges",
+        "command": "pitwall.forkChatWithChanges",
         "title": "Fork Session to New Worktree…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(repo-forked)"
       },
       {
-        "command": "agntree.refreshWorkspaces",
+        "command": "pitwall.refreshWorkspaces",
         "title": "Refresh",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(refresh)"
       },
       {
-        "command": "agntree.refreshChanges",
+        "command": "pitwall.refreshChanges",
         "title": "Refresh",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(refresh)"
       },
       {
-        "command": "agntree.openDiff",
+        "command": "pitwall.openDiff",
         "title": "Open Diff",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(diff)"
       },
       {
-        "command": "agntree.openInNewWindow",
+        "command": "pitwall.openInNewWindow",
         "title": "Open in New Window",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(multiple-windows)"
       },
       {
-        "command": "agntree.switchToWorkspace",
+        "command": "pitwall.switchToWorkspace",
         "title": "Open in This Window",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(target)"
       },
       {
-        "command": "agntree.importSessions",
+        "command": "pitwall.importSessions",
         "title": "Import Existing Sessions…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(cloud-download)"
       },
       {
-        "command": "agntree.openSettings",
-        "title": "Agntree Settings…",
-        "category": "Agntree",
+        "command": "pitwall.openSettings",
+        "title": "Pitwall Settings…",
+        "category": "Pitwall",
         "icon": "$(settings-gear)"
       },
       {
-        "command": "agntree.openKeybindings",
-        "title": "Agntree Keyboard Shortcuts…",
-        "category": "Agntree",
+        "command": "pitwall.openKeybindings",
+        "title": "Pitwall Keyboard Shortcuts…",
+        "category": "Pitwall",
         "icon": "$(keyboard)"
       },
       {
-        "command": "agntree.disableAutoSwitch",
+        "command": "pitwall.disableAutoSwitch",
         "title": "Turn Off Auto-Switch Workspace Folder",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(sync)"
       },
       {
-        "command": "agntree.enableAutoSwitch",
+        "command": "pitwall.enableAutoSwitch",
         "title": "Turn On Auto-Switch Workspace Folder",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(sync-ignored)"
       },
       {
-        "command": "agntree.disableFocusOnStartup",
+        "command": "pitwall.disableFocusOnStartup",
         "title": "Turn Off Focus on Startup",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(eye)"
       },
       {
-        "command": "agntree.enableFocusOnStartup",
+        "command": "pitwall.enableFocusOnStartup",
         "title": "Turn On Focus on Startup",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(eye-closed)"
       },
       {
-        "command": "agntree.stageFile",
+        "command": "pitwall.stageFile",
         "title": "Stage File",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(add)"
       },
       {
-        "command": "agntree.unstageFile",
+        "command": "pitwall.unstageFile",
         "title": "Unstage File",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(remove)"
       },
       {
-        "command": "agntree.discardFile",
+        "command": "pitwall.discardFile",
         "title": "Discard Changes",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(discard)"
       },
       {
-        "command": "agntree.stageAll",
+        "command": "pitwall.stageAll",
         "title": "Stage All Changes",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(add)"
       },
       {
-        "command": "agntree.unstageAll",
+        "command": "pitwall.unstageAll",
         "title": "Unstage All Changes",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(remove)"
       },
       {
-        "command": "agntree.discardAll",
+        "command": "pitwall.discardAll",
         "title": "Discard All Changes",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(discard)"
       },
       {
-        "command": "agntree.rebaseWorktree",
+        "command": "pitwall.rebaseWorktree",
         "title": "Rebase onto Upstream…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(repo-sync)"
       },
       {
-        "command": "agntree.rebaseContinue",
+        "command": "pitwall.rebaseContinue",
         "title": "Continue Rebase",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(check)"
       },
       {
-        "command": "agntree.rebaseAbort",
+        "command": "pitwall.rebaseAbort",
         "title": "Abort Rebase",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(close)"
       },
       {
-        "command": "agntree.rebaseSkip",
+        "command": "pitwall.rebaseSkip",
         "title": "Skip Commit",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(debug-step-over)"
       },
       {
-        "command": "agntree.clearWorktreeSessions",
+        "command": "pitwall.clearWorktreeSessions",
         "title": "Remove All Sessions from List…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(clear-all)"
       },
       {
-        "command": "agntree.copyWorktreePath",
+        "command": "pitwall.copyWorktreePath",
         "title": "Copy Path",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(copy)"
       },
       {
-        "command": "agntree.openTerminalAtWorktree",
+        "command": "pitwall.openTerminalAtWorktree",
         "title": "Open Terminal Here",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(terminal)"
       },
       {
-        "command": "agntree.openPRInBrowser",
+        "command": "pitwall.openPRInBrowser",
         "title": "Open Pull Request in Browser",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(link-external)"
       },
       {
-        "command": "agntree.checkoutPR",
+        "command": "pitwall.checkoutPR",
         "title": "Check Out Pull Request…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(git-pull-request)"
       },
       {
-        "command": "agntree.findSession",
+        "command": "pitwall.findSession",
         "title": "Find Session…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(sparkle)"
       },
       {
-        "command": "agntree.askSessionSearchAgain",
+        "command": "pitwall.askSessionSearchAgain",
         "title": "Ask Again…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(refresh)"
       },
       {
-        "command": "agntree.configureSessionSearch",
+        "command": "pitwall.configureSessionSearch",
         "title": "Find Session Settings…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(settings-gear)"
       },
       {
-        "command": "agntree.cancelSessionSearch",
+        "command": "pitwall.cancelSessionSearch",
         "title": "Stop Search",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(debug-stop)"
       },
       {
-        "command": "agntree.removeSessionSearch",
+        "command": "pitwall.removeSessionSearch",
         "title": "Remove Search",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(close)"
       },
       {
-        "command": "agntree.clearSessionSearches",
+        "command": "pitwall.clearSessionSearches",
         "title": "Clear Searches…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(clear-all)"
       },
       {
-        "command": "agntree.resumeSearchMatch",
+        "command": "pitwall.resumeSearchMatch",
         "title": "Resume",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(play)"
       },
       {
-        "command": "agntree.revealSearchMatch",
+        "command": "pitwall.revealSearchMatch",
         "title": "Show in Workspaces",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(list-tree)"
       },
       {
-        "command": "agntree.copySearchMatchCommand",
+        "command": "pitwall.copySearchMatchCommand",
         "title": "Copy Resume Command",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(copy)"
       },
       {
-        "command": "agntree.closeChat",
+        "command": "pitwall.closeChat",
         "title": "Close Session",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(stop-circle)"
       },
       {
-        "command": "agntree.starChat",
+        "command": "pitwall.starChat",
         "title": "Star Session",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(star-empty)"
       },
       {
-        "command": "agntree.unstarChat",
+        "command": "pitwall.unstarChat",
         "title": "Unstar Session",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(star-full)"
       },
       {
-        "command": "agntree.copyResumeCommand",
+        "command": "pitwall.copyResumeCommand",
         "title": "Copy Resume Command",
         "icon": "$(copy)",
-        "category": "Agntree"
+        "category": "Pitwall"
       },
       {
-        "command": "agntree.copySessionId",
+        "command": "pitwall.copySessionId",
         "title": "Copy Session ID",
         "icon": "$(copy)",
-        "category": "Agntree"
+        "category": "Pitwall"
       },
       {
-        "command": "agntree.showStarredSessions",
+        "command": "pitwall.showStarredSessions",
         "title": "Starred Sessions…",
-        "category": "Agntree",
+        "category": "Pitwall",
         "icon": "$(star-full)"
       },
       {
-        "command": "agntree.openNextSessionNeedingYou",
+        "command": "pitwall.openNextSessionNeedingYou",
         "title": "Go to Next Session That Needs You",
         "icon": "$(bell-dot)",
-        "category": "Agntree"
+        "category": "Pitwall"
       }
     ],
     "submenus": [
       {
-        "id": "agntree.newSession",
+        "id": "pitwall.newSession",
         "label": "New Session",
         "icon": "$(comment-add)"
       },
       {
-        "id": "agntree.newSessionContext",
+        "id": "pitwall.newSessionContext",
         "label": "New Session",
         "icon": "$(comment-add)"
       }
     ],
     "keybindings": [
       {
-        "command": "agntree.openNextSessionNeedingYou",
+        "command": "pitwall.openNextSessionNeedingYou",
         "key": "ctrl+alt+n",
         "mac": "ctrl+cmd+n"
       },
       {
-        "command": "agntree.showStarredSessions",
+        "command": "pitwall.showStarredSessions",
         "key": "ctrl+alt+s",
         "mac": "ctrl+cmd+s"
       },
       {
-        "command": "agntree.newDefaultSession",
+        "command": "pitwall.newDefaultSession",
         "key": "ctrl+alt+enter",
         "mac": "ctrl+cmd+enter"
       },
       {
-        "command": "agntree.findSession",
+        "command": "pitwall.findSession",
         "key": "ctrl+alt+f",
         "mac": "ctrl+cmd+f"
       },
       {
-        "command": "workbench.view.extension.agntree",
+        "command": "workbench.view.extension.pitwall",
         "key": "ctrl+alt+a",
         "mac": "ctrl+cmd+a"
       },
       {
-        "command": "agntree.renameChat",
+        "command": "pitwall.renameChat",
         "key": "f2",
-        "when": "focusedView == 'agntree.workspacesView' && !inputFocus"
+        "when": "focusedView == 'pitwall.workspacesView' && !inputFocus"
       },
       {
-        "command": "agntree.deleteChat",
+        "command": "pitwall.deleteChat",
         "key": "delete",
         "mac": "cmd+backspace",
-        "when": "focusedView == 'agntree.workspacesView' && !inputFocus"
+        "when": "focusedView == 'pitwall.workspacesView' && !inputFocus"
       },
       {
-        "command": "agntree.copyResumeCommand",
+        "command": "pitwall.copyResumeCommand",
         "key": "ctrl+c",
         "mac": "cmd+c",
-        "when": "focusedView == 'agntree.workspacesView' && !inputFocus"
+        "when": "focusedView == 'pitwall.workspacesView' && !inputFocus"
       },
       {
-        "command": "agntree.files.rename",
+        "command": "pitwall.files.rename",
         "key": "f2",
-        "when": "focusedView == 'agntree.filesView' && !inputFocus"
+        "when": "focusedView == 'pitwall.filesView' && !inputFocus"
       },
       {
-        "command": "agntree.files.delete",
+        "command": "pitwall.files.delete",
         "key": "delete",
         "mac": "cmd+backspace",
-        "when": "focusedView == 'agntree.filesView' && !inputFocus"
+        "when": "focusedView == 'pitwall.filesView' && !inputFocus"
       },
       {
-        "command": "agntree.files.copy",
+        "command": "pitwall.files.copy",
         "key": "ctrl+c",
         "mac": "cmd+c",
-        "when": "focusedView == 'agntree.filesView' && !inputFocus"
+        "when": "focusedView == 'pitwall.filesView' && !inputFocus"
       },
       {
-        "command": "agntree.files.cut",
+        "command": "pitwall.files.cut",
         "key": "ctrl+x",
         "mac": "cmd+x",
-        "when": "focusedView == 'agntree.filesView' && !inputFocus"
+        "when": "focusedView == 'pitwall.filesView' && !inputFocus"
       },
       {
-        "command": "agntree.files.paste",
+        "command": "pitwall.files.paste",
         "key": "ctrl+v",
         "mac": "cmd+v",
-        "when": "focusedView == 'agntree.filesView' && !inputFocus && agntree.hasFileClipboard"
+        "when": "focusedView == 'pitwall.filesView' && !inputFocus && pitwall.hasFileClipboard"
       }
     ],
     "configuration": [
       {
-        "id": "agntree.sessions",
+        "id": "pitwall.sessions",
         "title": "Sessions",
         "order": 1,
         "properties": {
-          "agntree.defaultHarness": {
+          "pitwall.defaultHarness": {
             "type": "string",
             "enum": [
               "",
@@ -727,10 +711,10 @@
               "The New Session button starts a Pi session."
             ],
             "default": "",
-            "markdownDescription": "The agent the **New Session** button (`+`) on a worktree or folder starts with one click. Every agent stays in the row's right-click **New Session** menu, and New Session asks which agent to use when the default one is not installed. Where the session opens is set by `#agntree.defaultSessionSurface#`.",
+            "markdownDescription": "The agent the **New Session** button (`+`) on a worktree or folder starts with one click. Every agent stays in the row's right-click **New Session** menu, and New Session asks which agent to use when the default one is not installed. Where the session opens is set by `#pitwall.defaultSessionSurface#`.",
             "order": 1
           },
-          "agntree.defaultSessionSurface": {
+          "pitwall.defaultSessionSurface": {
             "type": "string",
             "enum": [
               "terminal",
@@ -748,58 +732,58 @@
             "markdownDescription": "Where a session opens when you click its row or start a new one. The **In Terminal** and **In UI** commands in the New Session menu always override this.",
             "order": 2
           },
-          "agntree.autoImport.enabled": {
+          "pitwall.autoImport.enabled": {
             "type": "boolean",
             "default": true,
-            "markdownDescription": "Show sessions you started outside Agntree — in a plain terminal or in an agent's VS Code panel — as rows under their worktree. Turn off to list only sessions started from Agntree; **Import Existing Sessions…** still adds others by hand.",
+            "markdownDescription": "Show sessions you started outside Pitwall — in a plain terminal or in an agent's VS Code panel — as rows under their worktree. Turn off to list only sessions started from Pitwall; **Import Existing Sessions…** still adds others by hand.",
             "order": 3
           },
-          "agntree.autoImport.retentionDays": {
+          "pitwall.autoImport.retentionDays": {
             "type": "integer",
             "default": 15,
             "minimum": 1,
-            "markdownDescription": "Session rows leave the tree after this many days without activity, whether they were imported or started in Agntree. Starred sessions always stay. Only the row is removed: the agent keeps the conversation, and **Import Existing Sessions…** or **Find Session…** brings it back.",
+            "markdownDescription": "Session rows leave the tree after this many days without activity, whether they were imported or started in Pitwall. Starred sessions always stay. Only the row is removed: the agent keeps the conversation, and **Import Existing Sessions…** or **Find Session…** brings it back.",
             "order": 4
           }
         }
       },
       {
-        "id": "agntree.notifications",
+        "id": "pitwall.notifications",
         "title": "Notifications",
         "order": 2,
         "properties": {
-          "agntree.notifications.enabled": {
+          "pitwall.notifications.enabled": {
             "type": "boolean",
             "default": true,
             "markdownDescription": "Notify you about sessions you are not looking at. This is the main switch: turn it off and the settings below have no effect.",
             "order": 1
           },
-          "agntree.notifications.onTurnEnd": {
+          "pitwall.notifications.onTurnEnd": {
             "type": "boolean",
             "default": true,
-            "markdownDescription": "Notify when an agent finishes responding. Works for every agent. Needs `#agntree.notifications.enabled#`.",
+            "markdownDescription": "Notify when an agent finishes responding. Works for every agent. Needs `#pitwall.notifications.enabled#`.",
             "order": 2
           },
-          "agntree.notifications.onNeedsInput": {
+          "pitwall.notifications.onNeedsInput": {
             "type": "boolean",
             "default": true,
-            "markdownDescription": "Notify when a Claude Code session is waiting on you, for example at a permission prompt. Claude Code only. Needs `#agntree.notifications.enabled#`.",
+            "markdownDescription": "Notify when a Claude Code session is waiting on you, for example at a permission prompt. Claude Code only. Needs `#pitwall.notifications.enabled#`.",
             "order": 3
           },
-          "agntree.notifications.nativeBanner": {
+          "pitwall.notifications.nativeBanner": {
             "type": "boolean",
             "default": true,
-            "markdownDescription": "macOS only: also show a system banner while VS Code is in the background. The banner cannot be clicked; the notification inside VS Code has the **Open** button. Needs `#agntree.notifications.enabled#`.",
+            "markdownDescription": "macOS only: also show a system banner while VS Code is in the background. The banner cannot be clicked; the notification inside VS Code has the **Open** button. Needs `#pitwall.notifications.enabled#`.",
             "order": 4
           }
         }
       },
       {
-        "id": "agntree.findSession",
+        "id": "pitwall.findSession",
         "title": "Find Session",
         "order": 3,
         "properties": {
-          "agntree.sessionSearch.harness": {
+          "pitwall.sessionSearch.harness": {
             "type": "string",
             "enum": [
               "claude",
@@ -817,16 +801,16 @@
               "Codex",
               "Pi"
             ],
-            "markdownDescription": "The agent that runs **Find Session…**. It must be installed. Sessions from every installed agent are searched whichever one runs the search; opencode's sessions are searched too, but opencode cannot run it. Changing this clears `#agntree.sessionSearch.model#` and `#agntree.sessionSearch.effort#`.",
+            "markdownDescription": "The agent that runs **Find Session…**. It must be installed. Sessions from every installed agent are searched whichever one runs the search; opencode's sessions are searched too, but opencode cannot run it. Changing this clears `#pitwall.sessionSearch.model#` and `#pitwall.sessionSearch.effort#`.",
             "order": 1
           },
-          "agntree.sessionSearch.model": {
+          "pitwall.sessionSearch.model": {
             "type": "string",
             "default": "",
             "markdownDescription": "The model **Find Session…** uses, written the way that agent's CLI names it (for example `sonnet` for Claude Code). Leave empty to use the model the agent is already configured with. **Find Session Settings…** offers a list to pick from.",
             "order": 2
           },
-          "agntree.sessionSearch.effort": {
+          "pitwall.sessionSearch.effort": {
             "type": "string",
             "enum": [
               "",
@@ -859,57 +843,57 @@
             "markdownDescription": "How hard the agent thinks during **Find Session…**. Higher is slower and costs more. A level the chosen agent does not support is ignored.",
             "order": 3
           },
-          "agntree.sessionSearch.alwaysShowView": {
+          "pitwall.sessionSearch.alwaysShowView": {
             "type": "boolean",
             "default": true,
-            "markdownDescription": "Show the **Find Session** view in the Agntree sidebar all the time. Turn off to show it only after your first search.",
+            "markdownDescription": "Show the **Find Session** view in the Pitwall sidebar all the time. Turn off to show it only after your first search.",
             "order": 4
           }
         }
       },
       {
-        "id": "agntree.window",
+        "id": "pitwall.window",
         "title": "Window",
         "order": 4,
         "properties": {
-          "agntree.autoSwitchWorkspaceFolder": {
+          "pitwall.autoSwitchWorkspaceFolder": {
             "type": "boolean",
             "default": false,
             "markdownDescription": "When you select a worktree or session in another repository, make that folder the one VS Code has open, so the Explorer, search, and source control follow it. VS Code restarts its extensions on each switch, which shows as a brief flicker. With this off, use **Open in This Window** on a worktree's right-click menu.",
             "order": 1
           },
-          "agntree.focusOnStartup": {
+          "pitwall.focusOnStartup": {
             "type": "boolean",
             "default": false,
-            "markdownDescription": "Open the Agntree sidebar when VS Code starts, instead of the File Explorer.",
+            "markdownDescription": "Open the Pitwall sidebar when VS Code starts, instead of the File Explorer.",
             "order": 2
           }
         }
       },
       {
-        "id": "agntree.agentCommands",
+        "id": "pitwall.agentCommands",
         "title": "Agent Commands",
         "order": 5,
         "properties": {
-          "agntree.harnessCommands.claude": {
+          "pitwall.harnessCommands.claude": {
             "type": "string",
             "default": "claude",
             "markdownDescription": "The command that starts Claude Code. Change it when `claude` is not on your PATH (use the full path) or you launch it through a wrapper. Reload the window after changing it.",
             "order": 1
           },
-          "agntree.harnessCommands.opencode": {
+          "pitwall.harnessCommands.opencode": {
             "type": "string",
             "default": "opencode",
             "markdownDescription": "The command that starts opencode. Change it when `opencode` is not on your PATH (use the full path) or you launch it through a wrapper. Reload the window after changing it.",
             "order": 2
           },
-          "agntree.harnessCommands.codex": {
+          "pitwall.harnessCommands.codex": {
             "type": "string",
             "default": "codex",
             "markdownDescription": "The command that starts Codex. Change it when `codex` is not on your PATH (use the full path) or you launch it through a wrapper. Reload the window after changing it.",
             "order": 3
           },
-          "agntree.harnessCommands.pi": {
+          "pitwall.harnessCommands.pi": {
             "type": "string",
             "default": "pi",
             "markdownDescription": "The command that starts Pi. Change it when `pi` is not on your PATH (use the full path) or you launch it through a wrapper. Reload the window after changing it.",
@@ -921,761 +905,761 @@
     "menus": {
       "view/title": [
         {
-          "command": "agntree.addRepository",
-          "when": "view == agntree.workspacesView",
+          "command": "pitwall.addRepository",
+          "when": "view == pitwall.workspacesView",
           "group": "navigation@1"
         },
         {
-          "command": "agntree.cloneRepository",
-          "when": "view == agntree.workspacesView",
+          "command": "pitwall.cloneRepository",
+          "when": "view == pitwall.workspacesView",
           "group": "0_add@1"
         },
         {
-          "command": "agntree.showStarredSessions",
-          "when": "view == agntree.workspacesView",
+          "command": "pitwall.showStarredSessions",
+          "when": "view == pitwall.workspacesView",
           "group": "1_sessions@3"
         },
         {
-          "command": "agntree.setDefaultHarness",
-          "when": "view == agntree.workspacesView",
+          "command": "pitwall.setDefaultHarness",
+          "when": "view == pitwall.workspacesView",
           "group": "2_settings@0"
         },
         {
-          "command": "agntree.disableAutoSwitch",
-          "when": "view == agntree.workspacesView && config.agntree.autoSwitchWorkspaceFolder",
+          "command": "pitwall.disableAutoSwitch",
+          "when": "view == pitwall.workspacesView && config.pitwall.autoSwitchWorkspaceFolder",
           "group": "2_settings@1"
         },
         {
-          "command": "agntree.enableAutoSwitch",
-          "when": "view == agntree.workspacesView && !config.agntree.autoSwitchWorkspaceFolder",
+          "command": "pitwall.enableAutoSwitch",
+          "when": "view == pitwall.workspacesView && !config.pitwall.autoSwitchWorkspaceFolder",
           "group": "2_settings@1"
         },
         {
-          "command": "agntree.disableFocusOnStartup",
-          "when": "view == agntree.workspacesView && config.agntree.focusOnStartup",
+          "command": "pitwall.disableFocusOnStartup",
+          "when": "view == pitwall.workspacesView && config.pitwall.focusOnStartup",
           "group": "2_settings@2"
         },
         {
-          "command": "agntree.enableFocusOnStartup",
-          "when": "view == agntree.workspacesView && !config.agntree.focusOnStartup",
+          "command": "pitwall.enableFocusOnStartup",
+          "when": "view == pitwall.workspacesView && !config.pitwall.focusOnStartup",
           "group": "2_settings@2"
         },
         {
-          "command": "agntree.openSettings",
-          "when": "view == agntree.workspacesView",
+          "command": "pitwall.openSettings",
+          "when": "view == pitwall.workspacesView",
           "group": "2_settings@90"
         },
         {
-          "command": "agntree.openKeybindings",
-          "when": "view == agntree.workspacesView",
+          "command": "pitwall.openKeybindings",
+          "when": "view == pitwall.workspacesView",
           "group": "2_settings@91"
         },
         {
-          "command": "agntree.refreshWorkspaces",
-          "when": "view == agntree.workspacesView",
+          "command": "pitwall.refreshWorkspaces",
+          "when": "view == pitwall.workspacesView",
           "group": "3_refresh@1"
         },
         {
-          "command": "agntree.refreshChanges",
-          "when": "view == agntree.changesView",
+          "command": "pitwall.refreshChanges",
+          "when": "view == pitwall.changesView",
           "group": "navigation"
         },
         {
-          "command": "agntree.files.search",
-          "when": "view == agntree.filesView",
+          "command": "pitwall.files.search",
+          "when": "view == pitwall.filesView",
           "group": "navigation@0"
         },
         {
-          "command": "agntree.files.newFile",
-          "when": "view == agntree.filesView",
+          "command": "pitwall.files.newFile",
+          "when": "view == pitwall.filesView",
           "group": "navigation@1"
         },
         {
-          "command": "agntree.files.newFolder",
-          "when": "view == agntree.filesView",
+          "command": "pitwall.files.newFolder",
+          "when": "view == pitwall.filesView",
           "group": "navigation@2"
         },
         {
-          "command": "agntree.files.paste",
-          "when": "view == agntree.filesView && agntree.hasFileClipboard",
+          "command": "pitwall.files.paste",
+          "when": "view == pitwall.filesView && pitwall.hasFileClipboard",
           "group": "navigation@3"
         },
         {
-          "command": "agntree.files.refresh",
-          "when": "view == agntree.filesView",
+          "command": "pitwall.files.refresh",
+          "when": "view == pitwall.filesView",
           "group": "navigation@4"
         },
         {
-          "command": "agntree.findSession",
-          "when": "view == agntree.workspacesView",
+          "command": "pitwall.findSession",
+          "when": "view == pitwall.workspacesView",
           "group": "1_sessions@2"
         },
         {
-          "command": "agntree.findSession",
-          "when": "view == agntree.sessionSearchView",
+          "command": "pitwall.findSession",
+          "when": "view == pitwall.sessionSearchView",
           "group": "navigation@1"
         },
         {
-          "command": "agntree.clearSessionSearches",
-          "when": "view == agntree.sessionSearchView",
+          "command": "pitwall.clearSessionSearches",
+          "when": "view == pitwall.sessionSearchView",
           "group": "navigation@2"
         },
         {
-          "command": "agntree.configureSessionSearch",
-          "when": "view == agntree.sessionSearchView",
+          "command": "pitwall.configureSessionSearch",
+          "when": "view == pitwall.sessionSearchView",
           "group": "1_actions@1"
         },
         {
-          "command": "agntree.checkoutPR",
-          "when": "view == agntree.workspacesView",
+          "command": "pitwall.checkoutPR",
+          "when": "view == pitwall.workspacesView",
           "group": "0_add@2"
         },
         {
-          "command": "agntree.openNextSessionNeedingYou",
-          "when": "view == agntree.workspacesView",
+          "command": "pitwall.openNextSessionNeedingYou",
+          "when": "view == pitwall.workspacesView",
           "group": "1_sessions@1"
         }
       ],
       "view/item/context": [
         {
-          "command": "agntree.addWorktree",
-          "when": "view == agntree.workspacesView && viewItem == repository",
+          "command": "pitwall.addWorktree",
+          "when": "view == pitwall.workspacesView && viewItem == repository",
           "group": "inline@1"
         },
         {
-          "command": "agntree.addWorktree",
-          "when": "view == agntree.workspacesView && viewItem == repository",
+          "command": "pitwall.addWorktree",
+          "when": "view == pitwall.workspacesView && viewItem == repository",
           "group": "1_create@1"
         },
         {
-          "command": "agntree.checkoutPR",
-          "when": "view == agntree.workspacesView && viewItem == repository",
+          "command": "pitwall.checkoutPR",
+          "when": "view == pitwall.workspacesView && viewItem == repository",
           "group": "1_create@2"
         },
         {
-          "command": "agntree.moveRepositoryUp",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+          "command": "pitwall.moveRepositoryUp",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
           "group": "5_move@1"
         },
         {
-          "command": "agntree.moveRepositoryDown",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+          "command": "pitwall.moveRepositoryDown",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
           "group": "5_move@2"
         },
         {
-          "command": "agntree.removeRepository",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+          "command": "pitwall.removeRepository",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
           "group": "9_destructive@9"
         },
         {
-          "submenu": "agntree.newSession",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && (agntree.anyHarnessInstalled || agntree.anyNativeUiInstalled) && !config.agntree.defaultHarness",
+          "submenu": "pitwall.newSession",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && (pitwall.anyHarnessInstalled || pitwall.anyNativeUiInstalled) && !config.pitwall.defaultHarness",
           "group": "inline@1"
         },
         {
-          "command": "agntree.newDefaultSession",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && (agntree.anyHarnessInstalled || agntree.anyNativeUiInstalled) && config.agntree.defaultHarness",
+          "command": "pitwall.newDefaultSession",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && (pitwall.anyHarnessInstalled || pitwall.anyNativeUiInstalled) && config.pitwall.defaultHarness",
           "group": "inline@1"
         },
         {
-          "command": "agntree.openTerminalAtWorktree",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+          "command": "pitwall.openTerminalAtWorktree",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
           "group": "inline@2"
         },
         {
-          "submenu": "agntree.newSessionContext",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && (agntree.anyHarnessInstalled || agntree.anyNativeUiInstalled)",
+          "submenu": "pitwall.newSessionContext",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && (pitwall.anyHarnessInstalled || pitwall.anyNativeUiInstalled)",
           "group": "1_session@1"
         },
         {
-          "command": "agntree.importSessions",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+          "command": "pitwall.importSessions",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
           "group": "1_session@2"
         },
         {
-          "command": "agntree.switchToWorkspace",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && !config.agntree.autoSwitchWorkspaceFolder",
+          "command": "pitwall.switchToWorkspace",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/ && !config.pitwall.autoSwitchWorkspaceFolder",
           "group": "2_open@1"
         },
         {
-          "command": "agntree.openInNewWindow",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+          "command": "pitwall.openInNewWindow",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
           "group": "2_open@2"
         },
         {
-          "command": "agntree.openTerminalAtWorktree",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+          "command": "pitwall.openTerminalAtWorktree",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
           "group": "2_open@3"
         },
         {
-          "command": "agntree.openPRInBrowser",
-          "when": "view == agntree.workspacesView && viewItem == worktree",
+          "command": "pitwall.openPRInBrowser",
+          "when": "view == pitwall.workspacesView && viewItem == worktree",
           "group": "2_open@4"
         },
         {
-          "command": "agntree.copyWorktreePath",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+          "command": "pitwall.copyWorktreePath",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
           "group": "2_open@5"
         },
         {
-          "command": "agntree.mergeWorktree",
-          "when": "view == agntree.workspacesView && viewItem == worktree",
+          "command": "pitwall.mergeWorktree",
+          "when": "view == pitwall.workspacesView && viewItem == worktree",
           "group": "3_git@1"
         },
         {
-          "command": "agntree.rebaseWorktree",
-          "when": "view == agntree.workspacesView && viewItem == worktree",
+          "command": "pitwall.rebaseWorktree",
+          "when": "view == pitwall.workspacesView && viewItem == worktree",
           "group": "3_git@2"
         },
         {
-          "command": "agntree.clearWorktreeSessions",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
+          "command": "pitwall.clearWorktreeSessions",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
           "group": "9_destructive@1"
         },
         {
-          "command": "agntree.deleteWorktree",
-          "when": "view == agntree.workspacesView && viewItem == worktree",
+          "command": "pitwall.deleteWorktree",
+          "when": "view == pitwall.workspacesView && viewItem == worktree",
           "group": "9_destructive@2"
         },
         {
-          "command": "agntree.starChat",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|runningChat)(ClaudeUi|CodexUi)?$/",
+          "command": "pitwall.starChat",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|runningChat)(ClaudeUi|CodexUi)?$/",
           "group": "inline@0"
         },
         {
-          "command": "agntree.unstarChat",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(starredChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
+          "command": "pitwall.unstarChat",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(starredChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
           "group": "inline@0"
         },
         {
-          "command": "agntree.renameChat",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
+          "command": "pitwall.renameChat",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
           "group": "inline@1"
         },
         {
-          "command": "agntree.openChatInTerminal",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|starredChat)(ClaudeUi|CodexUi)?$/",
+          "command": "pitwall.openChatInTerminal",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat)(ClaudeUi|CodexUi)?$/",
           "group": "inline@2"
         },
         {
-          "command": "agntree.openClaudeUi",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)ClaudeUi$/ && agntree.claudeUiInstalled",
+          "command": "pitwall.openClaudeUi",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)ClaudeUi$/ && pitwall.claudeUiInstalled",
           "group": "inline@3"
         },
         {
-          "command": "agntree.openCodexUi",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)CodexUi$/ && agntree.codexUiInstalled",
+          "command": "pitwall.openCodexUi",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)CodexUi$/ && pitwall.codexUiInstalled",
           "group": "inline@3"
         },
         {
-          "command": "agntree.closeChat",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
+          "command": "pitwall.closeChat",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
           "group": "inline@4"
         },
         {
-          "command": "agntree.openChat",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
+          "command": "pitwall.openChat",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
           "group": "1_open@1"
         },
         {
-          "command": "agntree.openChatInTerminal",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
+          "command": "pitwall.openChatInTerminal",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
           "group": "1_open@2"
         },
         {
-          "command": "agntree.openClaudeUi",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)ClaudeUi$/ && !listMultiSelection",
+          "command": "pitwall.openClaudeUi",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)ClaudeUi$/ && !listMultiSelection",
           "group": "1_open@3"
         },
         {
-          "command": "agntree.openCodexUi",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)CodexUi$/ && !listMultiSelection",
+          "command": "pitwall.openCodexUi",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)CodexUi$/ && !listMultiSelection",
           "group": "1_open@3"
         },
         {
-          "command": "agntree.renameChat",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
+          "command": "pitwall.renameChat",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
           "group": "2_edit@1"
         },
         {
-          "command": "agntree.starChat",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|runningChat)(ClaudeUi|CodexUi)?$/",
+          "command": "pitwall.starChat",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|runningChat)(ClaudeUi|CodexUi)?$/",
           "group": "2_edit@2"
         },
         {
-          "command": "agntree.unstarChat",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(starredChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
+          "command": "pitwall.unstarChat",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(starredChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
           "group": "2_edit@2"
         },
         {
-          "command": "agntree.forkChat",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
+          "command": "pitwall.forkChat",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
           "group": "3_fork@1"
         },
         {
-          "command": "agntree.forkChatWithChanges",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
+          "command": "pitwall.forkChatWithChanges",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
           "group": "3_fork@2"
         },
         {
-          "command": "agntree.copyResumeCommand",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
+          "command": "pitwall.copyResumeCommand",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
           "group": "4_copy@1"
         },
         {
-          "command": "agntree.copySessionId",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
+          "command": "pitwall.copySessionId",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
           "group": "4_copy@2"
         },
         {
-          "command": "agntree.closeChat",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
+          "command": "pitwall.closeChat",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
           "group": "9_destructive@1"
         },
         {
-          "command": "agntree.deleteChat",
-          "when": "view == agntree.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
+          "command": "pitwall.deleteChat",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
           "group": "9_destructive@2"
         },
         {
-          "command": "agntree.openDiff",
-          "when": "view == agntree.workspacesView && viewItem == changedFile",
+          "command": "pitwall.openDiff",
+          "when": "view == pitwall.workspacesView && viewItem == changedFile",
           "group": "navigation"
         },
         {
-          "command": "agntree.rebaseContinue",
-          "when": "view == agntree.changesView && viewItem == rebaseSection",
+          "command": "pitwall.rebaseContinue",
+          "when": "view == pitwall.changesView && viewItem == rebaseSection",
           "group": "inline@1"
         },
         {
-          "command": "agntree.rebaseSkip",
-          "when": "view == agntree.changesView && viewItem == rebaseSection",
+          "command": "pitwall.rebaseSkip",
+          "when": "view == pitwall.changesView && viewItem == rebaseSection",
           "group": "inline@2"
         },
         {
-          "command": "agntree.rebaseAbort",
-          "when": "view == agntree.changesView && viewItem == rebaseSection",
+          "command": "pitwall.rebaseAbort",
+          "when": "view == pitwall.changesView && viewItem == rebaseSection",
           "group": "inline@3"
         },
         {
-          "command": "agntree.discardAll",
-          "when": "view == agntree.changesView && viewItem == unstagedSection",
+          "command": "pitwall.discardAll",
+          "when": "view == pitwall.changesView && viewItem == unstagedSection",
           "group": "inline"
         },
         {
-          "command": "agntree.stageAll",
-          "when": "view == agntree.changesView && viewItem == unstagedSection",
+          "command": "pitwall.stageAll",
+          "when": "view == pitwall.changesView && viewItem == unstagedSection",
           "group": "inline"
         },
         {
-          "command": "agntree.unstageAll",
-          "when": "view == agntree.changesView && viewItem == stagedSection",
+          "command": "pitwall.unstageAll",
+          "when": "view == pitwall.changesView && viewItem == stagedSection",
           "group": "inline"
         },
         {
-          "command": "agntree.stageFile",
-          "when": "view == agntree.changesView && viewItem == unstagedFile",
+          "command": "pitwall.stageFile",
+          "when": "view == pitwall.changesView && viewItem == unstagedFile",
           "group": "inline@1"
         },
         {
-          "command": "agntree.discardFile",
-          "when": "view == agntree.changesView && viewItem == unstagedFile",
+          "command": "pitwall.discardFile",
+          "when": "view == pitwall.changesView && viewItem == unstagedFile",
           "group": "inline@2"
         },
         {
-          "command": "agntree.unstageFile",
-          "when": "view == agntree.changesView && viewItem == stagedFile",
+          "command": "pitwall.unstageFile",
+          "when": "view == pitwall.changesView && viewItem == stagedFile",
           "group": "inline"
         },
         {
-          "command": "agntree.stageFile",
-          "when": "view == agntree.changesView && viewItem == unstagedFile",
+          "command": "pitwall.stageFile",
+          "when": "view == pitwall.changesView && viewItem == unstagedFile",
           "group": "navigation"
         },
         {
-          "command": "agntree.discardFile",
-          "when": "view == agntree.changesView && viewItem == unstagedFile",
+          "command": "pitwall.discardFile",
+          "when": "view == pitwall.changesView && viewItem == unstagedFile",
           "group": "destructive"
         },
         {
-          "command": "agntree.unstageFile",
-          "when": "view == agntree.changesView && viewItem == stagedFile",
+          "command": "pitwall.unstageFile",
+          "when": "view == pitwall.changesView && viewItem == stagedFile",
           "group": "navigation"
         },
         {
-          "command": "agntree.files.openToSide",
-          "when": "view == agntree.filesView && viewItem == file",
+          "command": "pitwall.files.openToSide",
+          "when": "view == pitwall.filesView && viewItem == file",
           "group": "1_open@1"
         },
         {
-          "command": "agntree.files.revealInFinder",
-          "when": "view == agntree.filesView && (viewItem == file || viewItem == folder)",
+          "command": "pitwall.files.revealInFinder",
+          "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
           "group": "2_reveal@1"
         },
         {
-          "command": "agntree.files.openInTerminal",
-          "when": "view == agntree.filesView && (viewItem == file || viewItem == folder)",
+          "command": "pitwall.files.openInTerminal",
+          "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
           "group": "2_reveal@2"
         },
         {
-          "command": "agntree.files.copyPath",
-          "when": "view == agntree.filesView && (viewItem == file || viewItem == folder)",
+          "command": "pitwall.files.copyPath",
+          "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
           "group": "3_path@1"
         },
         {
-          "command": "agntree.files.copyRelativePath",
-          "when": "view == agntree.filesView && (viewItem == file || viewItem == folder)",
+          "command": "pitwall.files.copyRelativePath",
+          "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
           "group": "3_path@2"
         },
         {
-          "command": "agntree.files.copy",
-          "when": "view == agntree.filesView && (viewItem == file || viewItem == folder)",
+          "command": "pitwall.files.copy",
+          "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
           "group": "4_clipboard@1"
         },
         {
-          "command": "agntree.files.cut",
-          "when": "view == agntree.filesView && (viewItem == file || viewItem == folder)",
+          "command": "pitwall.files.cut",
+          "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
           "group": "4_clipboard@2"
         },
         {
-          "command": "agntree.files.paste",
-          "when": "view == agntree.filesView && (viewItem == folder || viewItem == file) && agntree.hasFileClipboard",
+          "command": "pitwall.files.paste",
+          "when": "view == pitwall.filesView && (viewItem == folder || viewItem == file) && pitwall.hasFileClipboard",
           "group": "4_clipboard@3"
         },
         {
-          "command": "agntree.files.newFile",
-          "when": "view == agntree.filesView && viewItem == folder",
+          "command": "pitwall.files.newFile",
+          "when": "view == pitwall.filesView && viewItem == folder",
           "group": "5_create@1"
         },
         {
-          "command": "agntree.files.newFolder",
-          "when": "view == agntree.filesView && viewItem == folder",
+          "command": "pitwall.files.newFolder",
+          "when": "view == pitwall.filesView && viewItem == folder",
           "group": "5_create@2"
         },
         {
-          "command": "agntree.files.rename",
-          "when": "view == agntree.filesView && (viewItem == file || viewItem == folder)",
+          "command": "pitwall.files.rename",
+          "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
           "group": "6_edit@1"
         },
         {
-          "command": "agntree.files.delete",
-          "when": "view == agntree.filesView && (viewItem == file || viewItem == folder)",
+          "command": "pitwall.files.delete",
+          "when": "view == pitwall.filesView && (viewItem == file || viewItem == folder)",
           "group": "6_edit@2"
         },
         {
-          "command": "agntree.cancelSessionSearch",
-          "when": "view == agntree.sessionSearchView && viewItem == sessionSearchRunning",
+          "command": "pitwall.cancelSessionSearch",
+          "when": "view == pitwall.sessionSearchView && viewItem == sessionSearchRunning",
           "group": "inline@1"
         },
         {
-          "command": "agntree.askSessionSearchAgain",
-          "when": "view == agntree.sessionSearchView && viewItem == sessionSearch",
+          "command": "pitwall.askSessionSearchAgain",
+          "when": "view == pitwall.sessionSearchView && viewItem == sessionSearch",
           "group": "inline@1"
         },
         {
-          "command": "agntree.askSessionSearchAgain",
-          "when": "view == agntree.sessionSearchView && viewItem == sessionSearch",
+          "command": "pitwall.askSessionSearchAgain",
+          "when": "view == pitwall.sessionSearchView && viewItem == sessionSearch",
           "group": "navigation@1"
         },
         {
-          "command": "agntree.removeSessionSearch",
-          "when": "view == agntree.sessionSearchView && viewItem == sessionSearch",
+          "command": "pitwall.removeSessionSearch",
+          "when": "view == pitwall.sessionSearchView && viewItem == sessionSearch",
           "group": "3_destructive"
         },
         {
-          "command": "agntree.resumeSearchMatch",
-          "when": "view == agntree.sessionSearchView && viewItem == sessionSearchMatch",
+          "command": "pitwall.resumeSearchMatch",
+          "when": "view == pitwall.sessionSearchView && viewItem == sessionSearchMatch",
           "group": "inline@1"
         },
         {
-          "command": "agntree.revealSearchMatch",
-          "when": "view == agntree.sessionSearchView && viewItem == sessionSearchMatch",
+          "command": "pitwall.revealSearchMatch",
+          "when": "view == pitwall.sessionSearchView && viewItem == sessionSearchMatch",
           "group": "inline@2"
         },
         {
-          "command": "agntree.resumeSearchMatch",
-          "when": "view == agntree.sessionSearchView && viewItem == sessionSearchMatch",
+          "command": "pitwall.resumeSearchMatch",
+          "when": "view == pitwall.sessionSearchView && viewItem == sessionSearchMatch",
           "group": "navigation@1"
         },
         {
-          "command": "agntree.revealSearchMatch",
-          "when": "view == agntree.sessionSearchView && viewItem == sessionSearchMatch",
+          "command": "pitwall.revealSearchMatch",
+          "when": "view == pitwall.sessionSearchView && viewItem == sessionSearchMatch",
           "group": "navigation@2"
         },
         {
-          "command": "agntree.copySearchMatchCommand",
-          "when": "view == agntree.sessionSearchView && viewItem == sessionSearchMatch",
+          "command": "pitwall.copySearchMatchCommand",
+          "when": "view == pitwall.sessionSearchView && viewItem == sessionSearchMatch",
           "group": "navigation@3"
         }
       ],
-      "agntree.newSession": [
+      "pitwall.newSession": [
         {
-          "command": "agntree.newClaudeChat",
-          "when": "(config.agntree.defaultSessionSurface == 'ui' && agntree.claudeUiInstalled) || (config.agntree.defaultSessionSurface != 'ui' && agntree.claudeInstalled)",
+          "command": "pitwall.newClaudeChat",
+          "when": "(config.pitwall.defaultSessionSurface == 'ui' && pitwall.claudeUiInstalled) || (config.pitwall.defaultSessionSurface != 'ui' && pitwall.claudeInstalled)",
           "group": "1_harness@1"
         },
         {
-          "command": "agntree.newClaudeChatInTerminal",
-          "when": "config.agntree.defaultSessionSurface == 'ui' && agntree.claudeInstalled",
+          "command": "pitwall.newClaudeChatInTerminal",
+          "when": "config.pitwall.defaultSessionSurface == 'ui' && pitwall.claudeInstalled",
           "group": "1_harness@2"
         },
         {
-          "command": "agntree.newClaudeChatInUi",
-          "when": "config.agntree.defaultSessionSurface != 'ui'",
+          "command": "pitwall.newClaudeChatInUi",
+          "when": "config.pitwall.defaultSessionSurface != 'ui'",
           "group": "1_harness@3"
         },
         {
-          "command": "agntree.newOpencodeChat",
-          "when": "agntree.opencodeInstalled",
+          "command": "pitwall.newOpencodeChat",
+          "when": "pitwall.opencodeInstalled",
           "group": "1_harness@4"
         },
         {
-          "command": "agntree.newCodexChat",
-          "when": "(config.agntree.defaultSessionSurface == 'ui' && agntree.codexUiInstalled) || (config.agntree.defaultSessionSurface != 'ui' && agntree.codexInstalled)",
+          "command": "pitwall.newCodexChat",
+          "when": "(config.pitwall.defaultSessionSurface == 'ui' && pitwall.codexUiInstalled) || (config.pitwall.defaultSessionSurface != 'ui' && pitwall.codexInstalled)",
           "group": "1_harness@5"
         },
         {
-          "command": "agntree.newCodexChatInTerminal",
-          "when": "config.agntree.defaultSessionSurface == 'ui' && agntree.codexInstalled",
+          "command": "pitwall.newCodexChatInTerminal",
+          "when": "config.pitwall.defaultSessionSurface == 'ui' && pitwall.codexInstalled",
           "group": "1_harness@6"
         },
         {
-          "command": "agntree.newCodexChatInUi",
-          "when": "config.agntree.defaultSessionSurface != 'ui'",
+          "command": "pitwall.newCodexChatInUi",
+          "when": "config.pitwall.defaultSessionSurface != 'ui'",
           "group": "1_harness@7"
         },
         {
-          "command": "agntree.newPiChat",
-          "when": "agntree.piInstalled",
+          "command": "pitwall.newPiChat",
+          "when": "pitwall.piInstalled",
           "group": "1_harness@8"
         },
         {
-          "command": "agntree.setDefaultHarness",
+          "command": "pitwall.setDefaultHarness",
           "group": "9_default"
         }
       ],
-      "agntree.newSessionContext": [
+      "pitwall.newSessionContext": [
         {
-          "command": "agntree.newClaudeChat",
-          "when": "(config.agntree.defaultSessionSurface == 'ui' && agntree.claudeUiInstalled) || (config.agntree.defaultSessionSurface != 'ui' && agntree.claudeInstalled)",
+          "command": "pitwall.newClaudeChat",
+          "when": "(config.pitwall.defaultSessionSurface == 'ui' && pitwall.claudeUiInstalled) || (config.pitwall.defaultSessionSurface != 'ui' && pitwall.claudeInstalled)",
           "group": "1_harness@1"
         },
         {
-          "command": "agntree.newClaudeChatInTerminal",
-          "when": "config.agntree.defaultSessionSurface == 'ui' && agntree.claudeInstalled",
+          "command": "pitwall.newClaudeChatInTerminal",
+          "when": "config.pitwall.defaultSessionSurface == 'ui' && pitwall.claudeInstalled",
           "group": "1_harness@2"
         },
         {
-          "command": "agntree.newClaudeChatInUi",
-          "when": "config.agntree.defaultSessionSurface != 'ui'",
+          "command": "pitwall.newClaudeChatInUi",
+          "when": "config.pitwall.defaultSessionSurface != 'ui'",
           "group": "1_harness@3"
         },
         {
-          "command": "agntree.newOpencodeChat",
-          "when": "agntree.opencodeInstalled",
+          "command": "pitwall.newOpencodeChat",
+          "when": "pitwall.opencodeInstalled",
           "group": "1_harness@4"
         },
         {
-          "command": "agntree.newCodexChat",
-          "when": "(config.agntree.defaultSessionSurface == 'ui' && agntree.codexUiInstalled) || (config.agntree.defaultSessionSurface != 'ui' && agntree.codexInstalled)",
+          "command": "pitwall.newCodexChat",
+          "when": "(config.pitwall.defaultSessionSurface == 'ui' && pitwall.codexUiInstalled) || (config.pitwall.defaultSessionSurface != 'ui' && pitwall.codexInstalled)",
           "group": "1_harness@5"
         },
         {
-          "command": "agntree.newCodexChatInTerminal",
-          "when": "config.agntree.defaultSessionSurface == 'ui' && agntree.codexInstalled",
+          "command": "pitwall.newCodexChatInTerminal",
+          "when": "config.pitwall.defaultSessionSurface == 'ui' && pitwall.codexInstalled",
           "group": "1_harness@6"
         },
         {
-          "command": "agntree.newCodexChatInUi",
-          "when": "config.agntree.defaultSessionSurface != 'ui'",
+          "command": "pitwall.newCodexChatInUi",
+          "when": "config.pitwall.defaultSessionSurface != 'ui'",
           "group": "1_harness@7"
         },
         {
-          "command": "agntree.newPiChat",
-          "when": "agntree.piInstalled",
+          "command": "pitwall.newPiChat",
+          "when": "pitwall.piInstalled",
           "group": "1_harness@8"
         },
         {
-          "command": "agntree.setDefaultHarness",
+          "command": "pitwall.setDefaultHarness",
           "group": "9_default"
         }
       ],
       "commandPalette": [
         {
-          "command": "agntree.copySessionId",
+          "command": "pitwall.copySessionId",
           "when": "false"
         },
         {
-          "command": "agntree.copyResumeCommand",
+          "command": "pitwall.copyResumeCommand",
           "when": "false"
         },
         {
-          "command": "agntree.files.openToSide",
+          "command": "pitwall.files.openToSide",
           "when": "false"
         },
         {
-          "command": "agntree.files.revealInFinder",
+          "command": "pitwall.files.revealInFinder",
           "when": "false"
         },
         {
-          "command": "agntree.files.openInTerminal",
+          "command": "pitwall.files.openInTerminal",
           "when": "false"
         },
         {
-          "command": "agntree.files.copyPath",
+          "command": "pitwall.files.copyPath",
           "when": "false"
         },
         {
-          "command": "agntree.files.copyRelativePath",
+          "command": "pitwall.files.copyRelativePath",
           "when": "false"
         },
         {
-          "command": "agntree.files.copy",
+          "command": "pitwall.files.copy",
           "when": "false"
         },
         {
-          "command": "agntree.files.cut",
+          "command": "pitwall.files.cut",
           "when": "false"
         },
         {
-          "command": "agntree.files.rename",
+          "command": "pitwall.files.rename",
           "when": "false"
         },
         {
-          "command": "agntree.files.delete",
+          "command": "pitwall.files.delete",
           "when": "false"
         },
         {
-          "command": "agntree.moveRepositoryUp",
+          "command": "pitwall.moveRepositoryUp",
           "when": "false"
         },
         {
-          "command": "agntree.moveRepositoryDown",
+          "command": "pitwall.moveRepositoryDown",
           "when": "false"
         },
         {
-          "command": "agntree.deleteWorktree",
+          "command": "pitwall.deleteWorktree",
           "when": "false"
         },
         {
-          "command": "agntree.mergeWorktree",
+          "command": "pitwall.mergeWorktree",
           "when": "false"
         },
         {
-          "command": "agntree.rebaseWorktree",
+          "command": "pitwall.rebaseWorktree",
           "when": "false"
         },
         {
-          "command": "agntree.openPRInBrowser",
+          "command": "pitwall.openPRInBrowser",
           "when": "false"
         },
         {
-          "command": "agntree.openInNewWindow",
+          "command": "pitwall.openInNewWindow",
           "when": "false"
         },
         {
-          "command": "agntree.switchToWorkspace",
+          "command": "pitwall.switchToWorkspace",
           "when": "false"
         },
         {
-          "command": "agntree.copyWorktreePath",
+          "command": "pitwall.copyWorktreePath",
           "when": "false"
         },
         {
-          "command": "agntree.openTerminalAtWorktree",
+          "command": "pitwall.openTerminalAtWorktree",
           "when": "false"
         },
         {
-          "command": "agntree.clearWorktreeSessions",
+          "command": "pitwall.clearWorktreeSessions",
           "when": "false"
         },
         {
-          "command": "agntree.openChat",
+          "command": "pitwall.openChat",
           "when": "false"
         },
         {
-          "command": "agntree.renameChat",
+          "command": "pitwall.renameChat",
           "when": "false"
         },
         {
-          "command": "agntree.closeChat",
+          "command": "pitwall.closeChat",
           "when": "false"
         },
         {
-          "command": "agntree.deleteChat",
+          "command": "pitwall.deleteChat",
           "when": "false"
         },
         {
-          "command": "agntree.forkChat",
+          "command": "pitwall.forkChat",
           "when": "false"
         },
         {
-          "command": "agntree.forkChatWithChanges",
+          "command": "pitwall.forkChatWithChanges",
           "when": "false"
         },
         {
-          "command": "agntree.starChat",
+          "command": "pitwall.starChat",
           "when": "false"
         },
         {
-          "command": "agntree.unstarChat",
+          "command": "pitwall.unstarChat",
           "when": "false"
         },
         {
-          "command": "agntree.stageFile",
+          "command": "pitwall.stageFile",
           "when": "false"
         },
         {
-          "command": "agntree.unstageFile",
+          "command": "pitwall.unstageFile",
           "when": "false"
         },
         {
-          "command": "agntree.discardFile",
+          "command": "pitwall.discardFile",
           "when": "false"
         },
         {
-          "command": "agntree.openDiff",
+          "command": "pitwall.openDiff",
           "when": "false"
         },
         {
-          "command": "agntree.askSessionSearchAgain",
+          "command": "pitwall.askSessionSearchAgain",
           "when": "false"
         },
         {
-          "command": "agntree.cancelSessionSearch",
+          "command": "pitwall.cancelSessionSearch",
           "when": "false"
         },
         {
-          "command": "agntree.removeSessionSearch",
+          "command": "pitwall.removeSessionSearch",
           "when": "false"
         },
         {
-          "command": "agntree.resumeSearchMatch",
+          "command": "pitwall.resumeSearchMatch",
           "when": "false"
         },
         {
-          "command": "agntree.revealSearchMatch",
+          "command": "pitwall.revealSearchMatch",
           "when": "false"
         },
         {
-          "command": "agntree.copySearchMatchCommand",
+          "command": "pitwall.copySearchMatchCommand",
           "when": "false"
         },
         {
-          "command": "agntree.disableAutoSwitch",
-          "when": "config.agntree.autoSwitchWorkspaceFolder"
+          "command": "pitwall.disableAutoSwitch",
+          "when": "config.pitwall.autoSwitchWorkspaceFolder"
         },
         {
-          "command": "agntree.enableAutoSwitch",
-          "when": "!config.agntree.autoSwitchWorkspaceFolder"
+          "command": "pitwall.enableAutoSwitch",
+          "when": "!config.pitwall.autoSwitchWorkspaceFolder"
         },
         {
-          "command": "agntree.disableFocusOnStartup",
-          "when": "config.agntree.focusOnStartup"
+          "command": "pitwall.disableFocusOnStartup",
+          "when": "config.pitwall.focusOnStartup"
         },
         {
-          "command": "agntree.enableFocusOnStartup",
-          "when": "!config.agntree.focusOnStartup"
+          "command": "pitwall.enableFocusOnStartup",
+          "when": "!config.pitwall.focusOnStartup"
         }
       ]
     }

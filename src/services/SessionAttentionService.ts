@@ -132,7 +132,7 @@ export class SessionAttentionService {
     try {
       await this.checkTurns(prime);
     } catch (error) {
-      console.error('[Agntree] Attention check failed:', error);
+      console.error('[Pitwall] Attention check failed:', error);
     } finally {
       this.ticking = false;
     }
@@ -264,7 +264,7 @@ export class SessionAttentionService {
       return states;
     } catch (error) {
       console.error(
-        `[Agntree] Could not read ${group.adapter.id} sessions in ${group.path}:`,
+        `[Pitwall] Could not read ${group.adapter.id} sessions in ${group.path}:`,
         error
       );
       return null;

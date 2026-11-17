@@ -13,7 +13,7 @@ fifteen transcripts matched the mod's name.
 
 ## Decision
 
-- **No index.** An agent searches the records each harness already keeps. Agntree builds,
+- **No index.** An agent searches the records each harness already keeps. Pitwall builds,
   stores, and refreshes nothing for search.
 - **The harness runs the agent.** One installed harness's CLI runs a headless conversation
   with read-only file tools and no saved session. The user chooses the harness, model, and
@@ -24,8 +24,8 @@ fifteen transcripts matched the mod's name.
 - **Only the harness's record is trusted.** A match is shown only when its harness confirms
   the session exists; folder, title, and dates come from that record, and a quote is shown
   only when it opens one of the user's own prompts.
-- **The prompt carries the format; Agntree checks it.** The prompt ends with the JSON
-  Schema of the reply, whose field descriptions are the format instructions. Agntree
+- **The prompt carries the format; Pitwall checks it.** The prompt ends with the JSON
+  Schema of the reply, whose field descriptions are the format instructions. Pitwall
   parses each reply and validates it against that schema; a reply that breaks it goes back
   to the same agent with each problem named, at most twice. This needs nothing from a CLI
   beyond text in and text out and a follow-up message, so every runner shares it; a

@@ -30,7 +30,7 @@ const turnDuration = (second: number, pending?: number) =>
   });
 
 test('every step of a turn reads the same through the tail reader and the full parser', async (t) => {
-  const root = tempDir(t, 'agntree-claude-turn-');
+  const root = tempDir(t, 'pitwall-claude-turn-');
   const repo = path.join(root, 'repo');
   fs.mkdirSync(repo);
   cwd = repo;
@@ -66,7 +66,7 @@ test('every step of a turn reads the same through the tail reader and the full p
 });
 
 test('the tail reader skips a partial last line and widens its window until the turn is decided', async (t) => {
-  const dir = tempDir(t, 'agntree-claude-tail-');
+  const dir = tempDir(t, 'pitwall-claude-tail-');
   let serial = 0;
   const read = (content: string) => {
     const file = path.join(dir, `${++serial}.jsonl`);

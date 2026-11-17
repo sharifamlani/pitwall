@@ -1,6 +1,6 @@
 # Worktrees and repositories
 
-A git worktree is a second checkout of the same repository in its own directory, on its own branch. Agntree makes worktrees the unit of agent work: one worktree per task, one or more agent sessions inside it, and no two agents editing the same files. This page covers adding repositories, creating and removing worktrees, and the git actions on them.
+A git worktree is a second checkout of the same repository in its own directory, on its own branch. Pitwall makes worktrees the unit of agent work: one worktree per task, one or more agent sessions inside it, and no two agents editing the same files. This page covers adding repositories, creating and removing worktrees, and the git actions on them.
 
 For the workflow as a whole, read [Run multiple agents in parallel with git worktrees](guides/parallel-agents-git-worktrees.md).
 
@@ -8,10 +8,10 @@ For the workflow as a whole, read [Run multiple agents in parallel with git work
 
 In the **Workspaces** view, select **Add Local Folder or Repository…** (the folder icon in the view's title) and pick a folder.
 
-- A **git repository** is listed with its worktrees beneath it. If you pick a directory inside a repository, Agntree adds the repository's root.
+- A **git repository** is listed with its worktrees beneath it. If you pick a directory inside a repository, Pitwall adds the repository's root.
 - A **plain folder** is listed with its sessions directly beneath it. See [Folders without git](#folders-without-git).
 
-To start from GitHub instead, choose **Clone from GitHub…** in the view's `…` menu, enter a URL or `owner/repo`, and pick the parent folder. Agntree clones the repository and adds it.
+To start from GitHub instead, choose **Clone from GitHub…** in the view's `…` menu, enter a URL or `owner/repo`, and pick the parent folder. Pitwall clones the repository and adds it.
 
 Repositories do not need to be open in VS Code, and you can add as many as you like. Reorder them with **Move Up** and **Move Down** on the right-click menu.
 
@@ -44,7 +44,7 @@ Hover a repository and select **Create Worktree…** (**+**), then choose where 
 | **New branch** | Asks for a base branch and a name, then creates the branch |
 | **From upstream** | Fetches the `upstream` remote and bases a new branch on one of its branches. Shown when the repository has an `upstream` remote |
 
-Agntree creates the worktree in a folder beside the repository, so worktrees never clutter the repository itself:
+Pitwall creates the worktree in a folder beside the repository, so worktrees never clutter the repository itself:
 
 ```
 ~/code/storefront/                    the repository
@@ -59,7 +59,7 @@ Then hover the new worktree and select **New Session** (**+**) to start an agent
 
 Right-click a repository and choose **Check Out Pull Request…**, or pick it from the Workspaces `…` menu. Select an open pull request from the list, or enter a number or URL.
 
-Agntree fetches the pull request into a local branch named `pr-<number>` and creates a worktree for it, so reviewing a PR never disturbs the branch you are on. This works for pull requests from forks. Start a session in the new worktree to have an agent review, test, or extend the change.
+Pitwall fetches the pull request into a local branch named `pr-<number>` and creates a worktree for it, so reviewing a PR never disturbs the branch you are on. This works for pull requests from forks. Start a session in the new worktree to have an agent review, test, or extend the change.
 
 **Open Pull Request in Browser** on any worktree opens the pull request for its branch.
 
@@ -78,13 +78,13 @@ Selecting a worktree or one of its sessions points the [Changes and All Files pa
 | **Open Terminal Here** | A plain terminal in the worktree |
 | **Copy Path** | Copy the worktree's directory |
 
-To have VS Code follow your selection automatically, turn on [`agntree.autoSwitchWorkspaceFolder`](reference/settings.md#window). VS Code restarts its extensions on each switch, which shows as a short flicker.
+To have VS Code follow your selection automatically, turn on [`pitwall.autoSwitchWorkspaceFolder`](reference/settings.md#window). VS Code restarts its extensions on each switch, which shows as a short flicker.
 
 ## Merge and rebase
 
-**Merge Branch into This Worktree…** merges another worktree's branch into the one you right-clicked. Agntree warns first if the target has uncommitted changes, and on a conflict it offers a terminal in the worktree so you can resolve and commit.
+**Merge Branch into This Worktree…** merges another worktree's branch into the one you right-clicked. Pitwall warns first if the target has uncommitted changes, and on a conflict it offers a terminal in the worktree so you can resolve and commit.
 
-**Rebase onto Upstream…** fetches your remotes and rebases the worktree's branch onto the remote branch you pick. The first of `upstream/main`, `upstream/master`, `origin/main`, and `origin/master` that exists is recommended. Before it starts, Agntree shows which files would conflict and whether uncommitted changes will be stashed. If the rebase stops on a conflict, **Continue**, **Skip Commit**, and **Abort** appear in the Changes panel.
+**Rebase onto Upstream…** fetches your remotes and rebases the worktree's branch onto the remote branch you pick. The first of `upstream/main`, `upstream/master`, `origin/main`, and `origin/master` that exists is recommended. Before it starts, Pitwall shows which files would conflict and whether uncommitted changes will be stashed. If the rebase stops on a conflict, **Continue**, **Skip Commit**, and **Abort** appear in the Changes panel.
 
 ## Delete a worktree
 
@@ -95,15 +95,15 @@ Right-click a worktree and choose **Delete Worktree…**. The confirmation says 
 
 Deleting a worktree removes its directory from disk; it does not go to the Trash. If the worktree has uncommitted changes, the confirmation warns you and the buttons say **(force)**. Session rows under the worktree leave the list and their terminals close, but the agents keep the conversations. The main worktree cannot be deleted.
 
-## Remove a repository from Agntree
+## Remove a repository from Pitwall
 
-Right-click a repository or folder and choose **Remove from Agntree…**. This only removes it from the sidebar: your files, the git repository, and the agents' conversations are untouched. Add the folder again and **Import Existing Sessions…** brings its sessions back.
+Right-click a repository or folder and choose **Remove from Pitwall…**. This only removes it from the sidebar: your files, the git repository, and the agents' conversations are untouched. Add the folder again and **Import Existing Sessions…** brings its sessions back.
 
 ## Folders without git
 
 Any folder can hold sessions, even an empty one. A plain folder gets a folder icon, and its sessions sit directly under it with no worktree level.
 
-If the folder becomes a repository, for example because you or an agent runs `git init`, Agntree upgrades the row and keeps every session where it was. Actions that need git (creating a worktree, merge, rebase, pull requests) appear from then on.
+If the folder becomes a repository, for example because you or an agent runs `git init`, Pitwall upgrades the row and keeps every session where it was. Actions that need git (creating a worktree, merge, rebase, pull requests) appear from then on.
 
 ## Folders inside folders
 

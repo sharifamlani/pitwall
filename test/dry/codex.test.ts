@@ -41,7 +41,7 @@ const reply = (id: string, text: string, phase: 'commentary' | 'final_answer', a
 });
 
 function setup(t: { after(fn: () => void): void }) {
-  const rollout = writeRollout(tempDir(t, 'agntree-codex-'));
+  const rollout = writeRollout(tempDir(t, 'pitwall-codex-'));
   const thread = (id: string, cwd: string, updatedAgo: number, extra: Partial<CodexThread> = {}): CodexThread => ({
     id,
     name: id,

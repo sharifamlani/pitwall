@@ -47,7 +47,7 @@ function setup(t: { after(fn: () => void): void }) {
   const catalog = new WorktreeCatalog(storage, new GitService());
   const opened: ChatSession[] = [];
   const activated: ChatSession[] = [];
-  vscode.commands.registerCommand('agntree.openChat', (item: { data: ChatSession }) => opened.push(item.data));
+  vscode.commands.registerCommand('pitwall.openChat', (item: { data: ChatSession }) => opened.push(item.data));
   registerSessionSearchCommands({ subscriptions: [] } as never, {
     sessionSearch: finder,
     storageService: storage,
@@ -78,7 +78,7 @@ function found(match: Partial<SessionSearchMatch> & Pick<SessionSearchMatch, 'se
 test('Find Session asks with the harness defaults, and the gear changes the engine for the next question', async (t) => {
   const { runs } = setup(t);
 
-  const finding = runCommand('agntree.findSession');
+  const finding = runCommand('pitwall.findSession');
   const first = await waitFor(() => stub.__inputBoxes[0], 'the question box');
   assert.equal(first.title, 'Find Session — Claude Code · CLI default · CLI default');
 
@@ -95,13 +95,13 @@ test('Find Session asks with the harness defaults, and the gear changes the engi
   assert.ok(runs[0].prompt.includes('"the usage mod"') && runs[0].prompt.includes('Search the fake transcripts.'));
 });
 
-test('Resume opens a found session in its Agntree row, importing it into the owning root only once', async (t) => {
+test('Resume opens a found session in its Pitwall row, importing it into the owning root only once', async (t) => {
   const { root, storage, catalog, opened, activated } = setup(t);
   const node = found({ sessionId: 's1', cwd: path.join(root, 'sub') });
 
-  await runCommand('agntree.resumeSearchMatch', node);
-  await runCommand('agntree.resumeSearchMatch', node);
-  await runCommand('agntree.revealSearchMatch', node);
+  await runCommand('pitwall.resumeSearchMatch', node);
+  await runCommand('pitwall.resumeSearchMatch', node);
+  await runCommand('pitwall.revealSearchMatch', node);
 
   const chats = storage.getChats();
   assert.equal(chats.length, 1);
@@ -114,8 +114,8 @@ test('a found session outside every root resumes in a terminal at its folder, an
   const { outside, storage } = setup(t);
   const node = found({ sessionId: 's2', cwd: outside });
 
-  await runCommand('agntree.resumeSearchMatch', node);
-  await runCommand('agntree.copySearchMatchCommand', node);
+  await runCommand('pitwall.resumeSearchMatch', node);
+  await runCommand('pitwall.copySearchMatchCommand', node);
 
   const [terminal] = stub.window.terminals;
   assert.equal(terminal.options.cwd, outside);

@@ -17,7 +17,7 @@ const PENDING_TTL_MS = 5 * 60_000;
 /**
  * What a harness adds to the shared exact-ID linkage loop.
  *
- * The loop is for harnesses where Agntree chooses the native session ID: the
+ * The loop is for harnesses where Pitwall chooses the native session ID: the
  * session is resumable once a record with that ID appears. A record can appear
  * in a different directory from the one the launch predicted, so the source
  * decides which directories to watch and how to read an ID from a file name.

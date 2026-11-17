@@ -45,7 +45,7 @@ export class FilesTreeProvider implements vscode.TreeDataProvider<vscode.TreeIte
 
   setClipboard(uri: vscode.Uri, isCut: boolean): void {
     this.clipboard = { uri, isCut };
-    void vscode.commands.executeCommand('setContext', 'agntree.hasFileClipboard', true);
+    void vscode.commands.executeCommand('setContext', 'pitwall.hasFileClipboard', true);
   }
 
   getClipboard(): { uri: vscode.Uri; isCut: boolean } | undefined {
@@ -54,7 +54,7 @@ export class FilesTreeProvider implements vscode.TreeDataProvider<vscode.TreeIte
 
   clearClipboard(): void {
     this.clipboard = undefined;
-    void vscode.commands.executeCommand('setContext', 'agntree.hasFileClipboard', false);
+    void vscode.commands.executeCommand('setContext', 'pitwall.hasFileClipboard', false);
   }
 
   setActiveWorktree(worktree: Worktree | undefined): void {

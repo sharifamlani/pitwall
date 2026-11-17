@@ -591,7 +591,7 @@ export class OpencodeSessionService {
     timeoutMs: number
   ): Promise<string> {
     return new Promise((resolve, reject) => {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agntree-opencode-'));
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pitwall-opencode-'));
       const file = path.join(dir, 'output.json');
       let out: number | undefined;
       let timer: NodeJS.Timeout | undefined;

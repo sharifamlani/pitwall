@@ -21,7 +21,7 @@ function setup() {
   });
   const add = async (folder: string) => {
     stub.__openDialogResponses.push([{ fsPath: folder }]);
-    await runCommand('agntree.addRepository');
+    await runCommand('pitwall.addRepository');
     return shownMessages().at(-1);
   };
   const roots = () => storage.getRepositories().map((repo) => repo.name);
@@ -51,13 +51,13 @@ test('Move Up and Move Down reorder roots; a refused move explains itself withou
   storage.addRepository('second', '/second');
   const row = { itemType: 'repository', data: first };
 
-  await runCommand('agntree.moveRepositoryDown', row);
+  await runCommand('pitwall.moveRepositoryDown', row);
   assert.deepEqual(roots(), ['second', 'first']);
-  await runCommand('agntree.moveRepositoryUp', row);
+  await runCommand('pitwall.moveRepositoryUp', row);
   assert.deepEqual(roots(), ['first', 'second']);
   assert.equal(refreshes(), 2);
 
-  await runCommand('agntree.moveRepositoryUp', row);
+  await runCommand('pitwall.moveRepositoryUp', row);
   assert.equal(refreshes(), 2);
   assert.equal(shownMessages().at(-1), '"first" is already at the top.');
 });
@@ -74,12 +74,12 @@ test('Remove forgets every worktree of the root, so re-adding the folder can imp
   await add(repo);
   const row = { itemType: 'repository', data: storage.getRepositories()[0] };
 
-  await runCommand('agntree.removeRepository', row);
+  await runCommand('pitwall.removeRepository', row);
   assert.deepEqual(roots(), ['app'], 'nothing changes without confirmation');
   assert.deepEqual(forgotten, []);
 
   stub.__warningResponses.push('Remove');
-  await runCommand('agntree.removeRepository', row);
+  await runCommand('pitwall.removeRepository', row);
   assert.deepEqual(roots(), []);
   assert.deepEqual(forgotten.map((p) => fs.realpathSync(p)).sort(), [fs.realpathSync(repo), fs.realpathSync(linked)].sort());
 });

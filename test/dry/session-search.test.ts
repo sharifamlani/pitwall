@@ -55,7 +55,7 @@ function setup(t: { after(fn: () => void): void }, scenario: object | ((projectD
     entry.user('what is my browser version'),
   ]);
 
-  const dir = tempDir(t, 'agntree-search-');
+  const dir = tempDir(t, 'pitwall-search-');
   const scenarioFile = path.join(dir, 'scenario.json');
   const played = typeof scenario === 'function' ? scenario(path.basename(profile.projectDir(home))) : scenario;
   fs.writeFileSync(scenarioFile, JSON.stringify(played));
@@ -157,7 +157,7 @@ test('a search runs with the configured model and effort, read-only, with no sav
   assert.ok(args.includes('--strict-mcp-config'), 'the user config stays; only MCP servers are off');
   assert.deepEqual(
     mcpConfig,
-    { path: path.join(cwd, '.agntree-empty-mcp.json'), content: '{"mcpServers":{}}' },
+    { path: path.join(cwd, '.pitwall-empty-mcp.json'), content: '{"mcpServers":{}}' },
     'the empty MCP config is a file, so its JSON never passes through cmd.exe quoting'
   );
   for (const arg of args) {
@@ -296,7 +296,7 @@ test("a CLI that fails without an answer leaves a failed search carrying its err
 test('the newest ten searches are kept, and a malformed record or a harness this build lacks is skipped', async () => {
   const state = memento();
   const known = { harness: 'claude', sessionId: 'a', cwd: '/w', title: 'A', lastUpdated: 1, reason: '' };
-  await state.update('agntree.sessionSearches', [
+  await state.update('pitwall.sessionSearches', [
     { id: 'broken' },
     // Saved by a newer build that knows a harness this one does not.
     { id: 'newer', query: 'q', engine: { harness: 'aider', model: 'm', effort: 'medium' }, startedAt: 0, state: 'done', matches: [], activity: [] },

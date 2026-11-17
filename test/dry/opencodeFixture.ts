@@ -21,7 +21,7 @@ export interface OpencodeState {
 
 /** A fake CLI at `cli` playing `state`, with accessors for what it recorded. */
 export function fakeOpencode(t: { after(fn: () => void): void }, state: Omit<OpencodeState, 'calls'>) {
-  const dir = tempDir(t, 'agntree-opencode-');
+  const dir = tempDir(t, 'pitwall-opencode-');
   const stateFile = path.join(dir, 'state.json');
   fs.writeFileSync(stateFile, JSON.stringify({ ...state, calls: [] }));
   const read = (): OpencodeState => JSON.parse(fs.readFileSync(stateFile, 'utf8'));

@@ -15,7 +15,7 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 
-# Node / extension build output (mirrors Agntree's ignores so the Phase 1 import merges cleanly)
+# Node / extension build output (mirrors Pitwall's ignores so the Phase 1 import merges cleanly)
 node_modules/
 out/
 dist/

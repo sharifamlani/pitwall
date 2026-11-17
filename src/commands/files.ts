@@ -105,7 +105,7 @@ export function registerFileCommands(
     });
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('agntree.files.search', () => {
+    vscode.commands.registerCommand('pitwall.files.search', () => {
       const worktree = filesProvider.getActiveWorktree();
       if (!worktree) { return; }
       vscode.commands.executeCommand('workbench.action.findInFiles', {
@@ -113,35 +113,35 @@ export function registerFileCommands(
       });
     }),
 
-    vscode.commands.registerCommand('agntree.files.refresh', () => {
+    vscode.commands.registerCommand('pitwall.files.refresh', () => {
       filesProvider.refresh();
     }),
 
-    onRow('agntree.files.openToSide', (item: FileTreeItem) => {
+    onRow('pitwall.files.openToSide', (item: FileTreeItem) => {
       vscode.commands.executeCommand('vscode.open', item.uri, vscode.ViewColumn.Beside);
     }),
 
-    onRow('agntree.files.revealInFinder', (item: FileTreeItem) => {
+    onRow('pitwall.files.revealInFinder', (item: FileTreeItem) => {
       vscode.commands.executeCommand('revealFileInOS', item.uri);
     }),
 
-    onRow('agntree.files.openInTerminal', (item: FileTreeItem) => {
+    onRow('pitwall.files.openInTerminal', (item: FileTreeItem) => {
       const isFolder = (item.fileType & vscode.FileType.Directory) !== 0;
       const cwd = isFolder ? item.uri.fsPath : path.dirname(item.uri.fsPath);
       vscode.window.createTerminal({ cwd }).show();
     }),
 
-    onRow('agntree.files.copyPath', (item: FileTreeItem) => {
+    onRow('pitwall.files.copyPath', (item: FileTreeItem) => {
       vscode.env.clipboard.writeText(item.uri.fsPath);
     }),
 
-    onRow('agntree.files.copyRelativePath', (item: FileTreeItem) => {
+    onRow('pitwall.files.copyRelativePath', (item: FileTreeItem) => {
       const worktree = filesProvider.getActiveWorktree();
       if (!worktree) { return; }
       vscode.env.clipboard.writeText(path.relative(worktree.path, item.uri.fsPath));
     }),
 
-    onRow('agntree.files.rename', async (item: FileTreeItem) => {
+    onRow('pitwall.files.rename', async (item: FileTreeItem) => {
       const worktree = filesProvider.getActiveWorktree();
       if (!worktree) { return; }
       if (!isStrictlyWithin(item.uri.fsPath, worktree.path)) {
@@ -182,7 +182,7 @@ export function registerFileCommands(
       }
     }),
 
-    onRow('agntree.files.delete', async (item: FileTreeItem) => {
+    onRow('pitwall.files.delete', async (item: FileTreeItem) => {
       const worktree = filesProvider.getActiveWorktree();
       if (!worktree) { return; }
       if (!isStrictlyWithin(item.uri.fsPath, worktree.path)) {
@@ -209,25 +209,25 @@ export function registerFileCommands(
       }
     }),
 
-    vscode.commands.registerCommand('agntree.files.newFile', (item?: FileTreeItem) =>
+    vscode.commands.registerCommand('pitwall.files.newFile', (item?: FileTreeItem) =>
       createEntry(filesProvider, 'file', item)
     ),
 
-    vscode.commands.registerCommand('agntree.files.newFolder', (item?: FileTreeItem) =>
+    vscode.commands.registerCommand('pitwall.files.newFolder', (item?: FileTreeItem) =>
       createEntry(filesProvider, 'folder', item)
     ),
 
-    onRow('agntree.files.copy', (item: FileTreeItem) => {
+    onRow('pitwall.files.copy', (item: FileTreeItem) => {
       filesProvider.setClipboard(item.uri, false);
       vscode.window.setStatusBarMessage(`Copied: ${path.basename(item.uri.fsPath)}`, 3000);
     }),
 
-    onRow('agntree.files.cut', (item: FileTreeItem) => {
+    onRow('pitwall.files.cut', (item: FileTreeItem) => {
       filesProvider.setClipboard(item.uri, true);
       vscode.window.setStatusBarMessage(`Cut: ${path.basename(item.uri.fsPath)}`, 3000);
     }),
 
-    vscode.commands.registerCommand('agntree.files.paste', async (clicked?: FileTreeItem) => {
+    vscode.commands.registerCommand('pitwall.files.paste', async (clicked?: FileTreeItem) => {
       const item = clicked ?? selectedRow();
       const clipboard = filesProvider.getClipboard();
       if (!clipboard) { return; }

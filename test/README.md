@@ -23,7 +23,7 @@ file run in order, and the stub is reset before each test that uses it.
 |---|---|
 | `helpers.test.ts` | Pure rules: numbered fork names, the row icon state table, the last-exchange stale-reply rule, the launch claim rule, deepest-worktree matching, JSON Schema checks named by path, cmd.exe quoting |
 | `icons.test.ts` | Every harness ships generated (not hand-edited) marks for each theme and state; working animates and honors reduced motion, done is a green dot, closed is grey, new is a ring |
-| `menus.test.ts` | Manifest rules: a quiet hover row with nothing destructive, plain folders without git-only actions, New Session entries gated on their harness, single-row actions hidden while several rows are selected, keybinding rules (Ctrl+Alt for global keys, plain keys scoped to a focused Agntree tree), settings grouped into titled sections with a description and labelled choices, the New Session button switching from menu to one click once a default agent is set, numbered context groups and the Agntree category, row-only commands hidden from the palette, UI entries that explain a missing extension, dialog ellipses |
+| `menus.test.ts` | Manifest rules: a quiet hover row with nothing destructive, plain folders without git-only actions, New Session entries gated on their harness, single-row actions hidden while several rows are selected, keybinding rules (Ctrl+Alt for global keys, plain keys scoped to a focused Pitwall tree), settings grouped into titled sections with a description and labelled choices, the New Session button switching from menu to one click once a default agent is set, numbered context groups and the Pitwall category, row-only commands hidden from the palette, UI entries that explain a missing extension, dialog ellipses |
 | `storage.test.ts` | Legacy chat migration (once), repository order past legacy hidden entries, per-workspace terminal PIDs and their legacy migration, removal tombstones |
 | `git.test.ts` | Real `git`: plain folders keep their worktree id through `git init`, change lists classify renames, deletions, binaries, untracked and non-ASCII paths, discard, copying uncommitted work (binary edits, unusual names, no overwrite), the Discard All summary, force-removal guards |
 | `changes.test.ts` | Changes panel sections and rows, empty states, and the destructive Discard / Discard All commands (scope guard, Trash, exact confirmation text) |
@@ -77,7 +77,7 @@ none needs a harness CLI installed. No model turn or network call is made.
 
 | Variable | Used by | Meaning |
 |---|---|---|
-| `AGNTREE_TEST_TIMEOUT_MS` | `run.js` | Per-test timeout (default 60000). |
+| `PITWALL_TEST_TIMEOUT_MS` | `run.js` | Per-test timeout (default 60000). |
 
 ## Writing a dry test
 
@@ -117,14 +117,14 @@ npm run test:integration
 
 VS Code is found automatically on macOS, Windows, and Linux; override with
 `VSCODE_EXECUTABLE=/path/to/code` when it lives elsewhere. Set
-`AGNTREE_TEST_KEEP=1` to keep the temp profile for debugging.
+`PITWALL_TEST_KEEP=1` to keep the temp profile for debugging.
 
 ## Optional terminal-restore E2E (`test/e2e/terminal-restore`)
 
 This is not part of `npm run test:dry` or `npm run test:integration`. It opens a
 real VS Code window, takes about a minute, and proves the user-visible restore
 contract: three chats in three linked worktrees open; quit; reopen; quit; reopen.
-Every restored tab must carry its Agntree title, resume its own harness session in the
+Every restored tab must carry its Pitwall title, resume its own harness session in the
 background, run with its working directory set to its own worktree (never the workspace
 folder), and leave the previously active tab active.
 
@@ -135,7 +135,7 @@ all live under a fresh temp directory.
 
 ```bash
 npm run test:e2e
-AGNTREE_E2E_SCENARIO=no-shell-integration npm run test:e2e
+PITWALL_E2E_SCENARIO=no-shell-integration npm run test:e2e
 ```
 
 Prerequisites:
@@ -146,7 +146,7 @@ Prerequisites:
 - `node:sqlite` (Node 24, or Node 22 with `--experimental-sqlite`) or the
   `sqlite3` CLI, to seed the throwaway profile
 
-| `AGNTREE_E2E_SCENARIO` | Expectation |
+| `PITWALL_E2E_SCENARIO` | Expectation |
 |---|---|
 | `default` | every tab resumes after each quit |
 | `no-shell-integration` | same, with `terminal.integrated.shellIntegration.enabled` off |
@@ -154,8 +154,8 @@ Prerequisites:
 | `persistent-sessions-off` | VS Code keeps no terminal tabs; no resume is attempted |
 | `revive-never` | VS Code restores plain shells without identity; no resume is attempted |
 
-`AGNTREE_E2E_ROOT` sets the parent directory for the temp profile. Keep it short
+`PITWALL_E2E_ROOT` sets the parent directory for the temp profile. Keep it short
 (VS Code's unix socket path is limited to 103 characters, so macOS/Linux default
 to `/tmp`) and executable: the fake CLI wrapper lives there, and some hardened
-Linux systems mount `/tmp` with `noexec`. `AGNTREE_TEST_KEEP=1` keeps the profile
+Linux systems mount `/tmp` with `noexec`. `PITWALL_TEST_KEEP=1` keeps the profile
 and logs.

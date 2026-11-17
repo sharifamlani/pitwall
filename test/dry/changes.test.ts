@@ -14,7 +14,7 @@ import { runCommand, shown, stub, tempDir, worktreeRecord } from './support';
 
 beforeEach(() => stub.__reset());
 
-const worktree = worktreeRecord({ name: 'feature', path: '/tmp/agntree-dry-changes' });
+const worktree = worktreeRecord({ name: 'feature', path: '/tmp/pitwall-dry-changes' });
 
 function provider(staged: FileChange[], unstaged: FileChange[], isGit = true) {
   return new ChangesTreeProvider(
@@ -108,20 +108,20 @@ test('Discard refuses paths outside the worktree, trashes untracked files, and r
   fs.writeFileSync(path.join(root, 'untracked.txt'), 'u');
   const { calls, refreshes } = setupCommands(root, new Set(['tracked.txt']));
 
-  await runCommand('agntree.discardFile', changeRow(root, '../escape.txt'));
+  await runCommand('pitwall.discardFile', changeRow(root, '../escape.txt'));
   assert.ok(shown('Refusing to discard a path outside the worktree'));
 
   stub.__warningResponses.push(undefined);
-  await runCommand('agntree.discardFile', changeRow(root, 'untracked.txt'));
+  await runCommand('pitwall.discardFile', changeRow(root, 'untracked.txt'));
   assert.ok(fs.existsSync(path.join(root, 'untracked.txt')), 'cancelling keeps the file');
 
   stub.__warningResponses.push('Discard');
-  await runCommand('agntree.discardFile', changeRow(root, 'untracked.txt'));
+  await runCommand('pitwall.discardFile', changeRow(root, 'untracked.txt'));
   assert.ok(shown('Move untracked file "untracked.txt" to the Trash?'));
   assert.deepEqual(stub.__deleted, [{ path: path.join(root, 'untracked.txt'), options: { useTrash: true } }]);
 
   stub.__warningResponses.push('Discard');
-  await runCommand('agntree.discardFile', changeRow(root, 'tracked.txt'));
+  await runCommand('pitwall.discardFile', changeRow(root, 'tracked.txt'));
   assert.ok(shown('Discard changes to "tracked.txt"? This cannot be undone.'));
   assert.deepEqual(calls, ['discard tracked.txt']);
   assert.equal(refreshes(), 2);
@@ -131,7 +131,7 @@ test('Discard All says exactly what git clean will delete before it runs', async
   const { calls } = setupCommands(tempDir(t), new Set());
 
   stub.__warningResponses.push(undefined);
-  await runCommand('agntree.discardAll');
+  await runCommand('pitwall.discardAll');
   assert.ok(
     shown('Discard 2 modified files and 2 untracked files or folders in "feature"?'),
     'the confirmation counts both kinds'
@@ -140,6 +140,6 @@ test('Discard All says exactly what git clean will delete before it runs', async
   assert.deepEqual(calls, [], 'cancelling discards nothing');
 
   stub.__warningResponses.push('Discard All');
-  await runCommand('agntree.discardAll');
+  await runCommand('pitwall.discardAll');
   assert.deepEqual(calls, ['discardAll']);
 });

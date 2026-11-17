@@ -5,7 +5,7 @@
 
 ## Context
 
-Agntree launches each harness's native TUI in a terminal and observes the session from
+Pitwall launches each harness's native TUI in a terminal and observes the session from
 outside. opencode is the only harness that serves live state to another process; Claude and
 Codex are read from their transcripts and rollout files. Pi 1.5.2 has the richest event model
 of the four, but every event surface requires the observer to own the Pi process:
@@ -28,7 +28,7 @@ continue automatically, but it is an event, not a persisted entry.
 
 ## Decision
 
-- **The TUI owns the session.** Agntree chooses the ID up front, launches
+- **The TUI owns the session.** Pitwall chooses the ID up front, launches
   `pi --session-id <id>`, and reopens with `pi --session <record path>` (falling back to
   the ID when the record is not found); forks use
   `pi --fork <source> --session-id <new>`. The CLI remains the lifecycle boundary.
@@ -47,7 +47,7 @@ like a finished turn. That is tracked in `ROADMAP.md` as the settled-turn signal
 ## Alternatives
 
 - **Own `pi --mode rpc` as the chat session.** Gives exact events, but Pi runs headless in
-  RPC mode, so Agntree would have to build the conversation UI (prompt entry, streaming,
+  RPC mode, so Pitwall would have to build the conversation UI (prompt entry, streaming,
   tool output, extension UI records, keys) and would stop launching the native TUI. A product
   rewrite, not a harness adapter.
 - **Start RPC first, then open the TUI on the same session.** The RPC process does not
@@ -55,7 +55,7 @@ like a finished turn. That is tracked in `ROADMAP.md` as the settled-turn signal
   session lock or handoff, so two appenders can diverge or interleave writes. Rejected as
   unsafe and useless as a watcher.
 - **Start RPC only to create the record, then quit and resume in the TUI.** No gain: the ID
-  is already chosen up front, the TUI still writes the transcript, and Agntree still tails
+  is already chosen up front, the TUI still writes the transcript, and Pitwall still tails
   it.
 - **Poll `get_state` from a second RPC process.** It reports that process's state, not the
   TUI's, and reintroduces the second-writer problem.
@@ -85,7 +85,7 @@ like a finished turn. That is tracked in `ROADMAP.md` as the settled-turn signal
   queued follow-up, or compaction. No persisted signal distinguishes those today.
 - `deferred` is treated as terminal. If Pi gives it continuation semantics, the rule needs
   revisiting.
-- The format is documented and versioned, but Agntree does not gate on the header `version`,
+- The format is documented and versioned, but Pitwall does not gate on the header `version`,
   and discovery depends on the encoded directory name and `<timestamp>_<id>` filename, which
   come from Pi's source rather than its docs. A breaking v4 or a layout change would degrade
   silently (missing rows or wrong state), not throw. A header-version check and a recorded

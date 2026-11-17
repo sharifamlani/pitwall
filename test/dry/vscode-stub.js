@@ -256,7 +256,7 @@ const configuration = {
   },
   inspect(key) {
     return configurationValues.has(key)
-      ? { key: `agntree.${key}`, globalValue: configurationValues.get(key) }
+      ? { key: `pitwall.${key}`, globalValue: configurationValues.get(key) }
       : undefined;
   },
 };
@@ -608,7 +608,7 @@ module.exports = {
     } else {
       configurationValues.set(key, value);
     }
-    const changed = `agntree.${key}`;
+    const changed = `pitwall.${key}`;
     for (const listener of configurationChangeListeners) {
       listener({
         affectsConfiguration: (section) =>

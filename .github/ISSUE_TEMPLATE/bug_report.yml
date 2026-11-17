@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug in Agntree
+description: Report a bug in Pitwall
 title: "[Bug]: "
 labels: ["bug"]
 body:
@@ -12,7 +12,7 @@ body:
     id: agent
     attributes:
       label: AI Coding Agent
-      description: Which AI coding agent are you using with Agntree?
+      description: Which AI coding agent are you using with Pitwall?
       options:
         - Claude Code
         - Other
@@ -34,8 +34,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: Agntree Version
-      description: "Run `code --list-extensions --show-versions | grep agntree` to find your version"
+      label: Pitwall Version
+      description: "Run `code --list-extensions --show-versions | grep pitwall` to find your version"
       placeholder: "0.1.0"
     validations:
       required: true
@@ -54,7 +54,7 @@ body:
       label: Steps to Reproduce
       description: How can we reproduce this bug?
       placeholder: |
-        1. Open Agntree sidebar
+        1. Open Pitwall sidebar
         2. Click on...
         3. See error...
     validations:

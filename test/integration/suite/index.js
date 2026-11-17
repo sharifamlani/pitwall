@@ -20,7 +20,7 @@ function check(condition, message) {
 exports.run = async function run() {
   console.log('== activation ==');
   const extension = vscode.extensions.getExtension(extensionId);
-  assert(extension, `Agntree extension (${extensionId}) is discoverable`);
+  assert(extension, `Pitwall extension (${extensionId}) is discoverable`);
 
   await extension.activate();
   check(extension.isActive, 'extension activates without throwing');
@@ -37,7 +37,7 @@ exports.run = async function run() {
   );
 
   console.log('\n== configuration ==');
-  const config = vscode.workspace.getConfiguration('agntree');
+  const config = vscode.workspace.getConfiguration('pitwall');
   check(
     JSON.stringify(config.get('harnessCommands')) ===
       JSON.stringify({
@@ -83,68 +83,68 @@ exports.run = async function run() {
     (contributes.submenus || []).map((submenu) => submenu.id)
   );
   check(
-    contextMenus.some((item) => item.submenu === 'agntree.newSession'),
+    contextMenus.some((item) => item.submenu === 'pitwall.newSession'),
     'worktree context menu opens the new-session submenu'
   );
   const newSessionChildren = [
-    ...(menus['agntree.newSession'] || []),
-    ...(menus['agntree.newSessionContext'] || []),
+    ...(menus['pitwall.newSession'] || []),
+    ...(menus['pitwall.newSessionContext'] || []),
   ];
-  check(submenuIds.has('agntree.newSession'), 'agntree.newSession submenu is contributed');
+  check(submenuIds.has('pitwall.newSession'), 'pitwall.newSession submenu is contributed');
   check(
-    submenuIds.has('agntree.newSessionContext'),
-    'agntree.newSessionContext submenu is contributed'
+    submenuIds.has('pitwall.newSessionContext'),
+    'pitwall.newSessionContext submenu is contributed'
   );
   check(
     newSessionChildren.some(
       (item) =>
-        item.command === 'agntree.newClaudeChat' &&
-        item.when.includes('agntree.claudeInstalled') &&
-        item.when.includes('config.agntree.defaultSessionSurface')
+        item.command === 'pitwall.newClaudeChat' &&
+        item.when.includes('pitwall.claudeInstalled') &&
+        item.when.includes('config.pitwall.defaultSessionSurface')
     ),
     'Claude new-session entry follows the configured surface'
   );
   check(
     newSessionChildren.some(
-      (item) => item.command === 'agntree.newClaudeChatInUi'
+      (item) => item.command === 'pitwall.newClaudeChatInUi'
     ),
     'Claude exposes an explicit UI new-session entry'
   );
   check(
     newSessionChildren.some(
       (item) =>
-        item.command === 'agntree.newOpencodeChat' &&
-        item.when.includes('agntree.opencodeInstalled')
+        item.command === 'pitwall.newOpencodeChat' &&
+        item.when.includes('pitwall.opencodeInstalled')
     ),
     'opencode new-session entry is gated on the installed context key'
   );
   check(
     newSessionChildren.some(
       (item) =>
-        item.command === 'agntree.newCodexChat' &&
-        item.when.includes('agntree.codexInstalled') &&
-        item.when.includes('config.agntree.defaultSessionSurface')
+        item.command === 'pitwall.newCodexChat' &&
+        item.when.includes('pitwall.codexInstalled') &&
+        item.when.includes('config.pitwall.defaultSessionSurface')
     ),
     'Codex new-session entry follows the configured surface'
   );
   check(
     newSessionChildren.some(
-      (item) => item.command === 'agntree.newCodexChatInUi'
+      (item) => item.command === 'pitwall.newCodexChatInUi'
     ),
     'Codex exposes an explicit UI new-session entry'
   );
   check(
     newSessionChildren.some(
       (item) =>
-        item.command === 'agntree.newPiChat' &&
-        item.when.includes('agntree.piInstalled')
+        item.command === 'pitwall.newPiChat' &&
+        item.when.includes('pitwall.piInstalled')
     ),
     'Pi new-session entry is gated on the installed context key'
   );
   check(
     contextMenus.some(
       (item) =>
-        item.command === 'agntree.openClaudeUi' &&
+        item.command === 'pitwall.openClaudeUi' &&
         item.when.includes('ClaudeUi') &&
         !item.when.includes('claudeUiInstalled') &&
         !String(item.group).startsWith('inline')
@@ -154,8 +154,8 @@ exports.run = async function run() {
   check(
     contextMenus.some(
       (item) =>
-        item.command === 'agntree.openClaudeUi' &&
-        item.when.includes('agntree.claudeUiInstalled') &&
+        item.command === 'pitwall.openClaudeUi' &&
+        item.when.includes('pitwall.claudeUiInstalled') &&
         String(item.group).startsWith('inline')
     ),
     'Claude UI hover action appears only when installed'
@@ -163,7 +163,7 @@ exports.run = async function run() {
   check(
     contextMenus.some(
       (item) =>
-        item.command === 'agntree.openCodexUi' &&
+        item.command === 'pitwall.openCodexUi' &&
         item.when.includes('CodexUi') &&
         !item.when.includes('codexUiInstalled') &&
         !String(item.group).startsWith('inline')
@@ -173,8 +173,8 @@ exports.run = async function run() {
   check(
     contextMenus.some(
       (item) =>
-        item.command === 'agntree.openCodexUi' &&
-        item.when.includes('agntree.codexUiInstalled') &&
+        item.command === 'pitwall.openCodexUi' &&
+        item.when.includes('pitwall.codexUiInstalled') &&
         String(item.group).startsWith('inline')
     ),
     'Codex UI hover action appears only when installed'
@@ -195,7 +195,7 @@ exports.run = async function run() {
   );
 
   console.log('\n== wiring smoke tests ==');
-  await vscode.commands.executeCommand('agntree.refreshWorkspaces');
+  await vscode.commands.executeCommand('pitwall.refreshWorkspaces');
   check(true, 'refreshWorkspaces executes');
 
   console.log(

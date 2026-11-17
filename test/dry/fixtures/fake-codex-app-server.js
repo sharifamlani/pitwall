@@ -136,7 +136,7 @@ rl.on('line', (line) => {
   switch (method) {
     case 'initialize':
       result(id, {
-        userAgent: 'agntree-test/0.0.0 (Test OS) fake',
+        userAgent: 'pitwall-test/0.0.0 (Test OS) fake',
         codexHome: cwd,
         platformFamily: 'unix',
         platformOs: 'test',

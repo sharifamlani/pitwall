@@ -87,7 +87,7 @@ export function registerChatCommands(
 
   const defaultSessionSurface = (): SessionSurface =>
     vscode.workspace
-      .getConfiguration('agntree')
+      .getConfiguration('pitwall')
       .get<SessionSurface>('defaultSessionSurface', 'terminal');
 
   /**
@@ -215,7 +215,7 @@ export function registerChatCommands(
     const result = await tryOpen(() => nativeUi.openNewSession(worktree.path));
     if (result.kind === 'opened') {
       vscode.window.showInformationMessage(
-        `Opened a new ${nativeUi.displayName} conversation for ${worktree.name}. Send your first prompt there; Agntree will link the session.`
+        `Opened a new ${nativeUi.displayName} conversation for ${worktree.name}. Send your first prompt there; Pitwall will link the session.`
       );
       return;
     }
@@ -495,28 +495,28 @@ export function registerChatCommands(
   // also gets explicit In Terminal / In UI variants and an Open in UI command.
   for (const adapter of harnessRegistry.all()) {
     const name = `${adapter.id[0].toUpperCase()}${adapter.id.slice(1)}`;
-    register(`agntree.new${name}Chat`, (item?: WorkspaceTreeItem) =>
+    register(`pitwall.new${name}Chat`, (item?: WorkspaceTreeItem) =>
       createSession(item, adapter.id)
     );
     const nativeUi = adapter.nativeUi;
     if (nativeUi) {
-      register(`agntree.new${name}ChatInTerminal`, (item?: WorkspaceTreeItem) =>
+      register(`pitwall.new${name}ChatInTerminal`, (item?: WorkspaceTreeItem) =>
         createSession(item, adapter.id, 'terminal')
       );
-      register(`agntree.new${name}ChatInUi`, (item?: WorkspaceTreeItem) =>
+      register(`pitwall.new${name}ChatInUi`, (item?: WorkspaceTreeItem) =>
         createSession(item, adapter.id, 'ui')
       );
-      register(`agntree.open${name}Ui`, (item?: WorkspaceTreeItem) =>
+      register(`pitwall.open${name}Ui`, (item?: WorkspaceTreeItem) =>
         openNativeUi(item, adapter.id, nativeUi)
       );
     }
   }
   // Backwards-compatible alias; hidden from menus.
-  register('agntree.newChat', (item?: WorkspaceTreeItem) => createSession(item, 'claude'));
+  register('pitwall.newChat', (item?: WorkspaceTreeItem) => createSession(item, 'claude'));
 
   /** The configured default agent, when it names a registered harness. */
   const defaultHarness = (): HarnessId | undefined => {
-    const id = vscode.workspace.getConfiguration('agntree').get<string>('defaultHarness', '');
+    const id = vscode.workspace.getConfiguration('pitwall').get<string>('defaultHarness', '');
     return harnessRegistry.all().find((adapter) => adapter.id === id)?.id;
   };
 
@@ -531,7 +531,7 @@ export function registerChatCommands(
   // One click starts the default agent. Without a usable default the command
   // asks, so it is never a dead end from the palette or a stale setting. From
   // the keyboard or the palette it starts in the worktree the panels show.
-  register('agntree.newDefaultSession', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.newDefaultSession', async (item?: WorkspaceTreeItem) => {
     const start = (harness: HarnessId) =>
       createSession(item, harness, undefined, item ? undefined : activeWorktree());
     const all = harnessRegistry.all();
@@ -564,7 +564,7 @@ export function registerChatCommands(
     }
   });
 
-  register('agntree.setDefaultHarness', async () => {
+  register('pitwall.setDefaultHarness', async () => {
     const current = defaultHarness();
     const mark = (id: HarnessId | undefined) => (id === current ? 'current' : undefined);
     const adapters = harnessRegistry.all();
@@ -589,12 +589,12 @@ export function registerChatCommands(
     );
     if (selected) {
       await vscode.workspace
-        .getConfiguration('agntree')
+        .getConfiguration('pitwall')
         .update('defaultHarness', selected.harness, vscode.ConfigurationTarget.Global);
     }
   });
 
-  register('agntree.openChat', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.openChat', async (item?: WorkspaceTreeItem) => {
     const chat = rowChat(item);
     const worktree = chat && chatWorktree(chat);
     if (chat && worktree) {
@@ -604,7 +604,7 @@ export function registerChatCommands(
 
   // Explicitly open a session in its terminal. If it is open in its agent's
   // UI, close that tab first so two agent processes cannot run.
-  register('agntree.openChatInTerminal', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.openChatInTerminal', async (item?: WorkspaceTreeItem) => {
     const chat = resolveChat(item);
     const worktree = chat && chatWorktree(chat);
     if (!chat || !worktree) {
@@ -646,7 +646,7 @@ export function registerChatCommands(
     await openInTerminal(chat, worktree);
   });
 
-  register('agntree.renameChat', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.renameChat', async (item?: WorkspaceTreeItem) => {
     const chat = rowChat(item);
     if (!chat) {
       return;
@@ -665,7 +665,7 @@ export function registerChatCommands(
   });
 
   // Close the running terminal; the chat stays in the list.
-  register('agntree.closeChat', (item?: WorkspaceTreeItem, selected?: WorkspaceTreeItem[]) => {
+  register('pitwall.closeChat', (item?: WorkspaceTreeItem, selected?: WorkspaceTreeItem[]) => {
     const chats = rowChats(item, selected);
     for (const chat of chats) {
       terminalManager.closeChat(chat.id);
@@ -676,7 +676,7 @@ export function registerChatCommands(
   });
 
   // Remove a chat from the list. The harness keeps the session.
-  register('agntree.deleteChat', async (item?: WorkspaceTreeItem, selected?: WorkspaceTreeItem[]) => {
+  register('pitwall.deleteChat', async (item?: WorkspaceTreeItem, selected?: WorkspaceTreeItem[]) => {
     const chats = rowChats(item, selected);
     if (chats.length === 0) {
       return;
@@ -701,7 +701,7 @@ export function registerChatCommands(
     refreshTree();
   });
 
-  register('agntree.clearWorktreeSessions', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.clearWorktreeSessions', async (item?: WorkspaceTreeItem) => {
     const worktree = workspacesProvider.getWorktreeForItem(item);
     if (!worktree) {
       return;
@@ -727,7 +727,7 @@ export function registerChatCommands(
     refreshTree();
   });
 
-  register('agntree.forkChat', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.forkChat', async (item?: WorkspaceTreeItem) => {
     const source = forkSource(item);
     if (!source) {
       return;
@@ -749,7 +749,7 @@ export function registerChatCommands(
 
   // Fork into a new worktree that starts from the source's HEAD and carries
   // its uncommitted changes.
-  register('agntree.forkChatWithChanges', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.forkChatWithChanges', async (item?: WorkspaceTreeItem) => {
     const source = forkSource(item);
     if (!source) {
       return;
@@ -846,9 +846,9 @@ export function registerChatCommands(
         refreshTree();
       }
     };
-  register('agntree.starChat', setStarred(true));
-  register('agntree.unstarChat', setStarred(false));
-  register('agntree.toggleStarChat', setStarred('toggle'));
+  register('pitwall.starChat', setStarred(true));
+  register('pitwall.unstarChat', setStarred(false));
+  register('pitwall.toggleStarChat', setStarred('toggle'));
 
   /** A row's chat with a native session, or an explanation when it has none yet. */
   const linkedRowChat = (item?: WorkspaceTreeItem): LinkedChat | undefined => {
@@ -862,7 +862,7 @@ export function registerChatCommands(
     return chat as LinkedChat | undefined;
   };
 
-  register('agntree.copySessionId', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.copySessionId', async (item?: WorkspaceTreeItem) => {
     const chat = linkedRowChat(item);
     if (chat) {
       await vscode.env.clipboard.writeText(chat.harnessSessionId);
@@ -871,7 +871,7 @@ export function registerChatCommands(
   });
 
   // The command that resumes the session from any terminal.
-  register('agntree.copyResumeCommand', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.copyResumeCommand', async (item?: WorkspaceTreeItem) => {
     const chat = linkedRowChat(item);
     const worktree = chat && chatWorktree(chat);
     if (chat && worktree) {
@@ -887,7 +887,7 @@ export function registerChatCommands(
   // Jump to the open session that has waited longest since it finished or
   // asked for something. Visiting it clears its flag, so repeating the
   // command walks through the rest.
-  register('agntree.openNextSessionNeedingYou', async () => {
+  register('pitwall.openNextSessionNeedingYou', async () => {
     for (const chatId of sessionsNeedingYou()) {
       const chat = storageService.getChat(chatId);
       const worktree = chat && workspacesProvider.getWorktreeById(chat.worktreeId);
@@ -900,7 +900,7 @@ export function registerChatCommands(
     vscode.window.showInformationMessage('No session is waiting for you.');
   });
 
-  register('agntree.showStarredSessions', async () => {
+  register('pitwall.showStarredSessions', async () => {
     const starredChats = storageService.getStarredChats();
     if (starredChats.length === 0) {
       vscode.window.showInformationMessage(
@@ -957,7 +957,7 @@ export function registerChatCommands(
 }
 
 function pendingUiMessage(displayName = 'its VS Code UI'): string {
-  return `This session is starting in ${displayName}. Send your first prompt there and Agntree will link it.`;
+  return `This session is starting in ${displayName}. Send your first prompt there and Pitwall will link it.`;
 }
 
 /** Run an open call, turning a thrown error into a reportable result. */

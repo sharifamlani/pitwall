@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-Agntree's default shortcuts use `Ctrl+Alt` on Windows and Linux and `Ctrl+Cmd` on macOS, so they stay clear of VS Code's own. Every one can be changed.
+Pitwall's default shortcuts use `Ctrl+Alt` on Windows and Linux and `Ctrl+Cmd` on macOS, so they stay clear of VS Code's own. Every one can be changed.
 
 ## Anywhere in VS Code
 
@@ -10,7 +10,7 @@ Agntree's default shortcuts use `Ctrl+Alt` on Windows and Linux and `Ctrl+Cmd` o
 | `Ctrl+Alt+Enter` | `Ctrl+Cmd+Enter` | New Session with your default agent, in the current worktree |
 | `Ctrl+Alt+F` | `Ctrl+Cmd+F` | Find Session… |
 | `Ctrl+Alt+S` | `Ctrl+Cmd+S` | Starred Sessions… |
-| `Ctrl+Alt+A` | `Ctrl+Cmd+A` | Show the Agntree sidebar |
+| `Ctrl+Alt+A` | `Ctrl+Cmd+A` | Show the Pitwall sidebar |
 
 ## In the Workspaces view
 
@@ -36,7 +36,7 @@ With a file or folder selected:
 
 ## Change a shortcut
 
-Choose **Agntree Keyboard Shortcuts…** in the Agntree `…` menu. VS Code's Keyboard Shortcuts editor opens with Agntree's commands. There you can change or remove any shortcut, and give a key to any other Agntree command, such as **Fork Session Here** or **Open Session in Terminal**. Session and file commands act on the selected row when run from a key.
+Choose **Pitwall Keyboard Shortcuts…** in the Pitwall `…` menu. VS Code's Keyboard Shortcuts editor opens with Pitwall's commands. There you can change or remove any shortcut, and give a key to any other Pitwall command, such as **Fork Session Here** or **Open Session in Terminal**. Session and file commands act on the selected row when run from a key.
 
 ## A keyboard-only loop
 

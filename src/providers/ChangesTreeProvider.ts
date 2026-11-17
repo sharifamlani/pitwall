@@ -73,7 +73,7 @@ export class ChangeTreeItem extends vscode.TreeItem {
 
     this.contextValue = isStaged ? 'stagedFile' : 'unstagedFile';
     this.id = `changes:${isStaged ? 'staged' : 'unstaged'}:${change.path}`;
-    this.command = { command: 'agntree.openDiff', title: 'Open Diff', arguments: [this] };
+    this.command = { command: 'pitwall.openDiff', title: 'Open Diff', arguments: [this] };
   }
 }
 
@@ -163,8 +163,8 @@ export class ChangesTreeProvider implements vscode.TreeDataProvider<vscode.TreeI
 }
 
 function setContext(rebaseInProgress: boolean, hasChanges: boolean): void {
-  void vscode.commands.executeCommand('setContext', 'agntree.rebaseInProgress', rebaseInProgress);
-  void vscode.commands.executeCommand('setContext', 'agntree.hasChanges', hasChanges);
+  void vscode.commands.executeCommand('setContext', 'pitwall.rebaseInProgress', rebaseInProgress);
+  void vscode.commands.executeCommand('setContext', 'pitwall.hasChanges', hasChanges);
 }
 
 function placeholder(message: string, icon = 'info'): vscode.TreeItem {

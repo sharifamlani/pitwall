@@ -5,7 +5,7 @@
 
 ## Context
 
-Agntree opens each chat in an editor terminal, and the extension host can restart while
+Pitwall opens each chat in an editor terminal, and the extension host can restart while
 those terminals keep running. VS Code preserves two different things:
 
 - A **window reload** keeps the pty. The new extension host sees the same terminal with
@@ -29,21 +29,21 @@ serialized and restored.
 
 ## Decision
 
-An Agntree terminal keeps two identities, one per restore mode.
+A Pitwall terminal keeps two identities, one per restore mode.
 
 1. **The custom title is the identity across a quit.** Every terminal mapped to a chat
-   carries exactly `Agntree: <chat name> [<shortId>]`. `terminalTitle()` in `terminalEvents.ts`
+   carries exactly `Pitwall: <chat name> [<shortId>]`. `terminalTitle()` in `terminalEvents.ts`
    is the only formatter. `titleShortId()` accepts a name only when it starts
-   with `Agntree: ` and ends with a six-character id, so a terminal Agntree did not
+   with `Pitwall: ` and ends with a six-character id, so a terminal Pitwall did not
    create is never claimed.
 2. **The recorded PID is the identity across a reload.** `globalState` holds
-   `agntree.terminalPids: Record<workspacePath, Record<chatId, pid>>`.
+   `pitwall.terminalPids: Record<workspacePath, Record<chatId, pid>>`.
    `TerminalManager` writes an entry when a launched terminal's PID resolves, keeps it
    when the tab closes (VS Code fires close events on quit), and removes it when the
    chat is deleted, in every workspace that recorded it. It does not live on
    `ChatSession`: the record describes one workspace's terminal, not the chat. The
    outer key exists because `workspaceState` is replaced when the workspace folder
-   changes, and `agntree.autoSwitchWorkspaceFolder` changes it from inside Agntree; a
+   changes, and `pitwall.autoSwitchWorkspaceFolder` changes it from inside Pitwall; a
    workspace-scoped record would forget every running terminal on that switch. A record
    written by an earlier development build in `workspaceState` is migrated on first
    read.
@@ -86,7 +86,7 @@ An Agntree terminal keeps two identities, one per restore mode.
 ## Consequences
 
 - Restoring after a quit depends on the custom title. A tab renamed by hand before the
-  quit has no short id; focusing it re-applies the Agntree title, but that quit cannot
+  quit has no short id; focusing it re-applies the Pitwall title, but that quit cannot
   resume it.
 - A resumed tab is changed into its chat's worktree with POSIX shell quoting. Windows
   shells need the platform-specific quoting tracked in `ROADMAP.md`.
@@ -98,7 +98,7 @@ An Agntree terminal keeps two identities, one per restore mode.
   those activations as manager-initiated so the tree and panels do not follow them,
   stops when the user changes the active terminal, and any tab it did not reach is
   retitled when focused.
-- PIDs live in `globalState` under the workspace folder path, so Agntree's own
+- PIDs live in `globalState` under the workspace folder path, so Pitwall's own
   `autoSwitchWorkspaceFolder` cannot erase them. Restore assumes one window per
   workspace; a second window does not share the first window's terminals, and records
   for workspaces that are no longer open remain until their chats are deleted.
@@ -115,7 +115,7 @@ An Agntree terminal keeps two identities, one per restore mode.
 - Probe on VS Code 1.143.1 (macOS, zsh): a reload kept `terminal.processId`; a quit
   serialized the editor terminal with `cwd: ""` and `titleSource: 0`, and the revived
   shell's cwd report re-tagged the title as source 3, replacing it with `zsh`. Renaming
-  after `onDidStartTerminalShellExecution` kept the Agntree title through the next quit.
+  after `onDidStartTerminalShellExecution` kept the Pitwall title through the next quit.
 - `npm run test:e2e` with three chats in linked worktrees that are **not** the
   workspace folder: `default`, `no-shell-integration`, and `custom-tab-title` each
   produced three resume launches per reopen cycle (nine total), every launch ran with

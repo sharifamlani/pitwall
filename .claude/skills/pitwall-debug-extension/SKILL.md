@@ -1,6 +1,6 @@
 ---
 name: pitwall-debug-extension
-description: Debug and troubleshoot the Agntree VS Code extension. Use when there are errors, the extension isn't working, or when investigating issues.
+description: Debug and troubleshoot the Pitwall VS Code extension. Use when there are errors, the extension isn't working, or when investigating issues.
 allowed-tools:
   - Bash
   - Read
@@ -10,7 +10,7 @@ allowed-tools:
 
 # Debug Extension
 
-Troubleshoot issues with the Agntree VS Code extension.
+Troubleshoot issues with the Pitwall VS Code extension.
 
 ## Check Compilation Errors
 
@@ -30,7 +30,7 @@ In VS Code:
 
 Or check the Output panel:
 1. View > Output
-2. Select "Extension Host" or "Agntree"
+2. Select "Extension Host" or "Pitwall"
 
 ## Common Issues
 
@@ -43,7 +43,7 @@ Check `package.json` activation events:
 
 Verify the extension is installed:
 ```bash
-code --list-extensions | grep agntree
+code --list-extensions | grep pitwall
 ```
 
 ### Commands Not Appearing
@@ -72,7 +72,7 @@ code --list-extensions | grep agntree
 
 ## Probe the Real Window
 
-Use this when the symptom depends on VS Code's own host state rather than on Agntree's
+Use this when the symptom depends on VS Code's own host state rather than on Pitwall's
 logic: terminals restored after **Reload Window** versus **quit/reopen**, title persistence,
 activation order, or anything that only reproduces in a real window. Stubs and unit tests
 cannot show what the workbench restores.
@@ -84,13 +84,13 @@ quit/reopen can be tested as separate processes.
 ### Layout
 
 ```text
-/tmp/agntree-probe/
+/tmp/pitwall-probe/
   repo/                 # workspace folder the probe opens
   driver/               # one-file extension loaded with --extensionDevelopmentPath
     package.json
     extension.js
   user-data/            # isolated --user-data-dir (throwaway, created by the runner)
-    extensions/         # isolated --extensions-dir; the installed Agntree goes here
+    extensions/         # isolated --extensions-dir; the installed Pitwall goes here
   fake-claude.sh        # fake harness CLI: logs args, then sleeps
   run.js                # seed state, launch each stage, dump state
   state.json            # stage marker, survives process restarts
@@ -100,9 +100,9 @@ quit/reopen can be tested as separate processes.
 ### 1. Load the build under test
 
 ```bash
-mkdir -p /tmp/agntree-probe/user-data/extensions
-EXT=$(ls -d ~/.vscode/extensions/subhashkhileri.agntree-* | tail -1)
-cp -R "$EXT" /tmp/agntree-probe/user-data/extensions/agntree
+mkdir -p /tmp/pitwall-probe/user-data/extensions
+EXT=$(ls -d ~/.vscode/extensions/sharifamlani.pitwall-* | tail -1)
+cp -R "$EXT" /tmp/pitwall-probe/user-data/extensions/pitwall
 ```
 
 The runner recreates `user-data/extensions` before each run so a stale copy never hides a
@@ -115,7 +115,7 @@ settings, seeds state, and opens windows.
 
 ```json
 {
-  "name": "agntree-probe-driver",
+  "name": "pitwall-probe-driver",
   "publisher": "probe",
   "version": "0.0.1",
   "engines": { "vscode": "^1.90.0" },
@@ -142,10 +142,10 @@ exports.activate = async () => {
   const chats = JSON.parse(process.env.PROBE_CHATS);
 
   if (state.stage === 0) {
-    await sleep(3000); // let Agntree finish activating
+    await sleep(3000); // let Pitwall finish activating
     for (const chat of chats) {
       const item = { itemType: 'chat', label: chat.name, collapsibleState: 0, data: chat };
-      await vscode.commands.executeCommand('agntree.openChat', item);
+      await vscode.commands.executeCommand('pitwall.openChat', item);
     }
     await sleep(2500);
     const terms = await Promise.all(
@@ -175,7 +175,7 @@ exports.activate = async () => {
 };
 ```
 
-Drive the extension through its public commands (`agntree.openChat`, `agntree.newClaudeChat`,
+Drive the extension through its public commands (`pitwall.openChat`, `pitwall.newClaudeChat`,
 …) and snapshot only public surfaces (`window.terminals`, `activeTerminal`, chat rows in
 state). Do not import `out/extension.js`.
 
@@ -183,7 +183,7 @@ state). Do not import `out/extension.js`.
 
 ```bash
 CODE="/Applications/Visual Studio Code.app/Contents/MacOS/Code"
-PROBE=/tmp/agntree-probe
+PROBE=/tmp/pitwall-probe
 "$CODE" \
   --user-data-dir="$PROBE/user-data" \
   --extensions-dir="$PROBE/user-data/extensions" \
@@ -202,7 +202,7 @@ Write `user-data/User/settings.json` before the first launch:
 
 ```json
 {
-  "agntree.harnessCommands.claude": "/tmp/agntree-probe/fake-claude.sh",
+  "pitwall.harnessCommands.claude": "/tmp/pitwall-probe/fake-claude.sh",
   "terminal.integrated.enablePersistentSessions": true,
   "workbench.startupEditor": "none",
   "window.restoreWindows": "none",
@@ -218,19 +218,19 @@ it executable (`chmod +x`) and keep it out of the repository; it is probe scaffo
 
 ### 5. Seed state
 
-Agntree stores one JSON value under the extension id in the global state database. Seed it
+Pitwall stores one JSON value under the extension id in the global state database. Seed it
 with `sqlite3` (schema: `ItemTable(key TEXT UNIQUE, value BLOB)`):
 
 ```bash
 DB="$PROBE/user-data/User/globalStorage/state.vscdb"
-sqlite3 "$DB" "INSERT OR REPLACE INTO ItemTable(key, value) VALUES('subhashkhileri.agntree', '<json>');"
+sqlite3 "$DB" "INSERT OR REPLACE INTO ItemTable(key, value) VALUES('sharifamlani.pitwall', '<json>');"
 ```
 
 Escape single quotes in the JSON (`value.replace(/'/g, "''")`) before embedding it. Read the
 stored shape from `src/types.ts` (`STORAGE_KEYS`) and seed the minimum: repositories, chats,
 active chat, active worktree. Include every field the code path reads; a missing field usually
-fails silently. Seed chats with the worktree id Agntree computes for that repository (copy it
-from a real state dump or let Agntree add the repository once, then inspect) — a guessed id
+fails silently. Seed chats with the worktree id Pitwall computes for that repository (copy it
+from a real state dump or let Pitwall add the repository once, then inspect) — a guessed id
 makes the tree look empty and the probe misleading. `repo/` should be a git repository
 (`git init`), since the worktree and session flows assume one.
 
@@ -242,7 +242,7 @@ Copy the databases before opening them and query the copy with `immutable=1`:
 cp "$DB" "$PROBE/db-copy.vscdb"
 cp "$DB-wal" "$PROBE/db-copy.vscdb-wal" 2>/dev/null || true
 sqlite3 "file:$PROBE/db-copy.vscdb?immutable=1" \
-  "SELECT value FROM ItemTable WHERE key='subhashkhileri.agntree';"
+  "SELECT value FROM ItemTable WHERE key='sharifamlani.pitwall';"
 ```
 
 Workspace-scoped state (the editor grid, terminal pty state) lives in a different database:
@@ -265,7 +265,7 @@ Code restores, while the pty state can still show a different title. Custom titl
   file you can read an older value even though memory holds the new one. Copy the sidecar
   files or checkpoint before reading; do not diagnose a "lost write" from a stale copy.
 - **Wait for activation, not a fixed startup assumption.** The driver's own `activate` can
-  run before Agntree's; open chats only after a short settle or until the command succeeds.
+  run before Pitwall's; open chats only after a short settle or until the command succeeds.
 - **One stage per launch.** Writing the stage file before quitting lets the next launch
   continue the scenario without any IPC beyond the filesystem.
 - **Never target the real profile.** Use a throwaway `--user-data-dir`; do not write harness
@@ -275,10 +275,10 @@ Code restores, while the pty state can still show a different title. Custom titl
 
 ```bash
 # From the repository root
-code --uninstall-extension agntree.agntree
+code --uninstall-extension pitwall.pitwall
 npm run compile
 npx @vscode/vsce package --allow-missing-repository
-code --install-extension agntree-0.1.0.vsix
+code --install-extension pitwall-0.1.0.vsix
 ```
 
 Then reload VS Code window (Cmd+Shift+P > "Developer: Reload Window").

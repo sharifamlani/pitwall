@@ -1,6 +1,6 @@
 ---
 name: pitwall-add-feature
-description: Add a feature to the Agntree VS Code extension following the project's working agreement. Use when implementing new functionality, adding commands, extending a harness, or changing tree/menu behavior.
+description: Add a feature to the Pitwall VS Code extension following the project's working agreement. Use when implementing new functionality, adding commands, extending a harness, or changing tree/menu behavior.
 allowed-tools:
   - Read
   - Write
@@ -10,7 +10,7 @@ allowed-tools:
   - Bash
 ---
 
-# Add a Feature to Agntree
+# Add a Feature to Pitwall
 
 Read [`AGENTS.md`](../../../AGENTS.md) first — it is the working agreement and the canonical
 checklist. [`ARCHITECTURE.md`](../../../ARCHITECTURE.md) is the architecture reference and
@@ -56,7 +56,7 @@ difference behind `HarnessAdapter` or a capability flag.
 3. **Wire the user path.** Register in `src/extension.ts`, contribute in `package.json`, and
    pick the right surface: inline only for the primary action; everything else in the `…`
    or context menu. Dialog titles end in `…`. Gate harness entries on
-   `agntree.<harness>Installed`.
+   `pitwall.<harness>Installed`.
 4. **Render quietly.** Stable tree ids and `contextValue`; short labels; detail in the
    tooltip; harness mark from `treeIcons`; no destructive actions in the hover row.
 5. **Persist safely.** Read old shapes and migrate in `StorageService`; never require a

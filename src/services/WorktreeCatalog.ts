@@ -14,7 +14,7 @@ export interface Scope {
 const TTL_MS = 15_000;
 
 /**
- * Every worktree Agntree knows across all workspace roots, and which of them
+ * Every worktree Pitwall knows across all workspace roots, and which of them
  * owns a session: the deepest one containing the session's directory. Roots
  * can nest (a `Documents` root holding a repository that is a root of its
  * own), and a harness lists a parent directory's sessions with those of its

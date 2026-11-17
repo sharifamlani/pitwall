@@ -18,7 +18,7 @@ import { promptMatcher, truncateName } from '../utils/text';
  * A Pi session parsed from its JSONL record.
  *
  * Pi documents the format (`docs/session-format.md`) and also offers an SDK,
- * but Agntree reads the documented JSONL files, like Claude's transcripts:
+ * but Pitwall reads the documented JSONL files, like Claude's transcripts:
  * importing the installed package would couple the extension to a private
  * install path. Pi's CLI remains the process boundary for create, resume, and
  * fork. The record is append-only and versioned.

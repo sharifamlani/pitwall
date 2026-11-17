@@ -98,7 +98,7 @@ export class SessionSearchTreeProvider implements vscode.TreeDataProvider<Sessio
       .filter(Boolean)
       .join(' · ');
     item.tooltip = this.matchTooltip(match);
-    item.command = { command: 'agntree.resumeSearchMatch', title: 'Resume', arguments: [node] };
+    item.command = { command: 'pitwall.resumeSearchMatch', title: 'Resume', arguments: [node] };
     return item;
   }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Stand-in for `claude` in the terminal-restore E2E test. It logs the launch
- * arguments to the path in AGNTREE_E2E_RUNS and stays alive so the terminal
+ * arguments to the path in PITWALL_E2E_RUNS and stays alive so the terminal
  * keeps a running harness, without touching a model, network, or credentials.
  */
 const fs = require('fs');
@@ -18,7 +18,7 @@ const runsFlag = args.indexOf('--e2e-runs');
 const runsPath =
   runsFlag >= 0 && args[runsFlag + 1]
     ? args[runsFlag + 1]
-    : process.env.AGNTREE_E2E_RUNS;
+    : process.env.PITWALL_E2E_RUNS;
 const isLaunch =
   args.includes('--session-id') ||
   args.includes('--resume') ||

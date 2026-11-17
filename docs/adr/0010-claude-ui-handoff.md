@@ -8,10 +8,10 @@
 
 ## Context
 
-Agntree opens every chat in an editor terminal through the harness adapter. Claude
+Pitwall opens every chat in an editor terminal through the harness adapter. Claude
 Code also ships a VS Code extension with a native chat surface, and the extension
 already has a terminal mode and a UI mode. The request was to make the UI available
-from Agntree, following whatever surface the extension is configured to use.
+from Pitwall, following whatever surface the extension is configured to use.
 
 The extension exposes two relevant surfaces:
 
@@ -30,15 +30,15 @@ Three constraints make this a handoff rather than a second launch path.
    `workspaceFolders[0]` (falling back to the home directory). The documentation
    says the session must belong to the workspace currently open. A synthetic
    cross-cwd resume loaded the history but recorded new work under the launch cwd.
-   Agntree chats can belong to any worktree, and `agntree.autoSwitchWorkspaceFolder`
+   Pitwall chats can belong to any worktree, and `pitwall.autoSwitchWorkspaceFolder`
    is off by default, so the session's worktree is often not that first folder.
-2. **The extension assigns the session ID for a new UI chat.** Agntree's Claude
+2. **The extension assigns the session ID for a new UI chat.** Pitwall's Claude
    linkage chooses the ID before launch (`--session-id`) and links that exact
    transcript. The extension offers no way to supply that ID, so a UI-created chat
    would need a claim watcher and a different linkage rule.
 3. **The UI tab exposes no session ID.** VS Code can report when a webview tab
    opens, changes, or closes, but the Claude tab's input is only
-   `viewType: claudeVSCodePanel`, and its label is the session title. Agntree can
+   `viewType: claudeVSCodePanel`, and its label is the session title. Pitwall can
    map a tab only after a handoff it initiated; it cannot discover arbitrary Claude
    tabs. The tab tells us that the surface is open or active, not the session's
    turn state.
@@ -64,9 +64,9 @@ Ship a narrow, explicit handoff for an **existing** Claude session:
 - Add an optional `NativeUiCapability` to `HarnessAdapter`, with `openSession()`
   on the capability. `ClaudeHarness` implements it with `ClaudeUi` (`src/harnesses/claudeUi.ts`);
   commands and providers stay harness-agnostic.
-- Contribute `agntree.openClaudeUi` (**Open in Claude Code UI**) for Claude chat
+- Contribute `pitwall.openClaudeUi` (**Open in Claude Code UI**) for Claude chat
   rows. The row's context value gets a `ClaudeUi` suffix from the adapter, and the
-  menu is gated on `agntree.claudeUiInstalled`, which activation sets from
+  menu is gated on `pitwall.claudeUiInstalled`, which activation sets from
   `vscode.extensions.getExtension('anthropic.claude-code')` and refreshes on
   `extensions.onDidChange`.
 - Require a resumable native session. A new chat, a fork before its first prompt,
@@ -83,7 +83,7 @@ Ship a narrow, explicit handoff for an **existing** Claude session:
 - Register the expected Claude tab before opening. `claudeUiSurfaces()` binds
   the next Claude webview tab (or the active one after the command resolves) to the
   chat and watches `tabGroups.onDidChangeTabs` / `onDidChangeTabGroups`. The mapping
-  is in-memory and only covers tabs from Agntree's own handoff.
+  is in-memory and only covers tabs from Pitwall's own handoff.
 - Treat a mapped native-UI tab as an open chat. The tree uses `isOpen()` for the
   active mark, and the attention service polls UI chats alongside
   terminal chats. Editor-tab focus selects the matching chat: a terminal tab
@@ -112,7 +112,7 @@ Ship a narrow, explicit handoff for an **existing** Claude session:
   have to be persisted and replayed after activation; that is a separate flow.
 - **Create new chats in the UI.** Requires a claim watcher, a launch-mode setting,
   storage migration, and a change to the exact-ID linkage rule. Deferred.
-- **Track every UI surface.** The tab API is enough for tabs Agntree opened, but
+- **Track every UI surface.** The tab API is enough for tabs Pitwall opened, but
   the tab does not carry the session ID. Discovering arbitrary or restored Claude
   tabs would need title matching or an extension API that does not exist today.
   Deferred.
@@ -130,9 +130,9 @@ Ship a narrow, explicit handoff for an **existing** Claude session:
 - The matching row is selected and shown as active while the UI tab is open.
   Turn-state polling includes UI chats, so the row can animate while Claude works.
   Notifications are suppressed while that UI tab is the active editor tab.
-- Only tabs Agntree opened are mapped. A tab restored after a reload or opened
+- Only tabs Pitwall opened are mapped. A tab restored after a reload or opened
   directly from the Claude extension does not select the row or mark it active
-  until the chat is handed off through Agntree again.
+  until the chat is handed off through Pitwall again.
 - New sessions and unprompted forks still launch in the terminal. This is a UI
   handoff, not a replacement launch mode.
 - The Claude UI uses one profile. A chat cannot switch between EnMaaS and the old

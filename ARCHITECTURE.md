@@ -1,6 +1,6 @@
-# Agntree architecture
+# Pitwall architecture
 
-This is the deep reference for how Agntree is put together. Read [`AGENTS.md`](AGENTS.md)
+This is the deep reference for how Pitwall is put together. Read [`AGENTS.md`](AGENTS.md)
 first for the working agreement — where a change belongs, what to investigate before
 coding, testing doctrine, and the definition of done. Build and verification commands live
 there too.
@@ -71,7 +71,7 @@ view-box`), which Chromium plays in tree-icon `background-image`; honor
   session search via `findSessionsForRepository()`
 - **ClaudeAgentsService** - Caches `claude agents --json` for 10s (sharing one in-flight
   call), merges duplicate session IDs, and supplies `waitingFor` to the attention path.
-  Disabled when `agntree.notifications.onNeedsInput` is off; a failure logs once and
+  Disabled when `pitwall.notifications.onNeedsInput` is off; a failure logs once and
   disables the interface until restart.
 - **ClaudeTurnState** - Claude's turn-state derivation and scan over the shared progressive
   tail reader in `utils/jsonlTail.ts`; it reads 16 KB, then grows 4× until the deciding
@@ -87,13 +87,13 @@ view-box`), which Chromium plays in tree-icon `background-image`; honor
   resolves a session ID to its record. Records are read incrementally through
   `JsonlAppendReader`, and the ID → path catalog remembers a miss (`RecordPathCatalog` in
   `utils/recordCache.ts`, shared with Claude)
-- **OperationLog** - Append-only audit trail (`Agntree Operations` output channel) for destructive file and worktree operations
+- **OperationLog** - Append-only audit trail (`Pitwall Operations` output channel) for destructive file and worktree operations
 - **SessionAttentionService** - Polls chats with open terminals (~4s) through
   `HarnessAdapter.getLiveStates()` when the adapter implements it, otherwise through
   `listSessionsForWorktree()`; notifies on a finished turn or a non-empty `waitingFor`
 - **NotificationService** - Delivers the VS Code notification (with an Open action) and, on macOS while the window is unfocused, an `osascript` banner. Skips the session you are already typing in
 - **PendingSessionWatcher** - Shared polling loop for harnesses whose native session ID is assigned in a separate process: snapshot, claim the oldest unseen session, TTL, and auto-naming. Subclasses supply the harness and naming hooks
-- **ExactIdSessionWatcher** - Shared linkage loop for a harness where Agntree chooses the
+- **ExactIdSessionWatcher** - Shared linkage loop for a harness where Pitwall chooses the
   session ID: watch the harness's roots and directory for the chosen ID, enforce the TTL
   for closed chats, and auto-name from the harness record. Claude and Pi supply only the
   directory policy, the file-name-to-ID rule, and their service. A pending chat restored
@@ -106,7 +106,7 @@ view-box`), which Chromium plays in tree-icon `background-image`; honor
 - **OpencodeSessionWatcher** / **CodexSessionWatcher** - Harnesses that assign their own
   IDs extend `PendingSessionWatcher` to claim the oldest new session in the worktree and
   auto-name it
-- **SessionImportService** - Reconciles the stored chats with native sessions that no watcher owns: links a chat started in an agent's VS Code UI, imports recent sessions started outside Agntree, keeps harness-assigned names current, and ages out quiet rows. Bounded scans, retention, and removal tombstones live here
+- **SessionImportService** - Reconciles the stored chats with native sessions that no watcher owns: links a chat started in an agent's VS Code UI, imports recent sessions started outside Pitwall, keeps harness-assigned names current, and ages out quiet rows. Bounded scans, retention, and removal tombstones live here
 - **HarnessWatcherRegistry** - Dispatches pending-chat registration and name events by `chat.harness`
 - **SessionSearchService** - Find Session: runs one harness's CLI as a read-only agent over every searchable harness's records, lets a source prepare records it cannot expose as files, checks each reply against the answer's JSON Schema and sends a broken one back to the agent, confirms each match with its harness, and keeps finished searches (see [Find Session](#find-session))
 
@@ -118,7 +118,7 @@ choice (`showWorktree()`) and one file watcher on the shown worktree that refres
 panels.
 
 - **ChangesTreeProvider** - Shows staged/unstaged git changes for the active worktree. `GitService` lists each section with one `git diff -z --name-status` and one `--numstat` call (plus `ls-files` for untracked files), so the cost does not grow with the number of changed files; `--no-renames` lists a rename as the deletion and addition that stage, unstage, and discard act on. Section headers use a green check (staged) or yellow edit icon plus `n files · +a -d`; nested rows show their directory (`src/utils · M +2 -1`) because the list is flat; rows sort by status then path. A plain folder shows “Not a git repository” instead of a clean-tree message.
-- **SessionSearchTreeProvider** - The Find Session view: a row per question whose plain-text tooltip holds the agent's answer, the engine, and the steps it took, and a row per confirmed session beneath it. The view is listed collapsed; with `agntree.sessionSearch.alwaysShowView` off it appears only once a search exists (`agntree.hasSessionSearches`).
+- **SessionSearchTreeProvider** - The Find Session view: a row per question whose plain-text tooltip holds the agent's answer, the engine, and the steps it took, and a row per confirmed session beneath it. The view is listed collapsed; with `pitwall.sessionSearch.alwaysShowView` off it appears only once a search exists (`pitwall.hasSessionSearches`).
 - **FilesTreeProvider** - All Files browser for the active worktree. Directories sort first, names sort naturally, rows tooltip their worktree-relative path, and an unselected panel returns a placeholder row.
 
 ### Commands (`src/commands/`)
@@ -126,7 +126,7 @@ panels.
 Commands are registered in `package.json` under `contributes.commands` and implemented in:
 - `repository.ts` - Add/remove/clone workspace roots (plain folders or git repositories)
 - `worktree.ts` - Create/delete worktrees, merge branches, open in new window, checkout PRs
-- `chat.ts` - Create/open/rename/delete/fork/star sessions and hand them between the terminal and an agent's VS Code UI. Per-harness commands (`agntree.new<Harness>Chat`, its `InTerminal`/`InUi` variants, and `agntree.open<Harness>Ui`) are registered from the harness registry, so this file names no harness.
+- `chat.ts` - Create/open/rename/delete/fork/star sessions and hand them between the terminal and an agent's VS Code UI. Per-harness commands (`pitwall.new<Harness>Chat`, its `InTerminal`/`InUi` variants, and `pitwall.open<Harness>Ui`) are registered from the harness registry, so this file names no harness.
 - `sessionImport.ts` - **Import Existing Sessions** for one worktree
 - `sessionSearch.ts` - **Find Session**: the question box and its engine settings, and Resume / Show in Workspaces / Copy Resume Command on a found session
 - `changes.ts` - Changes panel actions: diffs, stage/unstage, discard, and the rebase controls
@@ -157,7 +157,7 @@ worktree. There is no `Fork of …` prefix.
 ## Claude Code Sessions
 
 Claude Code 2.1.310 or newer is required. There is no version probe or legacy path: an
-older CLI is unsupported and surfaces its own error when launched. Agntree uses the
+older CLI is unsupported and surfaces its own error when launched. Pitwall uses the
 `claude` CLI, its transcripts, and `claude agents --json`; it never edits
 `~/.claude/settings.json`.
 
@@ -241,12 +241,12 @@ host starts silently.
 
 ### Opening in the Claude Code extension UI
 
-`agntree.openClaudeUi` is an explicit handoff for an existing Claude session. It resolves the native ID, verifies the transcript exists, and calls `ClaudeHarness.nativeUi.openSession()` (`ClaudeUi` in `src/harnesses/claudeUi.ts`). The extension UI runs in the first VS Code workspace folder, so the service refuses a session from another worktree (`workspace-mismatch`) and the command offers to open that worktree in a new window. The extension and folder are checked before a running terminal is touched; only then is the terminal disposed after confirmation, and the command waits for its close event before handing over, so two processes never share one session.
+`pitwall.openClaudeUi` is an explicit handoff for an existing Claude session. It resolves the native ID, verifies the transcript exists, and calls `ClaudeHarness.nativeUi.openSession()` (`ClaudeUi` in `src/harnesses/claudeUi.ts`). The extension UI runs in the first VS Code workspace folder, so the service refuses a session from another worktree (`workspace-mismatch`) and the command offers to open that worktree in a new window. The extension and folder are checked before a running terminal is touched; only then is the terminal disposed after confirmation, and the command waits for its close event before handing over, so two processes never share one session.
 
 The service prefers the extension command `claude-vscode.editor.open` with `ViewColumn.Active` and `{ programmatic: 'honor-preferred-location' }`, which respects `claudeCode.preferredLocation` and opens where the session's terminal or the user's files are. Without a column, the extension creates a new right-hand editor group and may lock it. If the command is not registered it uses the documented `vscode://anthropic.claude-code/open?session=…` URI. A failing command is reported rather than falling back, because the URI starts a fresh conversation when the session is not found.
 
 `claudeUiSurfaces()` is the Claude policy over the shared
-`NativeUiTabSurfaceService`. It maps the Claude webview tabs that Agntree opened
+`NativeUiTabSurfaceService`. It maps the Claude webview tabs that Pitwall opened
 to their native session IDs. The tab carries the session title, not the ID, so
 the command registers an expectation before opening and the tracker binds the
 next Claude tab (or the active one after the command resolves). Only a command
@@ -262,7 +262,7 @@ resolves through `activeTerminal` or its title, and a native-UI tab resolves
 through the adapter's tracker and the session ID. The title fallback is what
 selects the CLI chat when focus returns from a Claude tab even though
 `activeTerminal` did not change. The mapping is in-memory and only covers tabs
-Agntree opened; a Claude tab restored after a reload or opened directly from the
+Pitwall opened; a Claude tab restored after a reload or opened directly from the
 extension is not mapped. Clicking the chat's tree row resolves the same native
 session IDs: an open UI tab is revealed instead of launching a CLI, while a live
 terminal still takes precedence.
@@ -270,7 +270,7 @@ terminal still takes precedence.
 `NativeUiCapability.openNewSession()` creates a new conversation. `ClaudeUi`
 calls the same `claude-vscode.editor.open` command with no session and
 no prompt, so the extension assigns the session ID and writes the transcript
-on the first prompt. `agntree.newClaudeChatInUi` creates the placeholder chat
+on the first prompt. `pitwall.newClaudeChatInUi` creates the placeholder chat
 first, takes a session snapshot, opens the conversation, and leaves
 `pendingUiLaunch` on the chat. `SessionImportService` links the first new
 native session in that worktree to the placeholder and clears the flag. The
@@ -296,7 +296,7 @@ Forking to a new worktree uses the native fork + move path (`prepareForkToNewWor
 
 `OpencodeSessionWatcher` polls `session.list` (bypassing the cache) every 3s while chats are pending, claims the oldest new top-level session in the worktree, links it, and renames the chat from the title (falling back to the first prompt after 30s). It gives up after 5 minutes. The poll/claim/TTL rules live in `PendingSessionWatcher`, which the Codex watcher shares.
 
-The opencode command is configurable via `agntree.harnessCommands.opencode` (default `opencode`). Prefer `opencode api …` over the TUI/`--fork` flags; `--fork` exists only on `opencode run`, not the TUI.
+The opencode command is configurable via `pitwall.harnessCommands.opencode` (default `opencode`). Prefer `opencode api …` over the TUI/`--fork` flags; `--fork` exists only on `opencode run`, not the TUI.
 
 ## Codex Sessions
 
@@ -342,7 +342,7 @@ The transport is newline-delimited JSON-RPC with per-request timeouts.
 
 ### Opening in the Codex extension UI
 
-`agntree.openCodexUi` hands an existing Codex thread to the `openai.chatgpt`
+`pitwall.openCodexUi` hands an existing Codex thread to the `openai.chatgpt`
 extension's conversation panel. The extension's sidebar deep link does not create an
 editor tab, so it carries neither an exact thread identity nor the active-group placement;
 the panel is the surface its own `chatgpt.newCodexPanel` command opens. `CodexUi`
@@ -360,7 +360,7 @@ writer, and the panel would otherwise fail.
 `codexUiSurfaces()` recognizes `TabInputCustom` tabs with view type
 `chatgpt.conversationEditor` and parses `openai-codex://route/(local|remote)/<id>`.
 Because the tab carries the thread ID, restored panels and panels opened directly in the
-Codex extension are mapped too; a thread with no Agntree chat is ignored. Clicking a
+Codex extension are mapped too; a thread with no Pitwall chat is ignored. Clicking a
 chat's tree row checks that map first, so an open panel is revealed with the same
 `vscode.openWith` call instead of starting a CLI. The Codex sidebar view is not an editor
 tab and is not tracked. Both harnesses share `NativeUiTabSurfaceService`: the Claude
@@ -372,7 +372,7 @@ opens `/extension/panel/new`, and the extension's workspace project comes from t
 Code workspace folders, not from a per-panel cwd. `CodexUi.checkNewSessionAvailability()`
 therefore requires the worktree to be the **only** workspace folder; a multi-root window
 gets `workspace-multi-root`, and another folder gets `workspace-mismatch`. When it is
-available, `agntree.newCodexChatInUi` creates the placeholder and `SessionImportService`
+available, `pitwall.newCodexChatInUi` creates the placeholder and `SessionImportService`
 links the first new thread in that worktree after the first prompt. `thread/start` cannot
 do this itself: an empty thread is readable only while the creating app-server is alive
 and has no rollout to resume after it exits.
@@ -381,7 +381,7 @@ and has no rollout to resume after it exits.
 
 Pi stores each conversation as an append-only JSONL record under
 `~/.pi/agent/sessions/--<encoded-cwd>--/<timestamp>_<id>.jsonl`. The format is documented
-in Pi's `docs/session-format.md` (version 3); Agntree parses it directly, like Claude's
+in Pi's `docs/session-format.md` (version 3); Pitwall parses it directly, like Claude's
 transcripts, because importing the installed package would couple the extension to a
 private install path. Pi has no state database to read.
 
@@ -393,7 +393,7 @@ private install path. Pi has no state database to read.
   as well, so a session started in a subdirectory while the worktree's setting was in
   effect is still found. A `sessionDir` set only in a subdirectory's own
   `.pi/settings.json` is not discoverable without walking the worktree; see
-  `ROADMAP.md`. Agntree does not inspect a `--session-dir` added by a wrapper command; use
+  `ROADMAP.md`. Pitwall does not inspect a `--session-dir` added by a wrapper command; use
   the environment variable or setting instead. Records are filtered by their header's
   `cwd` before they are parsed, so a lossy encoded directory name cannot place a session
   in the wrong worktree, and a flat directory shared by every project parses only the
@@ -440,7 +440,7 @@ Session for Pi is deferred (see `ROADMAP.md`).
 ## Session Import, Naming, and Retention
 
 `SessionImportService` is the second half of session linkage. The per-harness watchers
-remain the fast, exact path for a session Agntree launches: Claude and Pi match their
+remain the fast, exact path for a session Pitwall launches: Claude and Pi match their
 chosen pending ID, and Codex/opencode claim the oldest new session. The importer covers
 the two cases no watcher owns:
 
@@ -453,7 +453,7 @@ the two cases no watcher owns:
   that gap, and it is cleared when the chat links or the launch is cancelled. If the user
   opens the placeholder in a terminal instead, the flag is cleared and the expectation
   canceled.
-- **A session started outside Agntree.** The importer lists native sessions for each
+- **A session started outside Pitwall.** The importer lists native sessions for each
   visible repository/worktree, skips any ID already linked, pending, or removed, and
   imports recent ones as `autoImported` chats. It reserves sessions that an unlinked CLI
   placeholder is about to claim, using the same claim rule as the watchers, so it cannot
@@ -475,8 +475,8 @@ whose name is still automatic follows the harness name; the user's **Rename Sess
 sets `customName`, which stops further automatic renames.
 
 Retention is based on the later of the native session's last activity and the chat's
-`lastAccessedAt`. Every row, whether Agntree started it or the importer created it, is
-removed from Agntree after `agntree.autoImport.retentionDays` (default 15) quiet days; the
+`lastAccessedAt`. Every row, whether Pitwall started it or the importer created it, is
+removed from Pitwall after `pitwall.autoImport.retentionDays` (default 15) quiet days; the
 native session is untouched. A star is the only user-controlled exemption, and a chat open
 in a terminal or native-UI tab is kept while it is open. A chat with no linked session ages
 out by its own `lastAccessedAt`. Retention is not a tombstone, so a session that becomes
@@ -488,10 +488,10 @@ The importer scans every 3 seconds while a UI placeholder is in its first five m
 then every 2 minutes while auto-import is enabled, and stops when auto-import is disabled
 and no placeholder is waiting. A fast scan lists only the worktree whose placeholder is
 linking; imports, renames, and retention run on the full scan.
-`agntree.autoImport.enabled` only controls outside sessions and retention; a UI
+`pitwall.autoImport.enabled` only controls outside sessions and retention; a UI
 placeholder is always linked.
 
-A scan is skipped entirely while the Agntree view is hidden and nothing is waiting to
+A scan is skipped entirely while the Pitwall view is hidden and nothing is waiting to
 link (`isVisible`), so an idle window spawns no harness process; becoming visible wakes
 it. The worktree list is cached for 15 seconds because listing it is one synchronous git
 call per repository and the hot scan runs every few seconds, and activation reads the
@@ -499,7 +499,7 @@ worktrees only when a chat is actually waiting for a UI session.
 
 ### Choosing a session's surface
 
-`agntree.defaultSessionSurface` is read per click, so a settings change needs no reload.
+`pitwall.defaultSessionSurface` is read per click, so a settings change needs no reload.
 A row click resolves in this order: a live terminal is focused, an open native-UI tab is
 revealed, a pending UI placeholder explains that its session is still starting, the
 configured UI is used when `NativeUiCapability.checkAvailability()` allows it, and
@@ -537,7 +537,7 @@ single-folder workspace), `openSession()` for an existing session, and
   means zero. There is no fallback for transcripts that predate that field.
 - **"Needs you" comes from `claude agents --json`.** `ClaudeAgentsService` reads the
   process-level `status` and `waitingFor` for active sessions, cached for 10s. When
-  `agntree.notifications.onNeedsInput` is off it returns nothing without spawning the CLI.
+  `pitwall.notifications.onNeedsInput` is off it returns nothing without spawning the CLI.
   Claude-only today: opencode, Codex, and Pi expose no pending-permission state through
   their implementations. `waitingFor` is passed to the notifier as-is; `status: waiting`
   without a reason becomes `input needed`.
@@ -549,9 +549,9 @@ single-folder workspace), `openSession()` for an existing session, and
   entry goes when the chat is visited (`activateChat` or a row selection calls
   `markSeen`), the agent starts working again, or the chat closes, so the queue is bounded
   by the open chats and is not persisted. **Go to Next Session That Needs You**
-  (`agntree.openNextSessionNeedingYou`) opens its head through the same path as a row
+  (`pitwall.openNextSessionNeedingYou`) opens its head through the same path as a row
   click. It does not depend on the notification settings, except that waiting reasons are
-  only read while `agntree.notifications.onNeedsInput` is on.
+  only read while `pitwall.notifications.onNeedsInput` is on.
 
 ## Destructive Operations
 
@@ -632,7 +632,7 @@ no stored flag to migrate and no downgrade state if the repository is removed.
 
 ## PR Checkout
 
-The `agntree.checkoutPR` command creates a worktree from a GitHub pull request. It uses `gh` CLI for both PR discovery and fetching.
+The `pitwall.checkoutPR` command creates a worktree from a GitHub pull request. It uses `gh` CLI for both PR discovery and fetching.
 
 ### Flow
 
@@ -651,7 +651,7 @@ Using `pr-<number>` (e.g., `pr-4267`) instead of the PR's actual branch name avo
 
 **Find Session** answers a question in the user's words ("which session set up the usage
 mod?") across every session on the machine, not only those under a workspace root. It
-builds no index: an agent searches the records the harnesses already keep, and Agntree
+builds no index: an agent searches the records the harnesses already keep, and Pitwall
 trusts only what those harnesses confirm. [ADR 0014](docs/adr/0014-find-session-agent-over-native-records.md)
 records why.
 
@@ -677,7 +677,7 @@ sessions it searches are chosen independently:
 
 ### Flow
 
-1. `SessionSearchService.engine()` reads `agntree.sessionSearch.harness`, `.model`, and
+1. `SessionSearchService.engine()` reads `pitwall.sessionSearch.harness`, `.model`, and
    `.effort`. Empty or unsupported model and effort values leave the harness's own
    configured values in effect. The configured harness wins when its runner is available;
    otherwise the first available runner does, so a machine without Claude Code can still
@@ -720,7 +720,7 @@ a transcript cannot render.
 Acting on a found session reuses the import and open paths. When `WorktreeCatalog.owner()`
 finds a workspace root for its folder, **Resume** and **Show in Workspaces** use the chat
 already linked to that session or import it into that root once (`importNativeSession()`),
-then run `agntree.openChat` or `activateChat()`. Outside every root, **Resume** opens a
+then run `pitwall.openChat` or `activateChat()`. Outside every root, **Resume** opens a
 plain terminal in the session's folder with the adapter's resume command.
 
 ### Claude Code
@@ -826,7 +826,7 @@ search folder, leaving the user's Pi profile untouched.
 
 ### opencode
 
-opencode keeps sessions in its database, which Agntree may not read. Its CLI/API exposes
+opencode keeps sessions in its database, which Pitwall may not read. Its CLI/API exposes
 `session.list` (global when no directory is given), `session.message.list` filtered to
 `type=user`, and `session.export`; `OpencodeSessionSearch.prepare()` uses the first two to
 write one small JSON file per recent top-level, non-archived session into
@@ -873,9 +873,9 @@ To use `treeView.reveal()` on nested items:
 
 ### Terminal Persistence Across Restarts
 
-An Agntree terminal has two identities, and
+A Pitwall terminal has two identities, and
 [ADR 0009](docs/adr/0009-restored-terminals-keep-their-chat.md) records why and what each
-costs: the title `Agntree: <chat name> [<shortId>]` (`terminalTitle()` /
+costs: the title `Pitwall: <chat name> [<shortId>]` (`terminalTitle()` /
 `titleShortId()` in `terminalEvents.ts`) identifies a tab after a quit, and the pty PID
 recorded per workspace folder (`StorageService.getTerminalPids()` /
 `rememberTerminalPid()`) identifies a live agent after a reload. A rename is durable

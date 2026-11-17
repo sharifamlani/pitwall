@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Agntree is a VS Code extension that manages CLI coding-agent sessions (Claude Code,
+Pitwall is a VS Code extension that manages CLI coding-agent sessions (Claude Code,
 opencode, Codex, and Pi) across git repositories and worktrees. This is the working agreement
 for anyone changing the repository — human contributors and the coding agents working with
 them. It covers the taste behind the code, the questions to answer before writing any, and
@@ -46,7 +46,7 @@ is not loaded every session; read the relevant section when you touch that subsy
 - **Narrow destructiveness.** Deleting, discarding, renaming, and pasting are scoped to the
   active worktree, refuse dangerous paths, never overwrite silently, and are logged. A
   confirmation must say exactly what will be lost.
-- **Local-first.** Agntree has no telemetry and stores its state in VS Code's
+- **Local-first.** Pitwall has no telemetry and stores its state in VS Code's
   `globalState`. Network work happens through tools the user invoked — `git`, `gh`, and the
   harness CLIs themselves.
 - **Tests are executable specifications.** They prove behavior without a model turn, a
@@ -125,14 +125,14 @@ Answer these in order. If a question has no answer, investigate before editing.
 | --- | --- | --- |
 | Behavior that differs per harness | `src/harnesses/<Harness>Harness.ts` | Add a method or capability to the shared interface first; do not leak the branch. |
 | Handoff to an agent's own VS Code UI | `src/harnesses/<harness>Ui.ts` | Implement `NativeUiCapability`; tab tracking is a policy over `NativeUiTabSurfaceService`. |
-| New-session linkage and naming | `src/services/<Harness>SessionWatcher.ts` | Register it in `HarnessWatcherRegistry`. Reuse shared polling machinery when the lifecycle matches; implement the interface directly when it does not. A session started in an agent's VS Code UI or outside Agntree is reconciled by `src/services/SessionImportService.ts`; the exact-ID watchers remain the fast path. |
+| New-session linkage and naming | `src/services/<Harness>SessionWatcher.ts` | Register it in `HarnessWatcherRegistry`. Reuse shared polling machinery when the lifecycle matches; implement the interface directly when it does not. A session started in an agent's VS Code UI or outside Pitwall is reconciled by `src/services/SessionImportService.ts`; the exact-ID watchers remain the fast path. |
 | User action or multi-step flow | `src/commands/*.ts` | Register with `commandRegistrar()` from the module's `register*Commands()` and contribute it in `package.json`. Shared prompts and helpers live in `commands/common.ts`. |
 | Tree row, tooltip, icon state | `src/providers/*.ts`, `src/harnesses/sessionUtils.ts` | Stable row ids, `contextValue`, and quiet labels matter. |
 | Persistence or migration | `src/services/StorageService.ts` | Read old shapes, migrate on read, write back. |
 | Git or path safety | `src/services/GitService.ts`, `src/utils/paths.ts` | Argument arrays; `isWithin` / `isStrictlyWithin`. |
 | Cross-cutting timing or notifications | `src/services/*` | The adapter supplies turn state; the service stays harness-agnostic. |
 | External process or protocol | A service in `src/services/` | Lazy start, request timeouts, restart, idle shutdown, stderr tail. |
-| Command, menu, setting, context key | `package.json` + `src/extension.ts` | Gate harness entries on `agntree.<harness>Installed`; end dialog titles with `…`. |
+| Command, menu, setting, context key | `package.json` + `src/extension.ts` | Gate harness entries on `pitwall.<harness>Installed`; end dialog titles with `…`. |
 
 ### The feature pipeline
 
@@ -208,19 +208,19 @@ watcher, a command and menu entries, icons, tests, and documentation.
   `HarnessSessionWatcher` directly.
 - Registration in `HarnessRegistry` and `HarnessWatcherRegistry` in `extension.ts`;
   give a stateful adapter a `dispose()` so `HarnessRegistry.dispose()` releases it.
-- `agntree.new<Harness>Chat` contributed in `package.json` (registered for every adapter by
+- `pitwall.new<Harness>Chat` contributed in `package.json` (registered for every adapter by
   `registerChatCommands`, so `src/commands/chat.ts` needs no edit), plus entries in both
-  **New Session** submenus gated on `agntree.<harness>Installed`. The submenus themselves
-  are gated on `agntree.anyHarnessInstalled`, which activation sets.
-- `agntree.harnessCommands.<harness>` with a default. Activation sets the
-  `agntree.<harness>Installed` context key for every registered adapter.
+  **New Session** submenus gated on `pitwall.<harness>Installed`. The submenus themselves
+  are gated on `pitwall.anyHarnessInstalled`, which activation sets.
+- `pitwall.harnessCommands.<harness>` with a default. Activation sets the
+  `pitwall.<harness>Installed` context key for every registered adapter.
 - A base mark in `resources/icons/harness/base/`, registration in
   `scripts/generate-harness-icons.mjs`, and generated light/dark × state files.
 - For Find Session, optionally `sessionSearch` (search instructions, readable directories,
   `verify()` against the harness's own record, and `prepare()` when the records are not
   files) and `sessionSearchRunner` (a headless, read-only conversation that answers in
   text and takes follow-up messages, plus its default model and effort levels and a probe
-  for whether its CLI is available; add the id to the `agntree.sessionSearch.harness`
+  for whether its CLI is available; add the id to the `pitwall.sessionSearch.harness`
   enum). Shared code needs no edit; see
   `ARCHITECTURE.md` → Find Session and [ADR 0016](docs/adr/0016-find-session-sources-across-harnesses.md).
 - Adapter, service/watcher, menu, icon, and integration tests as applicable. Commands are
@@ -243,11 +243,11 @@ watcher, a command and menu entries, icons, tests, and documentation.
 The pattern behind the table: use the native lifecycle where one exists, fall back to a
 watcher or a tailed log only for the gaps the tool does not expose, and put the fallback in
 the harness layer. A session started in the agent's own VS Code UI cannot use a chosen ID:
-Agntree creates a `pendingUiLaunch` placeholder and `SessionImportService` links the real
+Pitwall creates a `pendingUiLaunch` placeholder and `SessionImportService` links the real
 session after the first prompt, with a bounded snapshot (persisted as
 `pendingUiKnownSessionIds`) so an older session in the same worktree is not claimed, even
-across a reload. The same service imports sessions started outside Agntree and
-applies the `agntree.autoImport.*` retention and removal tombstones. It pauses its slow
+across a reload. The same service imports sessions started outside Pitwall and
+applies the `pitwall.autoImport.*` retention and removal tombstones. It pauses its slow
 discovery pass while the tree view is hidden, so it must keep working with `isVisible`
 reporting `false` except when a launch is still linking. Do not add a second
 ad-hoc claimer for either case.
@@ -380,8 +380,8 @@ shortens the code but makes failure behavior less clear is a regression; revert 
   tears down the host. Persist the active chat to `globalState` before the switch;
   `activate()` restores the active worktree from the new first workspace folder.
 - **Restored terminals carry two identities.** The custom title
-  `Agntree: <name> [<shortId>]` identifies a tab after a quit; the PID recorded per
-  workspace folder (`agntree.terminalPids` in `globalState`) identifies a live pty after a
+  `Pitwall: <name> [<shortId>]` identifies a tab after a quit; the PID recorded per
+  workspace folder (`pitwall.terminalPids` in `globalState`) identifies a live pty after a
   reload. `TerminalManager.beginRestoreSync()` adopts by PID and resumes revived tabs by
   title. Never type into a terminal whose PID matches the record — it is the running
   agent. A rename is durable only after the command starts and only for the active tab.
@@ -440,7 +440,7 @@ shortens the code but makes failure behavior less clear is a regression; revert 
 
 1. Read `src/extension.ts` to see what is constructed, registered, and disposed.
 2. Read `src/harnesses/types.ts` — it is the contract every harness implements.
-3. Follow one path end to end: `agntree.newCodexChat` → `createSession` →
+3. Follow one path end to end: `pitwall.newCodexChat` → `createSession` →
    `TerminalManager.openChat` → `CodexHarness.buildLaunchCommand` → the watcher.
 4. Read `src/services/StorageService.ts` before touching persisted state.
 5. Read `src/utils/paths.ts` before touching files, and `GitService` before touching git.

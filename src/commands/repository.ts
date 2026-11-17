@@ -24,7 +24,7 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     (await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel, title }))?.[0]
       ?.fsPath;
 
-  register('agntree.addRepository', async () => {
+  register('pitwall.addRepository', async () => {
     const picked = await pickFolder('Add', 'Select a Folder or Git Repository');
     if (!picked) {
       return;
@@ -48,7 +48,7 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     refreshTree();
   });
 
-  register('agntree.removeRepository', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.removeRepository', async (item?: WorkspaceTreeItem) => {
     let repo = item?.itemType === 'repository' ? (item.data as Repository) : undefined;
     if (!repo) {
       const repos = storageService.getRepositories();
@@ -68,7 +68,7 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     }
 
     const confirm = await vscode.window.showWarningMessage(
-      `Remove "${repo.name}" from Agntree?\n\nIts session rows leave the list, losing custom names and stars, and their terminals close. Your files, git repository, and the agents' conversations are NOT deleted; Import Sessions can bring the sessions back after you add it again.`,
+      `Remove "${repo.name}" from Pitwall?\n\nIts session rows leave the list, losing custom names and stars, and their terminals close. Your files, git repository, and the agents' conversations are NOT deleted; Import Sessions can bring the sessions back after you add it again.`,
       { modal: true },
       'Remove'
     );
@@ -94,12 +94,12 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
       vscode.window.showInformationMessage(`"${repo.name}" is already at the ${direction === 'up' ? 'top' : 'bottom'}.`);
     }
   };
-  register('agntree.moveRepositoryUp', moveRepository('up'));
-  register('agntree.moveRepositoryDown', moveRepository('down'));
+  register('pitwall.moveRepositoryUp', moveRepository('up'));
+  register('pitwall.moveRepositoryDown', moveRepository('down'));
 
-  register('agntree.refreshWorkspaces', refreshTree);
+  register('pitwall.refreshWorkspaces', refreshTree);
 
-  register('agntree.cloneRepository', async () => {
+  register('pitwall.cloneRepository', async () => {
     const input = await vscode.window.showInputBox({
       prompt: 'Enter GitHub repository URL',
       placeHolder: 'https://github.com/owner/repo or owner/repo',

@@ -42,7 +42,7 @@ import { debounce } from './utils/debounce';
 const FILE_CHANGE_DEBOUNCE_MS = 300;
 
 export async function activate(context: vscode.ExtensionContext) {
-  const config = () => vscode.workspace.getConfiguration('agntree');
+  const config = () => vscode.workspace.getConfiguration('pitwall');
   const register = commandRegistrar(context);
   const setContext = (key: string, value: unknown) =>
     void vscode.commands.executeCommand('setContext', key, value);
@@ -105,20 +105,20 @@ export async function activate(context: vscode.ExtensionContext) {
   void Promise.all(
     harnessRegistry.all().map(async (adapter) => {
       const installed = await harnessRegistry.isInstalled(adapter.id);
-      setContext(`agntree.${adapter.id}Installed`, installed);
+      setContext(`pitwall.${adapter.id}Installed`, installed);
       return installed;
     })
-  ).then((installed) => setContext('agntree.anyHarnessInstalled', installed.some(Boolean)));
+  ).then((installed) => setContext('pitwall.anyHarnessInstalled', installed.some(Boolean)));
   const updateNativeUiContexts = (): void => {
     let anyInstalled = false;
     for (const adapter of harnessRegistry.all()) {
       if (adapter.nativeUi) {
         const installed = adapter.nativeUi.isInstalled();
         anyInstalled ||= installed;
-        setContext(`agntree.${adapter.id}UiInstalled`, installed);
+        setContext(`pitwall.${adapter.id}UiInstalled`, installed);
       }
     }
-    setContext('agntree.anyNativeUiInstalled', anyInstalled);
+    setContext('pitwall.anyNativeUiInstalled', anyInstalled);
   };
   updateNativeUiContexts();
   context.subscriptions.push(vscode.extensions.onDidChange(updateNativeUiContexts));
@@ -140,18 +140,18 @@ export async function activate(context: vscode.ExtensionContext) {
   // views and commands exist.
   const restore = terminalManager.beginRestoreSync((id) => workspacesProvider.getWorktreeById(id));
   await restore.adopted;
-  void restore.complete.catch((error) => console.error('Agntree: restoring terminals failed', error));
+  void restore.complete.catch((error) => console.error('Pitwall: restoring terminals failed', error));
 
   const changesProvider = new ChangesTreeProvider(gitService, (worktree) => workspacesProvider.isGitWorktree(worktree));
   const filesProvider = new FilesTreeProvider();
-  const workspacesTreeView = vscode.window.createTreeView('agntree.workspacesView', {
+  const workspacesTreeView = vscode.window.createTreeView('pitwall.workspacesView', {
     treeDataProvider: workspacesProvider,
     showCollapseAll: true,
     // Session rows can be removed, closed, and starred several at a time.
     canSelectMany: true,
   });
-  const changesTreeView = vscode.window.createTreeView('agntree.changesView', { treeDataProvider: changesProvider });
-  const filesTreeView = vscode.window.createTreeView('agntree.filesView', {
+  const changesTreeView = vscode.window.createTreeView('pitwall.changesView', { treeDataProvider: changesProvider });
+  const filesTreeView = vscode.window.createTreeView('pitwall.filesView', {
     treeDataProvider: filesProvider,
     showCollapseAll: true,
   });
@@ -203,7 +203,7 @@ export async function activate(context: vscode.ExtensionContext) {
   };
 
   /**
-   * Forget worktrees that are gone from Agntree. Their chats are removed
+   * Forget worktrees that are gone from Pitwall. Their chats are removed
    * without tombstones, so the sessions can be imported again later.
    */
   const forgetWorktrees = (worktrees: Worktree[]): void => {
@@ -245,7 +245,7 @@ export async function activate(context: vscode.ExtensionContext) {
   };
 
   // Native sessions started outside an exact-ID launch: a UI launch, or a
-  // session started outside Agntree. Also ages out quiet auto-imports.
+  // session started outside Pitwall. Also ages out quiet auto-imports.
   const sessionImporter = new SessionImportService(storageService, worktreeCatalog, harnessRegistry, {
     // Retention must also keep a chat whose terminal is still resuming.
     isChatOpen: (chat) => isChatOpen(chat) || terminalManager.isResuming(chat.id),
@@ -344,11 +344,11 @@ export async function activate(context: vscode.ExtensionContext) {
     isViewVisible: () => sessionSearchTreeView.visible,
   });
   // The Keyboard Shortcuts editor, filtered to this extension's commands.
-  register('agntree.openKeybindings', () =>
+  register('pitwall.openKeybindings', () =>
     vscode.commands.executeCommand('workbench.action.openGlobalKeybindings', `@ext:${context.extension.id}`)
   );
   // The Settings editor, filtered to this extension's sections.
-  register('agntree.openSettings', () =>
+  register('pitwall.openSettings', () =>
     vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${context.extension.id}`)
   );
   for (const [name, setting, label] of [
@@ -356,7 +356,7 @@ export async function activate(context: vscode.ExtensionContext) {
     ['FocusOnStartup', 'focusOnStartup', 'Focus on startup'],
   ]) {
     for (const enabled of [true, false]) {
-      register(`agntree.${enabled ? 'enable' : 'disable'}${name}`, async () => {
+      register(`pitwall.${enabled ? 'enable' : 'disable'}${name}`, async () => {
         await config().update(setting, enabled, vscode.ConfigurationTarget.Global);
         vscode.window.showInformationMessage(`${label} ${enabled ? 'enabled' : 'disabled'}`);
       });
@@ -481,7 +481,7 @@ export async function activate(context: vscode.ExtensionContext) {
   });
 
   if (config().get<boolean>('focusOnStartup', false)) {
-    void vscode.commands.executeCommand('workbench.view.extension.agntree');
+    void vscode.commands.executeCommand('workbench.view.extension.pitwall');
   }
 }
 

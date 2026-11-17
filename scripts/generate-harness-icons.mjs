@@ -58,12 +58,12 @@ const BADGE_R = 4.2;
  */
 const BEAT_CSS =
   '<style>' +
-  '.agntree-mark{transform-box:view-box;transform-origin:center;' +
-  'animation:agntree-beat 1.4s ease-in-out infinite}' +
-  '@keyframes agntree-beat{' +
+  '.pitwall-mark{transform-box:view-box;transform-origin:center;' +
+  'animation:pitwall-beat 1.4s ease-in-out infinite}' +
+  '@keyframes pitwall-beat{' +
   '0%,100%{transform:scale(1);opacity:1}' +
   '50%{transform:scale(.78);opacity:.72}}' +
-  '@media (prefers-reduced-motion:reduce){.agntree-mark{animation:none}}' +
+  '@media (prefers-reduced-motion:reduce){.pitwall-mark{animation:none}}' +
   '</style>';
 
 function badge(state, theme) {
@@ -93,7 +93,7 @@ function wrapMark(svg) {
     titleEnd === -1 ? svg.indexOf('>') + 1 : titleEnd + '</title>'.length;
   const bodyEnd = svg.lastIndexOf('</svg>');
   return (
-    `${svg.slice(0, bodyStart)}<g class="agntree-mark">` +
+    `${svg.slice(0, bodyStart)}<g class="pitwall-mark">` +
     `${svg.slice(bodyStart, bodyEnd)}</g>${svg.slice(bodyEnd)}`
   );
 }

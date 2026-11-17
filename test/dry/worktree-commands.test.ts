@@ -53,14 +53,14 @@ test('Create Worktree puts a new branch under <repo>-worktrees and hides branche
 
   stub.__quickPickResponses.push({ value: 'new' }, { label: 'main' });
   stub.__inputResponses.push('feat/login');
-  await runCommand('agntree.addWorktree', row);
+  await runCommand('pitwall.addWorktree', row);
   const created = path.join(scratch, 'app-worktrees', 'feat-login');
   assert.equal(worktreeAt(created)?.branch, 'feat/login');
   assert.deepEqual(branches(), ['feat/login', 'main']);
 
   // Both branches are checked out, so "Existing branch" has nothing to offer.
   stub.__quickPickResponses.push({ value: 'existing' });
-  await runCommand('agntree.addWorktree', row);
+  await runCommand('pitwall.addWorktree', row);
   assert.ok(shown('All branches are already checked out'));
 });
 
@@ -75,7 +75,7 @@ test('Delete Worktree closes its sessions before removing the directory, and a d
   assert.equal(worktree.branch, undefined);
 
   stub.__warningResponses.push('Delete Worktree Only');
-  await runCommand('agntree.deleteWorktree', { itemType: 'worktree', data: worktree });
+  await runCommand('pitwall.deleteWorktree', { itemType: 'worktree', data: worktree });
 
   const confirmation = stub.__messages.find((args) => String(args[0]).startsWith('Delete worktree'))!;
   assert.deepEqual(confirmation.slice(2), ['Delete Worktree Only'], 'no branch to delete');
@@ -90,7 +90,7 @@ test('Delete Worktree & Branch removes the worktree and its branch', async (t) =
   git(repoPath, 'worktree', 'add', '-q', '-b', 'feature', linked);
 
   stub.__warningResponses.push('Delete Worktree & Branch');
-  await runCommand('agntree.deleteWorktree', { itemType: 'worktree', data: worktreeAt(linked) });
+  await runCommand('pitwall.deleteWorktree', { itemType: 'worktree', data: worktreeAt(linked) });
 
   assert.equal(fs.existsSync(linked), false);
   assert.deepEqual(branches(), ['main']);
@@ -111,7 +111,7 @@ test('Rebase offers the remote branches, recommended main first, but not the bra
     offered = items.map((item) => item.branch);
     return undefined;
   });
-  await runCommand('agntree.rebaseWorktree', { itemType: 'worktree', data: worktreeAt(linked) });
+  await runCommand('pitwall.rebaseWorktree', { itemType: 'worktree', data: worktreeAt(linked) });
 
   assert.deepEqual(offered, ['origin/main', 'origin/zeta']);
 });

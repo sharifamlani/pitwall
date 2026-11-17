@@ -5,7 +5,7 @@
  * Launches the installed VS Code with a throwaway profile and this working
  * copy of the extension, drives three chats through quit/reopen/quit/reopen
  * against a fake harness CLI, and checks that every restored tab carries its
- * Agntree title and resumes its own session without the user touching a tab.
+ * Pitwall title and resumes its own session without the user touching a tab.
  *
  * Nothing outside the temp directory is read or written: the user-data dir,
  * extensions dir, git workspace, and Claude config all live under a fresh temp
@@ -16,11 +16,11 @@
  *
  * Environment:
  *   VSCODE_EXECUTABLE       path to VS Code (same resolver as the integration suite)
- *   AGNTREE_E2E_SCENARIO    default | no-shell-integration | custom-tab-title |
+ *   PITWALL_E2E_SCENARIO    default | no-shell-integration | custom-tab-title |
  *                           persistent-sessions-off | revive-never
- *   AGNTREE_E2E_ROOT        parent directory for the temp profile; use a path
+ *   PITWALL_E2E_ROOT        parent directory for the temp profile; use a path
  *                           without spaces on Windows
- *   AGNTREE_TEST_KEEP=1     keep the temp profile and logs
+ *   PITWALL_TEST_KEEP=1     keep the temp profile and logs
  */
 const { execFileSync, spawn } = require('child_process');
 const fs = require('fs');
@@ -92,14 +92,14 @@ function prepareRepo(repoPath) {
   fs.mkdirSync(repoPath, { recursive: true });
   fs.writeFileSync(
     path.join(repoPath, 'README.md'),
-    '# Agntree terminal-restore E2E workspace\n'
+    '# Pitwall terminal-restore E2E workspace\n'
   );
   runGit(['init'], repoPath);
   runGit(['add', 'README.md'], repoPath);
   runGit(
     [
       '-c',
-      'user.name=Agntree E2E',
+      'user.name=Pitwall E2E',
       '-c',
       'user.email=e2e@example.invalid',
       'commit',
@@ -212,7 +212,7 @@ function writeFakeCommand(root, runsPath) {
 
 function writeSettings(userDataDir, fakeCommand, scenario) {
   const settings = {
-    'agntree.harnessCommands.claude': fakeCommand,
+    'pitwall.harnessCommands.claude': fakeCommand,
     'terminal.integrated.enablePersistentSessions': true,
     'workbench.startupEditor': 'none',
     'window.restoreWindows': 'none',
@@ -231,7 +231,7 @@ function writeSettings(userDataDir, fakeCommand, scenario) {
 }
 
 function stageExtension(extensionsDir) {
-  const target = path.join(extensionsDir, 'agntree');
+  const target = path.join(extensionsDir, 'pitwall');
   const outFile = path.join(REPO_ROOT, 'out', 'extension.js');
   if (!fs.existsSync(outFile)) {
     throw new Error(`Missing ${outFile}; run npm run compile first`);
@@ -326,11 +326,11 @@ function report(entries) {
 }
 
 async function main() {
-  const scenarioName = process.env.AGNTREE_E2E_SCENARIO || 'default';
+  const scenarioName = process.env.PITWALL_E2E_SCENARIO || 'default';
   const scenario = SCENARIOS[scenarioName];
   if (!scenario) {
     throw new Error(
-      `Unknown AGNTREE_E2E_SCENARIO "${scenarioName}". Known: ${Object.keys(
+      `Unknown PITWALL_E2E_SCENARIO "${scenarioName}". Known: ${Object.keys(
         SCENARIOS
       ).join(', ')}`
     );
@@ -360,16 +360,16 @@ async function main() {
   // unix socket path to 103 characters. os.tmpdir() is long on macOS, so use
   // /tmp there; the override must also stay short.
   const defaultRoot = process.platform === 'win32' ? os.tmpdir() : '/tmp';
-  const parent = process.env.AGNTREE_E2E_ROOT
-    ? path.resolve(process.env.AGNTREE_E2E_ROOT)
+  const parent = process.env.PITWALL_E2E_ROOT
+    ? path.resolve(process.env.PITWALL_E2E_ROOT)
     : defaultRoot;
   fs.mkdirSync(parent, { recursive: true });
   const root = fs.realpathSync(
-    fs.mkdtempSync(path.join(parent, 'agntree-e2e-'))
+    fs.mkdtempSync(path.join(parent, 'pitwall-e2e-'))
   );
   if (process.platform === 'win32' && root.includes(' ')) {
     throw new Error(
-      'The temp path contains a space. Set AGNTREE_E2E_ROOT to a path without ' +
+      'The temp path contains a space. Set PITWALL_E2E_ROOT to a path without ' +
         'spaces; Windows shell quoting is POSIX-only in the harness launch command.'
     );
   }
@@ -380,7 +380,7 @@ async function main() {
   const logPath = path.join(root, 'log.jsonl');
   const statePath = path.join(root, 'state.json');
   const runsPath = path.join(root, 'fake-runs.log');
-  const keep = process.env.AGNTREE_TEST_KEEP === '1';
+  const keep = process.env.PITWALL_TEST_KEEP === '1';
 
   console.log(`VS Code:   ${exe}`);
   console.log(`Scenario:  ${scenarioName}`);
@@ -400,14 +400,14 @@ async function main() {
       seeder,
       path.join(userDataDir, 'User', 'globalStorage', 'state.vscdb'),
       JSON.stringify({
-        'agntree.repositories': [
+        'pitwall.repositories': [
           { id: 'e2e-repo', name: 'e2e-repo', rootPath: repoPath },
         ],
-        'agntree.chats': chats,
-        'agntree.activeChat': null,
-        'agntree.activeWorktreeId': null,
-        'agntree.prWorktrees': {},
-        'agntree.starredChats': [],
+        'pitwall.chats': chats,
+        'pitwall.activeChat': null,
+        'pitwall.activeWorktreeId': null,
+        'pitwall.prWorktrees': {},
+        'pitwall.starredChats': [],
       })
     );
 
@@ -417,12 +417,12 @@ async function main() {
 
     const env = {
       ...process.env,
-      AGNTREE_E2E_OUT: logPath,
-      AGNTREE_E2E_STATE: statePath,
-      AGNTREE_E2E_CHATS: JSON.stringify(chats),
-      AGNTREE_E2E_RUNS: runsPath,
-      AGNTREE_E2E_EXPECT_RESUMES: String(scenario.resumes),
-      AGNTREE_E2E_EXPECT_TITLES: scenario.titles ? '1' : '0',
+      PITWALL_E2E_OUT: logPath,
+      PITWALL_E2E_STATE: statePath,
+      PITWALL_E2E_CHATS: JSON.stringify(chats),
+      PITWALL_E2E_RUNS: runsPath,
+      PITWALL_E2E_EXPECT_RESUMES: String(scenario.resumes),
+      PITWALL_E2E_EXPECT_TITLES: scenario.titles ? '1' : '0',
       CLAUDE_CONFIG_DIR: claudeProfile,
     };
     const args = [

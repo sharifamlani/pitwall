@@ -1,6 +1,6 @@
-# Contributing to Agntree
+# Contributing to Pitwall
 
-Thank you for your interest in contributing to Agntree! This guide covers setup and the PR
+Thank you for your interest in contributing to Pitwall! This guide covers setup and the PR
 process. Before writing code, read [`AGENTS.md`](AGENTS.md): it is the project's working
 agreement and explains where a change belongs, what to investigate first, how we test, how
 to add support for another coding agent, and what "done" means.
@@ -14,8 +14,8 @@ You need [Node.js](https://nodejs.org/) 20+, [VS Code](https://code.visualstudio
 use fakes.
 
 ```bash
-git clone https://github.com/subhashkhileri/agntree.git
-cd agntree
+git clone https://github.com/sharifamlani/pitwall.git
+cd pitwall
 npm install
 npm run compile
 ```
@@ -37,20 +37,20 @@ soon; [`site/indexnow.mjs`](site/indexnow.mjs) decides which pages those are. De
 [`media/`](media/README.md), which says what to record and how; the illustrated window on
 the landing page and in the README GIFs is described once, in
 [`site/assets/demo.mjs`](site/assets/demo.mjs). The
-Agntree icon is drawn in [`resources/icons/agntree.svg`](resources/icons/agntree.svg);
+Pitwall icon is drawn in [`resources/icons/pitwall.svg`](resources/icons/pitwall.svg);
 `npm run build:icon` redraws the Marketplace PNG from it.
 
 ## How to Contribute
 
 ### Reporting Bugs
 
-1. Check [existing issues](https://github.com/subhashkhileri/agntree/issues) to avoid duplicates
-2. Use the [bug report template](https://github.com/subhashkhileri/agntree/issues/new?template=bug_report.yml)
+1. Check [existing issues](https://github.com/sharifamlani/pitwall/issues) to avoid duplicates
+2. Use the [bug report template](https://github.com/sharifamlani/pitwall/issues/new?template=bug_report.yml)
 3. Include steps to reproduce, expected vs actual behavior, and your environment
 
 ### Requesting Features
 
-1. Use the [feature request template](https://github.com/subhashkhileri/agntree/issues/new?template=feature_request.yml)
+1. Use the [feature request template](https://github.com/sharifamlani/pitwall/issues/new?template=feature_request.yml)
 2. Describe the problem you're trying to solve, not just the solution
 
 ### Submitting Pull Requests
@@ -66,11 +66,11 @@ Agntree icon is drawn in [`resources/icons/agntree.svg`](resources/icons/agntree
 
 ### Adding support for another coding agent
 
-Agntree models each CLI agent as a **harness**. The questions to answer first, the list of
+Pitwall models each CLI agent as a **harness**. The questions to answer first, the list of
 what ships, and how the existing harnesses solved them are in
 [`AGENTS.md`](AGENTS.md#adding-a-harness). If you have questions about the architecture,
-[open a discussion](https://github.com/subhashkhileri/agntree/discussions) or [file an
-issue](https://github.com/subhashkhileri/agntree/issues).
+[open a discussion](https://github.com/sharifamlani/pitwall/discussions) or [file an
+issue](https://github.com/sharifamlani/pitwall/issues).
 
 ## License
 

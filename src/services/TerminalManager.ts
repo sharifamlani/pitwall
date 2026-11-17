@@ -104,16 +104,16 @@ export class TerminalManager {
         }
       }),
       // A restored terminal can appear after activation; adopt it if its pty
-      // is one Agntree recorded.
+      // is one Pitwall recorded.
       vscode.window.onDidOpenTerminal((terminal) => {
         void this.adoptRestoredTerminal(
           terminal,
           this.storageService.getTerminalPids(),
           undefined,
           this.getWorktreeById
-        ).catch((error) => console.error('Agntree: could not adopt a restored terminal', error));
+        ).catch((error) => console.error('Pitwall: could not adopt a restored terminal', error));
       }),
-      // A mapped terminal always shows Agntree's title. Re-applying on focus
+      // A mapped terminal always shows Pitwall's title. Re-applying on focus
       // covers a title VS Code lost during a restore and a hand-renamed tab.
       vscode.window.onDidChangeActiveTerminal((terminal) => {
         if (!terminal) {
@@ -342,7 +342,7 @@ export class TerminalManager {
   }
 
   /**
-   * Give a mapped terminal Agntree's title. The rename command targets the
+   * Give a mapped terminal Pitwall's title. The rename command targets the
    * active terminal, so the caller must make this terminal active first. Writes
    * are serialized: each one re-checks the active tab when it runs, so a focus
    * change between queueing and execution cannot swap two tabs' titles.
@@ -416,7 +416,7 @@ export class TerminalManager {
       .then((choice) => {
         if (choice === 'Delete Chat') {
           this.storageService.deleteChat(chat.id);
-          vscode.commands.executeCommand('agntree.refreshWorkspaces');
+          vscode.commands.executeCommand('pitwall.refreshWorkspaces');
         }
       });
   }
@@ -532,7 +532,7 @@ export class TerminalManager {
 
   private dropChat(chatId: string): void {
     this.storageService.deleteChat(chatId);
-    vscode.commands.executeCommand('agntree.refreshWorkspaces');
+    vscode.commands.executeCommand('pitwall.refreshWorkspaces');
   }
 
   /**
@@ -835,7 +835,7 @@ export class TerminalManager {
   }
 
   /**
-   * Re-apply Agntree's title to tabs that VS Code restored as new shells.
+   * Re-apply Pitwall's title to tabs that VS Code restored as new shells.
    *
    * An editor terminal is serialized with an empty cwd, so every revival makes
    * the shell report a cwd change and VS Code re-tags the title as a config

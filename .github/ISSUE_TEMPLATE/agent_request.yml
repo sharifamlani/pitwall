@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Agntree's architecture is extensible for new AI coding agents. Use this template to request support for a new agent or to volunteer to implement it.
+        Pitwall's architecture is extensible for new AI coding agents. Use this template to request support for a new agent or to volunteer to implement it.
 
   - type: input
     id: agent-name

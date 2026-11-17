@@ -61,7 +61,7 @@ File operations in these panels are narrow by design:
 - They only act **inside the worktree** the panel shows. A path outside it is refused.
 - **Delete moves to the Trash** and asks first.
 - **Creating and pasting never overwrite** an existing file.
-- Every delete, discard, and refusal is recorded in the **Agntree Operations** output channel (**View → Output**, then pick it from the list).
+- Every delete, discard, and refusal is recorded in the **Pitwall Operations** output channel (**View → Output**, then pick it from the list).
 
 ## Related
 

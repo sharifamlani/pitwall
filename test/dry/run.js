@@ -19,7 +19,7 @@ const esbuild = require('esbuild');
 const TEST_DIR = __dirname;
 const BUILD_DIR = path.join(TEST_DIR, '.build');
 const STUB = path.join(TEST_DIR, 'vscode-stub.js');
-const TIMEOUT_MS = Number(process.env.AGNTREE_TEST_TIMEOUT_MS || 60_000);
+const TIMEOUT_MS = Number(process.env.PITWALL_TEST_TIMEOUT_MS || 60_000);
 
 const filter = process.argv[2];
 const testFiles = fs

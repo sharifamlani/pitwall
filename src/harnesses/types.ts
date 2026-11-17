@@ -7,7 +7,7 @@ export interface PreviewMessage {
   timestamp: number | null;
 }
 
-/** A session as discovered from a harness, normalized for Agntree. */
+/** A session as discovered from a harness, normalized for Pitwall. */
 export interface HarnessSession {
   harness: HarnessId;
   sessionId: string;
@@ -204,7 +204,7 @@ export type NativeUiAvailability =
   | { kind: 'available' }
   | NativeUiUnavailable;
 
-/** What happened when Agntree asked a harness to open a session in its UI. */
+/** What happened when Pitwall asked a harness to open a session in its UI. */
 export type NativeUiOpenResult =
   | { kind: 'opened'; via: 'command' | 'uri' }
   | NativeUiUnavailable

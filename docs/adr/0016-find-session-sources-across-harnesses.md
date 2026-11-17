@@ -64,7 +64,7 @@ differ sharply:
   available runner, so a machine without Claude Code can still search. Runner selection
   probes the executable (`SessionSearchRunner.isAvailable()`), not the adapter's install
   state: a leftover profile without the CLI is enough to show sessions but not to spawn
-  one. The `agntree.sessionSearch.harness` enum lists only harnesses with a runner
+  one. The `pitwall.sessionSearch.harness` enum lists only harnesses with a runner
   (`claude`, `codex`, `pi`).
 - **Verification stays with the harness.** Codex uses `thread/read` and
   `thread/items/list`, whose `userMessage` items are the typed prompts without the
@@ -88,7 +88,7 @@ differ sharply:
   `codex exec --ignore-user-config` in a throwaway home, and Pi's
   `--no-extensions --no-skills --no-context-files --no-mcp` all make a read-only run easy
   to describe, but they ignore the model, provider, skills, extensions, and rules the user
-  set. Agntree uses each harness as configured and removes only the MCP tools from the
+  set. Pitwall uses each harness as configured and removes only the MCP tools from the
   tool set.
 - **Give the agent a shell so it can call `opencode` itself.** It would need Bash without a
   sandbox, which is exactly what the read-only runners avoid.

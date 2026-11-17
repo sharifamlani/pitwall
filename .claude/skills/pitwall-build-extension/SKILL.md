@@ -1,6 +1,6 @@
 ---
 name: pitwall-build-extension
-description: Build, package, and install the Agntree VS Code extension. Use when asked to build, compile, package, create a VSIX, or install/update the extension.
+description: Build, package, and install the Pitwall VS Code extension. Use when asked to build, compile, package, create a VSIX, or install/update the extension.
 allowed-tools:
   - Bash
   - Read
@@ -8,7 +8,7 @@ allowed-tools:
 
 # Build Extension
 
-Build, package, and install the Agntree VS Code extension. Run these from the repository root.
+Build, package, and install the Pitwall VS Code extension. Run these from the repository root.
 
 ## Build
 
@@ -31,13 +31,13 @@ npm run test:dry
 npx @vscode/vsce package --allow-missing-repository
 ```
 
-The output is `agntree-<version>.vsix` in the repo root (for example `agntree-1.2.1.vsix`).
+The output is `pitwall-<version>.vsix` in the repo root (for example `pitwall-1.2.1.vsix`).
 Read the version from `package.json` rather than assuming one.
 
 ## Install the Extension
 
 ```bash
-code --install-extension ./agntree-<version>.vsix --force
+code --install-extension ./pitwall-<version>.vsix --force
 ```
 
 - No need to uninstall the existing copy first. `--force` replaces it in place, even when
@@ -76,7 +76,7 @@ use that fork's `code` CLI.
 1. Make changes to source files in `src/`
 2. `npm run compile` to check for errors
 3. Package with `npx @vscode/vsce package --allow-missing-repository`
-4. Install with `code --install-extension ./agntree-<version>.vsix --force`
+4. Install with `code --install-extension ./pitwall-<version>.vsix --force`
 5. Tell the user to reload: **Command Palette** (`Cmd+Shift+P`) → **Developer: Reload Window**
 6. Test in VS Code
 
