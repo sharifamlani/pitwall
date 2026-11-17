@@ -50,11 +50,13 @@ export interface HarnessLiveState {
 /**
  * Visual state of a chat row in the session tree.
  *
- * `working` is the animated mark (mid-turn), `done` is the mark plus a green
- * dot (turn finished, terminal open), `closed` is the grey mark, and `new` is
- * the mark plus a hollow ring for a chat the harness has not linked yet.
+ * `working` is the animated mark (mid-turn), `needs` is the mark plus an
+ * orange dot (the agent is waiting on the user), `done` is the mark plus a
+ * green dot (turn finished, terminal open), `closed` is the grey mark, and
+ * `new` is the mark plus a hollow ring for a chat the harness has not linked
+ * yet.
  */
-export type HarnessIconState = 'working' | 'done' | 'closed' | 'new';
+export type HarnessIconState = 'working' | 'needs' | 'done' | 'closed' | 'new';
 
 /** Extension-relative SVG paths for each theme and tree state. */
 export interface HarnessTreeIcons {

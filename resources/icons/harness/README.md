@@ -13,12 +13,14 @@ States:
   78% / 72% and back every 1.4s. A contraction never clips, and the relaxed
   frame is the same size as every other row. Reduced-motion users get the
   mark at rest.
+- `needs` — the brand mark plus an orange dot (#f0883e, reserved for "needs
+  you" by ROADMAP D17), meaning the agent is waiting on the user.
 - `done` — the brand mark plus a green dot, meaning the turn finished.
 - `closed` — the grey mark, no badge.
 - `new` — the brand mark plus a hollow ring for a chat the harness has not
   linked yet.
 
-Themes: `light`, `dark`. The ring behind the done/new badge is painted in the
+Themes: `light`, `dark`. The ring behind the needs/done/new badge is painted in the
 sidebar background color, so each state has a light and a dark file.
 
 A session is `closed` whenever its terminal is not open. That does not depend

@@ -49,6 +49,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   private readonly syncCache = new Map<string, { ahead: number; behind: number; fetchedAt: number }>();
 
   private turnStateProvider: (chatId: string) => TurnState | undefined = () => undefined;
+  private needsYouProvider: (chatId: string) => boolean = () => false;
   private chatOpenProvider: (chat: ChatSession) => boolean;
 
   private repoWatchers: vscode.Disposable[] = [];
@@ -108,6 +109,11 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   /** Live turn state for the working/done mark, wired once the attention service exists. */
   setTurnStateProvider(provider: (chatId: string) => TurnState | undefined): void {
     this.turnStateProvider = provider;
+  }
+
+  /** Whether a chat is waiting on the user, for the needs-you mark. */
+  setNeedsYouProvider(provider: (chatId: string) => boolean): void {
+    this.needsYouProvider = provider;
   }
 
   /** The one "is this chat open" predicate: a live terminal or a mapped native-UI tab. */
@@ -381,7 +387,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       item.iconPath = harnessIconPath(
         this.extensionUri,
         adapter,
-        selectHarnessIconState(chat, isOpen, this.turnStateProvider(chat.id))
+        selectHarnessIconState(chat, isOpen, this.turnStateProvider(chat.id), this.needsYouProvider(chat.id))
       );
 
       const time = chat.harnessSessionId
