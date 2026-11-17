@@ -4,6 +4,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-24
+- Superseded in Phase 2 (R36, R40): the agents call runs every 4 s whenever any chat is open, independent of focus.
 
 ## Context
 

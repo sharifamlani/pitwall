@@ -147,10 +147,10 @@ export class ClaudeHarness implements HarnessAdapter {
 
     // Start the independent transcript reads immediately; the shared agents
     // call may have to spawn the CLI and must not delay them.
-    const agentsPromise = this.agentsService.getStates();
+    const agentsPromise = this.agentsService.getSnapshot();
     const readings = await Promise.all(
       sessionIds.map(async (sessionId): Promise<
-        [string, ClaudeTurnReading] | null
+        [string, string, ClaudeTurnReading] | null
       > => {
         // The negative cache stops a session whose transcript has not appeared
         // from rescanning every project dir on each attention tick.
@@ -162,21 +162,45 @@ export class ClaudeHarness implements HarnessAdapter {
           return null;
         }
         const reading = await this.sessionService.readTurnState(filePath);
-        return reading ? [sessionId, reading] : null;
+        return reading ? [sessionId, filePath, reading] : null;
       })
     );
 
-    const agents = await agentsPromise;
-    for (const entry of readings) {
-      if (!entry) {
-        continue;
-      }
-      const [sessionId, reading] = entry;
-      states.set(sessionId, {
-        ...reading,
-        waitingFor: agents.get(sessionId)?.waitingFor,
-      });
-    }
+    const { observedAt, states: agents } = await agentsPromise;
+    await Promise.all(
+      readings.map(async (entry) => {
+        if (!entry) {
+          return;
+        }
+        const [sessionId, filePath, reading] = entry;
+        let waitingFor = agents.get(sessionId)?.waitingFor;
+        let writtenAt: number | undefined;
+        // A "waiting" row may come from a cached call up to ~10 s old. Drop it
+        // when the transcript was written after that call started. This
+        // relies on Claude not writing the main transcript while a prompt is
+        // showing: the tool call is written just before the prompt appears,
+        // and the answer (a deny's tool result, or the run after an allow)
+        // is written once the prompt is gone. So a real wait survives (at
+        // worst until the next call, if one started just before the tool-call
+        // write), while a sample taken before a deny is dropped instead of
+        // re-marking the chat. A one-off write during a wait (a resumed
+        // session re-appending its metadata) only delays the mark until the
+        // next call, whose start is later than the write. Subagent (sidechain) records go to their own
+        // files under <session>/subagents/, so they do not touch this mtime.
+        // One stat per waiting session per tick, never per agent row.
+        // The same stat also tells the attention service when the wait most
+        // likely began (the tool-call write).
+        if (waitingFor) {
+          const mtime = await this.sessionService.transcriptWrittenAt(filePath);
+          if (mtime !== null && mtime > observedAt) {
+            waitingFor = undefined;
+          } else if (mtime !== null) {
+            writtenAt = mtime;
+          }
+        }
+        states.set(sessionId, { ...reading, waitingFor, observedAt, ...(writtenAt !== undefined ? { writtenAt } : {}) });
+      })
+    );
 
     return states;
   }
