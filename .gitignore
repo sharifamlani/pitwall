@@ -7,6 +7,12 @@ credentials.json
 .credentials.json
 *.pem
 *.key
+.npmrc
+.netrc
+id_rsa*
+id_ed25519*
+*.p12
+*.pfx
 
 # Python (dev tooling under tools/, managed by Poetry)
 __pycache__/
