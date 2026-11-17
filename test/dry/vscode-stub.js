@@ -117,8 +117,78 @@ class Uri {
 }
 
 const inputBoxes = [];
+const quickPicks = [];
 
 /** Minimal InputBox: tests type and press Enter or a title button explicitly. */
+class FakeQuickPick {
+  constructor() {
+    this.value = '';
+    this.items = [];
+    this.placeholder = '';
+    this.title = '';
+    this.matchOnDescription = false;
+    this.matchOnDetail = false;
+    this.activeItems = [];
+    this.selectedItems = [];
+    this.shown = false;
+    this.hidden = false;
+    this.changeListeners = new Set();
+    this.acceptListeners = new Set();
+    this.hideListeners = new Set();
+    quickPicks.push(this);
+  }
+
+  onDidChangeValue(listener) {
+    this.changeListeners.add(listener);
+    return { dispose: () => this.changeListeners.delete(listener) };
+  }
+
+  onDidAccept(listener) {
+    this.acceptListeners.add(listener);
+    return { dispose: () => this.acceptListeners.delete(listener) };
+  }
+
+  onDidHide(listener) {
+    this.hideListeners.add(listener);
+    return { dispose: () => this.hideListeners.delete(listener) };
+  }
+
+  show() {
+    this.shown = true;
+  }
+
+  hide() {
+    if (this.hidden) {
+      return;
+    }
+    this.hidden = true;
+    for (const listener of [...this.hideListeners]) {
+      listener();
+    }
+  }
+
+  dispose() {
+    this.hide();
+  }
+
+  /** Test helper: type `value`. */
+  __type(value) {
+    this.value = value;
+    for (const listener of [...this.changeListeners]) {
+      listener(value);
+    }
+  }
+
+  /** Test helper: pick `item` and press Enter. */
+  __accept(item) {
+    this.selectedItems = item ? [item] : [];
+    this.activeItems = this.selectedItems;
+    for (const listener of [...this.acceptListeners]) {
+      listener();
+    }
+  }
+}
+
 class FakeInputBox {
   constructor() {
     this.value = '';
@@ -718,6 +788,7 @@ module.exports = {
       return quickPickResponses.shift();
     },
     createInputBox: () => new FakeInputBox(),
+    createQuickPick: () => new FakeQuickPick(),
     showInputBox: async (options) => {
       messages.push([options]);
       return inputResponses.shift();
@@ -779,6 +850,7 @@ module.exports = {
       inputResponses,
       openDialogResponses,
       inputBoxes,
+      quickPicks,
       openTerminals,
       openExternalCalls,
       fileWatchers,
@@ -849,6 +921,7 @@ module.exports = {
     openExternalResult = Boolean(value);
   },
   __inputBoxes: inputBoxes,
+  __quickPicks: quickPicks,
   __setQuickPickHandler: (handler) => {
     quickPickHandler = handler;
   },
