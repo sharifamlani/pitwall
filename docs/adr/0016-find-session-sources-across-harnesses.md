@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0016 — Find Session searches every harness, and runs only where a read-only mode exists
 
 - **Status:** Proposed

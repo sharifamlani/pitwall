@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Agent panels
 
 A Claude Code or Codex session can run in two places: the agent's CLI in a terminal, or the chat panel of the agent's own VS Code extension. Pitwall lets you open a session in either, move it between them, and choose which one a click prefers. The session is the same in both places.

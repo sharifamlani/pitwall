@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Claude Code session manager for VS Code
 
 Pitwall gives Claude Code a session manager inside VS Code. Every Claude Code session is listed under its repository and git worktree, resumes with one click, forks into a new branch, and tells you when it finishes or is waiting on a permission prompt. Pitwall drives the `claude` CLI you already have; it does not replace it.

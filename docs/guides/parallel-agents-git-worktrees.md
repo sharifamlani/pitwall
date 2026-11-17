@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Run multiple agents in parallel with git worktrees
 
 To run several coding agents at once without them overwriting each other, give each agent its own git worktree: a separate directory, on a separate branch, of the same repository. One task, one worktree, one agent. This guide shows the workflow by hand and then with Pitwall in VS Code, for Claude Code, Codex, opencode, and Pi.

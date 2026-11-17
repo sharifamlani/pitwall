@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Resume a Claude Code, Codex, opencode, or Pi session
 
 To resume a coding-agent session you need its session ID and, for most agents, the directory it ran in. This guide lists the resume command for each agent, shows where the ID comes from, and shows how to resume any session with one click in VS Code.

@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Sessions
 
 A session is one conversation with a coding agent. Pitwall lists every Claude Code, Codex, opencode, and Pi session under the repository and git worktree it runs in, and resumes any of them with one click. The session itself stays in the agent's own storage; Pitwall only keeps the list.

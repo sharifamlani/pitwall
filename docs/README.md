@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Pitwall documentation
 
 Pitwall is a free, open-source extension for VS Code and Cursor that manages coding-agent sessions. It puts every [Claude Code](agents/claude-code.md), [Codex](agents/codex.md), [opencode](agents/opencode.md), and [Pi](agents/pi.md) session in one sidebar, grouped by repository and git worktree, so you can start, resume, fork, find, and review agent work without juggling terminals or session IDs.

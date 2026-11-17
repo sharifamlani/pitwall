@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Settings
 
 Pitwall works without any configuration. To change how it behaves, choose **Pitwall Settings…** in the Pitwall `…` menu, or run **Pitwall: Pitwall Settings…** from the Command Palette. VS Code's Settings editor opens on Pitwall's settings, in the five groups below. Every setting can be changed there; none needs `settings.json`.

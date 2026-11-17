@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Pitwall compared with Orca, Paseo, and the plain CLI
 
 There are three ways to run several coding agents at once: by hand in terminals, in a standalone agent app such as Orca or Paseo, or inside your editor with an extension such as Pitwall. They solve the same problem from different places. This page describes each fairly so you can pick the one that fits how you work.

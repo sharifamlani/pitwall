@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0008 — A row exists only while its session does
 
 - **Status:** Accepted

@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0009 — Restored terminals keep their chat
 
 - **Status:** Accepted
@@ -89,7 +91,7 @@ A Pitwall terminal keeps two identities, one per restore mode.
   quit has no short id; focusing it re-applies the Pitwall title, but that quit cannot
   resume it.
 - A resumed tab is changed into its chat's worktree with POSIX shell quoting. Windows
-  shells need the platform-specific quoting tracked in `ROADMAP.md`.
+  shells need the platform-specific quoting tracked in the [upstream roadmap](https://github.com/sharifamlani/pitwall/blob/47124cd/ROADMAP.md).
 - With shell integration disabled, opening a chat skips the command-start wait: no cwd
   report re-tags the title, so the name from `createTerminal()` is already durable. A
   shell that never reports integration with the setting enabled (for example `cmd`)

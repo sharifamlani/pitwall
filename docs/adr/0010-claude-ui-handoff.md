@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0010 — Hand an existing Claude session to the Claude Code UI
 
 - **Status:** Accepted

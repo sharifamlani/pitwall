@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0011 — Hand an existing Codex thread to the Codex extension UI
 
 - **Status:** Accepted

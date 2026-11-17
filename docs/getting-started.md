@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Getting started
 
 Install Pitwall from the VS Code Marketplace, add a folder or repository, and click **+** to start a Claude Code, Codex, opencode, or Pi session. This page walks through that, start to finish.

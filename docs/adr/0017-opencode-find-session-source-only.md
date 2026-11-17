@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0017 — opencode stays a Find Session source, not a runner
 
 - **Status:** Proposed
@@ -98,7 +100,7 @@ Checked on 2026-11-11 with opencode v2.1.2 and the V2 documentation:
   installed. opencode sessions are included whenever one of them runs it.
 - opencode's recent-history coverage limits (newest 200 sessions, a 45-second preparation
   budget, a 4 MB snapshot cap, user messages only) are unchanged and remain recorded in
-  [ROADMAP.md](../../ROADMAP.md).
+  [upstream ROADMAP.md](https://github.com/sharifamlani/pitwall/blob/47124cd/ROADMAP.md).
 - Adding a runner later means implementing `SessionSearchRunner` for opencode, adding the
   id to the `pitwall.sessionSearch.harness` enum, and stating the minimum supported
   opencode version. The search contract does not change: one headless conversation,

@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0012 — Import native sessions, name them from the harness, and let the user choose the surface
 
 - **Status:** Accepted

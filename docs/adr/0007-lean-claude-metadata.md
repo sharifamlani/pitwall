@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0007 — Claude metadata is deliberately lean
 
 - **Status:** Accepted
@@ -31,4 +33,4 @@ and all of them were parsed on every full read. opencode and Codex still fill th
 - Tooltips have no usage footer; import rows have no branch or message count.
 - `messageCount: 0` means unknown. Do not render "0 messages".
 - Resume validation uses `hasMessages`, not a count.
-- [`ROADMAP.md`](../../ROADMAP.md) tracks restoring recap or usage if a cheap native source appears.
+- [`ROADMAP.md`](https://github.com/sharifamlani/pitwall/blob/47124cd/ROADMAP.md) tracks restoring recap or usage if a cheap native source appears.

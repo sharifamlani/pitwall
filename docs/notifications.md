@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Notifications
 
 Pitwall tells you when a coding agent finishes a turn and, for Claude Code, when it is waiting on a permission prompt or a question. With several agents running, you can stay in one session and let the others call you back.

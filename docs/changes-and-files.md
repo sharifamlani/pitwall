@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Changes and files
 
 The **Changes** and **All Files** panels show what is in the worktree you are working on. Select a worktree or a session in the Workspaces view and both panels follow it, so you can see what an agent changed in any branch without opening that branch in VS Code.

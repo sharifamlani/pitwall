@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0006 — Needs-you comes from `claude agents --json`, not hooks
 
 - **Status:** Accepted

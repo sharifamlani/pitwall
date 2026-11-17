@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0015 — Observe Pi sessions through their documented transcript
 
 - **Status:** Accepted
@@ -42,7 +44,7 @@ continue automatically, but it is an event, not a persisted entry.
 - **Do not install an extension into the user's Pi profile** to relay events.
 
 The accepted cost is that automatic retry, queued follow-ups, and compaction can briefly look
-like a finished turn. That is tracked in `ROADMAP.md` as the settled-turn signal.
+like a finished turn. That is tracked in the [upstream roadmap](https://github.com/sharifamlani/pitwall/blob/47124cd/ROADMAP.md) as the settled-turn signal.
 
 ## Alternatives
 

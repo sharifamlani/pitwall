@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Frequently asked questions
 
 Short answers to the questions people ask most about Pitwall, the VS Code session and git worktree manager for coding agents. Each answer links to the page with the detail.
@@ -104,7 +106,7 @@ Not today. Pitwall supports Claude Code, Codex, opencode, and Pi. Each agent is 
 
 ### Does Pitwall work on Windows?
 
-Partly. Pitwall is developed and tested on macOS and Linux. On Windows, the commands it types into a terminal are quoted for POSIX shells, which can fail for paths with spaces or special characters. Full Windows support is on the [roadmap](../ROADMAP.md).
+Partly. Pitwall is developed and tested on macOS and Linux. On Windows, the commands it types into a terminal are quoted for POSIX shells, which can fail for paths with spaces or special characters. Full Windows support is on the [upstream roadmap](https://github.com/sharifamlani/pitwall/blob/47124cd/ROADMAP.md).
 
 ### How is Pitwall different from Orca, Paseo, and other agent apps?
 

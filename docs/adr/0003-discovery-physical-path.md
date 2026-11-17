@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0003 — Discovery follows Claude's physical path encoding
 
 - **Status:** Accepted

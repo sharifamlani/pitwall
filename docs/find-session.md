@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Find Session
 
 Find Session finds a past coding-agent session from a description of what you did in it. Type "the one where we fixed the flaky cart test" and an agent searches your Claude Code, Codex, opencode, and Pi history in every folder on your machine, then lists the sessions that match so you can resume one.

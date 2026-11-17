@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0014 — Find Session runs an agent over the harnesses' own records
 
 - **Status:** Proposed

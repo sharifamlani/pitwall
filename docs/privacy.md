@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Privacy
 
 Pitwall is local-first. It collects no telemetry, needs no account, and keeps its own state inside VS Code on your machine. One feature, Find Session, sends session text to a model provider, and only when you ask it a question. This page says exactly what Pitwall reads, stores, and sends.

@@ -10,7 +10,7 @@ Deeper references:
 
 | Document | Use it for |
 | --- | --- |
-| [`docs/`](docs/README.md) | User documentation, one page per feature, agent, and reference; published as the website by `site/` |
+| [`docs/`](docs/README.md) | User documentation, one page per feature, agent, and reference |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Deep reference: subsystem map, harness internals, session discovery, notifications, worktrees, PR checkout |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Setup and the PR process for human contributors |
 | [`test/README.md`](test/README.md) | Test suites, coverage matrix, fakes, and environment variables |
@@ -225,8 +225,8 @@ watcher, a command and menu entries, icons, tests, and documentation.
   `ARCHITECTURE.md` → Find Session and [ADR 0016](docs/adr/0016-find-session-sources-across-harnesses.md).
 - Adapter, service/watcher, menu, icon, and integration tests as applicable. Commands are
   harness-agnostic, so they need no per-harness test.
-- A `docs/agents/<harness>.md` page listed in `site/pages.mjs`, the agent tables in
-  `README.md`, `docs/README.md`, and `site/landing.html`, `CHANGELOG.md`, `ARCHITECTURE.md`,
+- A `docs/agents/<harness>.md` page, the agent tables in
+  `README.md` and `docs/README.md`, `CHANGELOG.md`, `ARCHITECTURE.md`,
   `test/README.md`, and a `ROADMAP.md` entry for anything intentionally unsupported.
 
 ### How the harnesses solved it

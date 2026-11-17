@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Fork a session
 
 Forking copies a conversation into a new session that starts with the full history of the original. Use it to try a second approach, to split one long session into two lines of work, or to experiment without risking a session that is going well. The original is left exactly as it was.

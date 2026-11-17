@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # opencode session manager for VS Code
 
 Pitwall gives opencode a session manager inside VS Code. Every opencode session is listed under its repository and git worktree, resumes with one click, forks into a new branch, and notifies you when a turn finishes. Pitwall drives the `opencode` CLI you already have, through its documented CLI and API.

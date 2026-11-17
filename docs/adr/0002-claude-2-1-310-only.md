@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0002 — Support Claude Code 2.1.310 and newer only
 
 - **Status:** Accepted
@@ -36,4 +38,4 @@ command is missing, the CLI's own error is the user-visible failure.
   missing flag.
 - A future CLI change fails visibly instead of degrading.
 - `--bg` sessions, duplicate-transcript cleanup from old forks, and incremental parsing for the
-  full-metadata path stay deferred in [`ROADMAP.md`](../../ROADMAP.md).
+  full-metadata path stay deferred in [`ROADMAP.md`](https://github.com/sharifamlani/pitwall/blob/47124cd/ROADMAP.md).

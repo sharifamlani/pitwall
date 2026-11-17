@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Troubleshooting
 
 Most Pitwall problems come down to one of four things: the agent's command is not where Pitwall looks for it, a session is in a folder Pitwall has not been given, a session no longer exists on the agent's side, or a window still runs an older build. Find your symptom below.

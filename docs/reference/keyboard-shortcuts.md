@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Keyboard shortcuts
 
 Pitwall's default shortcuts use `Ctrl+Alt` on Windows and Linux and `Ctrl+Cmd` on macOS, so they stay clear of VS Code's own. Every one can be changed.

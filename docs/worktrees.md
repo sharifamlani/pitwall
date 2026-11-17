@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Worktrees and repositories
 
 A git worktree is a second checkout of the same repository in its own directory, on its own branch. Pitwall makes worktrees the unit of agent work: one worktree per task, one or more agent sessions inside it, and no two agents editing the same files. This page covers adding repositories, creating and removing worktrees, and the git actions on them.
