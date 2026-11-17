@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.34 · 2026-11-17
+> v0.35 · 2026-11-17
 
 ---
 
@@ -181,7 +181,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 3.3 | Status dots from `~/.claude/sessions` (busy / waiting / idle) + finished → seen when opened. Note: the needs-you (waiting) mark, orange #f0883e, landed early in Phase 2 (row 2.14, ruling R38); 3.3 adds the rest | ⏸ | ⏸ | — | D4, D18, T1 |
 | 3.4 | Inbox order: repos Needs you → Finished → Working → Idle; in-repo order; rows move only on status change | ⏸ | ⏸ | — | D18, D21 |
 | 3.5 | Repo row: "+" new chat, 🕘 session history (older + worktree chats; resume) | ⏸ | ⏸ | — | D28, D34 |
-| 3.6 | Hide Changes, worktree create/delete, PR badges; keep FILES, Find Session, Fork | ⏸ | ⏸ | — | D19 |
+| 3.6 | Hide Changes, worktree create/delete, PR badges; keep FILES, Find Session, Fork | ✅ | ✅ | 2026-11-17 · PR #26 `f0e1bce` → merge `16a2d12` (QA APPROVE; main CI green; 8+3 tests parked in `test/dry/core/dormant/`) | D19 |
 | 3.7 | Hotkeys Ctrl+Alt+1–9 / 0 / R / F / O / Shift+1–9, latent (hover); confirm Ctrl+Alt+F beats Cursor's `list.find` | ⏸ | ⏸ | — | D12, D15, T13 |
 | 3.8 | List keyboard: ↓/↑ highlight, Ctrl+↓/↑ open, Enter | ⏸ | ⏸ | — | D37 |
 | 3.9 | Search box (Ctrl+Alt+R): repos, chats, Find Session | ⏸ | ⏸ | — | D24 |
@@ -325,3 +325,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.32 · 2026-11-17.** Phase 2 posts live, approved by Sharif (hook B, orange needs-you image): LinkedIn https://www.linkedin.com/feed/update/urn:li:activity:7528489595731095552/ · X (reply 3 in the thread) https://x.com/SharifAmlani/status/2122724368136442262. Evaluator final: E1–E15 PASS. Development paused.
 - **v0.33 · 2026-11-17.** Sharif resumed development. Phase 3 (Sidebar v1) planning started; plan `docs/superpowers/plans/2026-11-17-phase3-sidebar-v1.md`.
 - **v0.34 · 2026-11-17.** Phase 3 plan passed QA pre-flight after one revision round (7 blocking findings fixed: wait-drop, first-run "finished", duplicate repos, wave conflicts). Rulings P1–P20, criteria E1–E18. Waiting on Sharif's go.
+- **v0.35 · 2026-11-17.** Row 3.6 ✅ (PR #26 → `16a2d12`): Changes view, worktree create/delete/merge/rebase, PR badges and fork-with-changes hidden; FILES collapsed; docs marked "hidden in v1". S1: F3 not reproduced live on non-PID keys (overlay generalised anyway); new finding P23 (other window's list doesn't redraw) → Task 5.
