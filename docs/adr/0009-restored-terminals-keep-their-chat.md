@@ -85,6 +85,33 @@ A Pitwall terminal keeps two identities, one per restore mode.
    a session, so the session is linked instead of leaving the chat unstarted. Chats that
    already have a native session are not registered.
 
+### Amendment (2026-11-17, Phase 2 Task 6b, ruling R39)
+
+Items 3 to 5 changed after a live walk on Windows found a title stamped on the
+wrong terminal and a reload tab never adopted:
+
+- **The rename lands on the focused terminal, not the active one.** The workbench
+  resolves `renameWithArg` through `TerminalService.activeInstance`, which returns a
+  terminal holding keyboard focus before the last active one. A tab shown without
+  focus is active but not focused, so with the user's keyboard in another terminal the
+  title lands there. Every rename now checks where it landed. A stray title is taken
+  back at once (the previous name returns as a fixed name: the command refuses an empty
+  name and no command restores a dynamic title), and the target is retried once per
+  later event that can move focus (a user's terminal activation or a window focus
+  change), never in a loop.
+- **A background show never replaces what the user is reading.** A tab is shown to
+  rename it only when its editor group's front tab is a terminal, or it lives in another
+  group or the panel. Otherwise its title waits.
+- **Adoption has no cut-off and activation awaits none of it.** A surviving pty is
+  adopted whenever its PID arrives, on the one `processId` read. `openChat` waits for a
+  pending adoption of a recorded chat, at most one PID wait, so a click cannot start a
+  second agent. Adopted background tabs are renamed in the background, because a reload
+  can re-tag their titles as the shell's.
+- **Duplicate short IDs are never guessed.** After a quit, a chat whose short ID is on
+  two or more unclaimed tabs is resumed into none of them, with one log line; on a
+  reload the tab with the recorded PID is the chat's. Remove closes an unmanaged tab only
+  when exactly one carries the short ID.
+
 ## Consequences
 
 - Restoring after a quit depends on the custom title. A tab renamed by hand before the
