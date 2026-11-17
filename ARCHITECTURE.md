@@ -78,7 +78,11 @@ view-box`), which Chromium plays in tree-icon `background-image`; honor
   parses the lean metadata surface (summary, preview, last exchange, last activity, turn
   state, `hasMessages`) and resolves session IDs to transcript paths; repository-wide
   session search via `findSessionsForRepository()`
-- **ClaudeAgentsService** - Caches `claude agents --json` for 10s (sharing one in-flight
+- **ClaudeSessionsFile** - Reads `<configDir>/sessions/*.json` (never the `.key` files beside
+  them) each tick: status, `waitingFor` and `statusUpdatedAt` for live sessions whose
+  `pidDomain` is this machine's and whose pid is alive. The live source for `getLiveStates`
+  ([ADR 0018](docs/adr/0018-live-status-from-sessions-file.md)).
+- **ClaudeAgentsService** - The per-session fallback. Caches `claude agents --json` for 10s (sharing one in-flight
   call), merges duplicate session IDs, and supplies `waitingFor` to the attention path.
   Disabled when `pitwall.notifications.onNeedsInput` is off; a failure logs once and
   disables the interface until restart.
@@ -167,7 +171,8 @@ worktree. There is no `Fork of …` prefix.
 
 Claude Code 2.1.310 or newer is required. There is no version probe or legacy path: an
 older CLI is unsupported and surfaces its own error when launched. Pitwall uses the
-`claude` CLI, its transcripts, and `claude agents --json`; it never edits
+`claude` CLI, its transcripts, the live-status files in `<configDir>/sessions/`, and
+`claude agents --json`; it never edits
 `~/.claude/settings.json`.
 
 Sessions are stored in `<configDir>/projects/<encoded-path>/<session-id>.jsonl`, where
@@ -544,8 +549,10 @@ single-folder workspace), `openSession()` for an existing session, and
   runs. The authoritative signal is the `turn_duration` system entry Claude writes at every
   turn end: `pendingBackgroundAgentCount` is present only while agents run, so its absence
   means zero. There is no fallback for transcripts that predate that field.
-- **"Needs you" comes from `claude agents --json`.** `ClaudeAgentsService` reads the
-  process-level `status` and `waitingFor` for active sessions, cached for 10s. When
+- **"Needs you" comes from `~/.claude/sessions`, else `claude agents --json`.**
+  `ClaudeSessionsFile` reads each live session's `status` and `waitingFor` fresh every tick
+  ([ADR 0018](docs/adr/0018-live-status-from-sessions-file.md)). When no file counts, or a
+  session's status is unknown, `ClaudeAgentsService` reads the same fields, cached for 10s. When
   `pitwall.notifications.onNeedsInput` is off it returns nothing without spawning the CLI.
   Claude-only today: opencode, Codex, and Pi expose no pending-permission state through
   their implementations. `waitingFor` is passed to the notifier as-is; `status: waiting`
