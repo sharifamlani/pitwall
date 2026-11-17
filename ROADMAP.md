@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.9 · 2026-11-16
+> v0.9.1 · 2026-11-16
 
 ---
 
@@ -74,6 +74,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D36 | **No repo needs to be open.** You open one Cursor window; Pitwall reads Claude Code's own files (`~/.claude/sessions`, `~/.claude/projects`) to show every repo, chat, status, history and pop-up. Windows for other folders are opened by Pitwall on demand (D35), never by hand. Option "everything in one window via terminal mode" rejected (that is what a switchboard does) | Sharif 2026-11-16 |
 | D37 | Keyboard in the Pitwall list (only while the list has focus): ↓/↑ move the highlight without opening; Ctrl+↓/Ctrl+↑ move and open (chat → added tab; repo → all its chats); Enter opens the highlighted row. Side by side stays Cursor's own split (split button, Split Right, drag a tab) | Sharif 2026-11-16 |
 | D38 | **Later (backlog 7.3, Sharif: not needed right away).** Remote Control per chat: right-click a Claude chat tab ("Claude: Turn on Remote Control") or a chat row, or press Ctrl+Alt+M on the highlighted row / the chat in front. Rows and tabs show 📡 while on (read from `bridgeSessionId` in the sessions file). Claude Code has no public command for it; route = its own `/remote-control` sent through the link's `prompt` (test T19, in 7.3) | Sharif 2026-11-16 |
+| D39 | **Team + phase-close flow.** Build subagents write code on branches → the Pitwall QA agent reviews it and approves an exact commit → the lead merges that commit to `main` → the Pitwall testing agent runs the real extension in Cursor and tests each feature → when a phase closes, the lead hands it to the Pitwall marketing agent, who drafts a LinkedIn progress post (problem first, Sharif's voice, says Pitwall is independent of Anthropic, credits Agntree). Drafts go to Sharif for approval; the marketing agent never posts by itself. Phase-close handoff to marketing: tag + SHA + evaluator scorecard (PASS features only); 1–3 plain bullets of what a user can now do + what still doesn't work; 1–2 screenshots/GIF from the testing agent with demo repo names only; one honest number or moment; anything not to mention yet | Sharif 2026-11-16 |
 ---
 
 ## §0.5 Phase renumbering map (v0.9, 2026-11-16)
@@ -282,3 +283,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.8.4 · 2026-11-16.** D38: Remote Control per chat (tab/row right-click, Ctrl+Alt+M, 📡 mark). Test row 2.8 (T19) for the route.
 - **v0.8.5 · 2026-11-16.** Remote Control (D38) moved to backlog row 6.3 per Sharif; test T19 moved with it.
 - **v0.9 · 2026-11-16.** Phases re-cut around the live-test findings (§0.5 crosswalk): new Phase 2 Windows parity and Phase 3 Sidebar v1; old one-window test absorbed (answered by D35); Chat panel → Phase 4 Windows and tabs; Status + pop-ups → Phase 5; Package + launch → Phase 6 (`v1.0.0`); backlog → Phase 7. Every decision D9–D37 now has a home row. Windows notifications turned on on Sharif's machine (app toasts, Cursor, Focus assist off).
+- **v0.9.1 · 2026-11-16.** D39: team flow (build → QA approves exact commit → lead merges → testing agent walks the real extension) and a LinkedIn progress post drafted at every phase close (Sharif approves each; 6.6 stays the launch post).
