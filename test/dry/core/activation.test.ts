@@ -372,6 +372,34 @@ test('activate does not wait for the session scan', async (t) => {
   await waitFor(() => f.storedChats().some((chat) => chat.harnessSessionId === 'scan-me'), 'the scan to import the session afterwards');
 });
 
+test("the session watchers' file watchers are armed only after the first render", async (t) => {
+  stub.__setTreeViewsVisible(true);
+  // The workbench is slow to ask for the rows.
+  stub.__setTreeViewFirstRenderDelay(1_000);
+  const lab = labFolder(t);
+  const f = await seededActivation(t, [], {}, [lab.repository]);
+  writeTranscript(f.claudeDir, lab.repository.rootPath, 'watch-me');
+  const watched: string[] = [];
+  const { watch } = nodeFs;
+  (nodeFs as unknown as Record<string, unknown>).watch = (target: unknown, ...rest: unknown[]) => {
+    watched.push(String(target));
+    return (watch as (...args: unknown[]) => unknown)(target, ...rest);
+  };
+  t.after(() => {
+    (nodeFs as unknown as Record<string, unknown>).watch = watch;
+  });
+
+  await f.start();
+  stub.__treeViews.find((candidate) => candidate.id === 'pitwall.workspacesView')!.__renderDelayMs = 1_000;
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const projects = path.resolve(f.claudeDir, 'projects');
+  const underProjects = () => watched.filter((target) => path.resolve(target).startsWith(projects));
+  assert.deepEqual(underProjects(), [], 'activation arms no watcher on the Claude profile');
+
+  await requestRows();
+  await waitFor(() => underProjects().length > 0, 'the watchers once the rows are out');
+});
+
 test('stored repos render before discovery finishes', async (t) => {
   stub.__setTreeViewsVisible(true);
   const scratch = tempDir(t);

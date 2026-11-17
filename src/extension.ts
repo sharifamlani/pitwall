@@ -34,6 +34,8 @@ import { samePath } from './core/utils/paths';
 
 /** Panels re-read the worktree this long after its files stop changing. */
 const FILE_CHANGE_DEBOUNCE_MS = 300;
+/** Work deferred past the list's first render starts after this long anyway while the list stays hidden. */
+const HIDDEN_LIST_START_MS = 3_000;
 
 export async function activate(context: vscode.ExtensionContext) {
   // Startup timing (E16): this line and the tree's "first render" bracket
@@ -80,8 +82,6 @@ export async function activate(context: vscode.ExtensionContext) {
   /** The chat whose native-UI tab is the active editor tab, if any. */
   const activeNativeUiChatId = (): string | undefined => chatVisibility.activeNativeUiChatId(visibilitySources);
 
-  harnessWatcherRegistry.startAll();
-
   // Menu gating: a harness entry needs its CLI; a UI entry needs the agent's
   // extension, re-checked when extensions change so no reload is needed.
   void Promise.all(
@@ -114,6 +114,29 @@ export async function activate(context: vscode.ExtensionContext) {
     context.extensionUri
   );
   workspacesProvider.setChatOpenProvider(isChatOpen);
+
+  // Run `start` once the list has first rendered (E16), in a task of its own
+  // so the rows reach the workbench first, or after HIDDEN_LIST_START_MS
+  // while the list stays hidden; never after deactivation.
+  let deactivated = false;
+  const afterFirstRender = (start: () => void): void => {
+    let started = false;
+    const once = () => {
+      if (!started && !deactivated) {
+        started = true;
+        start();
+      }
+    };
+    void workspacesProvider.whenSettled().then(() => setImmediate(once));
+    const fallback = setTimeout(once, HIDDEN_LIST_START_MS);
+    context.subscriptions.push({ dispose: () => clearTimeout(fallback) });
+  };
+  context.subscriptions.push({ dispose: () => (deactivated = true) });
+
+  // The session watchers arm a file watcher per project folder, which costs
+  // the extension host most of a reload's activation on Windows; a chat that
+  // links meanwhile is caught by their first check.
+  afterFirstRender(() => harnessWatcherRegistry.startAll());
 
   // Reconcile terminals that survived a reload or a quit (ADR 0009), in the
   // background: activation never waits for a PID. A click on a chat whose
