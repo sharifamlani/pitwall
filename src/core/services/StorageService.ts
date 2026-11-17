@@ -1,7 +1,16 @@
 import * as vscode from 'vscode';
 import { createHash } from 'crypto';
 import * as path from 'path';
-import { Repository, ChatSession, HarnessId, SessionSearchEngine, SessionSearchRecord, STORAGE_KEYS, generateId } from '../types';
+import {
+  Repository,
+  RepositoryWorktrees,
+  ChatSession,
+  HarnessId,
+  SessionSearchEngine,
+  SessionSearchRecord,
+  STORAGE_KEYS,
+  generateId,
+} from '../types';
 import { harnessSessionKey } from '../harness/sessionUtils';
 import { canonicalPath, samePath } from '../utils/paths';
 import {
@@ -507,6 +516,43 @@ export class StorageService {
       dismissed[key] = at;
     }
     return Promise.resolve(this.set(STORAGE_KEYS.DISMISSED_REPOS, dismissed));
+  }
+
+  // Worktree listings: a cache of git's answers, so nothing is guarded.
+
+  private storedWorktreeSnapshot(): Record<string, RepositoryWorktrees> {
+    const stored = this.get<unknown>(STORAGE_KEYS.WORKTREE_SNAPSHOT, {});
+    return stored && typeof stored === 'object' && !Array.isArray(stored) ? (stored as Record<string, RepositoryWorktrees>) : {};
+  }
+
+  /** A repository's last stored worktree listing, if it has a usable one. */
+  getWorktreeSnapshot(repoId: string): RepositoryWorktrees | undefined {
+    const entry = this.storedWorktreeSnapshot()[repoId] as Partial<RepositoryWorktrees> | undefined;
+    const usable =
+      entry &&
+      typeof entry.isGit === 'boolean' &&
+      Array.isArray(entry.worktrees) &&
+      entry.worktrees.every(
+        (worktree) =>
+          worktree &&
+          typeof worktree.id === 'string' &&
+          typeof worktree.path === 'string' &&
+          typeof worktree.name === 'string' &&
+          worktree.repoId === repoId
+      );
+    return usable ? (entry as RepositoryWorktrees) : undefined;
+  }
+
+  /** Keep a repository's latest worktree listing for the next start; written only when it changed. */
+  saveWorktreeSnapshot(repoId: string, listing: RepositoryWorktrees): void {
+    const snapshot = this.storedWorktreeSnapshot();
+    if (sameValue(snapshot[repoId], listing)) {
+      return;
+    }
+    // Repos no longer stored drop out, so the snapshot stays bounded.
+    const repoIds = new Set(this.getRepositories(true).map((repo) => repo.id));
+    const kept = Object.fromEntries(Object.entries(snapshot).filter(([id]) => repoIds.has(id) && id !== repoId));
+    void this.set(STORAGE_KEYS.WORKTREE_SNAPSHOT, { ...kept, [repoId]: listing });
   }
 
   // Chats

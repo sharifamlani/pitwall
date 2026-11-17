@@ -10,7 +10,7 @@ export interface Scope {
   worktrees: Worktree[];
 }
 
-/** Listing worktrees is a synchronous git call per root; pollers ask often. */
+/** Listing worktrees is a git call per root; pollers ask often. */
 const TTL_MS = 15_000;
 
 /**
@@ -23,12 +23,19 @@ const TTL_MS = 15_000;
  */
 export class WorktreeCatalog {
   private cache: { fetchedAt: number; scopes: Scope[] } | undefined;
+  /** The asynchronous listing in flight, shared by concurrent callers. */
+  private listing: Promise<Scope[]> | undefined;
 
   constructor(
     private readonly storageService: StorageService,
     private readonly gitService: GitService
   ) {}
 
+  /**
+   * Every root's worktrees. Lists synchronously when the cache is stale,
+   * which blocks the extension host for one git call per root: startup and
+   * the session scan use `scopesAsync`, and commands find the cache warm.
+   */
   scopes(force = false): Scope[] {
     if (!force && this.cache && Date.now() - this.cache.fetchedAt < TTL_MS) {
       return this.cache.scopes;
@@ -42,6 +49,43 @@ export class WorktreeCatalog {
     }
     this.cache = { fetchedAt: Date.now(), scopes };
     return scopes;
+  }
+
+  /**
+   * `scopes` without blocking: git lists every root at once as child
+   * processes. Concurrent callers share one listing; it fills the cache the
+   * synchronous lookups read.
+   */
+  scopesAsync(force = false): Promise<Scope[]> {
+    if (!force && this.cache && Date.now() - this.cache.fetchedAt < TTL_MS) {
+      return Promise.resolve(this.cache.scopes);
+    }
+    if (!force && this.listing) {
+      return this.listing;
+    }
+    const listing = Promise.all(
+      this.storageService.getRepositories().map(async (repo) => ({
+        repoRoot: repo.rootPath,
+        // A listing the list made within the TTL is as good as a new one.
+        worktrees: (await this.gitService.listRepositoryWorktreesAsync(repo.rootPath, repo.id, { maxAgeMs: TTL_MS })).worktrees,
+      }))
+    ).then((listed) => {
+      const scopes = listed.filter((scope) => scope.worktrees.length > 0);
+      // A listing overtaken by `invalidate` or a forced one is not cached.
+      if (this.listing === listing) {
+        this.listing = undefined;
+        this.cache = { fetchedAt: Date.now(), scopes };
+      }
+      return scopes;
+    });
+    this.listing = listing;
+    return listing;
+  }
+
+  /** Forget the cached worktrees, e.g. after a repository was added; the next lookup lists again. */
+  invalidate(): void {
+    this.cache = undefined;
+    this.listing = undefined;
   }
 
   worktrees(): Worktree[] {

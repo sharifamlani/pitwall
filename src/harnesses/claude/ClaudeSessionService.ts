@@ -82,7 +82,9 @@ export class ClaudeSessionService {
 
   /**
    * Every project directory. Claude writes real directories, but a user may
-   * symlink one in, so follow links instead of trusting the `Dirent`.
+   * symlink one in, so an entry that is not plainly a directory or a file is
+   * followed instead of trusting the `Dirent`. Blocks while it reads: the
+   * session scan uses `listProjectDirs`.
    */
   getProjectDirs(): string[] {
     let entries: fs.Dirent[];
@@ -94,19 +96,61 @@ export class ClaudeSessionService {
 
     const dirs: string[] = [];
     for (const entry of entries) {
-      if (entry.name.startsWith('.')) {
+      const dir = this.projectDirFor(entry);
+      if (dir === undefined) {
         continue;
       }
-      const dir = path.join(this.projectsDir, entry.name);
+      if (dir !== null) {
+        dirs.push(dir);
+        continue;
+      }
       try {
-        if (fs.statSync(dir).isDirectory()) {
-          dirs.push(dir);
+        if (fs.statSync(path.join(this.projectsDir, entry.name)).isDirectory()) {
+          dirs.push(path.join(this.projectsDir, entry.name));
         }
       } catch {
         // A broken symlink is not a project directory.
       }
     }
     return dirs;
+  }
+
+  /** `getProjectDirs` without blocking the extension host, for the session scan (E16). */
+  private async listProjectDirs(): Promise<string[]> {
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(this.projectsDir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+
+    const dirs: string[] = [];
+    for (const entry of entries) {
+      const dir = this.projectDirFor(entry);
+      if (dir === undefined) {
+        continue;
+      }
+      if (dir !== null) {
+        dirs.push(dir);
+        continue;
+      }
+      try {
+        if ((await fs.promises.stat(path.join(this.projectsDir, entry.name))).isDirectory()) {
+          dirs.push(path.join(this.projectsDir, entry.name));
+        }
+      } catch {
+        // A broken symlink is not a project directory.
+      }
+    }
+    return dirs;
+  }
+
+  /** A listing entry's project directory; undefined when it is not one, null when only a stat can tell (a link). */
+  private projectDirFor(entry: fs.Dirent): string | null | undefined {
+    if (entry.name.startsWith('.') || entry.isFile()) {
+      return undefined;
+    }
+    return entry.isDirectory() ? path.join(this.projectsDir, entry.name) : null;
   }
 
   /** The directory that holds one subdirectory per encoded project path. */
@@ -119,7 +163,7 @@ export class ClaudeSessionService {
 
     let files: string[];
     try {
-      files = fs.readdirSync(projectDir)
+      files = (await fs.promises.readdir(projectDir))
         .filter(f => f.endsWith('.jsonl') && !f.startsWith('agent-'));
     } catch {
       return [];
@@ -149,13 +193,18 @@ export class ClaudeSessionService {
     );
   }
 
-  private parseSessionFile(filePath: string, sessionId: string, stats: fs.Stats): ClaudeSession | null {
+  /**
+   * Read without blocking the extension host: a scan parses every transcript
+   * of every repository (129 at 1 MB each on the E16 profile), and a
+   * synchronous read held the list's first render behind all of them.
+   */
+  private async parseSessionFile(filePath: string, sessionId: string, stats: fs.Stats): Promise<ClaudeSession | null> {
     if (stats.size === 0) {
       return null;
     }
     const parser = new TranscriptParser(sessionId, filePath, stats.mtime);
     try {
-      for (const line of fs.readFileSync(filePath, 'utf-8').split('\n')) {
+      for (const line of (await fs.promises.readFile(filePath, 'utf-8')).split('\n')) {
         parser.add(line);
       }
     } catch {
@@ -174,10 +223,10 @@ export class ClaudeSessionService {
    * (`/x/repo-other` encodes like `/x/repo/other`), and callers still verify
    * the parsed `cwd`.
    */
-  private getProjectDirsForPaths(paths: string[]): string[] {
+  private async getProjectDirsForPaths(paths: string[]): Promise<string[]> {
     const encodedRoots = paths.map(encodeClaudeProjectPath);
 
-    return this.getProjectDirs().filter((dir) => {
+    return (await this.listProjectDirs()).filter((dir) => {
       const name = path.basename(dir);
       // An explicit project-dir name overrides Claude's path encoding.
       if (this.projectDirOverride && name === this.projectDirOverride) {
@@ -207,6 +256,11 @@ export class ClaudeSessionService {
       }
     }
 
+    // The tree looks each session up by ID next; the scan already found it.
+    for (const session of byId.values()) {
+      this.sessionPaths.remember(session.sessionId, session.filePath);
+    }
+
     return [...byId.values()].sort((a, b) => {
       if (!a.lastUpdated) return 1;
       if (!b.lastUpdated) return -1;
@@ -217,7 +271,7 @@ export class ClaudeSessionService {
   /** Sessions whose cwd is the worktree or inside it. */
   async findSessionsForWorktree(worktreePath: string): Promise<ClaudeSession[]> {
     const sessions = await this.getSessionsInDirs(
-      this.getProjectDirsForPaths([worktreePath])
+      await this.getProjectDirsForPaths([worktreePath])
     );
 
     // The directory match can over-include when encoding is ambiguous; keep
@@ -229,7 +283,7 @@ export class ClaudeSessionService {
   async findSessionsForRepository(repoRootPath: string, worktreePaths: string[]): Promise<ClaudeSession[]> {
     const roots = [repoRootPath, ...worktreePaths];
     const sessions = await this.getSessionsInDirs(
-      this.getProjectDirsForPaths(roots)
+      await this.getProjectDirsForPaths(roots)
     );
 
     return sessions.filter((session) =>

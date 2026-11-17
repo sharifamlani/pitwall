@@ -4,7 +4,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { GitService, worktreeId } from '../../../src/core/services/GitService';
+import { GitService, StartQueue, worktreeId } from '../../../src/core/services/GitService';
 import { tempDir } from '../support';
 
 function git(cwd: string, ...args: string[]): string {
@@ -57,6 +57,63 @@ test('a plain folder is its own worktree and keeps its id through git init', (t)
   const bare = path.join(scratch, 'bare.git');
   git(scratch, 'init', '-q', '--bare', bare);
   assert.deepEqual(service.listRepositoryWorktrees(bare, 'repo-bare'), { isGit: true, worktrees: [] });
+});
+
+test('the asynchronous worktree listing gives what the synchronous one does, without blocking', async (t) => {
+  const { scratch, root } = makeRepo(t);
+  const linked = path.join(scratch, 'repo-feature');
+  git(root, 'worktree', 'add', '-q', '-b', 'feature', linked);
+  const folder = path.join(scratch, 'notes');
+  fs.mkdirSync(folder);
+  const bare = path.join(scratch, 'bare.git');
+  git(scratch, 'init', '-q', '--bare', bare);
+  const missing = path.join(scratch, 'gone');
+
+  for (const [rootPath, repoId] of [
+    [root, 'repo-git'],
+    [folder, 'repo-notes'],
+    [bare, 'repo-bare'],
+    [missing, 'repo-gone'],
+  ]) {
+    const pending = service.listRepositoryWorktreesAsync(rootPath, repoId);
+    assert.ok(pending instanceof Promise, 'a promise, so the caller never waits on git');
+    assert.deepEqual(await pending, service.listRepositoryWorktrees(rootPath, repoId), rootPath);
+  }
+});
+
+test('git listings take turns; an urgent one, or one expedited while it waits, starts at once', async () => {
+  const queue = new StartQueue(1);
+  const started: string[] = [];
+  const turn = (key: string, urgent = false) =>
+    queue.acquire(key, urgent).then((release) => {
+      started.push(key);
+      return release;
+    });
+  const flushAll = async () => {
+    for (let i = 0; i < 3; i++) await new Promise((resolve) => setImmediate(resolve));
+  };
+
+  const releaseA = await turn('a');
+  const b = turn('b');
+  const c = turn('c');
+  await flushAll();
+  assert.deepEqual(started, ['a'], 'b and c wait for a turn');
+
+  queue.expedite('c');
+  await flushAll();
+  assert.deepEqual(started, ['a', 'c'], 'c, expedited, jumps the queue');
+  const releaseD = await turn('d', true);
+  assert.deepEqual(started, ['a', 'c', 'd'], 'an urgent turn never waits');
+
+  releaseA();
+  releaseD();
+  await flushAll();
+  assert.deepEqual(started, ['a', 'c', 'd'], 'b still waits while c runs');
+  (await c)();
+  await flushAll();
+  assert.deepEqual(started, ['a', 'c', 'd', 'b'], 'and starts when a turn frees');
+  (await b)();
+  queue.expedite('nobody');
 });
 
 test('change lists classify every status, including renames and non-ASCII names', (t) => {

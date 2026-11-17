@@ -341,6 +341,8 @@ const configuration = {
 let clipboardText = '';
 
 const commandHandlers = new Map();
+/** Context keys the extension set with `setContext`, by key. */
+const contextKeys = new Map();
 const outputChannels = [];
 const messages = [];
 const openTerminals = [];
@@ -354,6 +356,8 @@ const windowStateListeners = new Set();
 const configurationChangeListeners = new Set();
 const treeViews = [];
 let treeViewsVisible = false;
+/** How long a tree view created visible waits before the workbench asks for its first rows. */
+let treeViewFirstRenderDelayMs = 0;
 let activeTerminal;
 /**
  * The terminal holding keyboard focus, if any. The workbench's rename command
@@ -598,7 +602,10 @@ module.exports = {
         },
         dispose: () => undefined,
       };
-      if (view.visible) void render();
+      if (view.visible) {
+        if (treeViewFirstRenderDelayMs > 0) setTimeout(() => void render(), treeViewFirstRenderDelayMs);
+        else void render();
+      }
       treeViews.push(view);
       return view;
     },
@@ -828,8 +835,9 @@ module.exports = {
     },
     getCommands: async () => Array.from(commandHandlers.keys()),
     executeCommand: async (id, ...args) => {
-      // Context keys are bookkeeping for menus; nothing to execute in tests.
+      // Context keys gate menus and welcome views; tests read them back.
       if (id === 'setContext') {
+        contextKeys.set(args[0], args[1]);
         return undefined;
       }
       const handler = commandHandlers.get(id);
@@ -878,12 +886,14 @@ module.exports = {
       set.clear();
     }
     commandHandlers.clear();
+    contextKeys.clear();
     configurationValues.clear();
     quickPickHandler = null;
     clipboardText = '';
     activeTerminal = undefined;
     focusedTerminal = undefined;
     treeViewsVisible = false;
+    treeViewFirstRenderDelayMs = 0;
     activeTextEditor = undefined;
     silentExecutionEvents = false;
     defaultPidDelayMs = undefined;
@@ -901,8 +911,13 @@ module.exports = {
   __setTreeViewsVisible: (visible) => {
     treeViewsVisible = Boolean(visible);
   },
+  /** Test helper: a visible tree view created from now on is first drawn this long after it is created. */
+  __setTreeViewFirstRenderDelay: (ms) => {
+    treeViewFirstRenderDelayMs = ms;
+  },
   __shownDocuments: shownDocuments,
   __commandHandlers: commandHandlers,
+  __contextKeys: contextKeys,
   __outputChannels: outputChannels,
   __fileWatchers: fileWatchers,
   __messages: messages,

@@ -24,6 +24,8 @@ export interface RepoDiscoveryOptions {
   now?: () => number;
   /** Called with the roots a pass stored, so the list and the importer catch up. */
   onAdded?: (roots: string[]) => void;
+  /** Called once, when the first pass has ended, however it ended. */
+  onFirstPassDone?: () => void;
 }
 
 export interface RepoDiscoveryResult {
@@ -55,6 +57,7 @@ export class RepoDiscoveryService implements vscode.Disposable {
   private readonly intervalMs: number;
   private readonly now: () => number;
   private readonly onAdded: (roots: string[]) => void;
+  private onFirstPassDone: (() => void) | undefined;
   /** Folder → its repo root (null: not in git), with when git was asked. */
   private readonly roots = new BoundedCache<string, { root: string | null; at: number }>(2_000);
   private inFlight: Promise<RepoDiscoveryResult> | undefined;
@@ -82,6 +85,7 @@ export class RepoDiscoveryService implements vscode.Disposable {
     this.intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
     this.now = options.now ?? Date.now;
     this.onAdded = options.onAdded ?? (() => undefined);
+    this.onFirstPassDone = options.onFirstPassDone;
   }
 
   /**
@@ -125,6 +129,11 @@ export class RepoDiscoveryService implements vscode.Disposable {
   scan(): Promise<RepoDiscoveryResult> {
     this.inFlight ??= this.runScan().finally(() => {
       this.inFlight = undefined;
+      const firstPassDone = this.onFirstPassDone;
+      this.onFirstPassDone = undefined;
+      if (!this.disposed) {
+        firstPassDone?.();
+      }
     });
     return this.inFlight;
   }

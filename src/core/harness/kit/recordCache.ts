@@ -47,7 +47,9 @@ export class StatCache<T> {
   ): Promise<T | null> {
     let stats: fs.Stats;
     try {
-      stats = fs.statSync(filePath);
+      // Asynchronous: the session scan stats every transcript, and a blocking
+      // stat per file adds up on a synced folder (E16).
+      stats = await fs.promises.stat(filePath);
     } catch {
       return null;
     }
@@ -116,5 +118,11 @@ export class RecordPathCatalog {
     this.misses.delete(sessionId);
     this.paths.set(sessionId, found);
     return found;
+  }
+
+  /** Record where a scan that read the session found it, so the next lookup needs no scan. */
+  remember(sessionId: string, filePath: string): void {
+    this.misses.delete(sessionId);
+    this.paths.set(sessionId, filePath);
   }
 }

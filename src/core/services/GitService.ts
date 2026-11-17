@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
 import { Worktree, FileChange, RepositoryWorktrees } from '../types';
+import { BoundedCache } from '../utils/boundedCache';
 import { canonicalPath, isWithin, nativePath, samePath } from '../utils/paths';
 
 /** Outcome of a git command whose failure message the user should see. */
@@ -16,6 +17,78 @@ const execFileAsync = promisify(execFile);
 /** Large enough for `git diff` of a big worktree when copying changes. */
 const PATCH_MAX_BUFFER = 50 * 1024 * 1024;
 
+/**
+ * Asynchronous worktree listings that start git at once; more wait their
+ * turn. Starting a child process blocks the extension host for a moment
+ * (most on Windows), so a burst of starts is spread out instead of landing
+ * in one task.
+ */
+const CONCURRENT_LISTINGS = 3;
+
+/** How `listRepositoryWorktreesAsync` may answer. */
+export interface WorktreeListingOptions {
+  /** Accept the latest listing (or the one in flight) when it is at most this old. */
+  maxAgeMs?: number;
+  /** Start git now, ahead of waiting listings: someone waits on the answer. */
+  urgent?: boolean;
+}
+
+/**
+ * Turns for starting child processes: at most `limit` hold one at a time,
+ * the rest wait in order. An urgent caller, or a waiting one that is
+ * expedited, starts at once whatever the count.
+ */
+export class StartQueue {
+  private running = 0;
+  private readonly waiting: Array<{ key: string; start: () => void }> = [];
+
+  constructor(private readonly limit: number) {}
+
+  /** Wait for a turn; the result gives it back. */
+  async acquire(key: string, urgent = false): Promise<() => void> {
+    if (urgent || this.running < this.limit) {
+      this.running += 1;
+    } else {
+      // The turn is counted by whoever starts this caller.
+      await new Promise<void>((start) => this.waiting.push({ key, start }));
+    }
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      this.running -= 1;
+      while (this.running < this.limit && this.waiting.length > 0) {
+        this.running += 1;
+        this.waiting.shift()!.start();
+      }
+    };
+  }
+
+  /** Start the callers waiting under `key` now, ahead of the others. */
+  expedite(key: string): void {
+    for (let i = this.waiting.length - 1; i >= 0; i--) {
+      if (this.waiting[i].key === key) {
+        const [entry] = this.waiting.splice(i, 1);
+        this.running += 1;
+        entry.start();
+      }
+    }
+  }
+}
+
+/**
+ * Options for every git child process: no console window flashes up on
+ * Windows while git runs.
+ */
+const SPAWN_OPTIONS = { windowsHide: true } as const;
+
+/** One repository root's key among worktree listings. */
+function listingKey(repoPath: string, repoId: string): string {
+  return `${repoId}\0${repoPath}`;
+}
+
 /** Preferred rebase targets, in order. */
 const REBASE_TARGETS = ['upstream/main', 'upstream/master', 'origin/main', 'origin/master'];
 
@@ -26,12 +99,18 @@ const REBASE_TARGETS = ['upstream/main', 'upstream/master', 'origin/main', 'orig
  * (clone, fetch) are async so they never block the extension host.
  */
 export class GitService {
+  /** The latest asynchronous worktree listing per repository, for callers that accept a recent one. */
+  private readonly recentListings = new BoundedCache<string, { at: number; listing: RepositoryWorktrees }>(500);
+  private readonly listingsInFlight = new Map<string, Promise<RepositoryWorktrees>>();
+  private readonly listingTurns = new StartQueue(CONCURRENT_LISTINGS);
+
   private run(
     args: string[],
     cwd: string,
     options: { input?: string; maxBuffer?: number } = {}
   ): string {
     return execFileSync('git', args, {
+      ...SPAWN_OPTIONS,
       cwd,
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -77,7 +156,7 @@ export class GitService {
   /** Run a network command for its effect, logging a failure under `label`. */
   private async attemptAsync(args: string[], cwd: string, label: string): Promise<GitOutcome> {
     try {
-      await execFileAsync('git', args, { cwd });
+      await execFileAsync('git', args, { ...SPAWN_OPTIONS, cwd });
       return { success: true };
     } catch (error) {
       const message = gitErrorMessage(error);
@@ -108,7 +187,7 @@ export class GitService {
   async getMainRepoRoot(cwd: string): Promise<string | null> {
     const lines = async (args: string[], dir: string): Promise<string[] | null> => {
       try {
-        const { stdout } = await execFileAsync('git', args, { cwd: dir, encoding: 'utf-8' });
+        const { stdout } = await execFileAsync('git', args, { ...SPAWN_OPTIONS, cwd: dir, encoding: 'utf-8' });
         return stdout.split('\n').map((line) => line.trim()).filter(Boolean);
       } catch {
         return null;
@@ -141,81 +220,86 @@ export class GitService {
   }
 
   listWorktrees(repoPath: string, repoId: string): Worktree[] {
-    return this.parseWorktrees(repoPath, repoId) ?? [];
+    const { isGit, worktrees } = this.listRepositoryWorktrees(repoPath, repoId);
+    return isGit ? worktrees : [];
   }
 
   /**
-   * The worktrees sessions can run in for a workspace root. A plain folder is
-   * its own single worktree, so chats can attach before `git init`; the id is
-   * the one `git worktree list` reports for the main worktree afterwards,
-   * which keeps every chat bound across the conversion.
+   * The worktrees sessions can run in for a workspace root (see
+   * `repositoryWorktrees`). Blocks the extension host while git runs: keep it
+   * off startup and the session scan, which use the asynchronous listing.
    */
   listRepositoryWorktrees(repoPath: string, repoId: string): RepositoryWorktrees {
-    const worktrees = this.parseWorktrees(repoPath, repoId);
-    if (worktrees !== null) {
-      return { isGit: true, worktrees };
-    }
-    return {
-      isGit: false,
-      worktrees: [
-        {
-          id: worktreeId(repoId, repoPath),
-          repoId,
-          name: path.basename(repoPath),
-          path: repoPath,
-          isMain: true,
-        },
-      ],
-    };
-  }
-
-  /**
-   * Parse `git worktree list --porcelain`, or null when the path is not a git
-   * working tree root.
-   */
-  private parseWorktrees(repoPath: string, repoId: string): Worktree[] | null {
-    let output: string;
+    let output: string | null;
     try {
       output = this.run(['worktree', 'list', '--porcelain'], repoPath);
     } catch (error) {
-      // A plain folder is an expected answer. Anything else — git missing, or
-      // a root that no longer exists — deserves a diagnostic, though the row
-      // still falls back to a plain folder.
-      if (!String((error as { stderr?: unknown }).stderr ?? '').includes('not a git repository')) {
-        console.error(`Could not list git worktrees in ${repoPath}`, error);
-      }
-      return null;
+      output = null;
+      noteWorktreeListFailure(repoPath, error);
     }
+    return repositoryWorktrees(repoPath, repoId, output);
+  }
 
-    const worktrees: Worktree[] = [];
-    for (const entry of output.trim().split('\n\n')) {
-      const lines = entry.split('\n');
-      // Git emits `bare` only for the repository itself, which has no working
-      // tree to run sessions in.
-      if (lines.includes('bare')) {
-        return [];
+  /**
+   * `listRepositoryWorktrees` without blocking the extension host: git runs
+   * as a child process the caller awaits. Startup and the session scan use
+   * this, so a slow git (a synced folder, a busy disk) never holds up the
+   * list's first render (E16).
+   */
+  async listRepositoryWorktreesAsync(
+    repoPath: string,
+    repoId: string,
+    { maxAgeMs = 0, urgent = false }: WorktreeListingOptions = {}
+  ): Promise<RepositoryWorktrees> {
+    const key = listingKey(repoPath, repoId);
+    if (maxAgeMs > 0) {
+      // A caller that accepts a recent answer shares the latest listing or
+      // the one in flight: the list and the session scan both list every
+      // repository at startup, and each git start costs the extension host.
+      const recent = this.recentListings.get(key);
+      if (recent && Date.now() - recent.at < maxAgeMs) {
+        return recent.listing;
       }
-      const rawPath = lines.find((l) => l.startsWith('worktree '))?.slice('worktree '.length);
-      if (!rawPath) {
-        continue;
+      const inFlight = this.listingsInFlight.get(key);
+      if (inFlight) {
+        return inFlight;
       }
-      const worktreePath = nativePath(rawPath);
-      const branch = lines.find((l) => l.startsWith('branch '))?.slice('branch refs/heads/'.length);
-      worktrees.push({
-        id: worktreeId(repoId, worktreePath),
-        repoId,
-        name: branch || path.basename(worktreePath),
-        branch: branch || undefined,
-        path: worktreePath,
-        // Git reports physical paths, while a folder added through a symlink
-        // keeps the spelling the user picked.
-        isMain: samePath(worktreePath, repoPath),
-      });
     }
+    const listing = (async () => {
+      const release = await this.listingTurns.acquire(key, urgent);
+      let output: string | null;
+      try {
+        ({ stdout: output } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], {
+          ...SPAWN_OPTIONS,
+          cwd: repoPath,
+          encoding: 'utf-8',
+        }));
+      } catch (error) {
+        output = null;
+        noteWorktreeListFailure(repoPath, error);
+      } finally {
+        release();
+      }
+      return repositoryWorktrees(repoPath, repoId, output);
+    })();
+    this.listingsInFlight.set(key, listing);
+    try {
+      const result = await listing;
+      this.recentListings.set(key, { at: Date.now(), listing: result });
+      return result;
+    } finally {
+      if (this.listingsInFlight.get(key) === listing) {
+        this.listingsInFlight.delete(key);
+      }
+    }
+  }
 
-    // Git also answers from a subdirectory of a repository with the ancestor's
-    // worktrees. That folder is not one of them, so it is a plain folder.
-    return worktrees.some((worktree) => worktree.isMain) ? worktrees : null;
+  /**
+   * Start a worktree listing of this repository that is waiting for its
+   * turn now: someone came to wait on its answer.
+   */
+  expediteWorktreeListing(repoPath: string, repoId: string): void {
+    this.listingTurns.expedite(listingKey(repoPath, repoId));
   }
 
   createWorktree(repoPath: string, branch: string, worktreePath: string): boolean {
@@ -612,6 +696,79 @@ export function recommendedRebaseTarget(remoteBranches: readonly string[]): stri
  * never change; the path is canonical so a folder keeps its id when `git init`
  * starts reporting its physical path.
  */
+/**
+ * The worktrees sessions can run in for a workspace root, from the output of
+ * `git worktree list --porcelain` (null when git failed). A plain folder is
+ * its own single worktree, so chats can attach before `git init`; the id is
+ * the one `git worktree list` reports for the main worktree afterwards,
+ * which keeps every chat bound across the conversion.
+ */
+function repositoryWorktrees(repoPath: string, repoId: string, output: string | null): RepositoryWorktrees {
+  const worktrees = output === null ? null : parseWorktreeList(output, repoPath, repoId);
+  if (worktrees !== null) {
+    return { isGit: true, worktrees };
+  }
+  return {
+    isGit: false,
+    worktrees: [
+      {
+        id: worktreeId(repoId, repoPath),
+        repoId,
+        name: path.basename(repoPath),
+        path: repoPath,
+        isMain: true,
+      },
+    ],
+  };
+}
+
+/**
+ * A plain folder is an expected answer. Anything else (git missing, or a
+ * root that no longer exists) deserves a diagnostic, though the row still
+ * falls back to a plain folder.
+ */
+function noteWorktreeListFailure(repoPath: string, error: unknown): void {
+  if (!String((error as { stderr?: unknown }).stderr ?? '').includes('not a git repository')) {
+    console.error(`Could not list git worktrees in ${repoPath}`, error);
+  }
+}
+
+/**
+ * Parse `git worktree list --porcelain`, or null when the path is not a git
+ * working tree root.
+ */
+function parseWorktreeList(output: string, repoPath: string, repoId: string): Worktree[] | null {
+  const worktrees: Worktree[] = [];
+  for (const entry of output.trim().split('\n\n')) {
+    const lines = entry.split('\n');
+    // Git emits `bare` only for the repository itself, which has no working
+    // tree to run sessions in.
+    if (lines.includes('bare')) {
+      return [];
+    }
+    const rawPath = lines.find((l) => l.startsWith('worktree '))?.slice('worktree '.length);
+    if (!rawPath) {
+      continue;
+    }
+    const worktreePath = nativePath(rawPath);
+    const branch = lines.find((l) => l.startsWith('branch '))?.slice('branch refs/heads/'.length);
+    worktrees.push({
+      id: worktreeId(repoId, worktreePath),
+      repoId,
+      name: branch || path.basename(worktreePath),
+      branch: branch || undefined,
+      path: worktreePath,
+      // Git reports physical paths, while a folder added through a symlink
+      // keeps the spelling the user picked.
+      isMain: samePath(worktreePath, repoPath),
+    });
+  }
+
+  // Git also answers from a subdirectory of a repository with the ancestor's
+  // worktrees. That folder is not one of them, so it is a plain folder.
+  return worktrees.some((worktree) => worktree.isMain) ? worktrees : null;
+}
+
 export function worktreeId(repoId: string, worktreePath: string): string {
   const key = `${repoId}:${canonicalPath(worktreePath)}`;
   let hash = 0;

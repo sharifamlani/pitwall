@@ -17,7 +17,7 @@ import {
   NativeUiSurfaceTracker,
   SessionSearchRunner,
 } from '../../src/core/harness/types';
-import { ChatSession, HarnessId, Worktree } from '../../src/core/types';
+import { ChatSession, HarnessId, RepositoryWorktrees, Worktree } from '../../src/core/types';
 import { HARNESS_IDS } from '../../src/harnesses';
 
 /** A terminal created by the stub. */
@@ -97,7 +97,11 @@ interface StubControls {
   __shownDocuments: { target: unknown; options: Record<string, unknown> }[];
   __treeViews: FakeTreeView[];
   __outputChannels: Array<{ name: string; lines: string[] }>;
+  /** Context keys the extension set with `setContext`, by key. */
+  __contextKeys: Map<string, unknown>;
   __setTreeViewsVisible(visible: boolean): void;
+  /** A visible tree view created from now on is first drawn this long after it is created. */
+  __setTreeViewFirstRenderDelay(ms: number): void;
   workspace: { workspaceFolders: { uri: { fsPath: string } }[] };
   window: {
     terminals: FakeTerminal[];
@@ -199,7 +203,9 @@ export function makeStorage(
 /** A temp directory removed when the test ends, pass or fail. */
 export function tempDir(t: { after(fn: () => void): void }, prefix = 'pitwall-'): string {
   const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  // Asynchronous and retried: on Windows a background git child (the list and
+  // the scan run git without blocking) can hold a folder until it exits.
+  t.after(() => fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }));
   return dir;
 }
 
@@ -278,6 +284,23 @@ export async function waitFor<T>(
 /** Let queued promise callbacks run. */
 export function flush(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
+}
+
+/**
+ * The worktree listings a fake `GitService` gives the Repos tree: the
+ * blocking listing and the asynchronous one the tree renders from, both
+ * answered by `list`. Spread it into a test's `gitService` fake.
+ */
+export function fakeWorktreeListing(
+  list: (rootPath: string, repoId: string) => RepositoryWorktrees
+): {
+  listRepositoryWorktrees: (rootPath: string, repoId: string) => RepositoryWorktrees;
+  listRepositoryWorktreesAsync: (rootPath: string, repoId: string) => Promise<RepositoryWorktrees>;
+} {
+  return {
+    listRepositoryWorktrees: list,
+    listRepositoryWorktreesAsync: async (rootPath, repoId) => list(rootPath, repoId),
+  };
 }
 
 export function chatRecord(overrides: Partial<ChatSession> = {}): ChatSession {

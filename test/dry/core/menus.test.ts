@@ -239,13 +239,16 @@ test('inbox order replaces the manual repo order: no Move Up / Move Down anywher
   assert.ok(!everywhere.includes('pitwall.moveRepositoryDown'), 'no Move Down command or menu entry');
 });
 
-test('the list is named Repos, with the canvas empty state; FILES asks for a repo or session', () => {
+test('the list is named Repos, with the canvas empty state once a scan found nothing; FILES asks for a repo or session', () => {
   const views = pkg.contributes.views.pitwall as { id: string; name: string }[];
   assert.equal(views.find((view) => view.id === 'pitwall.workspacesView')?.name, 'Repos');
-  const welcome = pkg.contributes.viewsWelcome as { view: string; contents: string }[];
-  assert.equal(
-    welcome.find((entry) => entry.view === 'pitwall.workspacesView')?.contents,
-    'No repositories yet.\n[Add repository](command:pitwall.addRepository)'
+  const welcome = pkg.contributes.viewsWelcome as { view: string; contents: string; when?: string }[];
+  assert.deepEqual(
+    welcome.filter((entry) => entry.view === 'pitwall.workspacesView').map(({ contents, when }) => ({ contents, when })),
+    [
+      { contents: 'Scanning for repositories…', when: '!pitwall.scanned' },
+      { contents: 'No repositories yet.\n[Add repository](command:pitwall.addRepository)', when: 'pitwall.scanned' },
+    ]
   );
   assert.equal(
     welcome.find((entry) => entry.view === 'pitwall.filesView')?.contents,

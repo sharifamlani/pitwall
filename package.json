@@ -96,7 +96,13 @@
     "viewsWelcome": [
       {
         "view": "pitwall.workspacesView",
-        "contents": "No repositories yet.\n[Add repository](command:pitwall.addRepository)"
+        "contents": "Scanning for repositories…",
+        "when": "!pitwall.scanned"
+      },
+      {
+        "view": "pitwall.workspacesView",
+        "contents": "No repositories yet.\n[Add repository](command:pitwall.addRepository)",
+        "when": "pitwall.scanned"
       },
       {
         "view": "pitwall.filesView",

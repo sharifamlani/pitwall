@@ -12,7 +12,7 @@ import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/pro
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { SessionStatus } from '../../../src/core/providers/sessionStatus';
 import { RepositoryWorktrees } from '../../../src/core/types';
-import { FakeQuickPick, FakeTreeView, fakeAdapter, makeStorage, runCommand, stub, worktreeRecord } from '../support';
+import { FakeQuickPick, FakeTreeView, fakeAdapter, fakeWorktreeListing, makeStorage, runCommand, stub, worktreeRecord } from '../support';
 
 beforeEach(() => stub.__reset());
 
@@ -35,10 +35,14 @@ function setup(t: { after(fn: () => void): void }) {
   }
   const login = storage.createChat('wt-alpha', 'claude', 'Fix login', { harnessSessionId: 's1' });
   const parser = storage.createChat('wt-alpha', 'claude', 'Parser spike', { harnessSessionId: 's2' });
+  // As on a reload: each repo's last listing is stored.
+  for (const [repoId, worktree] of worktrees) {
+    storage.saveWorktreeSnapshot(repoId, { isGit: true, worktrees: [worktree] });
+  }
   const tree = new WorkspacesTreeProvider(
     storage,
     {
-      listRepositoryWorktrees: (_root: string, repoId: string): RepositoryWorktrees => ({ isGit: true, worktrees: [worktrees.get(repoId)!] }),
+      ...fakeWorktreeListing((_root: string, repoId: string): RepositoryWorktrees => ({ isGit: true, worktrees: [worktrees.get(repoId)!] })),
       getAheadBehind: () => null,
     } as never,
     { onTerminalStateChange: () => ({ dispose: () => undefined }), isActive: () => false } as never,

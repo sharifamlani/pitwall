@@ -13,7 +13,7 @@ import { NotificationService } from './core/services/NotificationService';
 import { SessionAttentionService } from './core/services/SessionAttentionService';
 import { SessionSearchService } from './core/services/SessionSearchService';
 import * as chatVisibility from './core/services/chatVisibility';
-import { disposeOperationLog } from './core/services/OperationLog';
+import { disposeOperationLog, logOperation } from './core/services/OperationLog';
 import { HarnessRegistry } from './core/harness/HarnessRegistry';
 import { enabledHarnesses } from './harnesses';
 import { chatNativeSessionIds } from './core/harness/sessionUtils';
@@ -34,10 +34,13 @@ import { samePath } from './core/utils/paths';
 
 /** Panels re-read the worktree this long after its files stop changing. */
 const FILE_CHANGE_DEBOUNCE_MS = 300;
+/** Work deferred past the list's first render starts after this long anyway while the list stays hidden. */
+const HIDDEN_LIST_START_MS = 3_000;
 
 export async function activate(context: vscode.ExtensionContext) {
-  // Startup timing (E16): this line and the tree's "first render" bracket activation.
-  console.log('[Pitwall] activate');
+  // Startup timing (E16): this line and the tree's "first render" bracket
+  // activation, in a channel an installed build shows.
+  logOperation('[Pitwall] activate');
   const config = () => vscode.workspace.getConfiguration('pitwall');
   const register = commandRegistrar(context);
   const setContext = (key: string, value: unknown) =>
@@ -79,8 +82,6 @@ export async function activate(context: vscode.ExtensionContext) {
   /** The chat whose native-UI tab is the active editor tab, if any. */
   const activeNativeUiChatId = (): string | undefined => chatVisibility.activeNativeUiChatId(visibilitySources);
 
-  harnessWatcherRegistry.startAll();
-
   // Menu gating: a harness entry needs its CLI; a UI entry needs the agent's
   // extension, re-checked when extensions change so no reload is needed.
   void Promise.all(
@@ -114,11 +115,36 @@ export async function activate(context: vscode.ExtensionContext) {
   );
   workspacesProvider.setChatOpenProvider(isChatOpen);
 
+  // Run `start` once the list has first rendered (E16), in a task of its own
+  // so the rows reach the workbench first, or after HIDDEN_LIST_START_MS
+  // while the list stays hidden; never after deactivation.
+  let deactivated = false;
+  const afterFirstRender = (start: () => void): void => {
+    let started = false;
+    const once = () => {
+      if (!started && !deactivated) {
+        started = true;
+        start();
+      }
+    };
+    void workspacesProvider.whenSettled().then(() => setImmediate(once));
+    const fallback = setTimeout(once, HIDDEN_LIST_START_MS);
+    context.subscriptions.push({ dispose: () => clearTimeout(fallback) });
+  };
+  context.subscriptions.push({ dispose: () => (deactivated = true) });
+
+  // The session watchers arm a file watcher per project folder, which costs
+  // the extension host most of a reload's activation on Windows; a chat that
+  // links meanwhile is caught by their first check.
+  afterFirstRender(() => harnessWatcherRegistry.startAll());
+
   // Reconcile terminals that survived a reload or a quit (ADR 0009), in the
   // background: activation never waits for a PID. A click on a chat whose
   // surviving tab is still waiting for its PID waits for that adoption in
   // openChat instead, so it cannot start a second agent.
-  const restore = terminalManager.beginRestoreSync((id) => workspacesProvider.getWorktreeById(id));
+  // A revived tab's worktree may be one git has not listed yet (a first
+  // start): the lookup waits for it, taking its turn behind the list's.
+  const restore = terminalManager.beginRestoreSync((id) => workspacesProvider.getWorktreeByIdAsync(id, { urgent: false }));
   void restore.complete.catch((error) => console.error('Pitwall: restoring terminals failed', error));
 
   const filesProvider = new FilesTreeProvider();
@@ -272,13 +298,16 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   });
   context.subscriptions.push(sessionImporter);
-  sessionImporter.start();
+  // The first scan starts after the list's first render (E16).
+  sessionImporter.start(workspacesProvider.whenSettled());
 
   // Repos found from the agents' sessions (ADR 0019), after the list first
   // renders; activation never waits for a pass.
   const repoDiscovery = new RepoDiscoveryService(storageService, gitService, () => harnessRegistry.all(), {
+    // Until the first pass ends, the empty list says it is scanning, not "No repositories yet".
+    onFirstPassDone: () => setContext('pitwall.scanned', true),
     onAdded: () => {
-      worktreeCatalog.scopes(true);
+      worktreeCatalog.invalidate();
       refreshTree();
       sessionImporter.wake();
     },
@@ -467,11 +496,14 @@ export async function activate(context: vscode.ExtensionContext) {
     }
   }
 
-  // Start on the worktree that matches the open workspace folder. Reveal is
-  // best-effort: the row may not have rendered yet.
+  // Start on the worktree that matches the open workspace folder, which may
+  // be a linked worktree git has not listed yet. Reveal is best-effort: the
+  // row may not have rendered yet.
   const folderPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  const startWorktree = folderPath ? workspacesProvider.findWorktreeByPath(folderPath) : undefined;
-  if (startWorktree) {
+  const showStartWorktree = (startWorktree: Worktree | undefined) => {
+    if (!startWorktree) {
+      return;
+    }
     showWorktree(startWorktree);
     const reveal = () =>
       setTimeout(() => {
@@ -493,6 +525,17 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       });
       context.subscriptions.push(once);
+    }
+  };
+  if (folderPath) {
+    const known = workspacesProvider.findWorktreeByPath(folderPath);
+    if (known) {
+      showStartWorktree(known);
+    } else {
+      // Not known until git lists it; a selection made meanwhile wins.
+      void workspacesProvider
+        .findWorktreeByPathAsync(folderPath, { urgent: false })
+        .then((listed) => (shownWorktree ? undefined : showStartWorktree(listed)));
     }
   }
 

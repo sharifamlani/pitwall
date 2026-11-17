@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { Repository, RepositoryWorktrees, Worktree, ChatSession, TreeItemType } from '../types';
 import { StorageService } from '../services/StorageService';
-import { GitService } from '../services/GitService';
+import { GitService, worktreeId } from '../services/GitService';
 import { TerminalManager } from '../services/TerminalManager';
 import { HarnessRegistry } from '../harness/HarnessRegistry';
 import { harnessIconPath } from '../harness/treeIcons';
@@ -16,6 +16,16 @@ import { STATUS_WORDS, SessionStatus, statusIconState } from './sessionStatus';
 import { orderRows, rankRepo, rankSession, repoStatus } from './inboxOrder';
 
 const REFRESH_DEBOUNCE_MS = 300;
+/**
+ * Before a repository's first listing this session, a background listing
+ * may reuse one the session scan made this recently (and vice versa).
+ */
+const RECENT_LISTING_MS = 15_000;
+/**
+ * Background listings start after the list's first render; while the list
+ * stays hidden, after this long anyway.
+ */
+const HIDDEN_LIST_LISTING_MS = 3_000;
 /**
  * Another window's stars, names and dismissals reach this window's rows on
  * this cadence at the latest; gaining focus redraws at once (P23).
@@ -94,8 +104,27 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.changeEmitter.event;
 
-  /** Worktrees per repository id, kept until the next hard refresh. */
+  /** Each repository's latest worktree listing this session, by repository id. */
   private readonly worktreeCache = new Map<string, RepositoryWorktrees>();
+  /** Repositories listed since the last hard refresh; a render after one waits to list again any it has listed before. */
+  private readonly listed = new Set<string>();
+  /** Worktree listings in flight, by repository id, with the refresh generation each started in. */
+  private readonly listings = new Map<string, { generation: number; done: Promise<void> }>();
+  /** Bumped by a hard refresh, so a listing that started before it is not taken as current. */
+  private listingGeneration = 0;
+  /** What rows were drawn from before a repository's first listing: its stored snapshot or a plain folder. */
+  private readonly standIns = new Map<string, RepositoryWorktrees>();
+  /** Repositories with a background listing queued, by id. */
+  private readonly listingQueued = new Set<string>();
+  /**
+   * Settles when background listings may start: after the first render, in
+   * a task of its own so the rows reach the workbench first. Starting git
+   * costs the extension host a moment per process (much more on a slow
+   * Windows machine), so none starts before the rows are out (E16).
+   */
+  private readonly backgroundListingsMayStart: Promise<void>;
+  private hiddenListTimer: NodeJS.Timeout | undefined;
+  private disposed = false;
 
   private turnStateProvider: (chatId: string) => TurnState | undefined = () => undefined;
   private needsYouProvider: (chatId: string) => boolean = () => false;
@@ -125,8 +154,10 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
 
   private readonly scheduledRefresh = debounce(() => {
     if (this.pendingCacheClear) {
+      // The old listings still answer lookups; the next render lists again.
       this.pendingCacheClear = false;
-      this.worktreeCache.clear();
+      this.listed.clear();
+      this.listingGeneration += 1;
     }
     this.updateRepoWatchers();
     this.fireChange();
@@ -158,11 +189,17 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     );
     this.scanTimer = setInterval(() => this.softRefresh(), SCAN_REDRAW_MS);
     this.scanTimer.unref?.();
+    this.backgroundListingsMayStart = new Promise<void>((resolve) => {
+      this.hiddenListTimer = setTimeout(resolve, HIDDEN_LIST_LISTING_MS);
+      void this.whenSettled().then(() => setImmediate(resolve));
+    }).then(() => clearTimeout(this.hiddenListTimer));
     this.updateRepoWatchers();
   }
 
   dispose(): void {
+    this.disposed = true;
     clearInterval(this.scanTimer);
+    clearTimeout(this.hiddenListTimer);
     this.scheduledRefresh.cancel();
     this.onGitChange.cancel();
     this.statusSubscription?.dispose();
@@ -347,6 +384,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
 
   async getChildren(element?: WorkspaceTreeItem): Promise<WorkspaceTreeItem[]> {
     if (!element) {
+      await this.awaitRelistings(this.storageService.getRepositories());
       const rows = this.rootRows();
       this.renderPending = false;
       const waiters = this.settleWaiters;
@@ -354,11 +392,12 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       waiters.forEach((resolve) => resolve());
       if (!this.firstRenderLogged) {
         this.firstRenderLogged = true;
-        console.log('[Pitwall] first render');
+        logOperation('[Pitwall] first render');
       }
       return rows;
     }
     if (element.itemType === 'repository') {
+      await this.awaitRelistings([element.data as Repository]);
       const entry = this.repoEntry(element.data as Repository, this.chatsByWorktree());
       return this.sessionRows(entry, this.orderedSessions(entry));
     }
@@ -369,6 +408,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       if (!repo) {
         return [];
       }
+      await this.awaitRelistings([repo]);
       const entry = this.repoEntry(repo, this.chatsByWorktree());
       const sessions = this.orderedSessions(entry).filter((session) => session.worktree.id === worktree.id);
       return this.sessionRows(entry, sessions);
@@ -485,7 +525,11 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     if (!this.view) {
       return;
     }
-    const all = entries ?? this.storageService.getRepositories().map((repo) => this.repoEntry(repo, this.chatsByWorktree()));
+    let all = entries;
+    if (!all) {
+      const byWorktree = this.chatsByWorktree();
+      all = this.storageService.getRepositories().map((repo) => this.repoEntry(repo, byWorktree));
+    }
     const count = all.reduce((sum, entry) => sum + entry.sessions.filter((session) => session.status === 'needs').length, 0);
     this.view.badge =
       count > 0 ? { value: count, tooltip: count === 1 ? '1 session needs you' : `${count} sessions need you` } : undefined;
@@ -509,14 +553,111 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     return item;
   }
 
-  /** A repository's worktrees and git state, listed once per hard refresh. */
+  /**
+   * A repository's worktrees and git state, never waiting on git (E16): the
+   * latest listing, else the stored snapshot, else the root as a plain
+   * folder. A repository not listed since the last hard refresh is listed
+   * in the background; a listing that differs from what was drawn redraws.
+   */
   private getRepoWorktrees(repo: Repository): RepositoryWorktrees {
-    let entry = this.worktreeCache.get(repo.id);
-    if (!entry) {
-      entry = this.gitService.listRepositoryWorktrees(repo.rootPath, repo.id);
-      this.worktreeCache.set(repo.id, entry);
+    if (!this.listed.has(repo.id)) {
+      this.listInBackground(repo);
     }
-    return entry;
+    const cached = this.worktreeCache.get(repo.id);
+    if (cached) {
+      return cached;
+    }
+    let standIn = this.standIns.get(repo.id);
+    if (!standIn) {
+      standIn = this.storageService.getWorktreeSnapshot(repo.id) ?? plainFolder(repo);
+      this.standIns.set(repo.id, standIn);
+    }
+    return standIn;
+  }
+
+  /**
+   * List a repository's worktrees without blocking; one listing per
+   * repository and refresh at a time. A caller that waits on the answer asks
+   * for an urgent one, which also hurries one already waiting for its turn;
+   * a background one takes its turn and, before the repository's first
+   * listing, may reuse the session scan's.
+   */
+  private listWorktrees(repo: Repository, urgent: boolean): Promise<void> {
+    const generation = this.listingGeneration;
+    const inFlight = this.listings.get(repo.id);
+    if (inFlight?.generation === generation) {
+      if (urgent) {
+        this.gitService.expediteWorktreeListing(repo.rootPath, repo.id);
+      }
+      return inFlight.done;
+    }
+    const options = urgent || this.worktreeCache.has(repo.id) ? { urgent } : { maxAgeMs: RECENT_LISTING_MS };
+    const done = this.gitService.listRepositoryWorktreesAsync(repo.rootPath, repo.id, options).then((listing) => {
+      if (this.listings.get(repo.id)?.done === done) {
+        this.listings.delete(repo.id);
+      }
+      if (this.disposed || generation !== this.listingGeneration) {
+        return;
+      }
+      this.worktreeCache.set(repo.id, listing);
+      this.listed.add(repo.id);
+      this.storageService.saveWorktreeSnapshot(repo.id, listing);
+      const standIn = this.standIns.get(repo.id);
+      this.standIns.delete(repo.id);
+      if (standIn && JSON.stringify(standIn) !== JSON.stringify(listing)) {
+        // The badge shows whether or not the rows redraw.
+        this.updateBadge();
+        this.softRefresh();
+      }
+    });
+    this.listings.set(repo.id, { generation, done });
+    return done;
+  }
+
+  /**
+   * Resolves once every stored repository has been listed since the last
+   * hard refresh, listing any that is not yet. Rows drawn after it come from
+   * git, not a stand-in.
+   */
+  async whenListed(): Promise<void> {
+    for (let round = 0; round < 5 && !this.disposed; round++) {
+      const pending = this.storageService.getRepositories().filter((repo) => !this.listed.has(repo.id));
+      if (pending.length === 0) {
+        return;
+      }
+      await Promise.all(pending.map((repo) => this.listWorktrees(repo, false)));
+    }
+  }
+
+  /**
+   * Queue a background listing. It starts once the first render is out (see
+   * `backgroundListingsMayStart`), never inside activation or the caller.
+   */
+  private listInBackground(repo: Repository): void {
+    if (this.listingQueued.has(repo.id) || this.listings.get(repo.id)?.generation === this.listingGeneration) {
+      return;
+    }
+    this.listingQueued.add(repo.id);
+    void this.backgroundListingsMayStart.then(() =>
+      setImmediate(() => {
+        this.listingQueued.delete(repo.id);
+        if (!this.disposed && !this.listed.has(repo.id)) {
+          void this.listWorktrees(repo, false);
+        }
+      })
+    );
+  }
+
+  /**
+   * Before a render that follows a hard refresh: list again, and wait for,
+   * each of these repositories listed earlier this session, so a worktree
+   * added or removed shows. A repository not listed yet this session never
+   * waits (E16): it is drawn from its stored snapshot, or as a plain folder,
+   * and listed in the background, and the rows follow when git answers.
+   */
+  private async awaitRelistings(repositories: Repository[]): Promise<void> {
+    const relist = repositories.filter((repo) => !this.listed.has(repo.id) && this.worktreeCache.has(repo.id));
+    await Promise.all(relist.map((repo) => this.listWorktrees(repo, true)));
   }
 
   private async sessionRows(entry: RepoEntry, sessions: SessionEntry[]): Promise<WorkspaceTreeItem[]> {
@@ -618,6 +759,21 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     return this.findWorktree((worktree) => samePath(worktree.path, targetPath));
   }
 
+  /**
+   * `getWorktreeById` for a caller that can wait: a miss before every
+   * repository's listing has landed waits for those listings (B1). Until
+   * then a repository without a stored snapshot knows only its main
+   * worktree, so a chat on a linked one would not be found.
+   */
+  getWorktreeByIdAsync(worktreeId: string, options: { urgent?: boolean } = {}): Promise<Worktree | undefined> {
+    return this.findWorktreeAsync((worktree) => worktree.id === worktreeId, options);
+  }
+
+  /** `findWorktreeByPath` for a caller that can wait (see `getWorktreeByIdAsync`). */
+  findWorktreeByPathAsync(targetPath: string, options: { urgent?: boolean } = {}): Promise<Worktree | undefined> {
+    return this.findWorktreeAsync((worktree) => samePath(worktree.path, targetPath), options);
+  }
+
   isGitRepo(repo: Repository): boolean {
     return this.getRepoWorktrees(repo).isGit;
   }
@@ -650,9 +806,9 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   }
 
   /**
-   * Search the cached worktrees, listing each root at most once. Startup
-   * resolves restored chats before the tree renders, so without the cache
-   * every chat would run `git worktree list` again.
+   * Search every repository's worktrees as `getRepoWorktrees` gives them, so
+   * a lookup never waits on git; a repository not listed yet is listed in
+   * the background.
    */
   private findWorktree(predicate: (worktree: Worktree) => boolean): Worktree | undefined {
     for (const repo of this.storageService.getRepositories()) {
@@ -663,6 +819,42 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     }
     return undefined;
   }
+
+  /**
+   * `findWorktree`, and on a miss wait for the listings of the repositories
+   * not listed since the last hard refresh, then look again. A chat names
+   * only its worktree's id, which does not say which repository owns it, so
+   * every such repository is waited on; each is listed at most once. An
+   * urgent lookup (a click) starts git at once, ahead of the queue.
+   */
+  private async findWorktreeAsync(
+    predicate: (worktree: Worktree) => boolean,
+    { urgent = true }: { urgent?: boolean } = {}
+  ): Promise<Worktree | undefined> {
+    const found = this.findWorktree(predicate);
+    if (found) {
+      return found;
+    }
+    // Never start git inside the caller's task, which may be activation; a
+    // lookup that is not urgent waits until the first render is out.
+    await (urgent ? new Promise((resolve) => setImmediate(resolve)) : this.backgroundListingsMayStart);
+    const pending = this.storageService.getRepositories().filter((repo) => !this.listed.has(repo.id));
+    if (pending.length === 0) {
+      return this.findWorktree(predicate);
+    }
+    await Promise.all(pending.map((repo) => this.listWorktrees(repo, urgent)));
+    return this.findWorktree(predicate);
+  }
+}
+
+/** A root as a plain folder: its own single worktree, with the id git's main worktree would have. */
+function plainFolder(repo: Repository): RepositoryWorktrees {
+  return {
+    isGit: false,
+    worktrees: [
+      { id: worktreeId(repo.id, repo.rootPath), repoId: repo.id, name: path.basename(repo.rootPath), path: repo.rootPath, isMain: true },
+    ],
+  };
 }
 
 /**
