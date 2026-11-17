@@ -15,7 +15,7 @@ export interface RepositoryCommandDeps {
   refreshTree: () => void;
 }
 
-/** Workspace-root commands: add, clone, remove, reorder, refresh. */
+/** Workspace-root commands: add, clone, remove, refresh. */
 export function registerRepositoryCommands(context: vscode.ExtensionContext, deps: RepositoryCommandDeps): void {
   const { storageService, gitService, refreshTree } = deps;
   const register = commandRegistrar(context);
@@ -83,20 +83,6 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     refreshTree();
   });
 
-  const moveRepository = (direction: 'up' | 'down') => (item?: WorkspaceTreeItem) => {
-    if (item?.itemType !== 'repository') {
-      return;
-    }
-    const repo = item.data as Repository;
-    if (storageService.moveRepository(repo.id, direction)) {
-      refreshTree();
-    } else {
-      vscode.window.showInformationMessage(`"${repo.name}" is already at the ${direction === 'up' ? 'top' : 'bottom'}.`);
-    }
-  };
-  register('pitwall.moveRepositoryUp', moveRepository('up'));
-  register('pitwall.moveRepositoryDown', moveRepository('down'));
-
   register('pitwall.refreshWorkspaces', refreshTree);
 
   register('pitwall.cloneRepository', async () => {
@@ -144,4 +130,32 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     vscode.window.showInformationMessage(`Cloned and added repository: ${repo.name}`);
     refreshTree();
   });
+}
+
+/**
+ * Dormant (P18): Move Up / Move Down. Inbox order replaced the manual repo
+ * order in Phase 3, so nothing calls this and the manifest contributes
+ * neither command. Restoring manual order means calling this from
+ * `extension.ts`, re-adding the manifest entries, and moving
+ * `test/dry/core/dormant/move-repository.test.ts` back.
+ */
+export function registerMoveRepositoryCommands(
+  context: vscode.ExtensionContext,
+  deps: Pick<RepositoryCommandDeps, 'storageService' | 'refreshTree'>
+): void {
+  const { storageService, refreshTree } = deps;
+  const register = commandRegistrar(context);
+  const moveRepository = (direction: 'up' | 'down') => (item?: WorkspaceTreeItem) => {
+    if (item?.itemType !== 'repository') {
+      return;
+    }
+    const repo = item.data as Repository;
+    if (storageService.moveRepository(repo.id, direction)) {
+      refreshTree();
+    } else {
+      vscode.window.showInformationMessage(`"${repo.name}" is already at the ${direction === 'up' ? 'top' : 'bottom'}.`);
+    }
+  };
+  register('pitwall.moveRepositoryUp', moveRepository('up'));
+  register('pitwall.moveRepositoryDown', moveRepository('down'));
 }
