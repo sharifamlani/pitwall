@@ -227,7 +227,8 @@ test('after a quit, each revived tab resumes its own chat in its worktree, quiet
   const restore = f.manager.beginRestoreSync(() => WORKTREE);
   await restore.adopted;
   await restore.complete;
-  const cd = `cd '${WORKTREE.path}' && `;
+  // R42: a revived tab's line starts with one space.
+  const cd = ` cd '${WORKTREE.path}' && `;
   assert.deepEqual(
     [revived, unlinked, duplicateFirst, duplicateSecond, samePty, fork, gone].map((tab) => tab.sent[0]),
     [`${cd}claude --resume linked`, `${cd}claude`, undefined, undefined, undefined, undefined, undefined]
@@ -310,7 +311,7 @@ test('adoption does not wait for a slow harness check, and a click meanwhile foc
 
   release(true);
   await restore.complete;
-  assert.equal(tab.sent[0], `cd '${WORKTREE.path}' && claude --resume slow`);
+  assert.equal(tab.sent[0], ` cd '${WORKTREE.path}' && claude --resume slow`);
   assert.ok(!f.manager.isResuming('5a5a5a00-slow'));
 });
 
@@ -385,7 +386,7 @@ test('a revived tab whose PID arrives late is still resumed in the background, a
   await restore.adopted;
   assert.equal(await f.open('c0c0c000-late'), tab, 'a click while the PID is pending focuses the revived tab');
   await restore.complete;
-  assert.deepEqual(tab.sent, [`cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s1`]);
+  assert.deepEqual(tab.sent, [` cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s1`]);
   assert.ok(f.manager.isActive('c0c0c000-late'));
   assert.equal(f.storage.getTerminalPids()['c0c0c000-late'], 8501, 'the late PID is recorded for a reload');
 
@@ -518,7 +519,7 @@ test('a revived tab is resumed only after its shell reports ready', async (t) =>
   stub.window.__integrateShell(tab);
   await waitFor(() => tab.sent.length > 0, 'the resume line');
   await flush();
-  assert.deepEqual(tab.sent, [`cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s2`]);
+  assert.deepEqual(tab.sent, [` cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s2`]);
 });
 
 test('with shell integration turned off, a revived tab is resumed at once', async (t) => {
@@ -530,7 +531,7 @@ test('with shell integration turned off, a revived tab is resumed at once', asyn
   const tab = f.restoredTab('Pitwall: No Integration [a2a2a2]', 8702);
 
   await f.manager.beginRestoreSync(() => WORKTREE).complete;
-  assert.deepEqual(tab.sent, [`cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s3`]);
+  assert.deepEqual(tab.sent, [` cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s3`]);
 });
 
 test('a revived tab whose shell never reports ready is still resumed, once, when the readiness cap runs out', async (t) => {
@@ -544,7 +545,7 @@ test('a revived tab whose shell never reports ready is still resumed, once, when
   const f = setup(t, { chats: [{ id: 'a3a3a300-never', harnessSessionId: 's4', status: 'closed' }] });
   await f.storage.rememberTerminalPid('a3a3a300-never', 7703);
   const tab = f.restoredTab('Pitwall: Never Ready [a3a3a3]', 8703);
-  const line = `cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s4`;
+  const line = ` cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s4`;
 
   t.mock.timers.enable({ apis: ['setTimeout'] });
   await f.manager.beginRestoreSync(() => WORKTREE).complete;
@@ -560,6 +561,39 @@ test('a revived tab whose shell never reports ready is still resumed, once, when
   t.mock.timers.tick(REVIVED_SHELL_READY_CAP_MS);
   await flush();
   assert.deepEqual(tab.sent, [line], 'and never sent twice');
+});
+
+const POWERSHELL = 'C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+
+test('a resume line typed into a revived tab starts with one space, so a dropped first keystroke cannot break it (R42)', async (t) => {
+  // Smoke 7 load-4: a revived Windows PowerShell 5.1 still starting ran
+  // "et-Location -LiteralPath ..." because it ate the line's first keystroke.
+  const cases: [string, string][] = [
+    [POWERSHELL, ` Set-Location -LiteralPath '/work/repo with space'; if ($?) { claude --resume r42 }`],
+    ['/bin/bash', ` cd '/work/repo with space' && claude --resume r42`],
+  ];
+  for (const [shell, expected] of cases) {
+    stub.__reset();
+    stub.__setShell(shell);
+    const f = setup(t, { chats: [{ id: 'b4b4b400-r42', harnessSessionId: 'r42', status: 'closed' }] });
+    await f.storage.rememberTerminalPid('b4b4b400-r42', 7704);
+    const tab = f.restoredTab('Pitwall: Revived [b4b4b4]', 8704);
+    await f.manager.beginRestoreSync(() => WORKTREE).complete;
+    await waitFor(() => tab.sent.length > 0, 'the resume line');
+    assert.deepEqual(tab.sent, [expected], shell);
+    f.manager.dispose();
+  }
+});
+
+test('guard: a launch line typed into a tab Pitwall just created has no leading space (R42)', async (t) => {
+  for (const shell of [POWERSHELL, '/bin/bash', 'C:\\WINDOWS\\system32\\cmd.exe']) {
+    stub.__reset();
+    stub.__setShell(shell);
+    const f = setup(t, { chats: [{ id: 'new-tab' }, { id: 'resumed-tab', harnessSessionId: 'linked' }] });
+    assert.deepEqual((await f.open('new-tab'))!.sent, ['claude'], shell);
+    assert.deepEqual((await f.open('resumed-tab'))!.sent, ['claude --resume linked'], shell);
+    f.manager.dispose();
+  }
 });
 
 test('a revived tab whose command starts after the retitle wait still gets its restore title', async (t) => {
