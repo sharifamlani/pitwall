@@ -15,6 +15,10 @@ import * as path from 'path';
 // The bundle runs from test/dry/.build, so the repo root is three levels up.
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const BUILDER = path.join(ROOT, 'scripts', 'build-manifest.mjs');
+import { ALL_HARNESSES, validateEnabled } from '../../../src/harnesses';
+
+/** The harnesses the shipped build enables. Change this with `src/harnesses/enabled.json`. */
+const SHIPPED_HARNESSES = ['claude'];
 const DORMANT = new Set(['codex', 'opencode', 'pi']);
 
 interface Setting {
@@ -111,13 +115,13 @@ test('enabling Codex is one switch: the claude,codex build has the Codex command
   );
 });
 
-test('the shipped package.json is the build of enabled.json, which is Claude only', () => {
+test('the shipped package.json is the build of enabled.json, which is SHIPPED_HARNESSES', () => {
   const enabled = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'harnesses', 'enabled.json'), 'utf8'));
-  assert.deepEqual(enabled, ['claude']);
-  const result = build(['--enabled', 'claude']);
+  assert.deepEqual(enabled, SHIPPED_HARNESSES);
+  const result = build(['--enabled', SHIPPED_HARNESSES.join(',')]);
   assert.equal(result.status, 0, result.output);
   const shipped = fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8').replace(/\r\n/g, '\n');
-  assert.equal(shipped, result.text, 'package.json equals the ["claude"] build');
+  assert.equal(shipped, result.text, 'package.json equals the SHIPPED_HARNESSES build');
 
   const check = spawnSync(process.execPath, [BUILDER, '--check'], { cwd: ROOT, encoding: 'utf8' });
   assert.equal(check.status, 0, `${check.stdout}${check.stderr}`);
@@ -266,4 +270,26 @@ test('core enum, enumItemLabels and enumDescriptions of unequal length are refus
   assert.equal(result.status, 2, result.output);
   assert.ok(result.output.includes('pitwall.defaultHarness'), result.output);
   assert.match(result.output, /unequal length|same length/);
+});
+
+test('enabled.json validation rejects unknown, inherited, duplicate and empty ids', () => {
+  assert.throws(() => validateEnabled(['toString'], ALL_HARNESSES), /Unknown harness "toString"/);
+  assert.throws(() => validateEnabled(['nope'], ALL_HARNESSES), /Unknown harness "nope".*Valid ids: claude/);
+  assert.throws(() => validateEnabled(['claude', 'claude'], ALL_HARNESSES), /Duplicate harness "claude"/);
+  assert.throws(() => validateEnabled([], ALL_HARNESSES), /must name at least one harness/);
+  assert.throws(() => validateEnabled([7], ALL_HARNESSES), /Unknown harness "7"/);
+  assert.deepEqual(validateEnabled(['claude', 'codex'], ALL_HARNESSES), ['claude', 'codex']);
+});
+
+test('harness folders with a contributes.json, ALL_HARNESSES keys and module ids agree', () => {
+  const harnessesDir = path.join(ROOT, 'src', 'harnesses');
+  const folders = fs
+    .readdirSync(harnessesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && fs.existsSync(path.join(harnessesDir, entry.name, 'contributes.json')))
+    .map((entry) => entry.name)
+    .sort();
+  assert.deepEqual(folders, Object.keys(ALL_HARNESSES).sort());
+  for (const [key, module] of Object.entries(ALL_HARNESSES)) {
+    assert.equal(module.id, key, `ALL_HARNESSES.${key}.id`);
+  }
 });

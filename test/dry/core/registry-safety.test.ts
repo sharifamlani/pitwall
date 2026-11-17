@@ -12,16 +12,19 @@ import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/pro
 import { SessionSearchTreeProvider } from '../../../src/core/providers/SessionSearchTreeProvider';
 import { TerminalManager } from '../../../src/core/services/TerminalManager';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
+import { SessionSearchService } from '../../../src/core/services/SessionSearchService';
 import { registerChatCommands } from '../../../src/core/commands/chat';
 import { SessionSearchRecord, STORAGE_KEYS } from '../../../src/core/types';
 import {
   chatRecord,
   FakeTerminal,
   fakeAdapter,
+  fakeSearchRunner,
   makeStorage,
   memento,
   runCommand,
   stub,
+  tempDir,
   worktreeRecord,
 } from '../support';
 
@@ -167,4 +170,17 @@ test('pitwall.newChat creates a session with the first enabled harness', async (
   await runCommand('pitwall.newChat', new WorkspaceTreeItem(WORKTREE.name, 1, 'worktree', WORKTREE, 'worktree'));
   assert.deepEqual(storage.getChats().map((chat) => chat.harness), ['opencode']);
   assert.deepEqual(opened, ['opencode']);
+});
+
+test('Find Session with an off-enum stored harness falls back to the first enabled harness', async (t) => {
+  const dir = tempDir(t);
+  const registry = new HarnessRegistry([
+    fakeAdapter('claude', { sessionSearchRunner: fakeSearchRunner() }),
+  ]);
+  const finder = new SessionSearchService(makeStorage(), registry, dir);
+  t.after(() => finder.dispose());
+  stub.__setConfiguration('sessionSearch.harness', 'codex');
+
+  const engine = await finder.engine();
+  assert.equal(engine?.harness, 'claude');
 });

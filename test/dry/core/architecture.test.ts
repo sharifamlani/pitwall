@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createRequire } from 'module';
+import type { build as esbuildBuild } from 'esbuild';
 
 // The bundle runs from test/dry/.build, so the repo root is three levels up.
 const ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -61,4 +63,28 @@ test('extension.ts reaches harnesses only through harnesses/index', () => {
   for (const spec of harnessImports) {
     assert.ok(spec === './harnesses' || spec === './harnesses/index', `forbidden harness import in extension.ts: ${spec}`);
   }
+});
+
+test('core reaches no harness folder, directly or transitively, in any import syntax', async () => {
+  // Loaded at run time: the dry runner bundles this file, and esbuild cannot be bundled.
+  const { build } = createRequire(__filename)('esbuild') as { build: typeof esbuildBuild };
+  const files = tsFiles(CORE).map((file) => path.relative(ROOT, file).split(path.sep).join('/'));
+  assert.ok(files.length > 0, 'src/core/ must contain source files');
+  const result = await build({
+    stdin: { contents: files.map((file) => `import './${file}';`).join('\n'), resolveDir: ROOT, loader: 'ts' },
+    bundle: true,
+    write: false,
+    metafile: true,
+    platform: 'node',
+    external: ['vscode'],
+    logLevel: 'silent',
+  });
+  const inputs = Object.keys(result.metafile.inputs).map((input) => input.split(path.sep).join('/'));
+  assert.ok(inputs.some((input) => input.startsWith('src/core/')), 'the graph includes core files');
+  const reached = inputs.filter((input) => input.startsWith('src/harnesses/') || input === 'src/extension.ts');
+  assert.deepEqual(reached, []);
+});
+
+test('src/ holds only core, harnesses and extension.ts', () => {
+  assert.deepEqual(fs.readdirSync(SRC).sort(), ['core', 'extension.ts', 'harnesses']);
 });

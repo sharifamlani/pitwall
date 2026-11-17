@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeStorage, memento, stub } from '../support';
-import { STORAGE_KEYS } from '../../../src/core/types';
+import { SessionSearchRecord, STORAGE_KEYS } from '../../../src/core/types';
 
 test('chats written before multi-harness support migrate on read, once', async () => {
   const globalState = memento();
@@ -103,4 +103,39 @@ test('a user removal leaves a tombstone; a retention delete and a manual import 
 
   storage.forgetRemovedSession('codex', 'thread-1');
   assert.equal(storage.getRemovedSessionKeys().size, 0);
+});
+
+function searchRecord(id: string, harness: string): SessionSearchRecord {
+  return {
+    id,
+    query: 'q',
+    engine: { harness, model: '', effort: '' },
+    startedAt: 1,
+    state: 'done',
+    answer: 'a',
+    matches: [],
+    activity: [],
+  } as SessionSearchRecord;
+}
+
+test('saving a search keeps stored searches of a disabled harness', async () => {
+  const seed = () => {
+    const globalState = memento();
+    void globalState.update(STORAGE_KEYS.SESSION_SEARCHES, [searchRecord('codex-search', 'codex')]);
+    return globalState;
+  };
+  const rawIds = (g: ReturnType<typeof memento>) =>
+    g.get<{ id: string }[]>(STORAGE_KEYS.SESSION_SEARCHES).map((record) => record.id);
+
+  const g = seed();
+  const storage = makeStorage(g, memento(), (id) => id === 'claude');
+  await storage.saveSessionSearch(searchRecord('claude-search', 'claude'));
+  assert.deepEqual(rawIds(g), ['claude-search', 'codex-search'], 'the codex record is still stored');
+  assert.deepEqual(storage.getSessionSearches().map((s) => s.id), ['claude-search'], 'but it is not read');
+
+  const g2 = seed();
+  const storage2 = makeStorage(g2, memento(), (id) => id === 'claude');
+  await storage2.saveSessionSearch(searchRecord('claude-search', 'claude'));
+  await storage2.removeSessionSearches(['claude-search']);
+  assert.deepEqual(rawIds(g2), ['codex-search'], 'removing a visible search leaves the hidden one');
 });
