@@ -18,14 +18,16 @@ const save = () => {
   fs.writeFileSync(temp, JSON.stringify(state));
   fs.renameSync(temp, stateFile);
 };
-state.calls.push(args);
-// A delayed call must be visible while it hangs, so the test can abort it.
-if (state.listDelayMs || state.messageDelayMs) save();
+// Registered before the call becomes visible: the test aborts as soon as it sees the call, and a SIGTERM
+// that arrives first would kill the process without recording that it was terminated.
 process.on('SIGTERM', () => {
   state.terminated = (state.terminated ?? 0) + 1;
   save();
   process.exit(143);
 });
+state.calls.push(args);
+// A delayed call must be visible while it hangs, so the test can abort it.
+if (state.listDelayMs || state.messageDelayMs) save();
 const reply = (value) => {
   save();
   process.stdout.write(JSON.stringify(value));
