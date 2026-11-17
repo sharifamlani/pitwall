@@ -1,42 +1,33 @@
 import * as os from 'os';
 import * as vscode from 'vscode';
-import { ChatSession, Worktree } from './types';
-import { StorageService } from './services/StorageService';
-import { WorktreeCatalog } from './services/WorktreeCatalog';
-import { GitService } from './services/GitService';
-import { GitHubService } from './services/GitHubService';
-import { TerminalManager } from './services/TerminalManager';
-import { ClaudeSessionService } from './services/ClaudeSessionService';
-import { ClaudeSessionWatcher } from './services/ClaudeSessionWatcher';
-import { OpencodeSessionWatcher } from './services/OpencodeSessionWatcher';
-import { CodexSessionWatcher } from './services/CodexSessionWatcher';
-import { PiSessionService } from './services/PiSessionService';
-import { PiSessionWatcher } from './services/PiSessionWatcher';
-import { HarnessWatcherRegistry } from './services/HarnessWatcherRegistry';
-import { SessionImportService } from './services/SessionImportService';
-import { NotificationService } from './services/NotificationService';
-import { SessionAttentionService } from './services/SessionAttentionService';
-import { SessionSearchService } from './services/SessionSearchService';
-import { disposeOperationLog } from './services/OperationLog';
-import { ClaudeHarness } from './harnesses/ClaudeHarness';
-import { OpencodeHarness } from './harnesses/OpencodeHarness';
-import { CodexHarness } from './harnesses/CodexHarness';
-import { PiHarness } from './harnesses/PiHarness';
-import { HarnessRegistry } from './harnesses/HarnessRegistry';
-import { chatNativeSessionIds } from './harnesses/sessionUtils';
-import { WorkspacesTreeProvider } from './providers/WorkspacesTreeProvider';
-import { ChangesTreeProvider } from './providers/ChangesTreeProvider';
-import { FilesTreeProvider, FileTreeItem } from './providers/FilesTreeProvider';
-import { SessionSearchTreeProvider } from './providers/SessionSearchTreeProvider';
-import { registerRepositoryCommands } from './commands/repository';
-import { registerWorktreeCommands } from './commands/worktree';
-import { registerChatCommands } from './commands/chat';
-import { registerChangesCommands } from './commands/changes';
-import { registerSessionImportCommands } from './commands/sessionImport';
-import { registerFileCommands } from './commands/files';
-import { SESSION_SEARCH_VIEW, registerSessionSearchCommands } from './commands/sessionSearch';
-import { commandRegistrar } from './commands/common';
-import { debounce } from './utils/debounce';
+import { ChatSession, Worktree } from './core/types';
+import { StorageService } from './core/services/StorageService';
+import { WorktreeCatalog } from './core/services/WorktreeCatalog';
+import { GitService } from './core/services/GitService';
+import { GitHubService } from './core/services/GitHubService';
+import { TerminalManager } from './core/services/TerminalManager';
+import { HarnessWatcherRegistry } from './core/harness/HarnessWatcherRegistry';
+import { SessionImportService } from './core/services/SessionImportService';
+import { NotificationService } from './core/services/NotificationService';
+import { SessionAttentionService } from './core/services/SessionAttentionService';
+import { SessionSearchService } from './core/services/SessionSearchService';
+import { disposeOperationLog } from './core/services/OperationLog';
+import { HarnessRegistry } from './core/harness/HarnessRegistry';
+import { enabledHarnesses } from './harnesses';
+import { chatNativeSessionIds } from './core/harness/sessionUtils';
+import { WorkspacesTreeProvider } from './core/providers/WorkspacesTreeProvider';
+import { ChangesTreeProvider } from './core/providers/ChangesTreeProvider';
+import { FilesTreeProvider, FileTreeItem } from './core/providers/FilesTreeProvider';
+import { SessionSearchTreeProvider } from './core/providers/SessionSearchTreeProvider';
+import { registerRepositoryCommands } from './core/commands/repository';
+import { registerWorktreeCommands } from './core/commands/worktree';
+import { registerChatCommands } from './core/commands/chat';
+import { registerChangesCommands } from './core/commands/changes';
+import { registerSessionImportCommands } from './core/commands/sessionImport';
+import { registerFileCommands } from './core/commands/files';
+import { SESSION_SEARCH_VIEW, registerSessionSearchCommands } from './core/commands/sessionSearch';
+import { commandRegistrar } from './core/commands/common';
+import { debounce } from './core/utils/debounce';
 
 /** Panels re-read the worktree this long after its files stop changing. */
 const FILE_CHANGE_DEBOUNCE_MS = 300;
@@ -52,23 +43,11 @@ export async function activate(context: vscode.ExtensionContext) {
   const gitService = new GitService();
   const worktreeCatalog = new WorktreeCatalog(storageService, gitService);
   const gitHubService = new GitHubService();
-  const opencodeHarness = new OpencodeHarness();
-  const codexHarness = new CodexHarness();
-  const claudeSessionService = new ClaudeSessionService();
-  const piSessionService = new PiSessionService();
-  const piHarness = new PiHarness({ sessionService: piSessionService });
-  const harnessRegistry = new HarnessRegistry([
-    new ClaudeHarness({ sessionService: claudeSessionService }),
-    opencodeHarness,
-    codexHarness,
-    piHarness,
-  ]);
-  const harnessWatcherRegistry = new HarnessWatcherRegistry([
-    new ClaudeSessionWatcher(storageService, claudeSessionService),
-    new OpencodeSessionWatcher(storageService, opencodeHarness, worktreeCatalog),
-    new CodexSessionWatcher(storageService, codexHarness, worktreeCatalog),
-    new PiSessionWatcher(storageService, piSessionService, worktreeCatalog),
-  ]);
+  const modules = enabledHarnesses().map((m) => m.create({ storageService, worktreeCatalog }));
+  const harnessRegistry = new HarnessRegistry(modules.map((m) => m.adapter));
+  const harnessWatcherRegistry = new HarnessWatcherRegistry(
+    modules.flatMap((m) => (m.watcher ? [m.watcher] : []))
+  );
   const terminalManager = new TerminalManager(storageService, harnessRegistry, harnessWatcherRegistry);
 
   const hasOpenNativeUi = (chat: ChatSession): boolean => {

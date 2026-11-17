@@ -112,7 +112,7 @@ function prepareRepo(repoPath) {
 
 /**
  * Mirrors GitService.generateWorktreeId for the seeded repository. Keep the
- * hash and seed string in sync with src/services/GitService.ts.
+ * hash and seed string in sync with src/core/services/GitService.ts.
  */
 function seededWorktreeId(worktreePath) {
   return `wt-${simpleHash(`e2e-repo:${path.resolve(worktreePath)}`)}`;
