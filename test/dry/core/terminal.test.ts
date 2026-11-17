@@ -1376,6 +1376,7 @@ for (const [what, arrange] of [
     const fresh = f.restoredTab('Pitwall: New Session [590a34]', 8062);
     terminalTabsWithFront(lab);
     stub.window.__setActiveTerminal(lab);
+    arrange(lab, fresh);
     // Only Pitwall's own shows move the front from here on, as in the walk.
     const following = vscode.window.onDidChangeActiveTerminal((terminal) => {
       if (!terminal) return;
@@ -1388,7 +1389,6 @@ for (const [what, arrange] of [
       }
     });
     t.after(() => following.dispose());
-    arrange(lab, fresh);
 
     await f.manager.beginRestoreSync(() => WORKTREE).complete;
     assert.match(String(lab.sent[0]), /claude --resume lab-transcript/);

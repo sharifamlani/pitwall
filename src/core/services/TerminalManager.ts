@@ -572,17 +572,21 @@ export class TerminalManager {
         this.pendingTitles.add(terminal);
         return;
       }
-      const front = this.captureFront();
+      const front = this.captureFront(terminal);
       const release = this.beginPitwallShow(terminal);
       try {
         await this.showForRetitle(terminal);
         await this.writeTitle(terminal);
-        // Put back what the user had in front, unless they moved on meanwhile.
-        if (vscode.window.activeTerminal === terminal) {
-          await this.restoreFront(front, terminal);
-        }
       } finally {
-        release();
+        try {
+          // Put back what the user had in front, however the rename ended
+          // (R44), unless they moved on meanwhile.
+          if (!this.isDisposed && vscode.window.activeTerminal === terminal) {
+            await this.restoreFront(front, terminal);
+          }
+        } finally {
+          release();
+        }
       }
     });
   }
@@ -610,13 +614,40 @@ export class TerminalManager {
    * active tab. A background retitle has to show its tab, because the rename
    * command only renames the active terminal; this is what to put back.
    */
-  private captureFront(): FrontView {
-    const group = vscode.window.tabGroups.activeTabGroup;
+  private captureFront(target?: vscode.Terminal): FrontView {
+    let group = vscode.window.tabGroups.activeTabGroup;
+    // Showing the target replaces the front tab of the group that holds it.
+    // When the active group's front is something else (such as an agent
+    // pane in another group), that group is left alone, so capture the front
+    // of the target's group instead (R1-x).
+    if (target && group?.activeTab && !(group.activeTab.input instanceof vscode.TabInputTerminal)) {
+      const holding = vscode.window.tabGroups.all.find(
+        (candidate) =>
+          candidate !== group &&
+          candidate.tabs.some((tab) => tab.input instanceof vscode.TabInputTerminal && tab.label === target.name)
+      );
+      group = holding ?? group;
+    }
+    const tab = group?.activeTab;
     return {
-      terminal: vscode.window.activeTerminal,
-      tab: group?.activeTab,
+      terminal: tab?.input instanceof vscode.TabInputTerminal ? this.terminalShowing(tab) : vscode.window.activeTerminal,
+      tab,
       viewColumn: group?.viewColumn,
     };
+  }
+
+  /**
+   * The terminal a terminal tab shows, by its title. The extension host's
+   * active terminal is not always the tab in front: Cursor reports a revived
+   * window's last revived tab (or none) while another tab is in front (R1-x).
+   */
+  private terminalShowing(tab: vscode.Tab): vscode.Terminal | undefined {
+    const active = vscode.window.activeTerminal;
+    if (active?.name === tab.label) {
+      return active;
+    }
+    const named = vscode.window.terminals.filter((terminal) => terminal.name === tab.label);
+    return named.length === 1 ? named[0] : active;
   }
 
   /**
@@ -1384,7 +1415,7 @@ export class TerminalManager {
     if (revived.length === 0) {
       return;
     }
-    const front = this.captureFront();
+    const front = this.captureFront(revived[0].terminal);
     // The pass stops once the user activates a terminal; Pitwall's own
     // background shows (this pass, a late retitle, an adoption) do not count.
     const userActivations = this.userActivations;
@@ -1396,7 +1427,10 @@ export class TerminalManager {
     // shows are released only once the front is restored or the pass ends.
     const releases: Array<() => void> = [];
     const releaseShows = () => releases.forEach((release) => release());
-    void (async () => {
+    // The tabs this pass showed. The front is put back only while one of them
+    // is still the active terminal: otherwise the user moved on (R44).
+    const shown = new Set<vscode.Terminal>();
+    const showRevived = async (): Promise<void> => {
       for (const item of revived) {
         const { terminal, integrated, started } = item;
         if (this.isDisposed || userTookOver()) {
@@ -1441,6 +1475,7 @@ export class TerminalManager {
             return;
           }
           releases.push(this.beginPitwallShow(terminal));
+          shown.add(terminal);
           await this.showForRetitle(terminal);
           await this.writeTitle(terminal);
           outcome = 'shown';
@@ -1449,15 +1484,23 @@ export class TerminalManager {
           return;
         }
       }
-      await this.queueTitleWork(async () => {
-        try {
-          if (!this.isDisposed) {
-            await this.restoreFront(front);
+    };
+    void (async () => {
+      try {
+        await showRevived();
+      } finally {
+        // Put back what the user had in front, however the pass ended (R44).
+        await this.queueTitleWork(async () => {
+          try {
+            const active = vscode.window.activeTerminal;
+            if (!this.isDisposed && !userTookOver() && active !== undefined && shown.has(active)) {
+              await this.restoreFront(front);
+            }
+          } finally {
+            releaseShows();
           }
-        } finally {
-          releaseShows();
-        }
-      });
+        });
+      }
     })()
       .catch(() => undefined)
       .finally(() => {
