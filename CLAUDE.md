@@ -27,8 +27,8 @@ Run `bash scripts/verify-foundation.sh` before every push; its `ignore` check fa
 
 - Releases use SemVer tags `vMAJOR.MINOR.PATCH`, as **annotated** git tags pushed to GitHub: `git tag -a vX.Y.Z -m "<one-line summary>" && git push origin vX.Y.Z`.
 - **Every version bump gets a tag, in the same session it lands.** A version with no tag doesn't count as released.
-- Each closed ROADMAP Phase is a minor release: Phase 0 → `v0.1.0`, Phase 1 → `v0.2.0`, … Phase 4 → `v0.5.0`. Phase 5, the first installable `.vsix`, is `v1.0.0`. Fixes between phases bump the patch number.
-- From Phase 1 onward, `package.json` `version` must equal the tag (reset Agntree's `4.0.0` on import). From Phase 5 onward, each tag also gets a GitHub release with the `.vsix` attached (`gh release create vX.Y.Z pitwall-X.Y.Z.vsix`).
+- Each closed ROADMAP Phase is a minor release: Phase 0 → `v0.1.0`, Phase 1 → `v0.2.0`, … Phase 5 → `v0.6.0`. Phase 6, the first installable `.vsix`, is `v1.0.0` (numbering per ROADMAP v0.9). Fixes between phases bump the patch number.
+- From Phase 1 onward, `package.json` `version` must equal the tag (reset Agntree's `4.0.0` on import). From Phase 6 onward, each tag also gets a GitHub release with the `.vsix` attached (`gh release create vX.Y.Z pitwall-X.Y.Z.vsix`).
 - Record each tag in the ROADMAP Phase row and the §6 changelog.
 
 ## Naming and credit

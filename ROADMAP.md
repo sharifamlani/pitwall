@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.8.5 · 2026-11-16
+> v0.9 · 2026-11-16
 
 ---
 
 ## §0 You are here
 
-- **Current phase:** Phase 1 — Import Agntree
-- **Current step:** 1.1 — write the Phase 1 plan (merge Agntree with history via an `upstream` remote)
+- **Current phase:** Phase 1 — Import Agntree (harness-modular, Claude-only)
+- **Current step:** plan revised for D9–D38 + the live tests; waiting on Sharif's review
 - **Last update:** 2026-11-16
-- **Next action:** Sharif verifies the updated prototype (canvas v36). Then fold D9–D36 + the assumption-test results into the Phase 1 plan (Sharif reviews), then start the import.
+- **Next action:** Sharif reviews [the Phase 1 plan](docs/superpowers/plans/2026-11-16-phase1-import-agntree.md) and picks how it runs (subagent-driven recommended); then Task 1, the import.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -27,7 +27,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 
 **What v1 done delivers.** An installable `.vsix` (`v1.0.0`). Its sidebar lists repos and sessions with status dots. A click opens the chat panel directly, and Windows pop-ups fire on "finished" and "needs you". It is free, MIT, and works on native Windows.
 
-**What later feels like.** You never hunt for windows. Ideally every repo's chat lives in one Cursor window (decided in Phase 2), and the session that has waited longest is one key away.
+**What later feels like.** You never hunt for windows. You open one Cursor window; Pitwall opens and focuses the rest for you (D35, D36), and the session that has waited longest is one key away. One window for every repo's chats is a v2 hope (7.4).
 
 ---
 
@@ -37,12 +37,12 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 |---|---|---|
 | D1 | Runs inside Cursor as a second extension next to the official Claude Code extension; never copies, embeds or modifies it | `transcripts/inital_idea.md` (license: all rights reserved) |
 | D2 | Fork Agntree (MIT), keeping its LICENSE line and a README credit; don't build from scratch | `transcripts/inital_idea.md` |
-| D3 | Open sessions via `vscode://anthropic.claude-code/open?session=<id>` / `claude-vscode.editor.open` | `transcripts/inital_idea.md` |
+| D3 | Open sessions via Claude Code's link (`<vscode.env.uriScheme>://anthropic.claude-code/open?session=<id>`, i.e. `cursor://` in Cursor) or `claude-vscode.editor.open`, in the window of the chat's folder (D35) | `transcripts/inital_idea.md` |
 | D4 | Status dot colors: blue = working, orange = needs you, green = finished, gray = idle | wireframe artifact `XhYy9L747DwQzBsQDpaFF2` |
 | D5 | Name is Pitwall; no "Claude" in the name | `transcripts/inital_idea.md` |
 | D6 | Extension = TypeScript/npm at the repo root; Python dev tooling = `tools/` via Poetry | [foundation plan](docs/superpowers/plans/2026-11-16-foundation.md) |
 | D7 | Public repo; `.packages/`, `transcripts/`, `.claude/`, `.env` are never tracked | [foundation plan](docs/superpowers/plans/2026-11-16-foundation.md) |
-| D8 | SemVer annotated tags on every version bump; Phase N closes as `v0.(N+1).0`, Phase 5 = `v1.0.0` | Sharif 2026-11-16, [CLAUDE.md](CLAUDE.md) |
+| D8 | SemVer annotated tags on every version bump; Phase N closes as `v0.(N+1).0`; Phase 6 (first installable release) = `v1.0.0` (after the v0.9 renumber) | Sharif 2026-11-16, [CLAUDE.md](CLAUDE.md) |
 | D9 | Claude Code only for v1; every agent lives in its own `src/harnesses/<id>/` folder, switched on by one `enabled.json` (Codex / opencode / Pi kept dormant) | Sharif 2026-11-16 |
 | D10 | Sidebar = standard VS Code list (TreeView) for v1; the custom card panel is v2 | Sharif 2026-11-16, spec canvas Decision 1 |
 | D11 | Two ways into a chat: click a repo → **all** of that repo's chats open as tabs in its window (close any you don't need); click a session → its tab is **added** to its window's tabs, never replacing them. Worktree chats open in their own window (D35) | Sharif 2026-11-16, spec canvas "Two ways into a chat" |
@@ -59,13 +59,13 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 
 | D22 | Clicking a file in FILES opens it as a normal Cursor editor tab in that repo's tab group, next to its chats (preview tabs and editing inherited) | Sharif 2026-11-16, decision log 13 |
 | D23 | Copy files between repos: copy/cut in one repo, switch, paste (Agntree's clipboard survives switching; paste lands in the shown repo/worktree; name clashes get " copy"). New: right-click "Copy to another repo" and drag a file onto a repo row. A copied `.env` that the target's `.gitignore` doesn't cover triggers an offer to add it | Sharif 2026-11-16, decision log 14 |
-| D24 | Search (Ctrl+Alt+R), one box: v1 = repos + chats by name/branch (instant) + Agntree's Find Session (agent reads transcripts). Instant text search inside chats → row 6.1 | Sharif 2026-11-16, decision log 15 |
+| D24 | Search (Ctrl+Alt+R), one box: v1 = repos + chats by name/branch (instant) + Agntree's Find Session (agent reads transcripts). Instant text search inside chats → row 7.1 | Sharif 2026-11-16, decision log 15 |
 | D25 | Bottom-bar counts are buttons: click "N need you" (or working / finished) → a list of those sessions; Pitwall jumps you to each in turn (Next ▸). Side by side only within one folder (amended by D35) | Sharif 2026-11-16, decision log 16 |
-| D26 | Every tab shows its repo + branch underneath (Sharif: keep). File tabs: Cursor's tab-label setting. Claude's chat tabs belong to Claude Code: test 2.5 must find a way; fallback is the window title + bottom bar showing "repo · ⎇ branch" | Sharif 2026-11-16, decision log 17 |
+| D26 | Every tab shows its repo + branch underneath (Sharif: keep). File tabs: Cursor's tab-label setting. Claude's chat tabs belong to Claude Code: test 4.5 must find a way; fallback is the window title + bottom bar showing "repo · ⎇ branch" | Sharif 2026-11-16, decision log 17 |
 | D27 | Sound: off by default (refines D20). Two switches, "needs you" and "finished"; when on, the Windows pop-up plays the system sound. Bell in the sidebar header + Settings | Sharif 2026-11-16, decision log 18 |
 | D28 | Repo rows: no printed hotkeys; a "+" on each repo starts a new Claude Code chat there; the header keeps only the folder icon (add repo). Right-click → "Dismiss from Pitwall" hides the repo (nothing on disk changes); it returns when re-added or when a new session starts in it | Sharif 2026-11-16, decision log 19 |
 | D29 | Principle: inherit everything Cursor already does (tabs, editor, menus, quick-pick box, keybinding editor, themes); never rebuild it. Canvas board "What Pitwall gets from Cursor" | Sharif 2026-11-16, decision log 20 |
-| D30 | Until contributions open, `main` stays unprotected so Sharif and his Claude push directly. Before the contributor call goes out (5.6), `main` gets a GitHub ruleset: changes only through a pull request with 1 approving review and passing CI, no force-push or deletion; only the repo admin (Sharif, and his Claude using his login) may bypass | Sharif 2026-11-16 |
+| D30 | Until contributions open, `main` stays unprotected so Sharif and his Claude push directly. Before the contributor call goes out (6.6), `main` gets a GitHub ruleset: changes only through a pull request with 1 approving review and passing CI, no force-push or deletion; only the repo admin (Sharif, and his Claude using his login) may bypass | Sharif 2026-11-16 |
 | D31 | ~~Tabs from several repos at once~~ (superseded by D35): session clicks keep adding tabs from any repo, all on screen and each labelled with its repo; clicking a repo name filters to that repo; an "All open tabs" row brings everything back; switching never closes tabs. Depends on the one-window test (2.6) | Sharif 2026-11-16, decision log 21 |
 | D32 | Pin tabs with Cursor's own Pin Tab (right-click → Pin, Ctrl+K Shift+Enter): pinned tabs sit left and survive "Close Others" | Sharif 2026-11-16, decision log 22 |
 | D33 | Sidebar never scrolls sideways (rows truncate with "…"); its edge drags to resize or hide, and the line above FILES drags to resize it, like any Cursor panel | Sharif 2026-11-16, decision log 23 |
@@ -73,10 +73,34 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D35 | **One window per folder (v1)** — the "one-repo-per-window rule". Claude's panel only resumes chats from its window's folder, and a git worktree counts as its own folder (tests T5, T17). Every window runs the same Pitwall sidebar; clicking a chat from another repo or worktree brings that folder's window forward (opening it if needed) with the chat open. A window's tabs only ever hold its own folder's chats. Supersedes the cross-repo parts of D15, D25, D26 (chat tabs), D31 | Sharif 2026-11-16 · [tests](docs/research/2026-11-16-assumption-tests.md) |
 | D36 | **No repo needs to be open.** You open one Cursor window; Pitwall reads Claude Code's own files (`~/.claude/sessions`, `~/.claude/projects`) to show every repo, chat, status, history and pop-up. Windows for other folders are opened by Pitwall on demand (D35), never by hand. Option "everything in one window via terminal mode" rejected (that is what a switchboard does) | Sharif 2026-11-16 |
 | D37 | Keyboard in the Pitwall list (only while the list has focus): ↓/↑ move the highlight without opening; Ctrl+↓/Ctrl+↑ move and open (chat → added tab; repo → all its chats); Enter opens the highlighted row. Side by side stays Cursor's own split (split button, Split Right, drag a tab) | Sharif 2026-11-16 |
-| D38 | **Later (backlog 6.3, Sharif: not needed right away).** Remote Control per chat: right-click a Claude chat tab ("Claude: Turn on Remote Control") or a chat row, or press Ctrl+Alt+M on the highlighted row / the chat in front. Rows and tabs show 📡 while on (read from `bridgeSessionId` in the sessions file). Claude Code has no public command for it; route = its own `/remote-control` sent through the link's `prompt` (test 2.8) | Sharif 2026-11-16 |
+| D38 | **Later (backlog 7.3, Sharif: not needed right away).** Remote Control per chat: right-click a Claude chat tab ("Claude: Turn on Remote Control") or a chat row, or press Ctrl+Alt+M on the highlighted row / the chat in front. Rows and tabs show 📡 while on (read from `bridgeSessionId` in the sessions file). Claude Code has no public command for it; route = its own `/remote-control` sent through the link's `prompt` (test T19, in 7.3) | Sharif 2026-11-16 |
+---
+
+## §0.5 Phase renumbering map (v0.9, 2026-11-16)
+
+The live tests of 2026-11-16 answered the old "one-window test" (one window per folder, D35), so the phases were re-cut around what is left to build. Old → new:
+
+| Old | New | What happened |
+|---|---|---|
+| Phase 1 Import Agntree (1.1–1.4) | Phase 1 (1.1–1.6) | Same goal; rows now match the plan's six tasks |
+| — | **Phase 2 Windows parity** | New: fix Agntree's Windows test failures (12 fail / 17 skipped on this machine) |
+| Phase 2 One-window test | absorbed | 2.1–2.3 answered by tests T5/T6/T17 → D35; 2.4 and 2.6 dropped with D31; 2.5 → 4.5; 2.7 → 4.6 |
+| — | **Phase 3 Sidebar v1** | New: the repo/session list as designed (D12–D14, D17–D19, D21, D24, D28, D33, D34, D36, D37) |
+| Phase 3 Chat panel by default | Phase 4 Windows and tabs | 3.1 → 4.1; 3.2 → 4.2 (one window per folder) |
+| Phase 4 Status dots + pop-ups | Phase 5 Status + pop-ups | 4.1 → 3.3 (dots live in the sidebar); 4.2 → 5.1; 4.3 → 5.2; 4.4 → 5.3 |
+| Phase 5 Package + install | Phase 6 Package + launch | 5.1–5.6 → 6.1–6.6 |
+| Phase 6 After v1 | Phase 7 After v1 | 6.1–6.3 → 7.1–7.3 |
+
+Version rule after the renumber: Phase N closes as `v0.(N+1).0`; Phase 6 (first installable release) is `v1.0.0`.
+
 ---
 
 ## §3 The Checklist — every Phase from start to v1.0.0
+
+```
+Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v1
+                     → 4 Windows and tabs → 5 Status + pop-ups → 6 Package + launch (v1.0.0) → 7 After v1
+```
 
 ### Phase 0 — Foundation
 **Goal:** Clean, public repo with Poetry, `.env`, a dev container and a one-command verify script.
@@ -98,93 +122,123 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | 0.9 | Review fix pass: check_env missing template, privacy check any depth/casing, container isolation | ✅ | — | 2026-11-16 · `0c295ae` | whole-branch review |
 | 0.10 | Independent evaluator scorecard (E1–E10) all PASS | ✅ | — | 2026-11-16 · E1–E8 @ `29a78a3`; E2/E3/E5/E7 + isolation re-graded @ `0c295ae`; E9–E10 @ `32214f9`. All 10 PASS | plan §4 |
 | 0.11 | Tag `v0.1.0` | ✅ | — | 2026-11-16 · tag `v0.1.0` → `32214f9` | D8 |
+| 0.12 | Spec canvas + brand book; decisions D9–D38 locked | ✅ | — | 2026-11-16 · canvas v42 | [canvas](https://claude.ai/artifact/XhYy9L747DwQzBsQDpaFF2) |
+| 0.13 | Live assumption tests T1–T17 (status files, hooks, one window per folder, maximize, pop-ups) | ✅ | — | 2026-11-16 · `afd4993`, `15c16b6`, `b2a42b2` | [tests](docs/research/2026-11-16-assumption-tests.md) |
 
-### Phase 1 — Import Agntree
-**Goal:** Agntree's code in this repo, with its history and MIT credit kept, building as Pitwall.
-**Entry gate:** Phase 0 ✅ (`v0.1.0`).
-**Exit gate:** `npm ci && npm run compile && npm test` green on host and in the container; tag `v0.2.0`.
+### Phase 1 — Import Agntree (harness-modular, Claude-only)
+**Goal:** Agntree's code in this repo with its history and MIT credit, renamed to Pitwall, reorganized so each agent lives in its own folder, shipping with only Claude Code enabled. Behaviour otherwise unchanged.
+**Entry gate:** Phase 0 ✅ (`v0.1.0`); Sharif approves the plan.
+**Exit gate:** Evaluator scorecard E1–E12 all PASS; `.vsix` installs and activates in Cursor; tag `v0.2.0`.
+**Status:** ⏸ plan written, waiting on Sharif's review.
+**Plan:** [2026-11-16-phase1-import-agntree.md](docs/superpowers/plans/2026-11-16-phase1-import-agntree.md)
+
+| # | Action | Status | Plan? | Date · Commit / Plan | Source |
+|---|---|---|---|---|---|
+| 1.1 | Import Agntree `47124cd` with full history; resolve root files; keep both copyright lines; `THIRD_PARTY_NOTICES.md`; allow only `.claude/skills/pitwall-*/` | ⏸ | ✅ | plan Task 1 | D2, D7 |
+| 1.2 | Triage every Windows-failing/skipped upstream test into `docs/windows-test-triage.md` (no fixes) | ⏸ | ✅ | plan Task 2 | tests doc T16 |
+| 1.3 | Scripted rename `agntree` → `pitwall` (ids, package, docs); `version` → `0.2.0` | ⏸ | ✅ | plan Task 3 | D5, D8 |
+| 1.4 | Reorganize into `src/core/` + `src/harnesses/<id>/` behind `HarnessModule` (moves only); architecture test | ⏸ | ✅ | plan Task 4 | D9 |
+| 1.5 | One switch `enabled.json = ["claude"]`; manifest fragments; disabled-agent records can't crash the tree | ⏸ | ✅ | plan Task 5 | D9 |
+| 1.6 | CI (ubuntu + windows), package, install in Cursor, evaluator E1–E12, tag `v0.2.0` | ⏸ | ✅ | plan Task 6 | D8 |
+
+### Phase 2 — Windows parity
+**Goal:** The inherited code works on native Windows, the way it does on Linux.
+**Entry gate:** Phase 1 ✅ (`v0.2.0`), with the triage doc.
+**Exit gate:** Windows CI runs the full test suite green (env-limit tests skip with a stated reason); tag `v0.3.0`.
 **Status:** ⏸ planned.
 **Plan:** ⏸ to write
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
-| 1.1 | Add `upstream` remote → `subhashkhileri/agntree`; merge with `--allow-unrelated-histories` | ⏸ | ⏸ | — | D2 |
-| 1.2 | Resolve root collisions (README, ROADMAP, `.gitignore`, LICENSE). Agntree tracks `.claude/`, which `check_private_paths` blocks: drop it or move it | ⏸ | ⏸ | — | D2, D7 |
-| 1.3 | Rename to Pitwall in `package.json` (name, displayName, publisher); `version` → `0.2.0` | ⏸ | ⏸ | — | D5, D8 |
-| 1.4 | `npm ci`, compile, dry tests green; add an npm step to `verify-foundation.sh` | ⏸ | ⏸ | — | D6 |
+| 2.1 | Fix every "real bug" in the triage, each with a failing test first | ⏸ | ⏸ | — | Phase 1 triage |
+| 2.2 | Make POSIX-assumption tests portable; mark env-limit tests (e.g. symlink EPERM) as skips with a reason | ⏸ | ⏸ | — | Phase 1 triage |
+| 2.3 | Windows CI job runs `npm test` | ⏸ | ⏸ | — | D8 |
+| 2.4 | Script launches of Cursor clear `ELECTRON_RUN_AS_NODE` (inherited from the extension host) | ⏸ | ⏸ | — | tests doc side notes |
 
-### Phase 2 — One-window test
-**Goal:** Decide whether every repo's chat can live in one Cursor window, or a click must jump to that repo's window.
-**Entry gate:** Phase 1 ✅.
-**Exit gate:** Written verdict with evidence; tag `v0.3.0`.
+### Phase 3 — Sidebar v1: repos and sessions
+**Goal:** The Pitwall list as designed on the canvas: every repo and chat from one window, sorted by who needs you.
+**Entry gate:** Phase 2 ✅ (`v0.3.0`).
+**Exit gate:** Walkthrough of the canvas prototype's sidebar flows passes in real Cursor against Sharif's real repos; tag `v0.4.0`.
 **Status:** ⏸ planned.
 **Plan:** ⏸ to write
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
-| 2.1 | Multi-root workspace with 3 repos; open a session per repo via the link handler; record which folder each runs in | ~ | — | spike 2026-11-16: **FAIL**, another repo's chat opens as a new empty chat in the window's folder ([tests](docs/research/2026-11-16-assumption-tests.md) T5) | `transcripts/inital_idea.md` |
-| 2.2 | Check the "already-open session opens a duplicate tab" bug | ~ | — | spike 2026-11-16: PASS, re-open focuses the existing tab, even in another window (T6) | `transcripts/inital_idea.md` |
-| 2.3 | Record the verdict: one-window vs jump-to-window | ⏸ | ⏸ | — | — |
-| 2.4 | Open two sessions from different repos side by side in one window (the "N need you" view) | ⏸ | ⏸ | — | D25 |
-| 2.5 | Can Claude Code chat tabs show their repo (description, tooltip, title)? Record what is possible | ⏸ | ⏸ | — | D26 |
-| 2.6 | Keep tabs from several repos open together, then show only one repo's tabs and switch back without closing any (repo filter over a shared tab set) | ⏸ | ⏸ | — | D31 |
-| 2.7 | T18: a chat started in the main folder that creates or enters a worktree mid-chat (Claude's own worktree feature) still opens in the main window | ⏸ | ⏸ | — | D35 |
+| 3.1 | Repos found from `~/.claude` (sessions in the last 14 days), added by folder icon, dismissed by right-click; no repo needs to be open | ⏸ | ⏸ | — | D13, D28, D36 |
+| 3.2 | Sessions from the last 14 days (incl. the Cursor panel's); branch on every row; ⧉ on worktree chats | ⏸ | ⏸ | — | D14, D18, D35 |
+| 3.3 | Status dots from `~/.claude/sessions` (busy / waiting / idle) + finished → seen when opened | ⏸ | ⏸ | — | D4, D18, T1 |
+| 3.4 | Inbox order: repos Needs you → Finished → Working → Idle; in-repo order; rows move only on status change | ⏸ | ⏸ | — | D18, D21 |
+| 3.5 | Repo row: "+" new chat, 🕘 session history (older + worktree chats; resume) | ⏸ | ⏸ | — | D28, D34 |
+| 3.6 | Hide Changes, worktree create/delete, PR badges; keep FILES, Find Session, Fork | ⏸ | ⏸ | — | D19 |
+| 3.7 | Hotkeys Ctrl+Alt+1–9 / 0 / R / F / O / Shift+1–9, latent (hover); confirm Ctrl+Alt+F beats Cursor's `list.find` | ⏸ | ⏸ | — | D12, D15, T13 |
+| 3.8 | List keyboard: ↓/↑ highlight, Ctrl+↓/↑ open, Enter | ⏸ | ⏸ | — | D37 |
+| 3.9 | Search box (Ctrl+Alt+R): repos, chats, Find Session | ⏸ | ⏸ | — | D24 |
+| 3.10 | Brand: status-row activity icon, D17 colors; no sideways scroll, resizable | ⏸ | ⏸ | — | D17, D33 |
 
-### Phase 3 — Chat panel by default
-**Goal:** Clicking a session opens the Claude Code chat panel directly, with no terminal step.
-**Entry gate:** Phase 2 verdict.
-**Exit gate:** Playwright/visual check: click → chat panel opens for the right session; tag `v0.4.0`.
+### Phase 4 — Windows and tabs (one window per folder)
+**Goal:** Clicking anything in Pitwall lands you in the right Cursor window with the chat open in Claude's panel; files and tabs behave like Cursor.
+**Entry gate:** Phase 3 ✅ (`v0.4.0`).
+**Exit gate:** Live walk: from one window, open chats in 3 repos + 1 worktree; each lands in its folder's window, no duplicates, no blank chats; tag `v0.5.0`.
 **Status:** ⏸ planned.
 **Plan:** ⏸ to write
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
-| 3.1 | Find Agntree's "move to chat panel" code path; make it the default for Claude Code sessions | ⏸ | ⏸ | — | D3 |
-| 3.2 | Handle the cross-window case per the Phase 2 verdict | ⏸ | ⏸ | — | Phase 2 |
+| 4.1 | Chats open in Claude's panel by default; link uses `vscode.env.uriScheme` (Agntree hardcodes `vscode://`) (was 3.1) | ⏸ | ⏸ | — | D3 |
+| 4.2 | Click a chat → Pitwall focuses (or opens) its folder's window, then opens the chat there (was 3.2) | ⏸ | ⏸ | — | D35, D36, T5, T6 |
+| 4.3 | Repo click opens all its chats as tabs; chat clicks add tabs; never duplicates | ⏸ | ⏸ | — | D11, T6 |
+| 4.4 | Match Claude tabs to chats reliably (titles are truncated, new chats all say "Claude Code") | ⏸ | ⏸ | — | T10 |
+| 4.5 | Repo + branch under tabs: file tabs via label setting; find a way for Claude tabs, else window title + bottom bar (was 2.5) | ⏸ | ⏸ | — | D26, T9 |
+| 4.6 | T18: a worktree entered mid-chat from main still opens in the main window (was 2.7) | ⏸ | ⏸ | — | D35 |
+| 4.7 | FILES follows the window's folder; file click = normal tab; copy/paste across repos, "Copy to another repo", drag onto a repo row, `.env` gitignore check | ⏸ | ⏸ | — | D19, D22, D23, T14 |
+| 4.8 | "+" starts the chat in that repo's window | ⏸ | ⏸ | — | D28, T15 |
+| 4.9 | Pin, split, drag-reorder: confirm Cursor's own behaviour is untouched | ⏸ | ⏸ | — | D16, D32 |
 
-### Phase 4 — Status dots + Windows pop-ups
-**Goal:** Live working / needs-you / finished / idle dots, plus Windows notifications driven by Claude Code hooks.
-**Entry gate:** Phase 3 ✅.
-**Exit gate:** Status matches ground truth across 3 live sessions; pop-up fires on Stop and Notification; tag `v0.5.0`.
+### Phase 5 — Status + pop-ups
+**Goal:** You find out the moment a chat needs you or finishes, without looking.
+**Entry gate:** Phase 4 ✅ (`v0.5.0`).
+**Exit gate:** Status matches ground truth across 3 live sessions; pop-ups fire for needs-you and finished, and a click lands on the right chat; tag `v0.6.0`.
 **Status:** ⏸ planned.
 **Plan:** ⏸ to write
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
-| 4.1 | Map Agntree's status labels to the D4 colors | ⏸ | ⏸ | — | D4 |
-| 4.2 | Hook-driven "needs you" on native Windows | ⏸ | ⏸ | — | `transcripts/inital_idea.md` |
-| 4.3 | Windows toast on finish / needs-you; clicking it focuses the session | ⏸ | ⏸ | — | `transcripts/inital_idea.md` |
-| 4.4 | Sound switches (needs you / finished), off by default; toast plays the system sound when on | ⏸ | ⏸ | — | D27 |
+| 5.1 | "Needs you" / "finished" from the sessions file + hooks (PermissionRequest, Notification, Stop) (was 4.2) | ⏸ | ⏸ | — | T1, T11 |
+| 5.2 | Windows pop-up under Pitwall's own sender; click → right window + chat (was 4.3) | ⏸ | ⏸ | — | D20, T2 |
+| 5.3 | Sound switches, off by default (was 4.4) | ⏸ | ⏸ | — | D27, T12 |
+| 5.4 | Bottom-bar counts → jump list; Ctrl+Alt+0 = longest wait | ⏸ | ⏸ | — | D25 |
+| 5.5 | First-run check: Windows notifications off / Focus assist on → offer `ms-settings:notifications` | ⏸ | ⏸ | — | tests doc T2 |
 
-### Phase 5 — Package + install
-**Goal:** An installable `.vsix`, running in Sharif's daily Cursor.
-**Entry gate:** Phase 4 ✅.
+### Phase 6 — Package + launch
+**Goal:** An installable `.vsix`, running in Sharif's daily Cursor, and the repo ready for contributors.
+**Entry gate:** Phase 5 ✅ (`v0.6.0`).
 **Exit gate:** `.vsix` installed in Cursor and used across real repos for a day; GitHub release `v1.0.0` with the `.vsix` attached.
 **Status:** ⏸ planned.
 **Plan:** ⏸ to write
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
-| 5.1 | `vsce package` → `pitwall-1.0.0.vsix` | ⏸ | ⏸ | — | D8 |
-| 5.2 | Install via *Extensions: Install from VSIX…* | ⏸ | ⏸ | — | `transcripts/inital_idea.md` |
-| 5.3 | `gh release create v1.0.0` with the `.vsix` attached | ⏸ | ⏸ | — | D8 |
-| 5.4 | (Optional) Publish to Open VSX with `OVSX_PAT` | ⏸ | ⏸ | — | `.env.example` |
-| 5.5 | Protect `main` before inviting contributors (D30): ruleset requiring a PR + 1 approving review + green CI, blocking force-push and deletion, bypass for the admin only; add `CONTRIBUTING.md` (fork → branch → PR) and `.github/CODEOWNERS` (@sharifamlani). Verify: a non-admin test account's direct push to `main` is rejected | ⏸ | ⏸ | — | D30 |
-| 5.6 | LinkedIn launch post: opens with the problem (idle sessions unnoticed in other windows), then what Pitwall does, then asks developers to contribute to the MIT repo. Posts only after 5.5 | ⏸ | ⏸ | — | Sharif 2026-11-16 |
+| 6.1 | `vsce package` → `pitwall-1.0.0.vsix` (was 5.1) | ⏸ | ⏸ | — | D8 |
+| 6.2 | Install via *Extensions: Install from VSIX…* (was 5.2) | ⏸ | ⏸ | — | `transcripts/inital_idea.md` |
+| 6.3 | `gh release create v1.0.0` with the `.vsix` attached (was 5.3) | ⏸ | ⏸ | — | D8 |
+| 6.4 | (Optional) Publish to Open VSX with `OVSX_PAT` (was 5.4) | ⏸ | ⏸ | — | `.env.example` |
+| 6.5 | Protect `main` before inviting contributors: PR + 1 approving review + green CI, no force-push/deletion, admin-only bypass; `CONTRIBUTING.md`, `.github/CODEOWNERS`; verify a non-admin push is rejected (was 5.5) | ⏸ | ⏸ | — | D30 |
+| 6.6 | LinkedIn launch post: problem first, then what Pitwall does, then the call for contributors; only after 6.5 (was 5.6) | ⏸ | ⏸ | — | Sharif 2026-11-16 |
 
-
-### Phase 6 — After v1 (backlog)
+### Phase 7 — After v1 (backlog)
 **Goal:** Improvements agreed during spec work but deliberately left out of v1.
-**Entry gate:** Phase 5 ✅ (`v1.0.0`).
+**Entry gate:** Phase 6 ✅ (`v1.0.0`).
 **Exit gate:** Per row.
 **Status:** ⏸ backlog.
 **Plan:** ⏸ to write
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
-| 6.1 | Instant search of the text inside chats (index the transcripts; results in the Ctrl+Alt+R box) | ⏸ | ⏸ | — | D24 |
-| 6.2 | Custom card panel for the sidebar (v2 look) | ⏸ | ⏸ | — | D10 |
-| 6.3 | Remote Control per chat (D38) + its test T19: link `prompt=/remote-control` turns it on; tab context menu can target a Claude chat tab | ⏸ | ⏸ | — | D38 |
+| 7.1 | Instant search of the text inside chats (was 6.1) | ⏸ | ⏸ | — | D24 |
+| 7.2 | Custom card panel for the sidebar, v2 look (was 6.2) | ⏸ | ⏸ | — | D10 |
+| 7.3 | Remote Control per chat + its test T19 (was 6.3) | ⏸ | ⏸ | — | D38 |
+| 7.4 | One-window hub (all repos' chats in one window), if Claude Code ever resumes chats from other folders | ⏸ | ⏸ | — | D35, tests doc recon |
+| 7.5 | Feature request to Anthropic for per-session folders (parked by Sharif) | ⏸ | ⏸ | — | tests doc recon |
 
 ---
 
@@ -195,7 +249,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | Q1 | ~~One-window vs jump-to-window~~ Resolved → D35 (one window per folder) | — | — |
 | Q2 | ~~Keep Agntree's other agents?~~ Resolved → D9 | — | — |
 | Q4 | ~~Spec canvas decisions 2–12~~ Resolved → D13–D21 (all locked 2026-11-16); 13–20 → D22–D29 | — | — |
-| Q3 | Publish to Open VSX / Marketplace, or `.vsix` only | Phase 5 | 5.4 |
+| Q3 | Publish to Open VSX / Marketplace, or `.vsix` only | Phase 6 | 6.4 |
 
 ---
 
@@ -206,6 +260,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 - [Agntree](https://github.com/subhashkhileri/agntree): upstream (MIT)
 - **Spec canvas** (wireframes, buildability, status rules, decisions) + **Brand Book** page: https://claude.ai/artifact/XhYy9L747DwQzBsQDpaFF2
 - [Reuse survey](docs/research/2026-11-16-reuse-survey.md): what code to lift from which repo, licenses, Windows spikes
+- [Phase 1 plan](docs/superpowers/plans/2026-11-16-phase1-import-agntree.md): import Agntree, harness-modular, Claude-only
 - [Assumption tests round 1](docs/research/2026-11-16-assumption-tests.md): T1–T16 live results (status, hooks, maximize, one-window, tabs, pop-ups)
 - `transcripts/inital_idea.md`: origin conversation (local only, never committed)
 
@@ -226,3 +281,4 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 - **v0.8.3 · 2026-11-16.** D37: list keyboard (↓/↑ highlight, Ctrl+↓/↑ open, Enter). Prototype: split button and Split Right inside the window; outer toggle removed; bigger tab close button.
 - **v0.8.4 · 2026-11-16.** D38: Remote Control per chat (tab/row right-click, Ctrl+Alt+M, 📡 mark). Test row 2.8 (T19) for the route.
 - **v0.8.5 · 2026-11-16.** Remote Control (D38) moved to backlog row 6.3 per Sharif; test T19 moved with it.
+- **v0.9 · 2026-11-16.** Phases re-cut around the live-test findings (§0.5 crosswalk): new Phase 2 Windows parity and Phase 3 Sidebar v1; old one-window test absorbed (answered by D35); Chat panel → Phase 4 Windows and tabs; Status + pop-ups → Phase 5; Package + launch → Phase 6 (`v1.0.0`); backlog → Phase 7. Every decision D9–D37 now has a home row. Windows notifications turned on on Sharif's machine (app toasts, Cursor, Focus assist off).
