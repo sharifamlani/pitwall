@@ -9,7 +9,7 @@
 **Tech Stack:** TypeScript 5, esbuild, `node --test` dry tests with the `vscode` stub, `@vscode/test-electron` (integration + terminal-restore e2e), `@vscode/vsce@3.2.1`, GitHub Actions (`ubuntu-latest`, `windows-latest`), Python 3.13 stdlib tools under `tools/` (pytest), gitleaks `v8.21.2` (docker), Git Bash on Windows 10.
 
 **Spec:**
-- [ROADMAP](../../../ROADMAP.md) v0.10: §3 Phase 2 rows 2.1–2.13; §2 D9 (Claude-only, dormant harnesses), D29 (inherit what Cursor does), D35 (one window per folder), D39 (team flow); §0.5.
+- [ROADMAP](../../../ROADMAP.md) v0.10: §3 Phase 2 rows 2.1–2.14; §2 D9 (Claude-only, dormant harnesses), D29 (inherit what Cursor does), D35 (one window per folder), D39 (team flow); §0.5.
 - [docs/windows-test-triage.md](../../windows-test-triage.md): 29 rows (12 fail + 17 skip). The file:line refs say "as of 47124cd", but the test lines are unchanged after the Phase 1 reorg. Only the folders moved (see "Triage row → current test" below).
 - [docs/progress_reports/phase1-final-review.md](../../progress_reports/phase1-final-review.md): I2 (→2.8), I3 (→2.9), I4 (→2.10), Minors M1–M9 (→2.12).
 - [docs/research/2026-11-16-assumption-tests.md](../../research/2026-11-16-assumption-tests.md) side notes: `ELECTRON_RUN_AS_NODE` (→2.4).
@@ -44,7 +44,7 @@ Baseline on this machine at `da8f0d4` (evaluator, Phase 1): Windows `ℹ tests 1
 
 ## Global Constraints
 
-- Phase 2 changes behaviour **only to fix the listed bugs** (triage real-bug rows 2 and 9–12, ROADMAP 2.6, 2.11, the 2.12 items, and 2.13 = finding F1). No new features, settings, commands or copy. Any other bug a task finds is written down for the lead, not fixed.
+- Phase 2 changes behaviour **only to fix the listed bugs** (triage real-bug rows 2 and 9–12, ROADMAP 2.6, 2.11, the 2.12 items, 2.13 = finding F1, and 2.14 = finding F2). No new features, settings, commands or copy. Any other bug a task finds is written down for the lead, not fixed.
 - Never copy, embed or modify the Claude Code extension. Drive it only through its public link and commands.
 - Public repo: never touch, read into a PR, or quote `.packages/`, `transcripts/`, `.claude/` (except `.claude/skills/pitwall-*/`), `.superpowers/`, `.env`. A probe file never uses those paths.
 - Launch Cursor, VS Code or Electron from a shell only with `env -u ELECTRON_RUN_AS_NODE -u VSCODE_ESM_ENTRYPOINT -u VSCODE_CRASH_REPORTER_PROCESS_TYPE …` (after Task 10: `bash scripts/cursor-cli.sh …`).
@@ -77,7 +77,7 @@ pitwall/
 ├── .vscodeignore                      DELETE  T8: vsce refuses it alongside package.json "files"
 ├── package.json                       MODIFY  T8: "files" allowlist · T11: version 0.3.0
 ├── CHANGELOG.md                       MODIFY  T11: 0.3.0 entry
-├── ROADMAP.md                         MODIFY  T11: rows 2.1–2.13 ✅ + SHAs, §0 → Phase 3, §6 entry, v0.11
+├── ROADMAP.md                         MODIFY  T11: rows 2.1–2.14 ✅ + SHAs, §0 → Phase 3, §6 entry, v0.11
 ├── scripts/
 │   ├── build-manifest.mjs             MODIFY  T7: --root; duplicate-id, enum and section-identity checks
 │   ├── repeat-tests.sh                CREATE  T5: one test file N times on P workers → "RUNS n PASS p FAIL f"
@@ -364,9 +364,10 @@ All commands run in Git Bash on Windows unless marked *Linux*. `W=/c/Users/Shari
   - **R2 orphan on Remove (2.6):** "+" on `uj-lab-a` → New Claude Code Session (terminal), type nothing. Quit and relaunch as in R1. Then right-click that chat's row → Remove from Pitwall → confirm. Expect the terminal tab count to drop by exactly 1 within 3 s, and the row to be gone.
   - **R3 copied command (row 8 note):** right-click "Lab ready" → Copy Resume Command. Expect the clipboard to equal `Set-Location -LiteralPath '<uj-lab-a path>'; if ($?) { claude --resume 7f3d3bef-3632-4027-99a7-42fba6529521 }`. Paste it into a new PowerShell terminal in the test Cursor: Claude resumes, with no parse error.
   - **N1 full-path Claude command (2.13, F1):** in the test profile's user `settings.json`, set `"pitwall.harnessCommands.claude"` to a full path to the claude executable (`claude.exe`, or npm's `claude.cmd`): the first line of `where.exe claude | tr -d '\r' | grep -iE '\.(exe|cmd)$' | head -1`. Expect a non-empty path ending in `.exe` or `.cmd` before writing the setting (an empty value would test the default `claude` and prove nothing). Never the extensionless npm shim, which PowerShell cannot run. A quoted `.cmd` path is still the F1 case: it needs `&` just like an `.exe`. "+" on `uj-lab-a` → New Claude Code Session (terminal). Expect the Claude banner in the new tab within 15 s, and none of `Unexpected token`, `is not recognized`, `is not a valid statement separator` in that tab. Then remove the setting again.
+  - **S1 needs you (2.14, F2):** click row "Lab ready" and, in its Claude terminal, ask Claude to run a shell command (e.g. `run git status`), so it stops at a permission prompt. Expect the row to show Pitwall's needs-you state (the inherited agents signal, ADR 0006) within 15 s, and `grep -cE "spawn .*claude.*(ENOENT|EINVAL)" <exthost.log>` → `0`. Answer the prompt (deny) afterwards.
   - **L1 log:** across the whole walk, `grep -cE "No tree item with id|TypeError|\[error\].*pitwall" <newest exthost.log>` → `0`.
-- Expected: W1, R1(a–d), R2, R3, N1 and L1 each PASS, with one capture per scenario in `$LOCALAPPDATA/pitwall-uj/captures/uj-p2-*.png` and the exthost log path in the report.
-- If it fails → the testing agent sends the scenario id, the repro steps, the capture and the log lines to the lead, who routes them to the owning task (W1 → Task 1, R1–R3 and N1 → Task 6, L1 → Task 10).
+- Expected: W1, R1(a–d), R2, R3, N1, S1 and L1 each PASS, with one capture per scenario in `$LOCALAPPDATA/pitwall-uj/captures/uj-p2-*.png` and the exthost log path in the report.
+- If it fails → the testing agent sends the scenario id, the repro steps, the capture and the log lines to the lead, who routes them to the owning task (W1 → Task 1, R1–R3 and N1 → Task 6, S1 → Task 12, L1 → Task 10).
 
 **Ground truth after Smoke 12** (system-says-pass ≠ correct): `git ls-remote --tags origin v0.3.0 'v0.3.0^{}'` shows an annotated tag that peels to the close commit. `gh run list -R sharifamlani/pitwall --branch main --limit 1 --json headSha,conclusion` returns that sha with `success`. `gh run view <id> --json jobs --jq '.jobs[]|[.name,.conclusion]|@tsv'` lists `ubuntu success`, `windows success` and `privacy success`. In the windows job log, `ℹ fail 0` appears.
 
@@ -389,9 +390,10 @@ N for flaky tests = **100 runs, 4 parallel workers.** Why 100: R9 measured about
 | E11 | Electron-safe launches (2.4) | `electron-env` test passes; `ELECTRON_RUN_AS_NODE=1 bash scripts/cursor-cli.sh --version` first line matches `^3\.\d+\.\d+$`; integration run from that shell prints `INTEGRATION RUN COMPLETE` | Smoke 11 | outputs |
 | E12 | Minors and 2.5 closed | Tests named in Task 9 Steps 1–5 and Task 10 Step 4 pass; testing agent L1 count = 0; Phase 1 plan tree no longer shows `docs/upstream/`, and its E8 evidence cell names `phase1-scorecard.md` | `npm test`; Smoke 12 L1; `grep -c "docs/upstream/" docs/superpowers/plans/2026-11-16-phase1-import-agntree.md` → 0, and `sed -n '/^## 1\./,/^## 2\./p' docs/superpowers/plans/2026-11-16-phase1-import-agntree.md | grep -c "upstream/ "` → 0 | lines |
 | E13 | Verify + CI green on the close commit | `bash scripts/verify.sh` exit 0 on this machine; ubuntu, windows and privacy jobs `success` for the close sha | run + `gh run view` | outputs |
-| E14 | ROADMAP + release | Rows 2.1–2.13 ✅ each with PR + merge sha; §0 → Phase 3 (Sidebar v1); §6 v0.11 entry; stamp v0.11; `package.json` 0.3.0; `CHANGELOG.md` 0.3.0; annotated tag `v0.3.0` on origin peels to the close commit; triage doc has 29 rows each with a "Phase 2 resolution" | grep + `git ls-remote --tags origin v0.3.0 'v0.3.0^{}'` + `git cat-file -t v0.3.0` → `tag` | outputs |
+| E14 | ROADMAP + release | Rows 2.1–2.14 ✅ each with PR + merge sha; §0 → Phase 3 (Sidebar v1); §6 v0.11 entry; stamp v0.11; `package.json` 0.3.0; `CHANGELOG.md` 0.3.0; annotated tag `v0.3.0` on origin peels to the close commit; triage doc has 29 rows each with a "Phase 2 resolution" | grep + `git ls-remote --tags origin v0.3.0 'v0.3.0^{}'` + `git cat-file -t v0.3.0` → `tag` | outputs |
+| E15 | Claude agents poll runs on Windows (2.14, finding F2) | Task 12 tests pass on Windows, and its red sha shows them `✖` on Windows; testing agent S1 PASS (needs-you within 15 s, 0 `spawn … claude … ENOENT/EINVAL` log lines) | `PITWALL_TEST_NAME_PATTERN="real claude CLI" npm test -- claude-agents` at red and at close; Smoke 12 S1 | ✖/✔ lines, UJ report |
 
-Smoke → criterion map: S0→E1 baseline · S1→E4/E10 · S2→E4 · S3, S4→E1 · S5→E5 · S6, S7→E9 · S8→E8 · S9→E6/E7 · S10→E12 · S11→E11 · S12→E9/E10/E12 · ground truth→E3/E13/E14.
+Smoke → criterion map: S0→E1 baseline · S1→E4/E10 · S2→E4 · S3, S4→E1 · S5→E5 · S6, S7→E9 · S8→E8 · S9→E6/E7 · S10→E12 · S11→E11 · S12→E9/E10/E12/E15 · ground truth→E3/E13/E14.
 
 ## 6. Implementation tasks
 
@@ -409,7 +411,7 @@ bash scripts/run-linux-tests.sh 2>&1 | grep -E "^ℹ (tests|pass|fail|skipped)"
 git push -u origin HEAD
 ```
 
-Waves (independent work runs in parallel; QA tests every open PR merged together): **A** = Tasks 1, 2, 7, 8 · **B** = Tasks 3, 6, 9, 10 (after 1 merges: support.ts) · **C** = Task 4 · **D** = Task 5 · **E** = Task 11.
+Waves (independent work runs in parallel; QA tests every open PR merged together): **A** = Tasks 1, 2, 7, 8 · **B** = Tasks 3, 6, 9, 10 (after 1 merges: support.ts) · **C** = Task 4 · **D** = Tasks 5, 12 · **E** = Task 11.
 
 ### Task 1: Worktree paths: one native spelling, one comparison (`phase2/task-1-worktree-paths`)
 
@@ -625,6 +627,24 @@ Waves (independent work runs in parallel; QA tests every open PR merged together
 - [ ] **Step 5: Run** Smoke 11. Expected as written there.
 - [ ] **Step 6: Commit** `fix: scrub Electron env in editor launches; reveal only after the tree settles; refresh Phase 1 plan evidence`. Closing block. Testing agent: reload uj-lab-a twice; `grep -c "No tree item with id"` in the newest exthost.log → `0`.
 
+### Task 12: The Claude agents poll runs on Windows (`phase2/task-12-claude-agents-exec`)
+
+**Closes:** ROADMAP 2.14 (finding F2, QA, while auditing spawn sites for Task 4). Depends on Task 4 (`fakeCli` on win32). Runs in parallel with Task 5. **Files:**
+- Modify: `src/harnesses/claude/ClaudeAgentsService.ts:32-46` (`execClaudeAgents`)
+- Test: `test/dry/harnesses/claude/claude-agents.test.ts`
+
+**Why:** `execClaudeAgents` calls `execFile(command, args, options)` directly. On Windows an npm-installed Claude is `claude.cmd`. A bare `claude` gives `spawn claude ENOENT`, and `claude.cmd` without a shell throws `EINVAL` (Node 22, CVE-2024-27980 guard). So the `claude agents --json` poll behind "needs you" (ADR 0006) never runs for Windows users. The existing tests inject `exec`, which is why none caught it.
+
+**Interfaces — Consumes:** `harnessInvocation(command: string, args: string[]): { command: string; args: string[]; shell: boolean }` from `src/core/harness/cli.ts` (win32: cmd-quoted, `shell: true`; elsewhere unchanged), and `fakeCli(dir, name, fixture, env)` from `test/dry/support.ts`. **Produces:** no API change.
+
+- [ ] **Step 1: Write the failing tests** in `claude-agents.test.ts`, using the service's REAL default exec (no injected `exec`):
+  - `test('the agents poll runs a real claude CLI on this platform, by full path', …)`: a fixture that prints the agents JSON shape the existing tests feed the parser; `cli = fakeCli(dir, 'claude', fixture, {})`; the service's command is `cli`. Assert the poll resolves and parses to the fixture's agents.
+  - `test('the agents poll runs a real claude CLI on this platform, by bare name on PATH', …)`: the same fixture, command `'claude'`, and `dir` prepended to `PATH` in the exec options' `env`. Assert the same.
+  Run `PITWALL_TEST_NAME_PATTERN="real claude CLI" npm test -- claude-agents`. Expected on Windows: both `✖` (EINVAL / ENOENT). On Linux they may already pass. Commit `test: the Claude agents poll runs a real CLI (fails on Windows)`; this is the red sha.
+- [ ] **Step 2: Implement.** In `execClaudeAgents`: `const inv = harnessInvocation(command, args); execFile(inv.command, inv.args, { ...options, shell: inv.shell }, …)`. No other change.
+- [ ] **Step 3: Run** the Step 1 command → `ℹ fail 0` on Windows and Linux; then `npm test -- claude-agents` → `ℹ fail 0`.
+- [ ] **Step 4: Commit** `fix: run the Claude agents poll through harnessInvocation so it works on Windows`. Closing block. The live check is Smoke 12 S1.
+
 ### Task 11: Close: Windows CI full suite, evaluator, live walk, v0.3.0 (`phase2/task-11-close`)
 
 **Closes:** ROADMAP 2.3; closes Phase 2. Depends on Tasks 1–10 merged. **Files:** `.github/workflows/ci.yml` (windows job), `docs/windows-test-triage.md`, `package.json` (version), `CHANGELOG.md`, `ROADMAP.md`, `docs/progress_reports/phase2-scorecard.md`.
@@ -633,8 +653,8 @@ Waves (independent work runs in parallel; QA tests every open PR merged together
 - [ ] **Step 2: Triage doc.** Update the header (current paths, "resolved in Phase 2"). Add a column `Phase 2 resolution` to all 29 rows, each one of `fixed (product, Task N, PR #x)`, `fixed (test, Task N, PR #x)`, `runs on Windows (Task 4)`, or `skip (reason: "<exact reason string>")`. Append the final Windows `ℹ` summary.
 - [ ] **Step 3: Commit** `ci: Windows runs the full test suite; triage resolutions` → PR → QA → merge.
 - [ ] **Step 4: Smoke 12** by the testing agent on the merged main; the report goes to the lead.
-- [ ] **Step 5: Independent evaluator** (fresh sub-agent, given only §5 and the repo URL) grades E1–E13 on a fresh clone and writes `docs/progress_reports/phase2-scorecard.md` as `| Criterion | Threshold | Result | Evidence | PASS/FAIL |`. FAILs go back to the owning task with the evaluator's repro. Re-grade only the affected criteria. After 3 rounds stalled on one criterion → `docs/progress_reports/SHARIF_ACTION_ITEMS.md`.
-- [ ] **Step 6: Release** (only when E1–E13 PASS). `package.json` `"version": "0.3.0"`; `node scripts/build-manifest.mjs --check` → up to date. `CHANGELOG.md` `## 0.3.0 — Windows parity` (3 bullets: what works on Windows now, the restore fixes, and the packaging and CI guards). ROADMAP: rows 2.1–2.13 → `✅ | — | 2026-11-<dd> · PR #x <sha> → merge <sha>`; Phase 2 Status `✅ done · tag v0.3.0`; Plan → this file; §0 → Phase 3 Sidebar v1; §6 `v0.11 · <date> · Phase 2 closed, tag v0.3.0.` with what shipped, what is now unblocked and the findings; stamp `v0.11`. Commit `roadmap v0.11: Phase 2 closed (evaluator E1-E13 PASS); v0.3.0`, push to main, then `git tag -a v0.3.0 -m "Phase 2: Windows parity" && git push origin v0.3.0`. Push the tag by name only, never `--tags`.
+- [ ] **Step 5: Independent evaluator** (fresh sub-agent, given only §5 and the repo URL) grades E1–E13 and E15 on a fresh clone and writes `docs/progress_reports/phase2-scorecard.md` as `| Criterion | Threshold | Result | Evidence | PASS/FAIL |`. FAILs go back to the owning task with the evaluator's repro. Re-grade only the affected criteria. After 3 rounds stalled on one criterion → `docs/progress_reports/SHARIF_ACTION_ITEMS.md`.
+- [ ] **Step 6: Release** (only when E1–E13 and E15 PASS). `package.json` `"version": "0.3.0"`; `node scripts/build-manifest.mjs --check` → up to date. `CHANGELOG.md` `## 0.3.0 — Windows parity` (3 bullets: what works on Windows now, the restore fixes, and the packaging and CI guards). ROADMAP: rows 2.1–2.14 → `✅ | — | 2026-11-<dd> · PR #x <sha> → merge <sha>`; Phase 2 Status `✅ done · tag v0.3.0`; Plan → this file; §0 → Phase 3 Sidebar v1; §6 `v0.11 · <date> · Phase 2 closed, tag v0.3.0.` with what shipped, what is now unblocked and the findings; stamp `v0.11`. Commit `roadmap v0.11: Phase 2 closed (evaluator E1-E13 PASS); v0.3.0`, push to main, then `git tag -a v0.3.0 -m "Phase 2: Windows parity" && git push origin v0.3.0`. Push the tag by name only, never `--tags`.
 - [ ] **Step 7:** Evaluator grades E14 and the ground-truth probes. Lead hands marketing the tag, sha, PASS-only scorecard, 1–3 user-facing bullets and 1–2 testing captures with demo repo names (D39).
 
 ## Out of scope (later phases)
