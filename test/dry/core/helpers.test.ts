@@ -1,8 +1,9 @@
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
+import * as fs from 'fs';
 import assert from 'node:assert/strict';
 import { nextForkName } from '../../../src/core/utils/text';
 import * as path from 'path';
-import { deepestContainingRoot, samePath } from '../../../src/core/utils/paths';
+import { deepestContainingRoot, isWithin, samePath } from '../../../src/core/utils/paths';
 import { JsonSchema, validateJson } from '../../../src/core/utils/jsonSchema';
 import { quoteForCmd } from '../../../src/core/harness/cli';
 import {
@@ -133,4 +134,43 @@ test('samePath matches one folder however the editor or git spells it', (t) => {
     assert.equal(samePath(dir, dir.toUpperCase()), false);
   }
   assert.equal(samePath(dir, path.join(dir, 'x')), false);
+});
+
+test('isWithin treats a lower-case drive letter as the same folder on Windows', (t) => {
+  const root = tempDir(t);
+  const child = path.join(root, 'src', 'a.ts');
+  if (process.platform === 'win32') {
+    const lowerDrive = (p: string) => p[0].toLowerCase() + p.slice(1);
+    assert.equal(isWithin(lowerDrive(child), root), true);
+    assert.equal(isWithin(child, lowerDrive(root)), true);
+    assert.equal(isWithin(lowerDrive(child), root.replace(/\\/g, '/')), true);
+    assert.equal(isWithin(root.toUpperCase(), root.toLowerCase()), true, 'the whole path is case-insensitive');
+  } else {
+    assert.equal(isWithin(child, root), true);
+    assert.equal(isWithin(root.toUpperCase(), root), false, 'POSIX paths stay case-sensitive');
+  }
+  assert.equal(isWithin(root, root), true);
+});
+
+test('isWithin reuses the cached real path', (t) => {
+  const root = tempDir(t);
+  const child = path.join(root, 'a.ts');
+  fs.writeFileSync(child, '');
+  assert.equal(isWithin(child, root), true); // warms the cache
+  // Only Windows compares native real paths; POSIX goes through canonicalPath, which has its own cache.
+  const spy = process.platform === 'win32' ? mock.method(fs.realpathSync, 'native') : undefined;
+  t.after(() => spy?.mock.restore());
+  for (let i = 0; i < 5; i++) {
+    assert.equal(isWithin(child, root), true);
+  }
+  assert.equal(spy?.mock.callCount() ?? 0, 0, 'no path is resolved twice');
+});
+
+test('isWithin still rejects a sibling folder sharing a prefix and a .. escape', (t) => {
+  const root = tempDir(t);
+  const lower = process.platform === 'win32' ? root[0].toLowerCase() + root.slice(1) : root;
+  assert.equal(isWithin(root + '-other', root), false);
+  assert.equal(isWithin(lower + '-other', root), false);
+  assert.equal(isWithin(path.join(lower, '..'), root), false);
+  assert.equal(isWithin(path.join(lower, '..', path.basename(root) + '-other'), root), false);
 });

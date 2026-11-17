@@ -28,19 +28,31 @@ export function canonicalPath(value: string): string {
   }
 }
 
+/**
+ * One comparable spelling of a path. Windows paths are case-insensitive and
+ * the editor, git and the OS disagree on drive-letter case, separators and
+ * 8.3 short names, so there they compare as lower-case native real paths
+ * (as `samePath` does). POSIX paths stay case-sensitive.
+ */
+function containmentKey(value: string): string {
+  return process.platform === 'win32'
+    ? comparablePath(value).normalize('NFC').toLowerCase()
+    : canonicalPath(value);
+}
+
 /** True when `candidate` is `root` or a subdirectory of it. */
 export function isWithin(candidate: string, root: string): boolean {
-  const normalizedCandidate = canonicalPath(candidate);
-  const normalizedRoot = canonicalPath(root);
+  const normalizedCandidate = containmentKey(candidate);
+  const normalizedRoot = containmentKey(root);
   return (
     normalizedCandidate === normalizedRoot ||
-    normalizedCandidate.startsWith(normalizedRoot + path.sep)
+    normalizedCandidate.startsWith(normalizedRoot.endsWith(path.sep) ? normalizedRoot : normalizedRoot + path.sep)
   );
 }
 
 /** True when `candidate` is strictly below `root` (the root itself is not). */
 export function isStrictlyWithin(candidate: string, root: string): boolean {
-  return isWithin(candidate, root) && canonicalPath(candidate) !== canonicalPath(root);
+  return isWithin(candidate, root) && containmentKey(candidate) !== containmentKey(root);
 }
 
 /**
@@ -65,11 +77,21 @@ export function nativePath(value: string): string {
   return path.normalize(value);
 }
 
+/** Successful native realpath lookups, keyed by resolved path (failures are not cached). */
+const nativeRealpathCache = new BoundedCache<string, string>(2_000);
+
 function comparablePath(value: string): string {
+  const resolved = path.resolve(value);
+  const cached = nativeRealpathCache.get(resolved);
+  if (cached) {
+    return cached;
+  }
   try {
-    return fs.realpathSync.native(value);
+    const real = fs.realpathSync.native(resolved);
+    nativeRealpathCache.set(resolved, real);
+    return real;
   } catch {
-    return path.resolve(value);
+    return resolved;
   }
 }
 
