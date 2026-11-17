@@ -32,7 +32,7 @@ PITWALL — phase plan
 ─────────────────────────────────
 Phase 1 : Import Agntree            [████████████████████] ✅ v0.2.0
 Phase 2 : Windows parity            [████████████████████] ✅ v0.3.0
-Phase 3 : Sidebar v1                [██..................] ⏳ plan written, QA pre-flight next
+Phase 3 : Sidebar v1                [███.................] ⏳ plan revised after QA pre-flight
 Phase 4 : Windows and tabs
 Phase 5 : Status + pop-ups
 Phase 6 : Package + launch (v1.0.0)
@@ -46,7 +46,7 @@ Phase 7 : After v1
 | P1 | Discovered repos are written into `pitwall.repositories` with `origin: 'discovered'`; a dismissal is a record `{rootPath, dismissedAt}` in a new key `pitwall.dismissedRepos` | Worktrees, chats, import and ids all hang off stored repositories; a parallel "virtual repo" path would fork every consumer | A dismissed repo needs both records consistent; Task 3 tests pin it |
 | P2 | A dismissed repo comes back only when a session **starts** in it after `dismissedAt`, judged by the transcript's first entry timestamp, or when it is added by hand | Canvas decision 19: "it comes back if you add it again or a new session starts in it". An old session that is still active must not resurrect it | A long-running session started before dismissal keeps the repo hidden; acceptable, matches the words |
 | P3 | Retention default becomes 14 days (`pitwall.autoImport.retentionDays` 15 → 14), shared by discovery and import | D18 / canvas decision 3 say 14 | none |
-| P4 | Live status reads `~/.claude/sessions/*.json` (pid-alive check, `.json` only). `claude agents --json` stays as the fallback when that folder is missing or holds no parseable file. The stale-wait drop and the toast anchor use the file's `statusUpdatedAt`. Amends ADR 0006 via new ADR 0018 | No CLI spawn every 10 s; covers panel sessions (T1); `statusUpdatedAt` is the real wait start, which R40/R41 had to approximate from transcript mtime | Older CLIs without the folder fall back; Smoke 2 checks both agree live |
+| P4 | Live status reads `~/.claude/sessions/*.json` (`.json` only; pid alive in this `pidDomain`). `claude agents --json` stays as the fallback, per session, when the folder is missing or a file has no known status. The file is read fresh each tick, so its status is current truth: `observedAt` = the snapshot's read time, and the R40 stale-wait drop applies only to fallback (cached `claude agents`) samples. `statusUpdatedAt` is used only as `writtenAt`, the wait-start anchor; the R45 floor (`lastClearAt`) stays the fetch time. Amends ADR 0006 via new ADR 0018 (QA pre-flight B1) | No CLI spawn every 10 s; covers panel sessions (T1); `statusUpdatedAt` is the real wait start, which R40/R41 had to approximate from transcript mtime. A drop keyed on `statusUpdatedAt` would hide a real wait for as long as it lasts, because it doesn't move while waiting | Older CLIs without the folder fall back; Smoke 2 checks both agree live |
 | P5 | Toasts stay limited to open chats in Phase 3 (no behaviour change to R36–R45); every row gets a dot. Pop-ups for all sessions are Phase 5 (5.1/5.2) | Keeps the hard-won needs-you rules untouched while the source changes | none in this phase |
 | P6 | "Rows move only on a status change": the in-group sort key is `statusSince` (when the row entered its current status), not last activity. The order is recomputed only when a status changes or a row is added/removed | A working session writes every few seconds; sorting by activity would reshuffle on every tick, under the mouse | Two rows entering the same status in the same tick tie-break by title, stable |
 | P7 | Session row branch = its worktree record's live branch (`Worktree.branch`), not the transcript's `gitBranch`; plain-folder repos show no `⎇`. `⧉` iff the worktree is not the repo's main worktree | The worktree's current branch is what "working on" means; the transcript stamp is per-message history | A detached HEAD shows the short sha, like the worktree row does today |
@@ -54,9 +54,14 @@ Phase 7 : After v1
 | P9 | Hidden D19 extras: contributions removed from `manifest/core.contributes.json`, construction removed from `extension.ts` (Changes provider, PR timer, `GitHubService` fetches), source files kept dormant with a header comment | Restoring is a manifest + wiring change; deleting code now would make a later restore a rewrite | Dormant files can rot; the architecture test keeps them compiling |
 | P10 | Ctrl+Alt+F moves from Find Session to "toggle FILES" (D12/D19). Find Session stays reachable from the search box footer, the view title overflow and the Command Palette. Ctrl+Alt+N stays as an alias of Ctrl+Alt+0 | Canvas hotkey table; avoids losing a shipped key | Muscle memory for Ctrl+Alt+F → Find Session breaks; noted in the changelog |
 | P11 | Ctrl+Alt+1–9 / a repo pick from search **reveal, expand and select** the repo in the list; the same key again opens its next chat through today's opener (terminal). "All its chats as tabs" is Phase 4 row 4.3 | Phase 4 owns windows and tabs | none |
-| P12 | Ctrl+Alt+Shift+1–9 and Ctrl+Alt+O call `vscode.openFolder(uri, {forceNewWindow: true})`; VS Code / Cursor focus an existing window that already has that folder open | No window registry needed until Phase 4 | If Cursor opens a duplicate window instead, Smoke 5 catches it and the keys move to Phase 4 |
+| P12 | Ctrl+Alt+Shift+1–9 and Ctrl+Alt+O call `vscode.openFolder(uri, {forceNewWindow: true})`; VS Code / Cursor focus an existing window that already has that folder open | No window registry needed until Phase 4 | If Cursor opens a duplicate window instead, S5's window-count check catches it and the keys move to Phase 4 |
 | P13 | First run auto-adds every discovered repo (no "Show them all / Choose repos…" prompt) | Canvas log locks "found automatically"; the prompt was a drawn variant | A user with many repos dismisses some by hand |
 | P14 | The header bell (sound) is not added in Phase 3; sound is row 5.3 | Avoids a control that does nothing | none |
+| P16 | Every chat record has a "seen" baseline: `createChat` and import set `seenAt` = now, and records loaded without one get `seenAt` = first time this version lists them. Finished = turn ended after `seenAt` (QA B2) | Otherwise ~500 imported sessions show green "finished" on first run and every repo ranks finished | A turn that ended just before first listing shows idle, not finished; acceptable |
+| P17 | Discovered repos get a deterministic id `repo-<first 12 hex of sha1(canonical root, lower-cased on Windows)>`; `addRepository` checks existing roots with `samePath`; the repositories overlay merge dedupes by `samePath`, keeping the oldest record (QA B3) | Two windows adding the same root must converge on one record, or worktree ids and chats split | Legacy manual repos keep their random ids |
+| P18 | Inbox order replaces the stored repo order: `moveRepositoryUp/Down` commands and menu entries are removed (code parked dormant), done in Task 5 (QA S9) | D21: position = urgency; manual order would fight it | none |
+| P19 | The header keeps a search icon next to the folder icon: the canvas Navigation board's header shows search (tooltip `Search repos and chats (Ctrl+Alt+R)`), bell and folder; D28 dropped only the header "+" (QA D-a) | The canvas is the spec for header icons | none |
+| P20 | Ctrl+↓/↑ or Enter on a **repo** row expands and selects it (P11); "all its chats" is Phase 4 row 4.3 (QA D-c) | Phase 4 owns tabs | none |
 | P15 | The live walk on Sharif's real `~/.claude` is **read-only**: list, order, status, search and history only. Open / new-chat / dismiss flows run on the testing agent's lab repos | Resuming a real session appends to its transcript; the testing agent must not touch Sharif's work | none |
 
 ## Global Constraints
@@ -75,7 +80,8 @@ Phase 7 : After v1
 - **Activation:** discovery and the first status read never block activation. Activation to first render stays ≤ 1 s with Sharif's real `~/.claude` (521 transcripts in 14 days, 1,606 total, 30 project dirs on 2026-11-17).
 - **Windows parity:** every new test passes on the windows CI job. Paths are compared with `samePath()`, and repo roots get one canonical native spelling (Phase 2 Task 1).
 - **Opener unchanged:** a chat still opens through today's opener (terminal default). Claude's panel by default is Phase 4 row 4.1, which needs 4.2's window-per-folder (T5).
-- **R36–R45** needs-you behaviour must keep passing: existing attention tests unchanged, except where a test names `claude agents` as the source.
+- **R36–R45** needs-you behaviour must keep passing: existing attention tests unchanged, except where a test names `claude agents` as the source. Toast state (open chats only, P5) is kept separate from row-status state (all chats).
+- **Performance:** the attention tick stats transcripts only for open chats and live sessions-file sessions; other chats' transcript changes come from the 60 s discovery scan (QA S5). Tick p95 ≤ 50 ms with 500 chats (E18).
 - **Flywheel:**
   - One PR per task on branch `phase3/task-N-<slug>`.
   - QA approves an exact sha. The lead merges only with `gh pr checks` green at that sha, then confirms main CI before the next merge.
@@ -103,11 +109,13 @@ pitwall/
 │   │   ├── types.ts                          T1 T3 T5  STORAGE_KEYS.dismissedRepos, Repository.origin, ChatSession.seenAt
 │   │   ├── services/
 │   │   │   ├── storageOverlay.ts             T1  NEW RecordOverlay<T>: record-level stale-echo guard
-│   │   │   ├── StorageService.ts             T1 T3  every collection through the overlay; dismissals
+│   │   │   ├── StorageService.ts             T1     every collection through the overlay; dismissals, seenAt, P17 ids
 │   │   │   ├── RepoDiscoveryService.ts       T3  NEW cwd → repo root, dedupe, dismissals, add
 │   │   │   ├── GitService.ts                 T3  getMainRepoRoot(cwd) via --git-common-dir
 │   │   │   └── SessionAttentionService.ts    T5  track every sidebar chat; seenAt; statusSince
 │   │   ├── harness/types.ts                  T2 T3 T6  HarnessLiveState.liveStatus, discoverRecentFolders, icon states
+│   │   ├── harness/treeIcons.ts, sessionUtils.ts   T6  icon state rename
+│   │   ├── providers/SessionSearchTreeProvider.ts  T6  'closed' literal → 'idle'
 │   │   ├── providers/
 │   │   │   ├── WorkspacesTreeProvider.ts     T5 T7  repo → session rows, descriptions, ordering, "+" and 🕘
 │   │   │   ├── sessionStatus.ts              T5  NEW four-status derivation (pure)
@@ -123,7 +131,7 @@ pitwall/
 │       ├── ClaudeRepoDiscovery.ts            T3  NEW recent folders from ~/.claude/projects
 │       └── ClaudeHarness.ts                  T2 T3  live states from the sessions file; discovery capability
 ├── resources/icons/
-│   ├── harness/claude-{dark,light}-{working,needs,finished,idle,new}.svg   T6  regenerated, D17 colours
+│   ├── harness/<4 harnesses>-{dark,light}-{working,needs,finished,idle,new}.svg   T6  40 files regenerated (claude in D17 colours; dormant harnesses keep their tint); count unchanged
 │   └── pitwall-activitybar.svg               T6  status-row mark, one colour, enlarged needs-you dot
 ├── scripts/
 │   ├── generate-harness-icons.mjs            T6  new states + D17 hexes
@@ -154,7 +162,7 @@ pitwall/
      |      SessionImportService (existing) --> chat rows for the repo's worktrees (14 d)
      |
      +--> SessionAttentionService.poll()  every 4 s
-            poll set = open chats ∪ chats with a live sessions-file entry ∪ chats whose transcript mtime moved
+            poll set = open chats ∪ chats with a live sessions-file entry (others refreshed by the 60 s scan)
             ClaudeHarness.getLiveStates(ids)
                ClaudeSessionsFile.snapshot() --(missing dir)--> ClaudeAgentsService (fallback)
                readTurnState(tail) (cached by mtime)
@@ -221,7 +229,8 @@ Session description: `⎇ {branch}[ ⧉]  {status} · {ago}[ · open]`. A plain-
 ```
 Repo row:      job-market: Ctrl+Alt+1 jumps here, Ctrl+Alt+Shift+1 opens it in its own window. Right-click for more.
                (positions 10+ leave out the key clauses: "job-market: Right-click for more.")
-⧉ session:     Worktree: a separate folder, so it runs in its own window (C:\code\job-market-wt\fiu)
+Every session: {title} / {status} · {ago} / Folder: C:\code\job-market   (D14: hover shows the folder, main too)
+⧉ session:     adds the canvas line: Worktree: a separate folder, so it runs in its own window (C:\code\job-market-wt\fiu)
 Repo "+":      New Claude Code session in job-market
 Repo 🕘:       Session history for job-market: every past chat in this repo
 Header search: Search repos and chats (Ctrl+Alt+R)
@@ -299,7 +308,7 @@ No repos and nothing discovered:          Discovery found repos (first run, P13)
 
 ### 3h. Activity bar icon
 
-BEFORE: chevron + pill mark (`#c5c5c5`).  AFTER: four dots in a row, one colour, the needs-you dot enlarged (`○ ● ⬤ ●` at 24 px), tooltip from Cursor (`Pitwall`).
+BEFORE: chevron + pill mark (`#c5c5c5`).  AFTER: four dots in a row, one colour, the needs-you dot enlarged (`● ⬤ ● ○` at 24 px: working, needs you (enlarged), finished, idle, in D17's order), tooltip from Cursor (`Pitwall`).
 
 ### State summary
 
@@ -323,10 +332,10 @@ BEFORE: chevron + pill mark (`#c5c5c5`).  AFTER: four dots in a row, one colour,
 | # | What it proves | Command | Expected | If it fails → |
 |---|---|---|---|---|
 | S1 | F3 exists on a non-PID key (live), so 3.0 fixes a real bug | Testing agent, own profile, two windows on `uj-lab-a`: 20 alternating star/rename actions across the windows, then a reload; protocol in Task 1 Step 1 | Log `captures/f3-repro-evidence/run.log` reports `lost=N reverted=M` (any N or M > 0 = reproduced) | 0/0 after 3 runs → ruling stands (overlay generalised anyway, R34 mechanism); record "not reproduced live" in the scorecard |
-| S2 | The sessions file is a correct live-status source | `node scripts/probe-claude-sessions.mjs` while a lab session sits on a permission prompt, then `claude agents --json` | Same sessionId shows `waiting` in both; a dead-pid file is listed as `dropped (pid not alive)` | Keep `claude agents` as primary (revert P4), file as secondary; tell Sharif |
+| S2 | The sessions file is a correct live-status source | `node scripts/probe-claude-sessions.mjs` while a lab session sits on a permission prompt, then `claude agents --json` | Same sessionId shows `waiting` in both; a dead-pid file is listed as `dropped (pid not alive)`; the log records `statusUpdatedAt` vs the tool-call write's transcript mtime on a real prompt (ordering evidence for P4) | Keep `claude agents` as primary (revert P4), file as secondary; tell Sharif |
 | S3 | Discovery finds the right folders from real data | `node scripts/list-claude-repos.mjs --days 14` | Prints N repo roots; every one exists on disk; 0 duplicates under `samePath` | Fix cwd parse / root mapping before Task 3's service work |
 | S4 | Each task's code is green on both OSes | `npm test` locally + `gh pr checks <N>` | 0 fail; skips ≤ 9 (`grep -cE "^ *﹣ "`), ubuntu + windows + privacy green | Fix in the task's PR; no merge |
-| S5 | The new keys reach Pitwall in Cursor | Testing agent: test Cursor → "Developer: Toggle Keyboard Shortcuts Troubleshooting", press Ctrl+Alt+F, 1, 0, R, O, Shift+1 | Each logs a `pitwall.*` command as the match, not `list.find` or another command | Pick the next free Ctrl+Alt key, record a ruling, update the canvas-copy tooltips |
+| S5 | The new keys reach Pitwall in Cursor | Testing agent: test Cursor → "Developer: Toggle Keyboard Shortcuts Troubleshooting", press Ctrl+Alt+F, 1, 0, R, O, Shift+1; then Ctrl+Alt+Shift+1 with that repo's folder already open | Each logs a `pitwall.*` command as the match, not `list.find` or another command; window count unchanged after the last press (P12) | Pick the next free Ctrl+Alt key, record a ruling, update the canvas-copy tooltips |
 | S6 | ↓/↑ don't open and Ctrl+↓/↑ move-and-open, in a real tree | Testing agent: focus the list, press ↓ ×3, then Ctrl+↓ | 0 new terminals / tabs after ↓; exactly 1 chat opened after Ctrl+↓ | If ↓ opens (`workbench.list.openMode`), set the items' command to open only on Enter/click and record a ruling |
 | S7 | End to end in real Cursor (E15) | Testing agent walk W1–W10 (Task 10) on the merged sha | Every step PASS with evidence files | Route each FAIL to its task owner; re-walk |
 | GT | System-says ≠ correct | After S7: compare the live tree with `list-claude-repos.mjs` and `probe-claude-sessions.mjs` output | Repo set equal; status of every live session equal | Open a finding; Phase 3 stays open |
@@ -335,40 +344,45 @@ BEFORE: chevron + pill mark (`#c5c5c5`).  AFTER: four dots in a row, one colour,
 
 | # | Criterion | Metric + threshold | How measured | Evidence |
 |---|---|---|---|---|
-| E1 | The full suite passes on both OSes | 0 fail on ubuntu + windows; skips ≤ 9, each with a reason | `gh run view` of main CI at the release sha; spec-reporter `﹣` count | scorecard row + run id |
+| E1 | The full suite passes on both OSes | 0 fail on ubuntu + windows; skips ≤ 9, each with a reason; the dormant (excluded) test count is recorded and those tests still typecheck (QA C5) | `gh run view` of main CI at the release sha; spec-reporter `﹣` count | scorecard row + run id |
 | E2 | Two windows never lose or revive each other's writes in any collection | Dry two-window stale-echo tests pass for repos, chats (incl. `seenAt`), stars, removed sessions, searches, dismissals: 6/6 | `npm test -- storage` names | test names in scorecard |
-| E3 | Every repo with a session in the last 14 days is listed, and no older one | Fixture with sessions aged 1 d, 13 d, 15 d → exactly the 1 d and 13 d repos; live set = `list-claude-repos.mjs --days 14` set | dry test + live GT | test name; diff output (empty) |
+| E3 | Every repo with a session in the last 14 days is listed, and no older one | Fixture with sessions aged 1 d, 13 d, 15 d → exactly the 1 d and 13 d repos; live set = the evaluator's own set, derived from raw `*.jsonl` `cwd` (first entry with a cwd) + `git rev-parse --git-common-dir`, using no repo script (QA C1) | dry test + evaluator's independent derivation | test name; diff output (empty) |
 | E4 | Dismiss hides a repo until it's re-added or a new session starts there | Dry: 3/3 cases (stays hidden after reload; back on new session; back on manual add). Live: same 3 on a lab repo | dry tests + testing walk W5 | test names; captures |
 | E5 | Session rows carry branch and worktree mark correctly | Every git-repo row shows `⎇ <branch>`; `⧉` on 100 % of worktree rows and 0 % of main rows (lab fixture with 1 worktree) | dry tree test + walk W3 | test name; screenshot |
 | E6 | Dots match the live truth | ≥ 9/9 observations (3 lab sessions × busy, waiting, idle) match `probe-claude-sessions.mjs` within 8 s; finished → idle within 8 s of opening the chat | walk W4 with probe log | `captures/w4-evidence/` |
-| E7 | Inbox order holds and rows don't move without a status change | Dry: rank tables for repos + sessions pass. Live: a waiting session's repo is row 1 within 8 s; 60 s with a working session and no status change → 0 order changes | dry `inbox-order` tests + walk W6 order log | test names; order log |
-| E8 | Repo "+" and 🕘 work | "+" creates exactly 1 new chat in that repo; history count = transcripts in the repo's project dirs (`list-claude-repos.mjs --repo <root> --all`); picking an OLDER chat shows it in the sidebar as idle | walk W7 | captures |
+| E7 | Inbox order holds and rows don't move without a status change | Dry: rank tables for repos + sessions pass. Live: a waiting session's repo is row 1 within 8 s; 60 s with a working session and no status change → 0 `[Pitwall] order` log lines (Task 5 logs `[Pitwall] order <repo ids>` on each re-sort, QA C2) | dry `inbox-order` tests + walk W6 exthost log | test names; log excerpt |
+| E8 | Repo "+" and 🕘 work | "+" creates exactly 1 new chat in that repo; history count = transcripts whose cwd maps to that repo, counted independently by the evaluator (QA C1); picking an OLDER chat shows it in the sidebar as idle | walk W7 | captures |
 | E9 | Agntree extras are hidden, keepers stay | `package.json` contributes contain 0 of: `pitwall.changesView`, `addWorktree`, `deleteWorktree`, `mergeWorktree`, `rebaseWorktree`, `checkoutPR`, `openPRInBrowser`, `forkChatWithChanges`; FILES view `visibility: collapsed`; `findSession` and `forkChat` present | `node scripts/check-contributes.mjs` (Task 4) | script output |
 | E10 | Every hotkey in the canvas table is bound and wins in Cursor | 23/23 bindings present in `package.json` (Ctrl+Alt+1–9 = 9, Ctrl+Alt+Shift+1–9 = 9, Ctrl+Alt+0, R, O, F, N = 5); S5 shows `pitwall.*` for 6/6 sampled keys | manifest test + S5 log | test name; troubleshooting log |
 | E11 | List keyboard per D37 | ↓ ×3 opens 0 chats; Ctrl+↓ opens 1; Enter opens 1 | walk W8 | captures |
-| E12 | Search finds repos and chats and hands off to Find Session | Placeholder, group labels, empty texts and footer match §3e byte-for-byte; 5/5 sampled chat names found with the first result correct; footer starts Find Session with the typed text | dry `search` tests + walk W9 | test names; captures |
+| E12 | Search finds repos and chats and hands off to Find Session | Placeholder, group labels, empty texts and footer match §3e byte-for-byte; 5/5 chat names, picked by the evaluator from storage with a stated seed, found with the first result correct (QA C4); footer starts Find Session with the typed text | dry `search` tests + walk W9 | test names; captures |
 | E13 | Brand colours and icons | `check-icon-colours.mjs` exit 0 (all fills = D17 hexes, idle is a ring with `fill="none"`); activity-bar SVG has 4 circles, one fill colour, the 2nd circle's r larger than the others | script | script output |
 | E14 | The package ships only what it should | `npm run package` on windows CI; packaged path count = allowlist expectation (updated in Task 6 for new icon names); privacy job green | CI run | run id |
 | E15 | End to end: the canvas sidebar flows work in real Cursor | Walk W1–W10 all PASS on the release sha, real `~/.claude` read-only (P15) + lab repos | testing agent walk | `captures/phase3-walk-evidence/` |
-| E16 | Startup stays fast with real data | Activation → first tree render ≤ 1 s, 5/5 starts, real `~/.claude` | exthost log timestamps (walk W1) | log excerpt |
+| E16 | Startup stays fast with real data | `[Pitwall] activate` → `[Pitwall] first render` ≤ 1 s, 5/5 starts, real `~/.claude` (Task 5 adds both log lines, QA C2) | exthost log (walk W1) | log excerpt |
+| E17 | The sidebar never scrolls sideways and resizes like any panel (D33) | Yes/no: at 220 px no horizontal scrollbar and rows end in "…"; dragging the edge resizes (QA C3) | walk W10 | 2 screenshots |
+| E18 | The status tick stays cheap with many chats | Attention tick p95 ≤ 50 ms over 100 ticks with 500 chats (dry bench, fake fs) (QA S5) | `npm test -- attention-bench` | bench output |
 
 ## 6. Implementation tasks
 
 Waves (parallel within a wave, one PR per task):
-- **A:** T1, T2, T3, T4, T6
-- **B:** T5 (consumes T2 + T6)
-- **C:** T7, T8, T9 (consume T5)
-- **D:** T10
+- **A:** T1, T2, T4, T6
+- **B:** T3 (stacks on T1's dismissal API; merge after T4), T5 (consumes T1 + T2 + T6)
+- **C:** T7, T8 (consume T5)
+- **D:** T9 (consumes T8's `goToRepo`)
+- **E:** T10
+
+Rebase order where files overlap: T2 before T3 (`ClaudeHarness.ts`, `harness/types.ts`), T4 before T3 (`extension.ts`, manifest, `menus.test.ts`) (QA B4, B6).
 
 ### Task 1: Every collection survives a stale storage echo (row 3.0, `phase3/task-1-storage-overlay`)
 
-**Files:** Create `src/core/services/storageOverlay.ts`. Modify `src/core/services/StorageService.ts` (`set`, every collection read/write), `src/core/types.ts` (`ChatSession.seenAt?: number`, `STORAGE_KEYS.dismissedRepos`). Test `test/dry/core/storage.test.ts`.
+**Files:** Create `src/core/services/storageOverlay.ts`. Modify `src/core/services/StorageService.ts` (private `set` at L63, every collection read/write), `src/core/types.ts` (`ChatSession.seenAt?: number`, `Repository.origin?`, `STORAGE_KEYS.DISMISSED_REPOS`). Test `test/dry/core/storage.test.ts`.
 
 **Interfaces:**
 - Produces `class RecordOverlay<T> { note(id: string, value: T | null): void; merge(stored: Record<string, T>): Record<string, T>; settle(stored: Record<string, T>): void }`:
   - `null` = removed by this window.
   - `settle` drops entries the store has echoed back unchanged, so other windows' later writes win.
-- Produces `StorageService`, unchanged public API. New: `getDismissedRepos(): Record<string, number>`, `setDismissed(rootPath: string, at: number | null): Promise<void>`, `markChatSeen(chatId: string, at: number): Promise<void>` (sets `ChatSession.seenAt`).
+- Produces `StorageService`, unchanged public API. New: `STORAGE_KEYS.DISMISSED_REPOS = 'pitwall.dismissedRepos'` (Task 1 owns the key and API, QA B4), `getDismissedRepos(): Record<string, number>`, `setDismissed(rootPath: string, at: number | null): Promise<void>`, `markChatSeen(chatId: string, at: number): Promise<void>` (sets `ChatSession.seenAt`). `createChat` sets `seenAt` = now; records loaded without `seenAt` get it on first load (P16). `addRepository(name, rootPath, opts?: { origin?: 'manual' | 'discovered' })` checks with `samePath` and, for `discovered`, uses the P17 deterministic id; the repositories merge dedupes by `samePath`, oldest record kept.
 - The PID overlay (R33a) is re-expressed on `RecordOverlay`; its two existing tests stay unchanged and green.
 
 - [ ] **Step 1:** The testing agent runs live repro S1. Protocol:
@@ -378,8 +392,8 @@ Waves (parallel within a wave, one PR per task):
   4. Diff the visible stars and names against the action log.
 
   Result goes to `captures/f3-repro-evidence/run.log` as `lost=N reverted=M`.
-- [ ] **Step 2:** Write failing tests, one per collection, each named `a stale storage echo cannot drop or revive this window's <collection> writes`, for `repositories`, `chats`, `starredChats`, `removedSessions`, `sessionSearches` and `dismissedRepos`. Use the stale-echo `memento` from the existing PID test (`storage.test.ts` "a stale storage echo cannot drop this window's PID records…"). Also add `two windows over one store keep each other's chat edits through a stale echo` (A stars, B renames the same chat, a stale echo lands, both edits survive).
-- [ ] **Step 3:** Run `npm test -- storage`. Expected: the 7 new tests FAIL; the 2 PID tests pass.
+- [ ] **Step 2:** Write failing tests, one per collection, each named `a stale storage echo cannot drop or revive this window's <collection> writes`, for `repositories`, `chats`, `starredChats`, `removedSessions`, `sessionSearches` and `dismissedRepos`. Use the stale-echo `memento` from the existing PID test (`storage.test.ts` "a stale storage echo cannot drop this window's PID records…"). Also add `two windows over one store keep each other's chat edits through a stale echo` (A stars, B renames the same chat, a stale echo lands, both edits survive); `two StorageService instances adding the same root through a stale echo keep one repository` (QA B3); `a chat created or loaded without seenAt gets a baseline` (P16).
+- [ ] **Step 3:** Run `npm test -- storage`. Expected: the 9 new tests FAIL; the 2 PID tests pass.
 - [ ] **Step 4:** Implement `RecordOverlay`, route every collection through it in `StorageService`, and re-express the PID overlay on it.
 - [ ] **Step 5:** Run `npm test`. Expected: 0 fail, skips ≤ 9.
 - [ ] **Step 6:** Commit, push, open the PR, and request QA.
@@ -390,12 +404,13 @@ Waves (parallel within a wave, one PR per task):
 
 **Interfaces:**
 - Produces `class ClaudeSessionsFile { constructor(opts?: { dir?: () => string; isAlive?: (pid: number) => boolean }); snapshot(): Promise<{ available: boolean; observedAt: number; states: Map<string, { status: 'busy' | 'waiting' | 'idle'; waitingFor?: string; statusUpdatedAt: number; pid: number; cwd: string }> }> }`:
-  - `available: false` when the folder is missing or has 0 parseable `.json` files.
-  - `isAlive` defaults to `process.kill(pid, 0)` in a try.
+  - A file counts only when its `status` is `busy`, `waiting` or `idle` and its `pidDomain` equals this machine's; `available: false` when no file counts. A session whose file has an unknown status falls back to `claude agents` for that session (QA S2).
+  - `isAlive` defaults to `process.kill(pid, 0)`: no throw or `EPERM` = alive, `ESRCH` = dead (QA S1). PID reuse is a known limit, recorded in ADR 0018.
+  - Two files with the same `sessionId`: the newest `statusUpdatedAt` wins (QA S3).
 - Produces `getLiveStates`, which returns `liveStatus` per session.
-  - `waitingFor` comes from the file when `available`, else from `ClaudeAgentsService` (unchanged fallback).
-  - The stale-wait drop uses `observedAt := statusUpdatedAt` (floored ms, same rule as hotfix #24).
-  - `writtenAt := statusUpdatedAt` for a waiting session.
+  - `waitingFor` comes from the file when it counts, else from `ClaudeAgentsService` (unchanged fallback).
+  - `observedAt` = the snapshot's read time; the R40 stale-wait drop (floored ms, hotfix #24) applies only to fallback samples (P4).
+  - `writtenAt := statusUpdatedAt` for a waiting session; `lastClearAt` (R45 floor, `SessionAttentionService.ts:395`) stays the fetch time.
 
 - [ ] **Step 1:** Write the failing tests:
   - `reads status, waitingFor and pid from each .json and never opens .key files`: a fixture folder holds a `.key` file, and an `fs` spy asserts it is never opened.
@@ -403,7 +418,11 @@ Waves (parallel within a wave, one PR per task):
   - `a missing or empty folder reports available: false`.
   - `a malformed file is skipped, the rest still read`.
   - `getLiveStates takes waitingFor from the sessions file and falls back to claude agents when it is unavailable`.
-  - `a wait whose statusUpdatedAt is older than the transcript's last write is dropped; same-ms counts as before`.
+  - `a transcript write after statusUpdatedAt while the file still says waiting keeps the wait` (QA B1).
+  - `fallback samples keep the R40 drop; same-ms counts as before`.
+  - `a file from another pidDomain is ignored`; `EPERM from the pid check counts as alive`.
+  - `an unknown status value falls back to claude agents for that session`.
+  - `two files for one sessionId: the newest statusUpdatedAt wins`.
   - `writtenAt of a waiting session is its statusUpdatedAt`.
 - [ ] **Step 2:** Run `npm test -- claude`. Expected: the new tests FAIL.
 - [ ] **Step 3:** Implement `ClaudeSessionsFile` and the `getLiveStates` changes. Write `probe-claude-sessions.mjs`: it prints `sessionId status pid statusUpdatedAt` per live file and `dropped (pid not alive)` for dead ones, and never reads `.key`.
@@ -411,16 +430,16 @@ Waves (parallel within a wave, one PR per task):
 - [ ] **Step 5:** Run Smoke S2 on a lab session (the lead, or testing). Then run `npm test`: 0 fail, and the existing attention tests pass unchanged (R36–R45).
 - [ ] **Step 6:** Commit, push, PR, QA.
 
-### Task 3: Repos found from `~/.claude`, and dismissed by right-click (row 3.1, `phase3/task-3-discovery`)
+### Task 3: Repos found from `~/.claude`, and dismissed by right-click (row 3.1, `phase3/task-3-discovery`; Wave B, branched from main after Task 1 merges)
 
 **Files:**
 - Create `src/harnesses/claude/ClaudeRepoDiscovery.ts`, `src/core/services/RepoDiscoveryService.ts`, `scripts/list-claude-repos.mjs`, `docs/adr/0019-repos-discovered-and-dismissed.md`.
-- Modify `src/core/services/GitService.ts` (`getMainRepoRoot`), `src/core/services/StorageService.ts` (`addRepository` origin, dismissals), `src/core/types.ts` (`Repository.origin?: 'manual' | 'discovered'`, `STORAGE_KEYS.dismissedRepos = 'pitwall.dismissedRepos'`), `src/core/commands/repository.ts` (`pitwall.dismissRepository`), `src/extension.ts`, `manifest/core.contributes.json` (`pitwall.autoImport.retentionDays` default 14, `pitwall.discovery.enabled` default true, the dismiss command + its menu entry replacing "Remove from Pitwall…" on repo rows), `docs/privacy.md`.
+- Modify `src/core/services/GitService.ts` (`getMainRepoRoot`), (the storage API comes from Task 1: `addRepository` origin + P17 id, `setDismissed`, `DISMISSED_REPOS`), `src/core/commands/repository.ts` (`pitwall.dismissRepository`), `src/extension.ts`, `manifest/core.contributes.json` (`pitwall.autoImport.retentionDays` default 14, `pitwall.discovery.enabled` default true, the dismiss command + its menu entry replacing "Remove from Pitwall…" on repo rows), `docs/privacy.md`.
 - Test `test/dry/core/repo-discovery.test.ts`, `test/dry/harnesses/claude/claude-repo-discovery.test.ts`.
 
 **Interfaces:**
 - Produces `HarnessAdapter.discoverRecentFolders?(sinceMs: number): Promise<DiscoveredFolder[]>` with `DiscoveredFolder { cwd: string; firstEntryAt: number; lastActivity: number }`.
-  - Claude reads each `*.jsonl` with `mtime ≥ sinceMs`, taking `cwd` and the first entry's timestamp from the head (≤ 64 KB). Results are cached by path + mtime.
+  - Claude reads each `*.jsonl` with `mtime ≥ sinceMs`, line by line, taking `cwd` from the first entry that has one (heads start with `queue-operation` entries without a cwd; an attachment line can exceed 64 KB) and the first entry's timestamp. It stops at a cwd or 1 MB and counts files skipped for having none (QA S7). Results are cached by path + mtime.
 - Produces `GitService.getMainRepoRoot(cwd: string): Promise<string | null>`:
   - Uses `git rev-parse --path-format=absolute --git-common-dir`, and returns its parent when it ends in `.git`.
   - Returns `null` when not a git repo.
@@ -429,7 +448,7 @@ Waves (parallel within a wave, one PR per task):
   - Runs after the first render, every 60 s and on window focus. Never awaited by activation.
   - Two concurrent scans or windows add a root once (dedupe on `samePath` against stored repos).
 - Produces the `pitwall.dismissRepository` command:
-  - Records `setDismissed(root, Date.now())`, removes the repo's rows and worktree records exactly as `removeRepository` does, minus closing terminals.
+  - Records `setDismissed(root, Date.now())`, removes the repo's rows and worktree records as `removeRepository` does, minus closing terminals, and deletes its chats with `rememberSession: false` so `REMOVED_SESSIONS` doesn't block re-import when the repo returns (QA S8).
   - Shows the §3d message.
   - `pitwall.addRepository` clears a dismissal.
 
@@ -445,9 +464,11 @@ Waves (parallel within a wave, one PR per task):
   - `a dismissed repo returns when a session starts in it after the dismissal`.
   - `an older session still active does not bring a dismissed repo back`.
   - `adding a dismissed repo by hand clears the dismissal`.
+  - `a returned repo gets its chats back` (QA S8).
+  - `the cwd comes from the first entry that has one, past a first line over 64 KB` (QA S7).
   - `discovery never runs before the first render and its failure is logged, not thrown`.
 - [ ] **Step 2:** Run `npm test -- discovery`. Expected: FAIL.
-- [ ] **Step 3:** Implement. Write `list-claude-repos.mjs [--days N] [--repo <root> --all]`: it prints the canonical repo roots with sessions in N days, or, with `--repo`, every transcript belonging to that repo's worktrees. Run S3 against the real `~/.claude`.
+- [ ] **Step 3:** Implement. Write `list-claude-repos.mjs [--days N] [--repo <root> --all]`, importing nothing from `src/` (a probe for S3, not the evaluator's ground truth, QA C1): it prints the canonical repo roots with sessions in N days, or, with `--repo`, every transcript belonging to that repo's worktrees. Run S3 against the real `~/.claude`.
 - [ ] **Step 4:** Write ADR 0019 (P1, P2, P3, P13) and the privacy line.
 - [ ] **Step 5:** Run `npm test`: 0 fail. Run `node scripts/build-manifest.mjs --check`.
 - [ ] **Step 6:** Commit, push, PR, QA.
@@ -474,7 +495,7 @@ Waves (parallel within a wave, one PR per task):
 
 ### Task 6: Brand icons: D17 status dots and the status-row activity icon (row 3.10, `phase3/task-6-brand-icons`)
 
-**Files:** Modify `scripts/generate-harness-icons.mjs`, `resources/icons/harness/*` (regenerated), `resources/icons/pitwall-activitybar.svg`, `src/core/harness/types.ts` (`HarnessIconState = 'working' | 'needs' | 'finished' | 'idle' | 'new'`, replacing `done`/`closed`), `src/core/harness/sessionUtils.ts` (`selectHarnessIconState`, mapped as below), `resources/icons/harness/README.md`, the packaging allowlist expectation. Create `scripts/check-icon-colours.mjs`. Test `test/dry/core/icons.test.ts`.
+**Files:** Modify `scripts/generate-harness-icons.mjs`, all 40 `resources/icons/harness/*.svg` (every harness regenerated with the renamed states; claude in D17 colours, dormant harnesses keep their tint; packaged count unchanged at 49), `resources/icons/pitwall-activitybar.svg`, `src/core/harness/types.ts` (`HarnessIconState = 'working' | 'needs' | 'finished' | 'idle' | 'new'`, replacing `done`/`closed`), `src/core/harness/treeIcons.ts:4` (`STATES`), `src/core/harness/sessionUtils.ts:153` (`selectHarnessIconState`, mapped as below), `src/core/providers/SessionSearchTreeProvider.ts:105` (`'closed'` literal) (QA B7), `resources/icons/harness/README.md`, the packaging archive check (new names, count stays 49). Create `scripts/check-icon-colours.mjs`. Test `test/dry/core/icons.test.ts`.
 
 **Interfaces:**
 - Produces files `resources/icons/harness/claude-{dark,light}-{working,needs,finished,idle,new}.svg`.
@@ -506,17 +527,20 @@ Waves (parallel within a wave, one PR per task):
 - Produces `type SessionStatus = 'needs' | 'working' | 'finished' | 'idle'` and `sessionStatus(input: { live?: HarnessLiveState; needsYou: boolean; seenAt?: number }): SessionStatus`:
   - needs: `needsYou` or `liveStatus === 'waiting'`.
   - working: `liveStatus === 'busy'` or `turnState === 'working'`.
-  - finished: turn done and `turnEndedAt > (seenAt ?? 0)`.
+  - finished: turn done and `turnEndedAt > seenAt` (`seenAt` always set, P16).
   - else idle.
 - Produces `rankRepo(s)`: needs 0, finished 1, working 2, idle 3. `rankSession(s)`: needs 0, working 1, finished 2, idle 3. Also `orderRows<T extends { id: string; status: SessionStatus; statusSince: number; title: string }>(rows: T[], rank: (s: SessionStatus) => number): T[]`, sorted by rank, then `statusSince` desc, then title.
 - Produces `SessionAttentionService`:
   - `statusOf(chatId): { status: SessionStatus; statusSince: number }`.
   - `onDidChangeStatus: Event<string[]>`, fired only for chats whose status changed.
-  - The poll set is open chats ∪ live sessions-file sessions ∪ chats whose transcript mtime moved.
-  - A chat in front (`isChatVisible`) or opened via `pitwall.openChat` calls `markChatSeen(id, now)`.
+  - The poll set is open chats ∪ live sessions-file sessions; other chats' turn state refreshes from the 60 s discovery/import scan (QA S5).
+  - Toast state (`needsYouSince`, `waitingSince`, cleared for chats that aren't open at `SessionAttentionService.ts:236-263`) is split from row-status state, which is kept for every chat (QA S6).
+  - A chat in front (`isChatVisible`) or opened via `pitwall.openChat` calls `markChatSeen(id, now)` only when `turnEndedAt > seenAt` (at most one write per finished turn, QA S4).
+  - Logs `[Pitwall] activate` and `[Pitwall] first render` once, and `[Pitwall] order <repo ids>` on each re-sort (QA C2).
 - Produces the tree:
   - Repo children are sessions from all of the repo's worktrees.
-  - Descriptions as in §3a, tooltips as in §3b.
+  - Descriptions as in §3a, tooltips as in §3b (every session tooltip has its folder line, D14).
+  - `moveRepositoryUp/Down` commands, menu entries and tests removed or parked dormant (P18).
   - The order is re-sorted only on `onDidChangeStatus` or row add/remove (P6); time labels refresh without re-sorting.
   - `TreeView.description = 'sorted by who needs you'`.
 
@@ -530,6 +554,11 @@ Waves (parallel within a wave, one PR per task):
   - `repo descriptions: "1 need you · 2 open", "2 sessions", "1 session"`.
   - `a closed session gets a status dot from the sessions file`.
   - `opening a finished chat marks it seen and it turns idle`.
+  - `a session whose turn ended before it was first listed is idle` (QA B2).
+  - `a chat kept in front writes seenAt at most once per finished turn` (QA S4).
+  - `closing a chat keeps its row status, and reopening it doesn't toast a pre-existing wait` (QA S6, R45).
+  - `every session tooltip shows its folder`.
+  - bench `attention tick p95 ≤ 50 ms with 500 chats` (E18).
   - `R36–R45 toasts still fire only for open chats`.
 - [ ] **Step 2:** Run them. Expected: FAIL.
 - [ ] **Step 3:** Implement `sessionStatus` and `inboxOrder`, then the attention changes, then the tree changes.
@@ -566,14 +595,15 @@ Waves (parallel within a wave, one PR per task):
   - `pitwall.openLongestWaiting` (Ctrl+Alt+0; Ctrl+Alt+N kept as an alias of the same behaviour, P10).
   - `pitwall.toggleFiles` (Ctrl+Alt+F).
   - `pitwall.list.moveDownAndOpen` / `moveUpAndOpen` (Ctrl+↓/↑, `when: focusedView == 'pitwall.workspacesView' && !inputFocus`).
-- Global keys use `ctrl+alt` (mac `ctrl+cmd`); the menus test rule stands. Ctrl+Alt+R is bound in Task 9.
+- Global keys use `ctrl+alt` (mac `ctrl+cmd`). `menus.test.ts:139-140` only allows `^ctrl\+alt\+\w+$` / `^ctrl\+cmd\+\w+$`; Task 8 widens both to allow an optional `shift\+` and says so in its PR (QA B5). Ctrl+Alt+R is bound in Task 9.
+- On a repo row, Ctrl+↓/↑ and Enter expand and select it (P20).
 
 - [ ] **Step 1:** Write failing tests:
   - `Ctrl+Alt+1–9, 0, O, F and Ctrl+Alt+Shift+1–9 are bound to Pitwall commands`.
   - `goToRepo(n) reveals and selects the nth repo in inbox order; again opens its next chat`.
   - `openRepoWindow(n) opens the nth repo folder in a new window`.
   - `toggleFiles shows FILES when hidden and hides it when shown`.
-  - `move-and-open moves focus one row and opens it`.
+  - `move-and-open moves focus one row and opens it; on a repo row it expands and selects` (P20).
   - `a repo tooltip names its keys only for positions 1–9`.
 - [ ] **Step 2:** Run them (FAIL), implement, then run `npm test`.
 - [ ] **Step 3:** The testing agent runs S5 and S6 on the PR build in its profile. Their results go in the PR before QA's verdict.
@@ -584,7 +614,7 @@ Waves (parallel within a wave, one PR per task):
 **Files:** Create `src/core/commands/search.ts`. Modify `manifest/core.contributes.json` (view/title navigation icon + keybinding), `src/extension.ts`. Test `test/dry/core/search.test.ts`.
 
 **Interfaces:**
-- Consumes the T5 order and statuses, and `pitwall.findSession` (existing; accepts an initial query string, added here if it doesn't already).
+- Consumes the T5 order and statuses, T8's `goToRepo`, and `pitwall.findSession`. It takes no query today (`sessionSearch.ts:246`); register it to pass an optional query to the existing `find(query)`, as `askSessionSearchAgain` does at L247.
 - Produces `pitwall.search`. The quick pick uses `matchOnDescription`, groups as `QuickPickItemKind.Separator` items, and copy exactly as in §3e.
   - Repo pick → `goToRepo` behaviour.
   - Chat pick → `pitwall.openChat`.
@@ -611,8 +641,8 @@ Waves (parallel within a wave, one PR per task):
   - **W7:** "+" and 🕘 (E8).
   - **W8:** ↓/Ctrl+↓/Enter (E11).
   - **W9:** search: 5 sampled names plus the footer (E12).
-  - **W10:** FILES toggle plus the hotkeys sample (E10), and no sideways scroll at a 220 px sidebar (screenshot).
-- [ ] **Step 2:** Dispatch the independent evaluator on a fresh clone for E1–E16. The loop runs until every criterion passes (3 stalled rounds → Sharif). The scorecard goes to `docs/progress_reports/phase3-scorecard.md`.
+  - **W10:** FILES toggle plus the hotkeys sample (E10), and no sideways scroll at a 220 px sidebar plus an edge resize (E17, 2 screenshots).
+- [ ] **Step 2:** Dispatch the independent evaluator on a fresh clone for E1–E18. The loop runs until every criterion passes (3 stalled rounds → Sharif). The scorecard goes to `docs/progress_reports/phase3-scorecard.md`.
 - [ ] **Step 3:** Release:
   - README status and known issues; CHANGELOG `[0.4.0]`.
   - `npm version 0.4.0 --no-git-tag-version`; `build-manifest --check`.
@@ -627,3 +657,4 @@ Waves (parallel within a wave, one PR per task):
 - Pop-ups for every session, the sound switches and bell, bottom-bar counts, and the jump list: Phase 5. Ctrl+Alt+0 ships here using the existing needs-you list.
 - FILES copy across repos, "Copy to another repo" and drag onto a repo row: Phase 4 row 4.7.
 - Remote Control (📡, Ctrl+Alt+M): Phase 7 row 7.3.
+- D14's bottom-bar corner showing the open chat's branch rides on row 4.5.
