@@ -200,8 +200,10 @@ function writeFakeCommand(root, runsPath) {
     // The bare name keeps this e2e about restore alone; the quoted full-path
     // case (finding F1) is covered by Task 6 Step 8b's dry test and Smoke 12
     // N1. The editor's terminals inherit PATH from the launch env, which
-    // copies process.env.
-    process.env.PATH = `${root}${path.delimiter}${process.env.PATH}`;
+    // copies process.env. Windows may spell the key `Path` or `PATH`; reuse
+    // the existing one so the copy never holds both.
+    const key = Object.keys(process.env).find((name) => name.toUpperCase() === 'PATH') ?? 'PATH';
+    process.env[key] = `${root}${path.delimiter}${process.env[key] ?? ''}`;
     return 'fake-claude';
   }
 
