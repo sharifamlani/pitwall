@@ -6,6 +6,7 @@ import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { HarnessAdapter, SessionMetadata } from '../../../src/core/harness/types';
 import { SessionStatus } from '../../../src/core/providers/sessionStatus';
 import { ChatSession, Repository, RepositoryWorktrees, Worktree } from '../../../src/core/types';
+import { disposeOperationLog } from '../../../src/core/services/OperationLog';
 import { fakeAdapter, fakeNativeUi, makeStorage, memento, flush, stub, waitFor, worktreeRecord } from '../support';
 
 beforeEach(() => stub.__reset());
@@ -299,6 +300,15 @@ test('repos rank by their most urgent session: needs you, finished, working, idl
 
 test('a tick with no status change does not reorder rows even when activity times change', async (t) => {
   const log = captureLog(t);
+  // The order diagnostics go to the Pitwall Operations output channel.
+  disposeOperationLog();
+  t.after(disposeOperationLog);
+  const operations = {
+    filter: (keep: (line: string) => boolean) =>
+      (stub.__outputChannels.find((channel: { name: string }) => channel.name === 'Pitwall Operations')?.lines ?? [])
+        .map((line: string) => line.slice(line.indexOf('] ') + 2))
+        .filter(keep),
+  };
   const storage = makeStorage();
   const now = Date.now();
   const alpha = storage.addRepository('alpha', '/work/alpha');
@@ -317,7 +327,7 @@ test('a tick with no status change does not reorder rows even when activity time
   const order = async () => (await tree.getChildren()).map((row) => row.label);
 
   assert.deepEqual(await order(), ['beta', 'alpha'], 'newest statusSince first');
-  const orderLines = () => log.filter((line) => line.startsWith('[Pitwall] order '));
+  const orderLines = () => operations.filter((line) => line.startsWith('[Pitwall] order '));
   assert.deepEqual(orderLines(), [`[Pitwall] order ${beta.id} ${alpha.id}`], 'one re-sort for the first render');
 
   // Ticks: activity moves, rows re-render, statuses stay.

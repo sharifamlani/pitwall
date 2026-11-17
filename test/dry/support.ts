@@ -82,6 +82,7 @@ interface StubControls {
   __setLateShellIntegration(value: boolean): void;
   __shownDocuments: { target: unknown; options: Record<string, unknown> }[];
   __treeViews: FakeTreeView[];
+  __outputChannels: Array<{ name: string; lines: string[] }>;
   __setTreeViewsVisible(visible: boolean): void;
   workspace: { workspaceFolders: { uri: { fsPath: string } }[] };
   window: {
