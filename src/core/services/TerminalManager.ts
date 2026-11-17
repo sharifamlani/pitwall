@@ -31,6 +31,9 @@ const COMMAND_START_TIMEOUT_MS = 2000;
  */
 const RESTORED_SHELL_TIMEOUT_MS = 10000;
 
+/** Red-commit stub: replaced by the readiness wait in the green commit. */
+export const REVIVED_SHELL_READY_CAP_MS = 60_000;
+
 /** A launched tab and the waits its command start is observed through. */
 interface StartedTerminal {
   terminal: vscode.Terminal;

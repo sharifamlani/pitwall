@@ -6,7 +6,7 @@
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { TerminalManager } from '../../../src/core/services/TerminalManager';
+import { REVIVED_SHELL_READY_CAP_MS, TerminalManager } from '../../../src/core/services/TerminalManager';
 import { PROCESS_ID_TIMEOUT_MS, terminalTitle } from '../../../src/core/services/terminalEvents';
 import { quoteShellArgument } from '../../../src/core/harness/cli';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
@@ -484,4 +484,65 @@ test('a late title still lands when another tab takes the front while the rename
   const title = terminalTitle(f.chat('6f6f6f00-slow-shell'));
   await waitFor(() => renames.slice(before).some((r) => r.target === tab && r.name === title), 'the late title');
   await waitFor(() => stub.window.activeTerminal === front, 'the user’s tab to be active again');
+});
+
+test('a revived tab is resumed only after its shell reports ready', async (t) => {
+  // A revived PowerShell can take many seconds to start; a line typed into it
+  // meanwhile can be lost.
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: 'a1a1a100-slow', harnessSessionId: 's2', status: 'closed' }] });
+  await f.storage.rememberTerminalPid('a1a1a100-slow', 7701);
+  const tab = f.restoredTab('Pitwall: Slow Shell [a1a1a1]', 8701);
+
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  await flush();
+  assert.deepEqual(tab.sent, [], 'nothing is typed into a shell that is still starting');
+  assert.equal(await f.open('a1a1a100-slow'), tab, 'a click meanwhile focuses the revived tab');
+  assert.equal(stub.window.terminals.length, 1, 'and opens no second tab');
+
+  stub.window.__integrateShell(tab);
+  await waitFor(() => tab.sent.length > 0, 'the resume line');
+  await flush();
+  assert.deepEqual(tab.sent, [`cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s2`]);
+});
+
+test('with shell integration turned off, a revived tab is resumed at once', async (t) => {
+  stub.__setConfiguration('shellIntegration.enabled', false);
+  // With the setting off the shell never reports ready, so nothing waits for it.
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: 'a2a2a200-off', harnessSessionId: 's3', status: 'closed' }] });
+  await f.storage.rememberTerminalPid('a2a2a200-off', 7702);
+  const tab = f.restoredTab('Pitwall: No Integration [a2a2a2]', 8702);
+
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  assert.deepEqual(tab.sent, [`cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s3`]);
+});
+
+test('a revived tab whose shell never reports ready is still resumed, once, when the readiness cap runs out', async (t) => {
+  // Integration is on, but the shell never activates it (for example, an
+  // execution policy that blocks the integration script).
+  stub.__setLateShellIntegration(true);
+  const warnings: unknown[][] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => warnings.push(args);
+  t.after(() => (console.warn = warn));
+  const f = setup(t, { chats: [{ id: 'a3a3a300-never', harnessSessionId: 's4', status: 'closed' }] });
+  await f.storage.rememberTerminalPid('a3a3a300-never', 7703);
+  const tab = f.restoredTab('Pitwall: Never Ready [a3a3a3]', 8703);
+  const line = `cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s4`;
+
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  t.mock.timers.tick(REVIVED_SHELL_READY_CAP_MS - 1);
+  await flush();
+  assert.deepEqual(tab.sent, [], 'not typed into before the cap');
+
+  t.mock.timers.tick(1);
+  await flush();
+  assert.deepEqual(tab.sent, [line], 'sent anyway when the cap runs out');
+  assert.equal(warnings.length, 1, 'one log line says so');
+
+  t.mock.timers.tick(REVIVED_SHELL_READY_CAP_MS);
+  await flush();
+  assert.deepEqual(tab.sent, [line], 'and never sent twice');
 });
