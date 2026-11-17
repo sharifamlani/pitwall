@@ -121,6 +121,12 @@
       "category": "Pitwall"
     },
     {
+      "command": "pitwall.search",
+      "title": "Search Repos and Chats",
+      "category": "Pitwall",
+      "icon": "$(search)"
+    },
+    {
       "command": "pitwall.addRepository",
       "title": "Add Local Folder or Repository…",
       "category": "Pitwall",
@@ -542,6 +548,11 @@
       "mac": "ctrl+cmd+f"
     },
     {
+      "command": "pitwall.search",
+      "key": "ctrl+alt+r",
+      "mac": "ctrl+cmd+r"
+    },
+    {
       "command": "workbench.view.extension.pitwall",
       "key": "ctrl+alt+a",
       "mac": "ctrl+cmd+a"
@@ -885,6 +896,11 @@
   ],
   "menus": {
     "view/title": [
+      {
+        "command": "pitwall.search",
+        "when": "view == pitwall.workspacesView",
+        "group": "navigation@0"
+      },
       {
         "command": "pitwall.addRepository",
         "when": "view == pitwall.workspacesView",

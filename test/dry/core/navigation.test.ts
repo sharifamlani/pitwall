@@ -33,7 +33,7 @@ test('Ctrl+Alt+1–9, 0, O, F and Ctrl+Alt+Shift+1–9 are bound to Pitwall comm
   assert.deepEqual(bound('ctrl+alt+n'), ['pitwall.openLongestWaiting'], 'Ctrl+Alt+N stays as an alias (P10)');
   assert.deepEqual(bound('ctrl+alt+o'), ['pitwall.openCurrentRepoWindow']);
   assert.deepEqual(bound('ctrl+alt+f'), ['pitwall.toggleFiles'], 'F moves from Find Session to FILES (P10)');
-  assert.deepEqual(bound('ctrl+alt+r'), [], 'Ctrl+Alt+R belongs to Task 9');
+  assert.deepEqual(bound('ctrl+alt+r'), ['pitwall.search'], 'Ctrl+Alt+R is the search box (Task 9)');
   for (const command of ['pitwall.openLongestWaiting', 'pitwall.openCurrentRepoWindow', 'pitwall.toggleFiles', 'pitwall.list.moveDownAndOpen', 'pitwall.list.moveUpAndOpen']) {
     assert.ok(commandIds.has(command), `${command} is declared`);
   }

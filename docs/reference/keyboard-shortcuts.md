@@ -31,6 +31,7 @@ Pitwall's default shortcuts use `Ctrl+Alt` on Windows and Linux and `Ctrl+Cmd` o
 | `Ctrl+Alt+O` | `Ctrl+Cmd+O` | Open the selected repo in a window of its own |
 | `Ctrl+Alt+Enter` | `Ctrl+Cmd+Enter` | New Session with your default agent, in the current worktree |
 | `Ctrl+Alt+F` | `Ctrl+Cmd+F` | Show or hide FILES (Find Session… stays in the Command Palette) |
+| `Ctrl+Alt+R` | `Ctrl+Cmd+R` | Search repos and chats; the last row hands your text to Find Session |
 | `Ctrl+Alt+S` | `Ctrl+Cmd+S` | Starred Sessions… |
 | `Ctrl+Alt+A` | `Ctrl+Cmd+A` | Show the Pitwall sidebar |
 

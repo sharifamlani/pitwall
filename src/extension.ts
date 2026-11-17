@@ -26,6 +26,7 @@ import { registerChatCommands } from './core/commands/chat';
 import { registerSessionImportCommands } from './core/commands/sessionImport';
 import { registerFileCommands } from './core/commands/files';
 import { registerNavigationCommands } from './core/commands/navigation';
+import { registerSearchCommands } from './core/commands/search';
 import { SESSION_SEARCH_VIEW, registerSessionSearchCommands } from './core/commands/sessionSearch';
 import { commandRegistrar } from './core/commands/common';
 import { debounce } from './core/utils/debounce';
@@ -341,6 +342,7 @@ export async function activate(context: vscode.ExtensionContext) {
   });
 
   registerNavigationCommands(context, { workspacesProvider, workspacesTreeView, filesTreeView });
+  registerSearchCommands(context, { workspacesProvider });
 
   // Each search runs in a short temp folder of its own, so its leftovers
   // never mix with a real project's sessions.

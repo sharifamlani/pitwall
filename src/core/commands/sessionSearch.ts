@@ -243,7 +243,7 @@ export function registerSessionSearchCommands(context: vscode.ExtensionContext, 
   const resumeCommand = (match: SessionSearchMatch): string =>
     harnessRegistry.get(match.harness).buildLaunchCommand({ worktreePath: match.cwd, sessionId: match.sessionId });
 
-  register('pitwall.findSession', () => find());
+  register('pitwall.findSession', (query?: unknown) => find(typeof query === 'string' ? query : ''));
   register('pitwall.askSessionSearchAgain', (node?: SessionSearchNode) => find(node?.search.query));
   register('pitwall.configureSessionSearch', () => configure());
   register('pitwall.cancelSessionSearch', () => sessionSearch.cancel());

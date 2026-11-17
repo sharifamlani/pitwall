@@ -12,6 +12,7 @@ Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pit
 
 | Command | What it does |
 | --- | --- |
+| **Pitwall: Search Repos and Chats** | Open the search box (`Ctrl+Alt+R`) |
 | **Pitwall: Add Local Folder or Repository…** | Add a folder or a git repository to the sidebar |
 | **Pitwall: Clone from GitHub…** | Clone a repository and add it |
 | **Pitwall: Remove from Pitwall…** | Remove a folder or repository from the sidebar. Files and conversations are kept. Like Dismiss, it stays off the list until a new session starts in it or you add it again |
