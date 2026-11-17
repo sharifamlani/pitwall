@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.27 · 2026-11-17
+> v0.28 · 2026-11-17
 
 ---
 
@@ -318,3 +318,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.25 · 2026-11-17.** Finding F4 is placed as Phase 4 row 4.2b: terminal identity rests on tab titles, and the editor renames the focused terminal rather than the target, so Phase 2 contains it with check-and-undo (R39) and Phase 4 spikes a title-free identity.
 - **v0.26 · 2026-11-17.** Needs-you timing fix merged → `3d0bd98` (R40/R41): a toast fires only if the chat was not in front after the prompt appeared (anchored on the transcript write, clamped to the last no-wait poll); no stale re-mark after a deny. Row 2.14 closes after the live S1 re-walk, which waits for Task 6b.
 - **v0.27 · 2026-11-17.** Task 6b merged → `68ad3d2`. Root cause: `renameWithArg` renames the keyboard-focused terminal, not the target. Fixes: check-and-undo renames with event-triggered retries; no second terminal per chat; activation never waits on terminals; the hidden-view reveal is deferred; a leading space guards resume lines typed into revived tabs (R42); Pitwall's own background shows don't count as the user looking (R43). Smoke 7 15/15 plus QA 5/5. Finding F4 (title-free identity) is row 4.2b.
+- **v0.28 · 2026-11-17.** Main CI green again at `dad160c` (hotfix PR #24: transcript mtime compared at ms resolution; main had been red since `3e6434a` on a same-ms race the local runs missed). PR #23 merged earlier (R45: a wait pending at activation never toasts). Rule added: no merge without green PR checks, and main CI confirmed after every merge. R46: the command-start focus yank is Claude Code's IDE integration (out of scope). R1-x (restore front-tab steal) confirmed as Pitwall's, fix in Task 6c.
