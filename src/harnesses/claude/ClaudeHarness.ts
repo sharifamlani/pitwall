@@ -191,7 +191,9 @@ export class ClaudeHarness implements HarnessAdapter {
         // The same stat also tells the attention service when the wait most
         // likely began (the tool-call write).
         if (waitingFor) {
-          const mtime = await this.sessionService.transcriptWrittenAt(filePath);
+          const rawMtime = await this.sessionService.transcriptWrittenAt(filePath);
+          // observedAt is whole ms but mtimeMs is fractional: compare at ms resolution, so a write in the same ms as the call counts as before it.
+          const mtime = rawMtime === null ? null : Math.floor(rawMtime);
           if (mtime !== null && mtime > observedAt) {
             waitingFor = undefined;
           } else if (mtime !== null) {

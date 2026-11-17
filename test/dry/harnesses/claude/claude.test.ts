@@ -129,7 +129,7 @@ test('a transcript written within the same millisecond as the agents call keeps 
 test('live states come from the transcript tail plus the waiting reason from claude agents', async (t) => {
   const profile = claudeProfile(t);
   const repo = profile.dir('repo');
-  profile.write(SESSION_ID, repo, [entry.user('Go'), entry.assistant('Done', 'end_turn', '2026-01-01T00:00:03.000Z')]);
+  const transcript = profile.write(SESSION_ID, repo, [entry.user('Go'), entry.assistant('Done', 'end_turn', '2026-01-01T00:00:03.000Z')]);
   let agentCalls = 0;
   const harness = new ClaudeHarness({
     agentsService: new ClaudeAgentsService({
@@ -142,6 +142,9 @@ test('live states come from the transcript tail plus the waiting reason from cla
     }),
   });
 
+  // Pin the transcript time in the past so the test never races the clock.
+  const past = new Date(Date.now() - 5000);
+  fs.utimesSync(transcript, past, past);
   const before = Date.now();
   const live = await harness.getLiveStates([SESSION_ID, 'missing-id']);
   const { observedAt, writtenAt, ...state } = live.get(SESSION_ID)!;
