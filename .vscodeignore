@@ -23,3 +23,17 @@ AGENTS.md
 ROADMAP.md
 .claude/**
 docs/adr/**
+tools/**
+.devcontainer/**
+manifest/**
+CLAUDE.md
+pyproject.toml
+poetry.lock
+poetry.toml
+.env
+.env.example
+.gitattributes
+.venv/**
+.pytest_cache/**
+.superpowers/**
+dist/**
