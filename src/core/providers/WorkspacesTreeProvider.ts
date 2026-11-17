@@ -3,7 +3,6 @@ import * as path from 'path';
 import { Repository, RepositoryWorktrees, Worktree, ChatSession, TreeItemType } from '../types';
 import { StorageService } from '../services/StorageService';
 import { GitService } from '../services/GitService';
-import { GitHubService } from '../services/GitHubService';
 import { TerminalManager } from '../services/TerminalManager';
 import { HarnessRegistry } from '../harness/HarnessRegistry';
 import { selectHarnessIconState } from '../harness/sessionUtils';
@@ -15,8 +14,6 @@ import { samePath } from '../utils/paths';
 import { chatTooltip } from './chatTooltip';
 
 const REFRESH_DEBOUNCE_MS = 300;
-/** PR badges are re-fetched this often. */
-const PR_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 /** Every row render could ask for ahead/behind, and each count is a git process. */
 const SYNC_CACHE_MS = 15_000;
 
@@ -62,13 +59,11 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   private revealsInFlight = 0;
   private refreshHeld = false;
   private readonly disposables: vscode.Disposable[] = [];
-  private readonly prRefreshTimer: NodeJS.Timeout;
 
   private readonly scheduledRefresh = debounce(() => {
     if (this.pendingCacheClear) {
       this.pendingCacheClear = false;
       this.worktreeCache.clear();
-      this.gitHubService.clearCache();
     }
     this.updateRepoWatchers();
     this.fireChange();
@@ -85,23 +80,17 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     private readonly gitService: GitService,
     terminalManager: TerminalManager,
     private readonly harnessRegistry: HarnessRegistry,
-    private readonly gitHubService: GitHubService,
     private readonly extensionUri: vscode.Uri
   ) {
     this.chatOpenProvider = (chat) => terminalManager.isActive(chat.id);
     // A terminal opening or closing only changes its row's mark.
     this.disposables.push(terminalManager.onTerminalStateChange(() => this.softRefresh()));
     this.updateRepoWatchers();
-    this.prRefreshTimer = setInterval(() => {
-      this.gitHubService.clearCache();
-      this.fireChange();
-    }, PR_REFRESH_INTERVAL_MS);
   }
 
   dispose(): void {
     this.scheduledRefresh.cancel();
     this.onGitChange.cancel();
-    clearInterval(this.prRefreshTimer);
     for (const disposable of [...this.disposables, ...this.repoWatchers]) {
       disposable.dispose();
     }
@@ -181,12 +170,6 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   softRefresh(): void {
     this.renderPending = true;
     this.scheduledRefresh();
-  }
-
-  /** The PR URL for a worktree's branch, once its badge has been looked up. */
-  getPRUrl(worktree: Worktree): string | undefined {
-    const repo = this.storageService.getRepository(worktree.repoId);
-    return repo ? this.gitHubService.getCachedPRInfo(repo.rootPath, worktree.name)?.url : undefined;
   }
 
   /**
@@ -322,16 +305,11 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
 
   private worktreeRows(repo: Repository, worktrees: Worktree[]): WorkspaceTreeItem[] {
     const currentFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const unknownPRs: string[] = [];
 
     const rows = worktrees.map((worktree) => {
       const item = this.worktreeItem(worktree, vscode.TreeItemCollapsibleState.Collapsed);
       const isCurrent = currentFolder !== undefined && samePath(currentFolder, worktree.path);
       const checkedOutPR = this.storageService.getPRWorktree(worktree.id);
-      const pr = this.gitHubService.getCachedPRInfo(repo.rootPath, worktree.name);
-      if (pr === undefined) {
-        unknownPRs.push(worktree.name);
-      }
 
       // Color marks state, not identity: amber for the open workspace, blue
       // for a PR checkout, green for the main worktree, neutral otherwise.
@@ -343,27 +321,20 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       item.iconPath = new vscode.ThemeIcon(icon, new vscode.ThemeColor(color));
 
       const sync = this.getSyncState(worktree.path);
-      const prNumber = checkedOutPR ?? pr?.number;
       const description = [
         isCurrent ? '●' : '',
         sync?.ahead ? `↑${sync.ahead}` : '',
         sync?.behind ? `↓${sync.behind}` : '',
-        prNumber ? `PR #${prNumber}` : '',
       ].filter(Boolean);
       if (description.length > 0) {
         item.description = description.join(' · ');
       }
-      item.tooltip = [worktree.path, isCurrent ? 'Active workspace' : '', pr ? `PR #${pr.number}: ${pr.title}` : '']
+      item.tooltip = [worktree.path, isCurrent ? 'Active workspace' : '']
         .filter(Boolean)
         .join('\n\n');
       return item;
     });
 
-    if (unknownPRs.length > 0) {
-      void Promise.all(unknownPRs.map((branch) => this.gitHubService.fetchPRInfo(repo.rootPath, branch))).then(() =>
-        this.fireChange()
-      );
-    }
     return rows;
   }
 

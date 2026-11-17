@@ -30,8 +30,6 @@ test('the hover row keeps frequent actions and nothing destructive or occasional
   for (const command of [
     'pitwall.deleteChat',
     'pitwall.removeRepository',
-    'pitwall.deleteWorktree',
-    'pitwall.forkChatWithChanges',
     'pitwall.clearWorktreeSessions',
     'pitwall.moveRepositoryUp',
     'pitwall.moveRepositoryDown',
@@ -56,9 +54,6 @@ test('a plain folder row offers shared actions but no git-only ones', () => {
   const folderActions = new Set(rowMenu.filter((entry) => entry.when?.includes('folderRepository')).map(id));
   for (const shared of ['pitwall.newSession', 'pitwall.openTerminalAtWorktree', 'pitwall.removeRepository', 'pitwall.moveRepositoryUp']) {
     assert.ok(folderActions.has(shared), shared);
-  }
-  for (const gitOnly of ['pitwall.addWorktree', 'pitwall.checkoutPR', 'pitwall.deleteWorktree', 'pitwall.mergeWorktree', 'pitwall.rebaseWorktree', 'pitwall.openPRInBrowser']) {
-    assert.ok(!folderActions.has(gitOnly), gitOnly);
   }
 });
 
@@ -169,10 +164,10 @@ test('Open in UI stays in the context menu without its extension and is a hover 
 });
 
 test('dialog commands end in an ellipsis; row-only commands stay out of the palette', () => {
-  for (const command of ['pitwall.addRepository', 'pitwall.cloneRepository', 'pitwall.importSessions', 'pitwall.forkChatWithChanges', 'pitwall.renameChat']) {
+  for (const command of ['pitwall.addRepository', 'pitwall.cloneRepository', 'pitwall.importSessions', 'pitwall.renameChat']) {
     assert.match(commands.find((entry) => entry.command === command)?.title ?? '', /…$/, command);
   }
-  for (const command of ['pitwall.moveRepositoryUp', 'pitwall.renameChat', 'pitwall.deleteWorktree', 'pitwall.files.delete', 'pitwall.starChat']) {
+  for (const command of ['pitwall.moveRepositoryUp', 'pitwall.renameChat', 'pitwall.files.delete', 'pitwall.starChat']) {
     assert.ok(
       (menus.commandPalette ?? []).some((entry) => entry.command === command && entry.when === 'false'),
       `${command} is hidden from the palette`

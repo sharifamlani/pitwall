@@ -12,12 +12,12 @@ New here? [Install Pitwall and start your first session](getting-started.md). It
 | --- | --- |
 | Install Pitwall and start a session | [Getting started](getting-started.md) |
 | Start, resume, rename, star, and clean up sessions | [Sessions](sessions.md) |
-| Give each task its own branch and directory | [Worktrees and repositories](worktrees.md) |
+| Give each task its own branch and directory (hidden in v1) | [Worktrees and repositories](worktrees.md) |
 | Try a second approach without losing the first | [Fork a session](fork-sessions.md) |
 | Find a session from last week by describing it | [Find Session](find-session.md) |
 | Know when an agent finishes or needs me | [Notifications](notifications.md) |
 | Use the Claude Code or Codex chat panel instead of a terminal | [Agent panels](agent-panels.md) |
-| See and manage what the agent changed | [Changes and files](changes-and-files.md) |
+| See and manage what the agent changed (Changes panel hidden in v1) | [Changes and files](changes-and-files.md) |
 
 ## Agents
 

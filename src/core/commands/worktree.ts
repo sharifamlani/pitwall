@@ -1,3 +1,4 @@
+// Parked by ROADMAP row 3.6 / ruling P9: not constructed or registered; restoring it is a manifest + wiring change.
 import * as vscode from 'vscode';
 import { StorageService } from '../services/StorageService';
 import { GitService, recommendedRebaseTarget } from '../services/GitService';
@@ -11,10 +12,10 @@ export interface WorktreeCommandDeps {
   storageService: StorageService;
   gitService: GitService;
   gitHubService: GitHubService;
-  workspacesProvider: Pick<WorkspacesTreeProvider, 'getWorktreeForItem' | 'isGitRepo' | 'getPRUrl'>;
+  workspacesProvider: Pick<WorkspacesTreeProvider, 'getWorktreeForItem' | 'isGitRepo'>;
+  getPRUrl: (worktree: Worktree) => string | undefined;
   /** Remove a deleted worktree's chats and clear the panels if they show it. */
   forgetWorktrees: (worktrees: Worktree[]) => void;
-  switchWorkspaceFolder: (folderPath: string) => void;
   refreshTree: () => void;
 }
 
@@ -23,7 +24,7 @@ export interface WorktreeCommandDeps {
  * small open/copy/switch actions on a worktree row.
  */
 export function registerWorktreeCommands(context: vscode.ExtensionContext, deps: WorktreeCommandDeps): void {
-  const { storageService, gitService, gitHubService, workspacesProvider, refreshTree } = deps;
+  const { storageService, gitService, gitHubService, workspacesProvider, refreshTree, getPRUrl } = deps;
   const register = commandRegistrar(context);
 
   /** The selected repository row, or a choice among the git repositories. */
@@ -129,37 +130,6 @@ export function registerWorktreeCommands(context: vscode.ExtensionContext, deps:
       refreshTree();
     } else {
       vscode.window.showErrorMessage('Failed to create worktree. Check that the branch exists and path is valid.');
-    }
-  });
-
-  register('pitwall.openInNewWindow', async (item?: WorkspaceTreeItem) => {
-    const worktree = workspacesProvider.getWorktreeForItem(item);
-    if (worktree) {
-      await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(worktree.path), {
-        forceNewWindow: true,
-      });
-    }
-  });
-
-  register('pitwall.copyWorktreePath', async (item?: WorkspaceTreeItem) => {
-    const worktree = workspacesProvider.getWorktreeForItem(item);
-    if (worktree) {
-      await vscode.env.clipboard.writeText(worktree.path);
-      vscode.window.showInformationMessage(`Copied path: ${worktree.path}`);
-    }
-  });
-
-  register('pitwall.openTerminalAtWorktree', (item?: WorkspaceTreeItem) => {
-    const worktree = workspacesProvider.getWorktreeForItem(item);
-    if (worktree) {
-      openTerminal(`Terminal: ${worktree.name}`, worktree.path);
-    }
-  });
-
-  register('pitwall.switchToWorkspace', (item?: WorkspaceTreeItem) => {
-    const worktree = workspacesProvider.getWorktreeForItem(item);
-    if (worktree) {
-      deps.switchWorkspaceFolder(worktree.path);
     }
   });
 
@@ -403,7 +373,7 @@ export function registerWorktreeCommands(context: vscode.ExtensionContext, deps:
     if (!worktree) {
       return;
     }
-    const url = workspacesProvider.getPRUrl(worktree);
+    const url = getPRUrl(worktree);
     if (url) {
       await vscode.env.openExternal(vscode.Uri.parse(url));
     } else {

@@ -2,6 +2,8 @@
 
 # Changes and files
 
+> **Pitwall v1 hides the Changes panel, worktree create/delete/merge/rebase, pull request badges and Fork Session to New Worktree.** The Files panel (collapsed by default), Find Session and Fork Session Here stay. The sections below describe the hidden features and apply again if they return (ROADMAP row 3.6).
+
 The **Changes** and **All Files** panels show what is in the worktree you are working on. Select a worktree or a session in the Workspaces view and both panels follow it, so you can see what an agent changed in any branch without opening that branch in VS Code.
 
 Both panels name the worktree in their title, for example `Changes (feature/search ~ storefront)`.

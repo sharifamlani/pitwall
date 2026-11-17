@@ -78,7 +78,6 @@ test('disabled harness records are skipped, not thrown', async (t) => {
     } as never,
     { onTerminalStateChange: () => ({ dispose: () => undefined }), isActive: () => false } as never,
     registry,
-    { getCachedPRInfo: () => null, fetchPRInfo: async () => null, clearCache: () => undefined } as never,
     vscode.Uri.file('/extension')
   );
   t.after(() => tree.dispose());

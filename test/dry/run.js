@@ -32,7 +32,7 @@ function collectTests(dir, prefix = '') {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
-      return entry.name.startsWith('.build') || entry.name === 'fixtures' ? [] : collectTests(path.join(dir, entry.name), rel);
+      return entry.name.startsWith('.build') || entry.name === 'fixtures' || entry.name === 'dormant' ? [] : collectTests(path.join(dir, entry.name), rel);
     }
     return entry.name.endsWith('.test.ts') ? [rel] : [];
   });

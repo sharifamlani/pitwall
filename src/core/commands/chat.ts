@@ -753,6 +753,7 @@ export function registerChatCommands(
     vscode.window.showInformationMessage(`Forked session "${chat.name}"`);
   });
 
+  // Parked by ROADMAP row 3.6 (ruling P9): registered, not contributed.
   // Fork into a new worktree that starts from the source's HEAD and carries
   // its uncommitted changes.
   register('pitwall.forkChatWithChanges', async (item?: WorkspaceTreeItem) => {

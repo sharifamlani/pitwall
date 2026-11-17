@@ -1,5 +1,7 @@
 > Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
 
+> **Pitwall v1 hides the worktree and pull request features described here.** Creating, deleting, merging and rebasing worktrees, pull request badges and Check Out Pull Request, the Changes panel, and Fork Session to New Worktree are parked (ROADMAP row 3.6). Add repositories, Files, Find Session and Fork Session Here stay. Where this page covers a hidden feature, it applies again if the feature returns.
+
 # Run multiple agents in parallel with git worktrees
 
 To run several coding agents at once without them overwriting each other, give each agent its own git worktree: a separate directory, on a separate branch, of the same repository. One task, one worktree, one agent. This guide shows the workflow by hand and then with Pitwall in VS Code, for Claude Code, Codex, opencode, and Pi.

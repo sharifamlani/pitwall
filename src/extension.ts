@@ -4,7 +4,6 @@ import { ChatSession, Worktree } from './core/types';
 import { StorageService } from './core/services/StorageService';
 import { WorktreeCatalog } from './core/services/WorktreeCatalog';
 import { GitService } from './core/services/GitService';
-import { GitHubService } from './core/services/GitHubService';
 import { TerminalManager } from './core/services/TerminalManager';
 import { HarnessWatcherRegistry } from './core/harness/HarnessWatcherRegistry';
 import { SessionImportService } from './core/services/SessionImportService';
@@ -17,13 +16,11 @@ import { HarnessRegistry } from './core/harness/HarnessRegistry';
 import { enabledHarnesses } from './harnesses';
 import { chatNativeSessionIds } from './core/harness/sessionUtils';
 import { WorkspacesTreeProvider } from './core/providers/WorkspacesTreeProvider';
-import { ChangesTreeProvider } from './core/providers/ChangesTreeProvider';
 import { FilesTreeProvider, FileTreeItem } from './core/providers/FilesTreeProvider';
 import { SessionSearchTreeProvider } from './core/providers/SessionSearchTreeProvider';
 import { registerRepositoryCommands } from './core/commands/repository';
-import { registerWorktreeCommands } from './core/commands/worktree';
+import { registerWorktreeRowCommands } from './core/commands/worktree-rows';
 import { registerChatCommands } from './core/commands/chat';
-import { registerChangesCommands } from './core/commands/changes';
 import { registerSessionImportCommands } from './core/commands/sessionImport';
 import { registerFileCommands } from './core/commands/files';
 import { SESSION_SEARCH_VIEW, registerSessionSearchCommands } from './core/commands/sessionSearch';
@@ -47,7 +44,6 @@ export async function activate(context: vscode.ExtensionContext) {
   const storageService = new StorageService(context, (id) => enabledIds.has(id));
   const gitService = new GitService();
   const worktreeCatalog = new WorktreeCatalog(storageService, gitService);
-  const gitHubService = new GitHubService();
   const modules = harnessModules.map((m) => m.create({ storageService, worktreeCatalog }));
   const harnessRegistry = new HarnessRegistry(modules.map((m) => m.adapter));
   const harnessWatcherRegistry = new HarnessWatcherRegistry(
@@ -108,7 +104,6 @@ export async function activate(context: vscode.ExtensionContext) {
     gitService,
     terminalManager,
     harnessRegistry,
-    gitHubService,
     context.extensionUri
   );
   workspacesProvider.setChatOpenProvider(isChatOpen);
@@ -120,7 +115,6 @@ export async function activate(context: vscode.ExtensionContext) {
   const restore = terminalManager.beginRestoreSync((id) => workspacesProvider.getWorktreeById(id));
   void restore.complete.catch((error) => console.error('Pitwall: restoring terminals failed', error));
 
-  const changesProvider = new ChangesTreeProvider(gitService, (worktree) => workspacesProvider.isGitWorktree(worktree));
   const filesProvider = new FilesTreeProvider();
   const workspacesTreeView = vscode.window.createTreeView('pitwall.workspacesView', {
     treeDataProvider: workspacesProvider,
@@ -128,20 +122,18 @@ export async function activate(context: vscode.ExtensionContext) {
     // Session rows can be removed, closed, and starred several at a time.
     canSelectMany: true,
   });
-  const changesTreeView = vscode.window.createTreeView('pitwall.changesView', { treeDataProvider: changesProvider });
   const filesTreeView = vscode.window.createTreeView('pitwall.filesView', {
     treeDataProvider: filesProvider,
     showCollapseAll: true,
   });
-  context.subscriptions.push(workspacesTreeView, changesTreeView, filesTreeView);
+  context.subscriptions.push(workspacesTreeView, filesTreeView);
   const refreshTree = () => workspacesProvider.refresh();
 
-  // The worktree the Changes and Files panels show, and one watcher on its
-  // files that refreshes both.
+  // The worktree the Files panel shows, and one watcher on its files that
+  // refreshes it.
   let shownWorktree: Worktree | undefined;
   let worktreeWatcher: vscode.FileSystemWatcher | undefined;
   const refreshPanels = debounce(() => {
-    changesProvider.refresh();
     filesProvider.refresh();
   }, FILE_CHANGE_DEBOUNCE_MS);
   const showWorktree = (worktree: Worktree | undefined): void => {
@@ -155,7 +147,6 @@ export async function activate(context: vscode.ExtensionContext) {
         worktreeWatcher.onDidCreate(refreshPanels);
         worktreeWatcher.onDidDelete(refreshPanels);
       }
-      changesProvider.setActiveWorktree(worktree);
       filesProvider.setActiveWorktree(worktree);
     }
     const repoName = worktree && storageService.getRepository(worktree.repoId)?.name;
@@ -164,8 +155,7 @@ export async function activate(context: vscode.ExtensionContext) {
       : repoName && worktree.name !== repoName
         ? ` (${worktree.name} ~ ${repoName})`
         : ` (${worktree.name})`;
-    changesTreeView.title = `Changes${suffix}`;
-    filesTreeView.title = `All Files${suffix}`;
+    filesTreeView.title = `Files${suffix}`;
   };
 
   /** Close chats' terminals and delete their rows; a removed selection is cleared. */
@@ -298,15 +288,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Commands
   registerRepositoryCommands(context, { storageService, gitService, forgetWorktrees, refreshTree });
-  registerWorktreeCommands(context, {
-    storageService,
-    gitService,
-    gitHubService,
-    workspacesProvider,
-    forgetWorktrees,
-    switchWorkspaceFolder,
-    refreshTree,
-  });
+  registerWorktreeRowCommands(context, { workspacesProvider, switchWorkspaceFolder });
   registerChatCommands(context, {
     storageService,
     gitService,
@@ -324,7 +306,6 @@ export async function activate(context: vscode.ExtensionContext) {
     refreshTree,
   });
   registerSessionImportCommands(context, storageService, gitService, worktreeCatalog, workspacesProvider, harnessRegistry, refreshTree);
-  registerChangesCommands(context, gitService, changesProvider, refreshTree);
   registerFileCommands(context, filesProvider, () => {
     const [row] = filesTreeView.selection;
     return row instanceof FileTreeItem ? row : undefined;
@@ -488,7 +469,6 @@ export async function activate(context: vscode.ExtensionContext) {
       worktreeWatcher?.dispose();
       attentionService.dispose();
       terminalManager.dispose();
-      changesProvider.dispose();
       filesProvider.dispose();
       workspacesProvider.dispose();
       harnessWatcherRegistry.dispose();

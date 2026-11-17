@@ -471,7 +471,6 @@ async function needsYouFlow(t: { after(fn: () => void): void }) {
     { listRepositoryWorktrees: () => ({ isGit: true, worktrees: [worktree] }), getAheadBehind: () => null } as never,
     terminals,
     registry,
-    { getCachedPRInfo: () => null, fetchPRInfo: async () => null, clearCache: () => undefined } as never,
     vscode.Uri.file('/extension')
   );
   t.after(() => tree.dispose());

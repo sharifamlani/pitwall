@@ -7,7 +7,7 @@ Install Pitwall from the VS Code Marketplace, add a folder or repository, and cl
 ## Requirements
 
 - **VS Code 1.93 or newer**, or an editor built on it such as Cursor.
-- **Git**, for worktrees, the Changes panel, and pull requests. A plain folder without git works too.
+- **Git**, for repositories and the Files panel. A plain folder without git works too.
 - **At least one supported agent CLI**, installed and working in a terminal:
 
   | Agent | Command | Notes |
