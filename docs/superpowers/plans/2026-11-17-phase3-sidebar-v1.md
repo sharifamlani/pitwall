@@ -81,7 +81,7 @@ Phase 7 : After v1
 - **Windows parity:** every new test passes on the windows CI job. Paths are compared with `samePath()`, and repo roots get one canonical native spelling (Phase 2 Task 1).
 - **Opener unchanged:** a chat still opens through today's opener (terminal default). Claude's panel by default is Phase 4 row 4.1, which needs 4.2's window-per-folder (T5).
 - **R36–R45** needs-you behaviour must keep passing: existing attention tests unchanged, except where a test names `claude agents` as the source. Toast state (open chats only, P5) is kept separate from row-status state (all chats).
-- **Performance:** the attention tick stats transcripts only for open chats and live sessions-file sessions; other chats' transcript changes come from the 60 s discovery scan (QA S5). Tick p95 ≤ 50 ms with 500 chats (E18).
+- **Performance:** the attention tick stats transcripts only for open chats and live sessions-file sessions; other chats' transcript changes come from the 60 s discovery scan (QA S5). Tick p95 ≤ 50 ms with 500 chats, measured by a bench outside the default suite (E18).
 - **Flywheel:**
   - One PR per task on branch `phase3/task-N-<slug>`.
   - QA approves an exact sha. The lead merges only with `gh pr checks` green at that sha, then confirms main CI before the next merge.
@@ -106,7 +106,7 @@ pitwall/
 ├── src/
 │   ├── extension.ts                          T3 T4 T5 T8 T9  wire discovery, drop Changes/PR wiring, new commands
 │   ├── core/
-│   │   ├── types.ts                          T1 T3 T5  STORAGE_KEYS.dismissedRepos, Repository.origin, ChatSession.seenAt
+│   │   ├── types.ts                          T1 T5     STORAGE_KEYS.DISMISSED_REPOS, Repository.origin, ChatSession.seenAt
 │   │   ├── services/
 │   │   │   ├── storageOverlay.ts             T1  NEW RecordOverlay<T>: record-level stale-echo guard
 │   │   │   ├── StorageService.ts             T1     every collection through the overlay; dismissals, seenAt, P17 ids
@@ -361,7 +361,7 @@ BEFORE: chevron + pill mark (`#c5c5c5`).  AFTER: four dots in a row, one colour,
 | E15 | End to end: the canvas sidebar flows work in real Cursor | Walk W1–W10 all PASS on the release sha, real `~/.claude` read-only (P15) + lab repos | testing agent walk | `captures/phase3-walk-evidence/` |
 | E16 | Startup stays fast with real data | `[Pitwall] activate` → `[Pitwall] first render` ≤ 1 s, 5/5 starts, real `~/.claude` (Task 5 adds both log lines, QA C2) | exthost log (walk W1) | log excerpt |
 | E17 | The sidebar never scrolls sideways and resizes like any panel (D33) | Yes/no: at 220 px no horizontal scrollbar and rows end in "…"; dragging the edge resizes (QA C3) | walk W10 | 2 screenshots |
-| E18 | The status tick stays cheap with many chats | Attention tick p95 ≤ 50 ms over 100 ticks with 500 chats (dry bench, fake fs) (QA S5) | `npm test -- attention-bench` | bench output |
+| E18 | The status tick stays cheap with many chats | Suite (deterministic): at 500 chats a tick stats only open chats and live sessions-file sessions, 0 others. Bench (outside the default suite): tick p95 ≤ 50 ms over 100 ticks (QA S5, R2) | `npm test -- attention` + `node --test test/bench/attention-bench.js` | test name + bench output |
 
 ## 6. Implementation tasks
 
@@ -372,7 +372,7 @@ Waves (parallel within a wave, one PR per task):
 - **D:** T9 (consumes T8's `goToRepo`)
 - **E:** T10
 
-Rebase order where files overlap: T2 before T3 (`ClaudeHarness.ts`, `harness/types.ts`), T4 before T3 (`extension.ts`, manifest, `menus.test.ts`) (QA B4, B6).
+Rebase order where files overlap: T2 before T3 (`ClaudeHarness.ts`, `harness/types.ts`), T4 before T3 (`extension.ts`, manifest, `menus.test.ts`), T3 before T5 (`extension.ts`, manifest, `menus.test.ts`) (QA B4, B6, R3).
 
 ### Task 1: Every collection survives a stale storage echo (row 3.0, `phase3/task-1-storage-overlay`)
 
@@ -558,7 +558,7 @@ Rebase order where files overlap: T2 before T3 (`ClaudeHarness.ts`, `harness/typ
   - `a chat kept in front writes seenAt at most once per finished turn` (QA S4).
   - `closing a chat keeps its row status, and reopening it doesn't toast a pre-existing wait` (QA S6, R45).
   - `every session tooltip shows its folder`.
-  - bench `attention tick p95 ≤ 50 ms with 500 chats` (E18).
+  - `at 500 chats a tick stats only open and live sessions-file chats` (count assert, in the suite); the p95 timing lives in `test/bench/attention-bench.js`, outside the default run (E18).
   - `R36–R45 toasts still fire only for open chats`.
 - [ ] **Step 2:** Run them. Expected: FAIL.
 - [ ] **Step 3:** Implement `sessionStatus` and `inboxOrder`, then the attention changes, then the tree changes.
