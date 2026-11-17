@@ -64,6 +64,7 @@ Phase 7 : After v1
 | P20 | Ctrl+↓/↑ or Enter on a **repo** row expands and selects it (P11); "all its chats" is Phase 4 row 4.3 (QA D-c) | Phase 4 owns tabs | none |
 | P21 | Header naming: Cursor shows the container title `PITWALL` on top and, because FILES sits below, gives the list its own header. The list's header reads `REPOS` with the description `sorted by who needs you` and the search + folder icons, the closest native form of the canvas header `PITWALL  sorted by who needs you [search][bell][folder]` | A container with two sections always shows per-section headers; naming the list `Pitwall` would print `PITWALL` twice | One word differs from the canvas |
 | P22 | Native limits of the standard list (canvas decision 1, D10, D29), accepted for v1 and listed in §3i: the status word uses Cursor's muted description colour (the dot carries the colour, the word the meaning, so the brand's "never colour alone" holds); the selected row uses Cursor's selection, not the orange edge; high-contrast themes get the dark/light SVGs | TreeItem descriptions and selection can't be styled per row; the custom card panel that can is v2 (7.2) | none for v1 |
+| P23 | A window's list redraws from storage when the window gains focus and on each 60 s scan, so stars, names and dismissals written by another window show up (testing S1 finding: window B kept stale stars and names until it wrote or reloaded; the stored data was current) | `globalState` has no cross-window change event; refreshing on focus covers the moment a user can act on a row | A window left unfocused shows other windows' edits up to 60 s late |
 | P15 | The live walk on Sharif's real `~/.claude` is **read-only**: list, order, status, search and history only. Open / new-chat / dismiss flows run on the testing agent's lab repos | Resuming a real session appends to its transcript; the testing agent must not touch Sharif's work | none |
 
 ## Global Constraints
@@ -586,6 +587,7 @@ Rebase order where files overlap: T2 before T3 (`ClaudeHarness.ts`, `harness/typ
   - The poll set is open chats ∪ live sessions-file sessions; other chats' turn state refreshes from the 60 s discovery/import scan (QA S5).
   - Toast state (`needsYouSince`, `waitingSince`, cleared for chats that aren't open at `SessionAttentionService.ts:236-263`) is split from row-status state, which is kept for every chat (QA S6).
   - A chat in front (`isChatVisible`) or opened via `pitwall.openChat` calls `markChatSeen(id, now)` only when `turnEndedAt > seenAt` (at most one write per finished turn, QA S4).
+  - The tree re-reads storage and refreshes on `window.onDidChangeWindowState` (focused) and on each 60 s scan (P23).
   - Logs `[Pitwall] activate` and `[Pitwall] first render` once, and `[Pitwall] order <repo ids>` on each re-sort (QA C2).
 - Produces the tree:
   - Repo children are sessions from all of the repo's worktrees.
@@ -614,6 +616,7 @@ Rebase order where files overlap: T2 before T3 (`ClaudeHarness.ts`, `harness/typ
   - `repo summary says "1 needs you" and "2 need you"`.
   - `the activity badge counts needs-you sessions and hides at 0`.
   - `clicking a repo row points FILES at its main worktree; opening a chat points it at the chat's worktree`.
+  - `a window redraws stars, names and dismissals written by another window when it gains focus and on the 60 s scan` (P23; two StorageService instances over one memento).
   - `at 500 chats a tick stats only open and live sessions-file chats` (count assert, in the suite); the p95 timing lives in `test/bench/attention-bench.js`, outside the default run (E18).
   - `R36–R45 toasts still fire only for open chats`.
 - [ ] **Step 2:** Run them. Expected: FAIL.
