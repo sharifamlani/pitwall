@@ -12,6 +12,7 @@
  *   npm run test:dry -- claude   # run files whose name contains "claude"
  */
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const esbuild = require('esbuild');
@@ -50,6 +51,14 @@ if (testFiles.length === 0) {
 fs.rmSync(BUILD_DIR, { recursive: true, force: true });
 fs.mkdirSync(BUILD_DIR, { recursive: true });
 
+// Tests never read the developer's Claude profile. A test that builds a
+// ClaudeHarness without a fixture would otherwise see the real
+// ~/.claude/sessions (live sessions on this machine) and change behaviour from
+// one machine to the next. Fixtures still set their own CLAUDE_CONFIG_DIR.
+const CLAUDE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'pitwall-dry-claude-'));
+const testEnv = { ...process.env, CLAUDE_CONFIG_DIR: CLAUDE_HOME };
+delete testEnv.CLAUDE_CODE_PROJECT_DIR_NAME;
+
 let status = 0;
 try {
   const bundles = testFiles.map((file) => {
@@ -81,7 +90,7 @@ try {
         : []),
       ...bundles,
     ],
-    { stdio: 'inherit', env: process.env }
+    { stdio: 'inherit', env: testEnv }
   );
   status = result.status ?? 1;
 } catch (error) {
@@ -89,6 +98,7 @@ try {
   status = 1;
 } finally {
   fs.rmSync(BUILD_DIR, { recursive: true, force: true });
+  fs.rmSync(CLAUDE_HOME, { recursive: true, force: true });
 }
 
 process.exit(status);
