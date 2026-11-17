@@ -500,10 +500,15 @@ exports.activate = async function activate() {
     if (stage === '1r') {
       // After Developer: Reload Window every pty survives; Pitwall adopts each
       // tab by PID, keeps every title, and types into none of them.
+      const front = watchFront(Date.now());
       const settled = await waitFor(async () => {
         const names = (await readTerminals()).map((terminal) => terminal.name).sort();
         return JSON.stringify(names) === JSON.stringify(state.reload.names);
       }, 'the reloaded tabs to keep their titles', 30000);
+      // Adopted background tabs are renamed in the background; the tab in
+      // front must be in front again once that is done (R44).
+      await sleep(3000);
+      front.check('1r', state.activeName);
       const terminals = await snapshot();
       check('stage 1r: the tab count is unchanged after a reload', terminals.length === state.reload.names.length, String(terminals.length));
       check('stage 1r: every title is unchanged after a reload', settled, JSON.stringify(terminals.map((terminal) => terminal.name)));
