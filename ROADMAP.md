@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.31 · 2026-11-17
+> v0.32 · 2026-11-17
 
 ---
 
@@ -322,3 +322,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.29 · 2026-11-17.** Task 6c merged → `ae775fc` (R44). Restore puts back the group's real front tab, not `activeTerminal`, which differs in Cursor. Reveals wait for render and hold refreshes, so no more "No tree item". Pitwall's own shows never select or reveal. e2e asserts both; Smoke 7 10/10 (builder 5 + QA 5). Main CI green.
 - **v0.30 · 2026-11-17.** Sharif: move off the terminal path as fast as possible (the product is Claude's panel). R48: terminal restore stops in Phase 2. Restore with a file in front at quit fails because VS Code itself drops the revived terminals' names (reproduced with no Pitwall) → known issue, Phase 4 row 4.2b. R1(b) is timed from Pitwall's activation (lead, delegated).
 - **v0.31 · 2026-11-17 · Phase 2 closed, tag `v0.3.0`.** Independent evaluator: E1–E13 + E15 PASS (round 2, after R49 updated the packaged count to 49). Windows: 0 dry-test failures (was 12), full suite + `.vsix` build on Windows CI, privacy gate. Restore after quit/reload, needs-you (orange mark, Ctrl+Alt+N, one pop-up per unseen wait). Rulings R20–R50 in the plan. Unblocked: Phase 3. Deferred: 3.0 (F3), 4.2b (F4 + the file-in-front editor race), the opencode Windows spawn (when D9 enables it). Development paused by Sharif after this release.
+- **v0.32 · 2026-11-17.** Phase 2 posts live, approved by Sharif (hook B, orange needs-you image): LinkedIn https://www.linkedin.com/feed/update/urn:li:activity:7528489595731095552/ · X (reply 3 in the thread) https://x.com/SharifAmlani/status/2122724368136442262. Evaluator final: E1–E15 PASS. Development paused.
