@@ -77,6 +77,8 @@ interface StubControls {
   __openExternalCalls: { toString(): string }[];
   __setSilentExecutionEvents(value: boolean): void;
   __setShell(shellPath: string | undefined): void;
+  __setPidDelayMs(ms: number | undefined): void;
+  __setLateShellIntegration(value: boolean): void;
   workspace: { workspaceFolders: { uri: { fsPath: string } }[] };
   window: {
     terminals: FakeTerminal[];
@@ -87,6 +89,7 @@ interface StubControls {
     __fireDidOpenTerminal(terminal: unknown): void;
     __fireDidStartTerminalShellExecution(terminal: unknown, commandLine?: string): void;
     __setActiveTerminal(terminal: unknown): void;
+    __integrateShell(terminal: unknown): void;
   };
 }
 

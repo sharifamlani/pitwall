@@ -7,7 +7,7 @@ import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { TerminalManager } from '../../../src/core/services/TerminalManager';
-import { terminalTitle } from '../../../src/core/services/terminalEvents';
+import { PROCESS_ID_TIMEOUT_MS, terminalTitle } from '../../../src/core/services/terminalEvents';
 import { quoteShellArgument } from '../../../src/core/harness/cli';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { ClaudeHarness } from '../../../src/harnesses/claude/ClaudeHarness';
@@ -400,4 +400,58 @@ test('Remove closes a restored tab Pitwall could not resume, and only that tab',
   // Two stored chats share this short ID, so the tab is not provably theirs.
   f.manager.closeChat('f0f0f000-twin-a');
   assert.deepEqual([fork, other, twin].map((tab) => tab.disposed), [true, false, false]);
+});
+
+test('a new tab whose PID arrives after the wait still has its PID recorded', async (t) => {
+  stub.__setPidDelayMs(PROCESS_ID_TIMEOUT_MS + 500);
+  const f = setup(t, { chats: [{ id: '3c3c3c00-slow-pid', harnessSessionId: 'linked' }] });
+
+  const terminal = (await f.open('3c3c3c00-slow-pid'))!;
+  // openChat returned on today's bound, before the PID arrived.
+  assert.equal(f.storage.getTerminalPids()['3c3c3c00-slow-pid'], undefined);
+  await waitFor(
+    () => f.storage.getTerminalPids()['3c3c3c00-slow-pid'] === terminal.__pid,
+    'the late PID to be recorded',
+    PROCESS_ID_TIMEOUT_MS
+  );
+  assert.equal(terminal.__pidReads, 1, 'the late PID comes from the same read');
+});
+
+test('a late PID is not recorded for a tab that closed meanwhile', async (t) => {
+  stub.__setPidDelayMs(PROCESS_ID_TIMEOUT_MS + 300);
+  const f = setup(t, { chats: [{ id: '4d4d4d00-closed', harnessSessionId: 'linked' }] });
+  const terminal = (await f.open('4d4d4d00-closed'))!;
+  f.close(terminal);
+  let pidSettled = false;
+  void terminal.processId.then(() => (pidSettled = true));
+  await waitFor(() => pidSettled, 'the late PID to arrive', PROCESS_ID_TIMEOUT_MS);
+  await flush();
+  assert.equal(f.storage.getTerminalPids()['4d4d4d00-closed'], undefined);
+});
+
+test('a background tab whose shell integration arrives late still gets its restore title', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: '5e5e5e00-slow-shell', name: 'Slow Shell', harnessSessionId: 'linked' }] });
+  const renames: { name: string; target: unknown }[] = [];
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    renames.push({ name: arg.name, target: stub.window.activeTerminal });
+    if (stub.window.activeTerminal) stub.window.activeTerminal.name = arg.name;
+  });
+
+  // openChat returns on today's bound, before the shell integrates; waiting
+  // for the late shell would never settle here.
+  const tab = (await f.open('5e5e5e00-slow-shell'))!;
+
+  // The user moves on to another tab before the slow shell starts.
+  const front = f.restoredTab('the user’s shell', 9100);
+  stub.window.__setActiveTerminal(front);
+  // Only a rename after the launch command starts is the one a quit keeps.
+  const before = renames.length;
+  stub.window.__integrateShell(tab);
+
+  const title = terminalTitle(f.chat('5e5e5e00-slow-shell'));
+  await waitFor(() => renames.slice(before).some((r) => r.target === tab && r.name === title), 'the late title');
+  await waitFor(() => stub.window.activeTerminal === front, 'the user’s tab to be active again');
+  assert.ok(renames.every((r) => r.target === tab), 'only the slow tab is renamed');
+  assert.equal(front.name, 'the user’s shell');
 });

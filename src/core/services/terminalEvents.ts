@@ -4,7 +4,7 @@ import { ChatSession } from '../types';
 import { quoteShellArgument } from '../harness/cli';
 
 /** How long to wait for a terminal's pty before giving up on its PID. */
-const PROCESS_ID_TIMEOUT_MS = 2000;
+export const PROCESS_ID_TIMEOUT_MS = 2000;
 /** How long to let `show()` settle before renaming the active terminal. */
 const ACTIVE_TERMINAL_TIMEOUT_MS = 1000;
 

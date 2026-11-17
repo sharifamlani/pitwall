@@ -276,6 +276,9 @@ const configurationChangeListeners = new Set();
 let activeTerminal;
 let nextTerminalPid = 4100;
 let silentExecutionEvents = false;
+let defaultPidDelayMs;
+let lateShellIntegration = false;
+const shellIntegrationListeners = new Set();
 const warningResponses = [];
 const quickPickResponses = [];
 const inputResponses = [];
@@ -391,7 +394,10 @@ module.exports = {
       activeTerminalListeners.add(listener);
       return { dispose: () => activeTerminalListeners.delete(listener) };
     },
-    onDidChangeTerminalShellIntegration: () => ({ dispose: () => undefined }),
+    onDidChangeTerminalShellIntegration: (listener) => {
+      shellIntegrationListeners.add(listener);
+      return { dispose: () => shellIntegrationListeners.delete(listener) };
+    },
     onDidStartTerminalShellExecution: (listener) => {
       executionStartListeners.add(listener);
       return { dispose: () => executionStartListeners.delete(listener) };
@@ -411,6 +417,22 @@ module.exports = {
         listener({ terminal, execution: { commandLine } });
       }
     },
+    /**
+     * Test helper: a slow shell reports integration now, then runs the text
+     * typed into it before, reporting each as a command start.
+     */
+    __integrateShell: (terminal) => {
+      terminal.shellIntegration = {};
+      terminal.__awaitingIntegration = false;
+      for (const listener of [...shellIntegrationListeners]) {
+        listener({ terminal, shellIntegration: terminal.shellIntegration });
+      }
+      for (const text of terminal.sent) {
+        for (const listener of [...executionStartListeners]) {
+          listener({ terminal, execution: { commandLine: text } });
+        }
+      }
+    },
     __setActiveTerminal: (terminal) => {
       activeTerminal = terminal;
       for (const listener of activeTerminalListeners) {
@@ -426,7 +448,8 @@ module.exports = {
         disposed: false,
         __pid: options.__pid ?? nextTerminalPid++,
         exitStatus: options.__exitStatus,
-        shellIntegration: {},
+        shellIntegration: lateShellIntegration ? undefined : {},
+        __awaitingIntegration: lateShellIntegration,
         __pidReads: 0,
         get processId() {
           this.__pidReads += 1;
@@ -434,7 +457,8 @@ module.exports = {
         },
         sendText(text) {
           this.sent.push(text);
-          if (silentExecutionEvents) {
+          // A shell that has not integrated yet runs typed-ahead text later.
+          if (silentExecutionEvents || this.__awaitingIntegration) {
             return;
           }
           for (const listener of executionStartListeners) {
@@ -464,7 +488,7 @@ module.exports = {
       };
       // `__pidDelayMs` models a pty that reports its PID late (Windows):
       // one promise per terminal, like VS Code; Infinity never resolves.
-      const delay = options.__pidDelayMs;
+      const delay = options.__pidDelayMs ?? defaultPidDelayMs;
       const pidPromise =
         delay === undefined
           ? undefined
@@ -572,6 +596,7 @@ module.exports = {
       openTerminalListeners,
       activeTerminalListeners,
       executionStartListeners,
+      shellIntegrationListeners,
       tabChangeListeners,
       tabGroupChangeListeners,
       configurationChangeListeners,
@@ -586,6 +611,8 @@ module.exports = {
     clipboardText = '';
     activeTerminal = undefined;
     silentExecutionEvents = false;
+    defaultPidDelayMs = undefined;
+    lateShellIntegration = false;
     openExternalResult = true;
     nextTerminalPid = 4100;
     module.exports.workspace.workspaceFolders = [];
@@ -629,6 +656,14 @@ module.exports = {
           changed === section || changed.startsWith(`${section}.`),
       });
     }
+  },
+  /** Test helper: terminals created from now on report their PID after `ms`. */
+  __setPidDelayMs: (ms) => {
+    defaultPidDelayMs = ms;
+  },
+  /** Test helper: terminals created from now on integrate only on `window.__integrateShell`. */
+  __setLateShellIntegration: (value) => {
+    lateShellIntegration = Boolean(value);
   },
   /** Test helper: change the default terminal shell (`vscode.env.shell`). */
   __setShell: (shellPath) => {

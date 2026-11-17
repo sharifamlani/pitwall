@@ -22,7 +22,7 @@ import { fakeAdapter, fakeSearchRunner, makeStorage, runCommand, sessionRecord, 
 beforeEach(() => stub.__reset());
 
 /** A plain-folder root `app`, a folder outside every root, and the commands over a fake harness. */
-function setup(t: { after(fn: () => void): void }) {
+function setup(t: { after(fn: () => void): void }, adapter: Partial<HarnessAdapter> = {}) {
   const scratch = tempDir(t);
   const root = path.join(scratch, 'app');
   const outside = path.join(scratch, 'elsewhere');
@@ -42,6 +42,7 @@ function setup(t: { after(fn: () => void): void }) {
           return JSON.stringify({ answer: 'Nothing matched.', matches: [] });
         },
       }),
+      ...adapter,
     }),
   ]);
   const finder = new SessionSearchService(storage, registry, path.join(scratch, 'search'));
@@ -131,6 +132,17 @@ test('a found session outside every root resumes in a terminal at its folder, an
     await vscode.env.clipboard.readText(),
     `Set-Location -LiteralPath '${outside.replace(/'/g, "''")}'; if ($?) { claude --resume s2 }`
   );
+});
+
+test('in PowerShell, a found session outside every root resumes a quoted full-path command through the call operator', async (t) => {
+  const { outside } = setup(t, {
+    buildLaunchCommand: ({ sessionId }) => `'C:\\Program Files\\Claude\\claude.exe' --resume ${sessionId}`,
+  });
+  stub.__setShell('C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+
+  await runCommand('pitwall.resumeSearchMatch', found({ sessionId: 's3', cwd: outside }));
+  const [terminal] = stub.window.terminals;
+  assert.ok(terminal.sent[0].startsWith("& '"), terminal.sent[0]);
 });
 
 /** The finder over a fake harness whose agent replies `answer` and whose record confirms with `verify`. */
