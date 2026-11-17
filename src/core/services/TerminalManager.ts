@@ -363,7 +363,12 @@ export class TerminalManager {
       const lateStart = watchCommandStart(terminal);
       this.lateStarts.add(lateStart.cancel);
       const started = waitForCommandStart(terminal, RESTORED_SHELL_TIMEOUT_MS);
-      terminal.sendText(command);
+      // R42: a revived shell can report ready before it reads keystrokes (its
+      // shell integration is restored from the last session) and drop the
+      // first one: Smoke 7 saw "et-Location -LiteralPath ...". A leading space
+      // is harmless in PowerShell, cmd.exe and bash (and keeps the line out
+      // of bash history under ignorespace), so a dropped keystroke is the space.
+      terminal.sendText(` ${command}`);
       return { readiness, started, lateStart };
     });
 
