@@ -28,5 +28,5 @@ test('All Files lists folders first in natural order, hides build and VCS output
   const src = top[0];
   assert.equal(src.contextValue, 'folder');
   const [nested] = (await files.getChildren(src)) as FileTreeItem[];
-  assert.equal(nested.tooltip, 'src/a.ts', 'rows tooltip their worktree-relative path');
+  assert.equal(nested.tooltip, path.join('src', 'a.ts'), 'rows tooltip their worktree-relative path');
 });

@@ -88,3 +88,29 @@ def test_other_claude_skill_still_flagged():
 )
 def test_private_file_inside_pitwall_skill_still_flagged(path):
     assert leaked_paths([path]) == [path]
+
+
+def test_npmrc_flagged():
+    assert leaked_paths([".npmrc", "sub/.npmrc"]) == [".npmrc", "sub/.npmrc"]
+
+
+def test_netrc_flagged():
+    assert leaked_paths([".netrc", "home/.netrc"]) == [".netrc", "home/.netrc"]
+
+
+def test_id_rsa_flagged():
+    paths = ["id_rsa", "keys/id_rsa.pub"]
+    assert leaked_paths(paths) == paths
+
+
+def test_id_ed25519_flagged():
+    paths = ["id_ed25519", "keys/id_ed25519.pub"]
+    assert leaked_paths(paths) == paths
+
+
+def test_p12_flagged():
+    assert leaked_paths(["certs/a.p12"]) == ["certs/a.p12"]
+
+
+def test_pfx_flagged():
+    assert leaked_paths(["certs/a.pfx"]) == ["certs/a.pfx"]

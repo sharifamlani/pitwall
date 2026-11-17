@@ -61,7 +61,7 @@ file run in order, and the stub is reset before each test that uses it.
 | File | Stands in for |
 |---|---|
 | `vscode-stub.js` | The `vscode` module. `__reset()` clears messages, terminals, commands, listeners, and settings between tests. |
-| `support.ts` | Typed stub controls, in-memory `Memento`/`StorageService`, temp directories, `waitFor`, record factories, fake adapters / native UIs / search runners, and `fakeCli()`, the POSIX wrapper that runs a fixture as a harness CLI (`posixOnly` skips those tests on Windows). |
+| `support.ts` | Typed stub controls, in-memory `Memento`/`StorageService`, temp directories, `waitFor`, record factories, fake adapters / native UIs / search runners, and `fakeCli()`, the wrapper that runs a fixture as a harness CLI (on Windows it is a `.cmd` file; `skipOnWindows(reason)` skips a test and must say why). |
 | `claudeFixture.ts` | A synthetic Claude profile under a temp `CLAUDE_CONFIG_DIR` (or `HOME`) with transcript writers. |
 | `piFixture.ts` | A synthetic Pi profile under a temp `PI_CODING_AGENT_DIR` with session-entry builders and a writer that names records the way Pi does. |
 | `opencodeFixture.ts` | A fake `opencode` CLI over `fixtures/fake-opencode.js`, with accessors for its state file and the calls it recorded. |

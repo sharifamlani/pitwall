@@ -11,7 +11,7 @@ import * as path from 'path';
 import { ClaudeSessionService } from '../../../../src/harnesses/claude/ClaudeSessionService';
 import { claudeProjectDirMatches, encodeClaudeProjectPath } from '../../../../src/harnesses/claude/paths';
 import { claudeProfile, entry } from './claudeFixture';
-import { setEnv } from '../../support';
+import { dirLink, setEnv } from '../../support';
 
 const BASE = Math.floor(Date.now() / 1000) - 1000;
 const ids = (sessions: { sessionId: string }[]) => sessions.map((session) => session.sessionId);
@@ -63,13 +63,13 @@ test('paths encode every non-alphanumeric character, resolve symlinks, and match
   const worktree = profile.dir('worktree');
   writeSession(profile, 'wt-session', worktree, 1);
   const linkedWorktree = path.join(profile.root, 'linked-worktree');
-  fs.symlinkSync(worktree, linkedWorktree, 'dir');
+  dirLink(worktree, linkedWorktree);
   assert.equal(encodeClaudeProjectPath(linkedWorktree), encodeClaudeProjectPath(worktree), 'the physical path is encoded');
   assert.deepEqual(ids(await service.findSessionsForWorktree(linkedWorktree)), ['wt-session']);
 
   const linkTarget = profile.dir('linked-project-target');
   writeSession(profile, 'symlinked-dir-session', worktree, 2, { projectDir: linkTarget });
-  fs.symlinkSync(linkTarget, `${profile.projectDir(worktree)}-linked`, 'dir');
+  dirLink(linkTarget, `${profile.projectDir(worktree)}-linked`);
   assert.ok(ids(await service.findSessionsForWorktree(worktree)).includes('symlinked-dir-session'), 'a symlinked project directory is scanned');
 
   // Claude truncates names past 200 characters and appends a hash it does not

@@ -71,11 +71,8 @@ pass npm
 
 # 8. vsix - the packaged extension holds only allowlisted paths (vsce ignores .gitignore, so a stray
 #    root file or a private folder in a checkout would otherwise ship)
-vsix_files=$(npx -y @vscode/vsce@3.2.1 ls 2>/dev/null | tr -d '\r' | grep -v '^[[:space:]]*$') \
-  || fail vsix "vsce ls failed"
-stray=$(grep -Ev '^(out/.+|resources/.+|package\.json|README\.md|LICENSE|LICENSE\.txt|CHANGELOG\.md|THIRD_PARTY_NOTICES\.md)$' <<<"$vsix_files" || true)
-[[ -z "$stray" ]] || fail vsix "paths outside the allowlist would ship in the .vsix:
-$stray"
+unset VIRTUAL_ENV
+poetry run python -m tools.check_vsix || fail vsix "paths outside the allowlist would ship in the .vsix (see STRAY lines above)"
 pass vsix
 
 # 9. linux-tests - the npm test suite on Linux in the container (host only)

@@ -103,7 +103,7 @@ pitwall/
 │   └── shared/*.test.ts            MOVE    kit tests (native-ui, pending/exact-id watchers, jsonl reader, search sources)
 ├── docs/
 │   ├── adr/                        MOVE    (was adr/) upstream decision records, ids renamed
-│   ├── upstream/                   MOVE    upstream user docs (docs/*.md), ids renamed, marked "inherited"
+│   ├── reference …                   KEEP in place (Ruling R8); fixtures stay in test/dry/fixtures/ (Ruling R13)
 │   ├── windows-test-triage.md      CREATE  every Windows-failing/skipped test, classified (feeds Phase 2)
 │   └── superpowers/plans/…         this plan
 ├── .claude/skills/pitwall-*/       MOVE    upstream's 4 skills renamed (add-feature, build-extension, debug-extension, inspect-runtime-state)
@@ -246,7 +246,7 @@ AFTER:  Pitwall: New Claude Code Session · … (0 Codex/opencode/Pi entries)
 **Smoke 7 — END-TO-END: installed in Sharif's Cursor, it activates and lists this repo**
 - Proves: the packaged `.vsix` works in the real editor.
 - Command: `npx -y @vscode/vsce@3.2.1 package -o dist/pitwall-0.2.0.vsix && env -u ELECTRON_RUN_AS_NODE -u VSCODE_ESM_ENTRYPOINT -u VSCODE_CRASH_REPORTER_PROCESS_TYPE cursor --install-extension dist/pitwall-0.2.0.vsix --force`, reload Cursor, then `grep -h "sharifamlani.pitwall" "$APPDATA/Cursor/logs/<newest>/window*/exthost/exthost.log"`
-- Expected: `cursor --list-extensions --show-versions` shows `sharifamlani.pitwall@0.2.0`; exthost log shows activation and 0 lines matching `pitwall.*(Error|failed)`. Screenshot of the Pitwall sidebar with this repo's row (cua-driver) saved to `docs/evidence/phase1-sidebar.png`.
+- Expected: `cursor --list-extensions --show-versions` shows `sharifamlani.pitwall@0.2.0`; exthost log shows activation and 0 lines matching `pitwall.*(Error|failed)`. Screenshot evidence: testing agent UJ run 6 (see `docs/progress_reports/phase1-scorecard.md`, E8 part 2).
 - If it fails → the exthost log names the throwing module.
 
 **Ground truth after Smoke 7:** Phase 1 still builds rows only from Pitwall's own stored chats (upstream `WorkspacesTreeProvider` reads `storageService.getChatsByWorktree`), and the renamed storage starts empty. Upstream auto-import (`pitwall.autoImport.enabled`, default **true**, scans every 2 min) adds a repo's recent Claude chats on its own, so check two things on a test repo with one known chat: (1) **auto path:** with defaults, after adding the repo, exactly **1 row** appears within ~2 minutes, titled with that chat's `ai-title`; (2) **manual path:** with `pitwall.autoImport.enabled = false`, remove and re-add the repo → **0 rows** held for 150 s, then *Pitwall: Import Existing Sessions…* imports it → exactly **1 row** with the same title. (Found by the testing agent, UJ run 1.) Reading every chat across all repos with no repo added is Phase 3 (rows 3.1–3.2).
@@ -262,7 +262,7 @@ AFTER:  Pitwall: New Claude Code Session · … (0 Codex/opencode/Pi entries)
 | E5 | Shipped build is Claude-only | 0 occurrences of `codex`, `opencode`, `"pi"` / `Pi ` agent ids in shipped `package.json` contributes | `node -e` scan of package.json | count |
 | E6 | Renamed completely | 0 `agntree` hits in `src/ test/ manifest/ package.json` outside the explicit credit lines | `git grep -ni agntree` | count |
 | E7 | Disabled-agent records can't break the sidebar | `registry-safety.test.ts` passes (stored codex chat + search record with codex disabled → tree renders, no throw) | `npm test` | test line |
-| E8 | It runs in a real editor | integration suite exit 0 on Windows host **and** Cursor exthost log shows `sharifamlani.pitwall` activated with 0 errors | Smokes 6–7 | log lines + screenshot |
+| E8 | It runs in a real editor | integration suite exit 0 on Windows host **and** Cursor exthost log shows `sharifamlani.pitwall` activated with 0 errors | Smokes 6–7 | log lines + testing agent UJ run 6 (see `docs/progress_reports/phase1-scorecard.md`, E8 part 2) |
 | E9 | Windows failures are triaged | `docs/windows-test-triage.md` lists every Windows fail+skip (count = Windows `fail + skipped`) with a class: env-limit / POSIX-assumption / real-bug | count rows vs Windows run | file + run summary |
 | E10 | Verify + CI green | `scripts/verify.sh` exit 0 on host; GitHub Actions `ci.yml` green on both jobs for the closing commit | run + `gh run list --limit 1` | outputs |
 | E11 | Privacy holds | `check_private_paths` OK; gitleaks no leaks on fresh clone; only `.claude/skills/pitwall-*/` tracked under `.claude/` | commands | outputs |
@@ -271,7 +271,7 @@ AFTER:  Pitwall: New Claude Code Session · … (0 Codex/opencode/Pi entries)
 ## 6. Implementation tasks
 
 ### Task 1: Import upstream with history; resolve root collisions
-**Files:** merge commit; modify LICENSE, README.md, .gitignore, CHANGELOG.md, CLAUDE.md; create THIRD_PARTY_NOTICES.md; modify tools/check_private_paths.py + tests; delete site/, media/, .github/workflows/{pages,release}.yml; move adr/→docs/adr/, upstream docs/*.md→docs/upstream/, .claude/skills/<x>→.claude/skills/pitwall-<x>.
+**Files:** merge commit; modify LICENSE, README.md, .gitignore, CHANGELOG.md, CLAUDE.md; create THIRD_PARTY_NOTICES.md; modify tools/check_private_paths.py + tests; delete site/, media/, .github/workflows/{pages,release}.yml; move adr/→docs/adr/, upstream docs/*.md stay in docs/ (kept in place, R8), .claude/skills/<x>→.claude/skills/pitwall-<x>.
 - [ ] `git remote add upstream https://github.com/subhashkhileri/agntree && git fetch upstream && git merge --allow-unrelated-histories --no-commit upstream/main`.
 - [ ] Resolve: ours for ROADMAP/CLAUDE.md/.gitignore (union upstream's ignore lines); LICENSE = MIT text with upstream's copyright line followed by ours; README = ours + "Forked from [Agntree](…) by Subhash Khileri (MIT), at `47124cd`".
 - [ ] `THIRD_PARTY_NOTICES.md`: one section per upstream project. Agntree: name, URL, commit `47124cd`, licence MIT, full licence text. A header line says later lifts append here with their licence.
@@ -288,7 +288,7 @@ AFTER:  Pitwall: New Claude Code Session · … (0 Codex/opencode/Pi entries)
 - [ ] Commit `docs: triage upstream's Windows test failures for Phase 2`.
 
 ### Task 3: Rename agntree → pitwall
-**Files:** package.json, src/**, test/**, docs/adr/**, docs/upstream/**, AGENTS.md, .claude/skills/pitwall-*/**, .github templates, scripts/generate-harness-icons.mjs, resources (if ids appear).
+**Files:** package.json, src/**, test/**, docs/adr/**, docs/** (kept in place, R8), AGENTS.md, .claude/skills/pitwall-*/**, .github templates, scripts/generate-harness-icons.mjs, resources (if ids appear).
 - [ ] Add a committed rename script `scripts/rename-upstream-ids.mjs`: an explicit replacement table (`agntree.` → `pitwall.`, `Agntree` → `Pitwall`, `agntree` → `pitwall`, `subhashkhileri` publisher → `sharifamlani`, `4.0.0` → `0.2.0` in package.json only). It skips LICENSE, CHANGELOG credit lines, and README credit lines, which carry a `credit-allow` marker comment. It is idempotent and prints counts per file.
 - [ ] package.json: `name: "pitwall"`, `displayName: "Pitwall"`, `description: "Every Claude Code session across your repos, in one sidebar."`, `publisher: "sharifamlani"`, `version: "0.2.0"`, repository/bugs/homepage → sharifamlani/pitwall. Keywords trimmed to Claude Code + Cursor + session terms.
 - [ ] Run Smoke 3. Commit `rename: agntree ids → pitwall (scripted, behavior-neutral)`.

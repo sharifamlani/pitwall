@@ -24,7 +24,7 @@ One folder per coding agent ("harness"). Core (`src/core/`) never imports from h
 
 Codex, opencode and Pi are in the tree, tested, and switched off. To ship one, add its id to
 `enabled.json` (for example `["claude", "codex"]`), run `node scripts/build-manifest.mjs`, and
-commit both files.
+commit both files. Then change `SHIPPED_HARNESSES` in `test/dry/core/manifest.test.ts` to the same list, or `npm test` fails by design.
 
 ## Add an agent
 

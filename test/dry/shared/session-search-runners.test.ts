@@ -10,7 +10,7 @@ import * as path from 'path';
 import { CodexSearchRunner } from '../../../src/harnesses/codex/codexSearch';
 import { quoteForCmd } from '../../../src/core/harness/cli';
 import { PiSearchRunner } from '../../../src/harnesses/pi/piSearch';
-import { fakeCli, posixOnly, setEnv, tempDir } from '../support';
+import { fakeCli, setEnv, tempDir } from '../support';
 
 const CODEX_SEARCH_FIXTURE = path.resolve(__dirname, '..', 'fixtures', 'fake-codex-search.js');
 const PI_FIXTURE = path.resolve(__dirname, '..', 'fixtures', 'fake-pi-search.js');
@@ -26,7 +26,7 @@ interface CodexState {
   homes?: string[];
 }
 
-test('the Codex runner keeps the user config, disables MCP servers, and re-runs for a correction', posixOnly, async (t) => {
+test('the Codex runner keeps the user config, disables MCP servers, and re-runs for a correction', async (t) => {
   const dir = tempDir(t, 'pitwall-codex-run-');
   const cwd = path.join(dir, 'search');
   fs.mkdirSync(cwd);
@@ -106,7 +106,7 @@ test('the Codex runner keeps the user config, disables MCP servers, and re-runs 
   assert.deepEqual(activity, ['Exec rg banana', 'Exec rg banana'], 'each run reports its tool call');
 });
 
-test('the Pi runner uses only read-only tools, keeps its session under the search cwd, and resumes it for a correction', posixOnly, async (t) => {
+test('the Pi runner uses only read-only tools, keeps its session under the search cwd, and resumes it for a correction', async (t) => {
   const dir = tempDir(t, 'pitwall-pi-run-');
   const cwd = path.join(dir, 'search');
   fs.mkdirSync(cwd);

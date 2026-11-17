@@ -21,6 +21,12 @@ _PRIVATE = re.compile(
     | (^|/)\.env(\.[^/]*)?$                                    # .env and .env.*
     | (^|/)\.?(token|credentials)\.json$                       # OAuth / login tokens
     | \.(pem|key)$                                             # private keys
+    | (^|/)\.npmrc$                                            # npm auth tokens
+    | (^|/)\.netrc$                                            # machine logins
+    | (^|/)id_rsa[^/]*$                                        # SSH keys
+    | (^|/)id_ed25519[^/]*$
+    | \.p12$                                                   # certificate bundles
+    | \.pfx$
     """,
     re.IGNORECASE | re.VERBOSE,
 )

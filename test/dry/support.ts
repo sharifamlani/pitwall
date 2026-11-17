@@ -150,16 +150,35 @@ export function tempDir(t: { after(fn: () => void): void }, prefix = 'pitwall-')
   return dir;
 }
 
-/** Skips a test on Windows, where the fake CLIs' POSIX shell wrappers cannot run. */
-export const posixOnly = {
-  skip: process.platform === 'win32' ? 'the fake CLIs are POSIX shell wrappers' : false,
-};
+/** Links a directory. Windows junctions need no Developer Mode, and `fs.realpathSync` resolves them. */
+export function dirLink(target: string, link: string): void {
+  fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+}
+
+/** Skips a test on Windows. The reason is required: the spec reporter prints it, so every skip is explained. */
+export function skipOnWindows(reason: string): { skip: string | false } {
+  return { skip: process.platform === 'win32' ? reason : false };
+}
 
 /**
  * An executable `dir/name` standing in for a harness CLI: it runs the Node
- * `fixture` with `env` set and passes its arguments through.
+ * `fixture` with `env` set and passes its arguments through. On Windows it is
+ * a `.cmd` file (CRLF) and the returned path is that file.
  */
 export function fakeCli(dir: string, name: string, fixture: string, env: Record<string, string>): string {
+  if (process.platform === 'win32') {
+    const lines = ['@echo off'];
+    for (const [key, value] of Object.entries(env)) {
+      if (/["%\r\n]/.test(value)) {
+        throw new Error(`fakeCli cannot pass ${key} to a .cmd file: ${value}`);
+      }
+      lines.push(`set "${key}=${value}"`);
+    }
+    lines.push(`"${process.execPath}" "${fixture}" %*`);
+    const cli = path.join(dir, `${name}.cmd`);
+    fs.writeFileSync(cli, lines.join('\r\n') + '\r\n');
+    return cli;
+  }
   const cli = path.join(dir, name);
   const vars = Object.entries(env)
     .map(([key, value]) => `${key}='${value}' `)

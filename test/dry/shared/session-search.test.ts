@@ -14,7 +14,7 @@ import { ClaudeSessionService } from '../../../src/harnesses/claude/ClaudeSessio
 import { SessionSearchService } from '../../../src/core/services/SessionSearchService';
 import { encodeClaudeProjectPath } from '../../../src/harnesses/claude/paths';
 import { claudeProfile, entry } from '../harnesses/claude/claudeFixture';
-import { fakeCli, makeStorage, memento, posixOnly, stub, tempDir, waitFor } from '../support';
+import { fakeCli, makeStorage, memento, stub, tempDir, waitFor } from '../support';
 
 const FIXTURE = path.resolve(__dirname, '..', 'fixtures', 'fake-claude-search.js');
 
@@ -105,7 +105,7 @@ const promptSchema = (prompt: string) => JSON.parse(prompt.slice(prompt.lastInde
 
 const MOD_MATCH = { harness: 'claude', sessionId: MOD_SESSION, quote: 'i would like to install a claude mod', reason: 'Asks for the mod.' };
 
-test('a search runs with the configured model and effort, read-only, with no saved session, and keeps only sessions Claude confirms', posixOnly, async (t) => {
+test('a search runs with the configured model and effort, read-only, with no saved session, and keeps only sessions Claude confirms', async (t) => {
   const answer = (projectDirName: string) => ({
     answer: 'The mod was set up inside the laptop USB setup session on 8 November.',
     matches: [
@@ -181,7 +181,7 @@ test('a search runs with the configured model and effort, read-only, with no sav
   assert.deepEqual(reloaded.searches().map((stored) => stored.id), [search.id], 'kept across a reload');
 });
 
-test('stopping a search ends the agent and everything it started, and keeps nothing', posixOnly, async (t) => {
+test('stopping a search ends the agent and everything it started, and keeps nothing', async (t) => {
   // The grandchild holds the output open, as the ripgrep behind a Grep does.
   const { finder, storage, call } = setup(t, { hang: true, grandchild: true });
 
@@ -212,7 +212,7 @@ test('stopping a search ends the agent and everything it started, and keeps noth
   assert.deepEqual(finder.searches(), []);
 });
 
-test('a new question stops the running search, and one overtaken while waiting never starts', posixOnly, async (t) => {
+test('a new question stops the running search, and one overtaken while waiting never starts', async (t) => {
   const { finder, storage, call, play, starts } = setup(t, { hang: true });
   const first = finder.search('first question', (await finder.engine())!);
   const { pid } = await call();
@@ -248,7 +248,7 @@ test('confirming a quote reads the transcript in one pass and leaves no file ope
   assert.equal(openFiles(), before);
 });
 
-test('a reply that breaks the schema goes back to the same agent with what is wrong, and the fixed reply is kept', posixOnly, async (t) => {
+test('a reply that breaks the schema goes back to the same agent with what is wrong, and the fixed reply is kept', async (t) => {
   const answer = { answer: 'The mod was installed on 8 November.', matches: [MOD_MATCH] };
   const { finder, call } = setup(t, {
     turns: [
@@ -272,7 +272,7 @@ test('a reply that breaks the schema goes back to the same agent with what is wr
   ]);
 });
 
-test('an agent that never fixes its reply fails the search after two corrections', posixOnly, async (t) => {
+test('an agent that never fixes its reply fails the search after two corrections', async (t) => {
   const { finder, storage, call } = setup(t, { turns: [[reply('no idea')], [reply('still no idea')], [reply('{}')]] });
 
   const search = await finder.search('the usage mod', (await finder.engine())!);
@@ -283,7 +283,7 @@ test('an agent that never fixes its reply fails the search after two corrections
   assert.deepEqual(storage.getSessionSearches().map((stored) => stored.state), ['failed']);
 });
 
-test("a CLI that fails without an answer leaves a failed search carrying its error", posixOnly, async (t) => {
+test("a CLI that fails without an answer leaves a failed search carrying its error", async (t) => {
   const { finder, storage } = setup(t, { exitCode: 1, stderr: 'Error: Invalid API key · Please run /login' });
 
   const search = await finder.search('anything', (await finder.engine())!);
