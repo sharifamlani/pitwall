@@ -84,3 +84,19 @@ test('the activity-bar icon is four dots in one colour with the second dot large
   const colours = new Set([...svg.matchAll(/(?:fill|stroke)="(#[0-9a-fA-F]{6}|currentColor)"/g)].map((m) => m[1]));
   assert.equal(colours.size, 1, 'one colour');
 });
+
+test('claude status SVGs are circles only, carry no Claude clay, and new is a dashed hollow idle-grey ring', () => {
+  const grey = { dark: '#6b6f76', light: '#818b98' } as const;
+  for (const theme of ['light', 'dark'] as const) {
+    for (const state of ['working', 'needs', 'finished', 'idle', 'new'] as const) {
+      const svg = read(`resources/icons/harness/claude-${theme}-${state}.svg`);
+      assert.doesNotMatch(svg, /<(path|rect|polygon|polyline|ellipse|line|use|image)\b/i, `claude ${theme} ${state} is circles only`);
+      assert.doesNotMatch(svg, /#D97757/i, `claude ${theme} ${state} has no Claude clay`);
+    }
+    const fresh = read(`resources/icons/harness/claude-${theme}-new.svg`);
+    assert.match(fresh, /fill="none"/);
+    assert.match(fresh, /stroke-dasharray=/);
+    assert.match(fresh, new RegExp(`stroke="${grey[theme]}"`));
+    assert.equal([...fresh.matchAll(/<circle\b/g)].length, 1, 'one ring');
+  }
+});
