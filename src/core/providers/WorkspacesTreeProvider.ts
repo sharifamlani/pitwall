@@ -22,6 +22,11 @@ const REFRESH_DEBOUNCE_MS = 300;
  */
 const RECENT_LISTING_MS = 15_000;
 /**
+ * Background listings start after the list's first render; while the list
+ * stays hidden, after this long anyway.
+ */
+const HIDDEN_LIST_LISTING_MS = 3_000;
+/**
  * Another window's stars, names and dismissals reach this window's rows on
  * this cadence at the latest; gaining focus redraws at once (P23).
  */
@@ -111,6 +116,14 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   private readonly standIns = new Map<string, RepositoryWorktrees>();
   /** Repositories with a background listing queued, by id. */
   private readonly listingQueued = new Set<string>();
+  /**
+   * Settles when background listings may start: after the first render, in
+   * a task of its own so the rows reach the workbench first. Starting git
+   * costs the extension host a moment per process (much more on a slow
+   * Windows machine), so none starts before the rows are out (E16).
+   */
+  private readonly backgroundListingsMayStart: Promise<void>;
+  private hiddenListTimer: NodeJS.Timeout | undefined;
   private disposed = false;
 
   private turnStateProvider: (chatId: string) => TurnState | undefined = () => undefined;
@@ -176,12 +189,17 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     );
     this.scanTimer = setInterval(() => this.softRefresh(), SCAN_REDRAW_MS);
     this.scanTimer.unref?.();
+    this.backgroundListingsMayStart = new Promise<void>((resolve) => {
+      this.hiddenListTimer = setTimeout(resolve, HIDDEN_LIST_LISTING_MS);
+      void this.whenSettled().then(() => setImmediate(resolve));
+    }).then(() => clearTimeout(this.hiddenListTimer));
     this.updateRepoWatchers();
   }
 
   dispose(): void {
     this.disposed = true;
     clearInterval(this.scanTimer);
+    clearTimeout(this.hiddenListTimer);
     this.scheduledRefresh.cancel();
     this.onGitChange.cancel();
     this.statusSubscription?.dispose();
@@ -611,18 +629,23 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     }
   }
 
-  /** Queue a background listing; it starts after the caller returns, never inside activation. */
+  /**
+   * Queue a background listing. It starts once the first render is out (see
+   * `backgroundListingsMayStart`), never inside activation or the caller.
+   */
   private listInBackground(repo: Repository): void {
     if (this.listingQueued.has(repo.id) || this.listings.get(repo.id)?.generation === this.listingGeneration) {
       return;
     }
     this.listingQueued.add(repo.id);
-    setImmediate(() => {
-      this.listingQueued.delete(repo.id);
-      if (!this.disposed && !this.listed.has(repo.id)) {
-        void this.listWorktrees(repo, false);
-      }
-    });
+    void this.backgroundListingsMayStart.then(() =>
+      setImmediate(() => {
+        this.listingQueued.delete(repo.id);
+        if (!this.disposed && !this.listed.has(repo.id)) {
+          void this.listWorktrees(repo, false);
+        }
+      })
+    );
   }
 
   /**
@@ -812,8 +835,9 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     if (found) {
       return found;
     }
-    // Never start git inside the caller's task, which may be activation.
-    await new Promise((resolve) => setImmediate(resolve));
+    // Never start git inside the caller's task, which may be activation; a
+    // lookup that is not urgent waits until the first render is out.
+    await (urgent ? new Promise((resolve) => setImmediate(resolve)) : this.backgroundListingsMayStart);
     const pending = this.storageService.getRepositories().filter((repo) => !this.listed.has(repo.id));
     if (pending.length === 0) {
       return this.findWorktree(predicate);

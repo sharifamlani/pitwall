@@ -437,8 +437,9 @@ test('worktree lookups never wait on git and list each repository at most once',
   // the lookup starts the listing instead of waiting for it.
   assert.equal(tree.getWorktreeById('wt-b'), undefined);
   assert.equal(tree.findWorktreeByPath('/work/a')?.isMain, true);
-  await waitFor(() => tree.getWorktreeById('wt-b'), 'the background listing');
+  // The listing starts in the background once the first render is out.
   await tree.getChildren();
+  await waitFor(() => tree.getWorktreeById('wt-b'), 'the background listing');
   assert.equal(tree.getWorktreeById('wt-b')?.path, '/work/b');
   assert.equal(tree.getWorktreeById('wt-b')?.path, '/work/b');
   assert.equal(tree.findWorktreeByPath('/work/a')?.id, 'wt-a');
@@ -514,6 +515,10 @@ test('with no stored listing and git still listing, the first render shows every
   const linked = worktreeRecord({ id: 'wt-fiu', repoId: app.id, name: 'feat/fiu', branch: 'feat/fiu', path: '/work/app-fiu', isMain: false });
   storage.createChat(linked.id, 'claude', 'Worktree chat', { harnessSessionId: 'fiu' });
   const { tree, calls, changes } = heldListings(t, storage);
+  // Activation reads the rows (the badge, lookups) before the workbench asks.
+  assert.equal(tree.getWorktreeById('wt-fiu'), undefined);
+  for (let i = 0; i < 5; i++) await flush();
+  assert.equal(calls.length, 0, 'no git starts before the first render is out');
 
   const first = await Promise.race([
     tree.getChildren(),
@@ -542,9 +547,11 @@ test("a lookup that misses before a repository's first listing waits for it, ahe
   const linked = worktreeRecord({ id: 'wt-fiu', repoId: app.id, name: 'feat/fiu', path: '/work/app-fiu', isMain: false });
   const { tree, calls, expedited } = heldListings(t, storage);
 
+  await tree.getChildren();
+  await waitFor(() => calls.length === 1, 'the background listing, after the first render');
   assert.equal(tree.getWorktreeById('wt-fiu'), undefined, 'the stand-in knows only the main worktree');
   const lookup = tree.getWorktreeByIdAsync('wt-fiu');
-  // The sync miss queued a background listing; the lookup hurries it.
+  // The lookup hurries the background listing ahead of the queue.
   await waitFor(() => expedited.includes(app.id), 'the lookup to hurry the listing ahead of the queue');
   assert.equal(calls.length, 1, 'one listing serves both');
   calls.forEach((call) => call.answer(gitListing(main, linked)));
@@ -554,6 +561,19 @@ test("a lookup that misses before a repository's first listing waits for it, ahe
   assert.equal(await tree.getWorktreeByIdAsync('wt-gone'), undefined, 'a worktree that no listing has is not found');
   assert.equal(calls.length, asked, 'without listing a listed repository again');
   assert.equal((await tree.findWorktreeByPathAsync('/work/app-fiu'))?.id, 'wt-fiu', 'paths resolve the same way');
+});
+
+test('a lookup before the first render lists at once, urgently, instead of waiting for it', async (t) => {
+  const storage = makeStorage();
+  const app = storage.addRepository('app', '/work/app');
+  const linked = worktreeRecord({ id: 'wt-fiu', repoId: app.id, path: '/work/app-fiu', isMain: false });
+  const { tree, calls } = heldListings(t, storage);
+
+  const lookup = tree.getWorktreeByIdAsync('wt-fiu');
+  await waitFor(() => calls.length === 1, 'a listing for the lookup');
+  assert.equal(calls[0].urgent, true, 'urgent: someone waits on it');
+  calls[0].answer(gitListing(worktreeRecord({ id: 'wt-app', repoId: app.id, path: '/work/app' }), linked));
+  assert.equal((await lookup)?.id, 'wt-fiu');
 });
 
 test('a listing that started before a hard refresh never overwrites the one after it', async (t) => {
