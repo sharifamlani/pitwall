@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { nextForkName } from '../../../src/core/utils/text';
-import { deepestContainingRoot } from '../../../src/core/utils/paths';
+import * as path from 'path';
+import { deepestContainingRoot, samePath } from '../../../src/core/utils/paths';
 import { JsonSchema, validateJson } from '../../../src/core/utils/jsonSchema';
 import { quoteForCmd } from '../../../src/core/harness/cli';
 import {
@@ -10,7 +11,7 @@ import {
   selectHarnessIconState,
   SESSION_CREATED_SLACK_MS,
 } from '../../../src/core/harness/sessionUtils';
-import { chatRecord, sessionRecord } from '../support';
+import { chatRecord, sessionRecord, tempDir } from '../support';
 
 test('fork names number siblings and nest forks of forks', () => {
   const cases: [string, string[], string][] = [
@@ -118,4 +119,15 @@ test('arguments are quoted for cmd.exe, and what it cannot carry is refused', ()
   assert.equal(quoteForCmd('haiku & calc'), '"haiku & calc"');
   assert.throws(() => quoteForCmd('50%off'), /cannot pass/);
   assert.throws(() => quoteForCmd('a"b'), /cannot pass/);
+});
+
+test('samePath matches one folder however the editor or git spells it', (t) => {
+  const dir = tempDir(t);
+  if (process.platform === 'win32') {
+    assert.equal(samePath(dir[0].toLowerCase() + dir.slice(1), dir.replace(/[\\]/g, '/')), true);
+  } else {
+    assert.equal(samePath(dir, dir + '/'), true);
+    assert.equal(samePath(dir, dir.toUpperCase()), false);
+  }
+  assert.equal(samePath(dir, path.join(dir, 'x')), false);
 });

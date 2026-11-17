@@ -59,3 +59,28 @@ export function deepestContainingRoot<T extends { path: string }>(
   }
   return best;
 }
+
+/** One native spelling of a path: on Windows `C:/a/b` becomes `C:\a\b`. */
+export function nativePath(value: string): string {
+  return path.normalize(value);
+}
+
+function comparablePath(value: string): string {
+  try {
+    return fs.realpathSync.native(value);
+  } catch {
+    return path.resolve(value);
+  }
+}
+
+/**
+ * True when two spellings name the same folder. Windows paths are
+ * case-insensitive and the editor, git and the OS disagree on drive-letter
+ * case, separators and 8.3 short names, so they compare as native real paths.
+ */
+export function samePath(a: string, b: string): boolean {
+  if (process.platform === 'win32') {
+    return comparablePath(a).toLowerCase() === comparablePath(b).toLowerCase();
+  }
+  return canonicalPath(a) === canonicalPath(b);
+}

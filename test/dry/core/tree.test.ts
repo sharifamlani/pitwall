@@ -5,7 +5,7 @@ import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/pro
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { HarnessAdapter, SessionMetadata } from '../../../src/core/harness/types';
 import { ChatSession, Repository, RepositoryWorktrees, Worktree } from '../../../src/core/types';
-import { fakeAdapter, fakeNativeUi, makeStorage, stub, waitFor, worktreeRecord } from '../support';
+import { fakeAdapter, fakeNativeUi, makeStorage, stub, tempDir, waitFor, worktreeRecord } from '../support';
 
 beforeEach(() => stub.__reset());
 
@@ -180,4 +180,22 @@ test('a plain folder shows its sessions directly and follows git init and remova
   fireGitDir('__fireDelete');
   await waitFor(async () => (await rootRow()).contextValue === 'folderRepository', 'the downgrade');
   assert.equal(tree.getParent(chatRow)?.itemType, 'repository');
+});
+
+test("the window's own worktree is marked active whatever case the editor gives its drive letter", async (t) => {
+  const repoPath = tempDir(t);
+  const lowerDrive = (p: string) => (process.platform === 'win32' ? p[0].toLowerCase() + p.slice(1) : p);
+  stub.workspace.workspaceFolders = [{ uri: { fsPath: lowerDrive(repoPath) } }];
+  const storage = makeStorage();
+  storage.addRepository('demo', repoPath);
+  const tree = provider(
+    t,
+    storage,
+    (repo) => ({ isGit: true, worktrees: [worktreeRecord({ id: 'wt-demo', repoId: repo.id, path: repoPath })] }),
+    [fakeAdapter('claude')]
+  );
+  const [repoRow] = await tree.getChildren();
+  const [main] = await tree.getChildren(repoRow);
+  assert.match(String(main.description), /●/);
+  assert.match(String((main.tooltip as vscode.MarkdownString | string | undefined) ?? ''), /Active workspace/);
 });

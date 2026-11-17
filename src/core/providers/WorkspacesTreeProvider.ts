@@ -11,6 +11,7 @@ import { harnessIconPath } from '../harness/treeIcons';
 import { HarnessAdapter, SessionMetadata, TurnState } from '../harness/types';
 import { formatRelativeTime } from '../utils/text';
 import { debounce } from '../utils/debounce';
+import { samePath } from '../utils/paths';
 import { chatTooltip } from './chatTooltip';
 
 const REFRESH_DEBOUNCE_MS = 300;
@@ -259,7 +260,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
 
     const rows = worktrees.map((worktree) => {
       const item = this.worktreeItem(worktree, vscode.TreeItemCollapsibleState.Collapsed);
-      const isCurrent = currentFolder === worktree.path;
+      const isCurrent = currentFolder !== undefined && samePath(currentFolder, worktree.path);
       const checkedOutPR = this.storageService.getPRWorktree(worktree.id);
       const pr = this.gitHubService.getCachedPRInfo(repo.rootPath, worktree.name);
       if (pr === undefined) {
@@ -408,7 +409,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   }
 
   findWorktreeByPath(targetPath: string): Worktree | undefined {
-    return this.findWorktree((worktree) => worktree.path === targetPath);
+    return this.findWorktree((worktree) => samePath(worktree.path, targetPath));
   }
 
   isGitRepo(repo: Repository): boolean {

@@ -135,7 +135,7 @@ export function makeStorage(
 
 /** A temp directory removed when the test ends, pass or fail. */
 export function tempDir(t: { after(fn: () => void): void }, prefix = 'pitwall-'): string {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
