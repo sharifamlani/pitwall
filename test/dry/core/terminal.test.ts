@@ -1435,3 +1435,29 @@ test('after a quit, New Session’s late title (its slow shell ran the line afte
   assert.equal(frontTabLabel(), 'Pitwall: Lab ready [06be7b]', 'Lab ready is in front again');
   assert.equal(stub.window.__focusedTerminal, undefined, 'and keyboard focus never moved');
 });
+
+test('a tab list that lags the active terminal for a moment is waited out, so the terminal really in front is put back (R44)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: 'b44b4400-slow', name: 'Slow', harnessSessionId: 'slow-1' }] });
+  const { tab, title } = await slowChat(f, 'b44b4400-slow');
+  tab.name = 'Windows PowerShell';
+  const next = f.restoredTab('the user’s next tab', 9445);
+  terminalTabsWithFront(tab);
+  // The tab list follows the active terminal a moment later, as the
+  // workbench reports it (the e2e caught a restore that trusted the lag).
+  const lagging = vscode.window.onDidChangeActiveTerminal((terminal) => {
+    if (!terminal) return;
+    setTimeout(() => {
+      terminalTabsWithFront(terminal as never);
+      stub.window.__fireTabsChanged();
+    }, 20);
+  });
+  t.after(() => lagging.dispose());
+  stub.window.__focusTerminal(next); // the user moves on; the tab list still shows the chat tab
+
+  stub.window.__integrateShell(tab); // the chat's late command start retitles it now, during the lag
+  await waitFor(() => tab.name === title, 'the late title');
+  await waitFor(() => stub.window.activeTerminal === next && frontTabLabel() === 'the user’s next tab', 'the user’s tab in front again');
+  for (let i = 0; i < 5; i++) await flush();
+  assert.equal(stub.window.activeTerminal, next);
+});
