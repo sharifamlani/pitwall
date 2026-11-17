@@ -17,7 +17,7 @@ import {
   NativeUiSurfaceTracker,
   SessionSearchRunner,
 } from '../../src/core/harness/types';
-import { ChatSession, HarnessId, Worktree } from '../../src/core/types';
+import { ChatSession, HarnessId, RepositoryWorktrees, Worktree } from '../../src/core/types';
 import { HARNESS_IDS } from '../../src/harnesses';
 
 /** A terminal created by the stub. */
@@ -282,6 +282,23 @@ export async function waitFor<T>(
 /** Let queued promise callbacks run. */
 export function flush(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
+}
+
+/**
+ * The worktree listings a fake `GitService` gives the Repos tree: the
+ * blocking listing and the asynchronous one the tree renders from, both
+ * answered by `list`. Spread it into a test's `gitService` fake.
+ */
+export function fakeWorktreeListing(
+  list: (rootPath: string, repoId: string) => RepositoryWorktrees
+): {
+  listRepositoryWorktrees: (rootPath: string, repoId: string) => RepositoryWorktrees;
+  listRepositoryWorktreesAsync: (rootPath: string, repoId: string) => Promise<RepositoryWorktrees>;
+} {
+  return {
+    listRepositoryWorktrees: list,
+    listRepositoryWorktreesAsync: async (rootPath, repoId) => list(rootPath, repoId),
+  };
 }
 
 export function chatRecord(overrides: Partial<ChatSession> = {}): ChatSession {

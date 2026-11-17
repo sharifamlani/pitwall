@@ -12,7 +12,7 @@ import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/pro
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { SessionStatus } from '../../../src/core/providers/sessionStatus';
 import { RepositoryWorktrees } from '../../../src/core/types';
-import { FakeTreeView, fakeAdapter, makeStorage, runCommand, stub, worktreeRecord } from '../support';
+import { FakeTreeView, fakeAdapter, fakeWorktreeListing, makeStorage, runCommand, stub, worktreeRecord } from '../support';
 
 beforeEach(() => stub.__reset());
 
@@ -60,7 +60,7 @@ function setup(t: { after(fn: () => void): void }, repoCount = 3) {
   const tree = new WorkspacesTreeProvider(
     storage,
     {
-      listRepositoryWorktrees: (_root: string, repoId: string): RepositoryWorktrees => ({ isGit: true, worktrees: [worktrees.get(repoId)!] }),
+      ...fakeWorktreeListing((_root: string, repoId: string): RepositoryWorktrees => ({ isGit: true, worktrees: [worktrees.get(repoId)!] })),
       getAheadBehind: () => null,
     } as never,
     { onTerminalStateChange: () => ({ dispose: () => undefined }), isActive: () => false } as never,
