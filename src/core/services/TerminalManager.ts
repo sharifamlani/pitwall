@@ -501,20 +501,72 @@ export class TerminalManager {
       if (this.isDisposed || !this.terminalToChatId.has(terminal) || !isLiveTerminal(terminal)) {
         return;
       }
-      const previous = vscode.window.activeTerminal;
-      if (previous !== terminal) {
-        await this.showForRetitle(terminal);
+      if (vscode.window.activeTerminal === terminal) {
+        await this.writeTitle(terminal);
+        return;
       }
+      const front = this.captureFront();
+      await this.showForRetitle(terminal);
       await this.writeTitle(terminal);
-      if (
-        previous &&
-        previous !== terminal &&
-        vscode.window.activeTerminal === terminal &&
-        vscode.window.terminals.includes(previous)
-      ) {
-        await this.showForRetitle(previous);
+      // Put back what the user had in front, unless they moved on meanwhile.
+      if (vscode.window.activeTerminal === terminal) {
+        await this.restoreFront(front, terminal);
       }
     });
+  }
+
+  /**
+   * What is in front now: the active terminal, and the active editor group's
+   * active tab. A background retitle has to show its tab, because the rename
+   * command only renames the active terminal; this is what to put back.
+   */
+  private captureFront(): FrontView {
+    const group = vscode.window.tabGroups.activeTabGroup;
+    return {
+      terminal: vscode.window.activeTerminal,
+      tab: group?.activeTab,
+      viewColumn: group?.viewColumn,
+    };
+  }
+
+  /**
+   * Show again what was in front before a background retitle, without moving
+   * keyboard focus. Text, diff, custom and notebook tabs are reopened by their
+   * resource with `preserveFocus`. A webview tab (such as an extension's chat
+   * panel), the settings page and other editors have no way back that leaves
+   * focus alone, so the renamed terminal stays in front of them until the
+   * user switches back. A terminal tab, or no editor tab, brings back the
+   * terminal that was active.
+   */
+  private async restoreFront(front: FrontView, retitled?: vscode.Terminal): Promise<void> {
+    const tab = front.tab;
+    const input = tab?.input;
+    const options = { viewColumn: front.viewColumn, preserveFocus: true };
+    const ignore = () => undefined;
+    if (tab && input instanceof vscode.TabInputText) {
+      await vscode.window.showTextDocument(input.uri, { ...options, preview: tab.isPreview }).then(undefined, ignore);
+      return;
+    }
+    if (tab && input instanceof vscode.TabInputTextDiff) {
+      await vscode.commands
+        .executeCommand('vscode.diff', input.original, input.modified, tab.label, { ...options, preview: tab.isPreview })
+        .then(undefined, ignore);
+      return;
+    }
+    if (input instanceof vscode.TabInputCustom) {
+      await vscode.commands.executeCommand('vscode.openWith', input.uri, input.viewType, options).then(undefined, ignore);
+      return;
+    }
+    if (input instanceof vscode.TabInputNotebook) {
+      await vscode.commands.executeCommand('vscode.openWith', input.uri, input.notebookType, options).then(undefined, ignore);
+      return;
+    }
+    if (tab && !(input instanceof vscode.TabInputTerminal)) {
+      return;
+    }
+    if (front.terminal && front.terminal !== retitled && vscode.window.terminals.includes(front.terminal)) {
+      await this.showForRetitle(front.terminal);
+    }
   }
 
   /**
@@ -1113,7 +1165,8 @@ export class TerminalManager {
     if (revived.length === 0) {
       return;
     }
-    const previous = vscode.window.activeTerminal;
+    const front = this.captureFront();
+    const previous = front.terminal;
     // Late-start watches not handed to `retitleOnLateStart` are cancelled
     // when the pass ends, however it ends.
     const unhanded = new Set(revived);
@@ -1166,12 +1219,8 @@ export class TerminalManager {
         expected = terminal;
       }
       await this.queueTitleWork(async () => {
-        if (
-          !this.isDisposed &&
-          previous &&
-          vscode.window.terminals.includes(previous)
-        ) {
-          await this.showForRetitle(previous);
+        if (!this.isDisposed) {
+          await this.restoreFront(front);
         }
       });
     })()
