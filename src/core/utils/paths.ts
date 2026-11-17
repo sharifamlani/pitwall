@@ -77,11 +77,21 @@ export function nativePath(value: string): string {
   return path.normalize(value);
 }
 
+/** Successful native realpath lookups, keyed by resolved path (failures are not cached). */
+const nativeRealpathCache = new BoundedCache<string, string>(2_000);
+
 function comparablePath(value: string): string {
+  const resolved = path.resolve(value);
+  const cached = nativeRealpathCache.get(resolved);
+  if (cached) {
+    return cached;
+  }
   try {
-    return fs.realpathSync.native(value);
+    const real = fs.realpathSync.native(resolved);
+    nativeRealpathCache.set(resolved, real);
+    return real;
   } catch {
-    return path.resolve(value);
+    return resolved;
   }
 }
 
