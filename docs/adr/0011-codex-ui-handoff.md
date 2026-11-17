@@ -60,7 +60,7 @@ session IDs.
 
 - `CodexHarness` gains the optional `NativeUiCapability`: display name
   **Codex UI**, context-value suffix `CodexUi`, install detection for
-  `openai.chatgpt`, and `openSession()` in `CodexUi` (`src/harnesses/codexUi.ts`).
+  `openai.chatgpt`, and `openSession()` in `CodexUi` (`src/harnesses/codex/codexUi.ts`).
 - `CodexUi.checkAvailability()` reports only `not-installed` or
   `available`; it does not inspect the workspace folder.
 - `CodexUi.openSession()` opens

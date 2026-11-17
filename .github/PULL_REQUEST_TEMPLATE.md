@@ -31,7 +31,8 @@
 - [ ] Code follows the project's working agreement in [AGENTS.md](../AGENTS.md)
 - [ ] Reviewed the diff for duplicated mechanisms or invariants, unbounded caches, unowned
       lifetimes, dead code, and sleeps in tests ([guide](../AGENTS.md#reviewing-your-own-diff))
-- [ ] No harness conditionals outside `src/harnesses/` or per-harness watchers
+- [ ] No harness conditionals outside `src/harnesses/<id>/`; `src/core/` imports no harness folder
+- [ ] `package.json` contributes regenerated (`node scripts/build-manifest.mjs --check` passes)
 - [ ] No new lint/type errors or diagnostics
 - [ ] Extension activates without errors
 - [ ] State persists correctly across restarts (if applicable)

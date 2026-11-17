@@ -25,9 +25,16 @@ is not loaded every session; read the relevant section when you touch that subsy
 ## How we think
 
 - **One seam per harness.** Claude Code, opencode, Codex, and Pi disagree about session
-  identity, discovery, forking, and live state. Those disagreements belong in
-  `src/harnesses/` and in each harness's watcher. Commands, providers, and shared services
-  stay harness-agnostic so adding support for another agent does not touch the core.
+  identity, discovery, forking, and live state. Those disagreements belong in the harness's
+  own folder, `src/harnesses/<id>/`. Everything agent-agnostic lives in `src/core/`
+  (commands, providers, services, and the harness contract in `src/core/harness/`), and core
+  never imports a harness folder; `test/dry/core/architecture.test.ts` enforces it. Adding an
+  agent does not touch the core.
+- **One switch decides which agents ship.** `src/harnesses/enabled.json` (today
+  `["claude"]`) picks the modules activation builds and the manifest fragments
+  `scripts/build-manifest.mjs` merges into `package.json`. Codex, opencode, and Pi stay in
+  the tree, dormant and tested. Anything that reads a harness id from stored data checks
+  `HarnessRegistry.has(id)` first. See [`src/harnesses/README.md`](src/harnesses/README.md).
 - **One mechanism per job.** When two paths share a lifecycle or an invariant, name the
   shared mechanism and keep the differences at the edges. Do not copy a flow to vary one
   step, and do not abstract two similar lines that share no invariant.
@@ -123,16 +130,16 @@ Answer these in order. If a question has no answer, investigate before editing.
 
 | Kind of change | Home | Notes |
 | --- | --- | --- |
-| Behavior that differs per harness | `src/harnesses/<Harness>Harness.ts` | Add a method or capability to the shared interface first; do not leak the branch. |
-| Handoff to an agent's own VS Code UI | `src/harnesses/<harness>Ui.ts` | Implement `NativeUiCapability`; tab tracking is a policy over `NativeUiTabSurfaceService`. |
-| New-session linkage and naming | `src/services/<Harness>SessionWatcher.ts` | Register it in `HarnessWatcherRegistry`. Reuse shared polling machinery when the lifecycle matches; implement the interface directly when it does not. A session started in an agent's VS Code UI or outside Pitwall is reconciled by `src/services/SessionImportService.ts`; the exact-ID watchers remain the fast path. |
-| User action or multi-step flow | `src/commands/*.ts` | Register with `commandRegistrar()` from the module's `register*Commands()` and contribute it in `package.json`. Shared prompts and helpers live in `commands/common.ts`. |
-| Tree row, tooltip, icon state | `src/providers/*.ts`, `src/harnesses/sessionUtils.ts` | Stable row ids, `contextValue`, and quiet labels matter. |
-| Persistence or migration | `src/services/StorageService.ts` | Read old shapes, migrate on read, write back. |
-| Git or path safety | `src/services/GitService.ts`, `src/utils/paths.ts` | Argument arrays; `isWithin` / `isStrictlyWithin`. |
-| Cross-cutting timing or notifications | `src/services/*` | The adapter supplies turn state; the service stays harness-agnostic. |
-| External process or protocol | A service in `src/services/` | Lazy start, request timeouts, restart, idle shutdown, stderr tail. |
-| Command, menu, setting, context key | `package.json` + `src/extension.ts` | Gate harness entries on `pitwall.<harness>Installed`; end dialog titles with `…`. |
+| Behavior that differs per harness | `src/harnesses/<id>/<Harness>Harness.ts` | Add a method or capability to the shared interface first; do not leak the branch. |
+| Handoff to an agent's own VS Code UI | `src/harnesses/<id>/<harness>Ui.ts` | Implement `NativeUiCapability`; tab tracking is a policy over `NativeUiTabSurfaceService`. |
+| New-session linkage and naming | `src/harnesses/<id>/<Harness>SessionWatcher.ts` | Register it in `HarnessWatcherRegistry`. Reuse shared polling machinery when the lifecycle matches; implement the interface directly when it does not. A session started in an agent's VS Code UI or outside Pitwall is reconciled by `src/core/services/SessionImportService.ts`; the exact-ID watchers remain the fast path. |
+| User action or multi-step flow | `src/core/commands/*.ts` | Register with `commandRegistrar()` from the module's `register*Commands()` and contribute it in its manifest fragment (see the row below). Shared prompts and helpers live in `commands/common.ts`. |
+| Tree row, tooltip, icon state | `src/core/providers/*.ts`, `src/core/harness/sessionUtils.ts` | Stable row ids, `contextValue`, and quiet labels matter. |
+| Persistence or migration | `src/core/services/StorageService.ts` | Read old shapes, migrate on read, write back. |
+| Git or path safety | `src/core/services/GitService.ts`, `src/core/utils/paths.ts` | Argument arrays; `isWithin` / `isStrictlyWithin`. |
+| Cross-cutting timing or notifications | `src/core/services/*` | The adapter supplies turn state; the service stays harness-agnostic. |
+| External process or protocol | A service in `src/core/services/` (or `src/harnesses/<id>/` when only one harness uses it) | Lazy start, request timeouts, restart, idle shutdown, stderr tail. |
+| Command, menu, setting, context key | `manifest/core.contributes.json` or `src/harnesses/<id>/contributes.json`, then `node scripts/build-manifest.mjs`; plus `src/extension.ts` | `package.json` `contributes` is generated, so never edit it by hand; `--check` fails on drift. An entry whose id, `when`, or enum names one harness goes in that harness's fragment. Gate harness entries on `pitwall.<harness>Installed`; end dialog titles with `…`. |
 
 ### The feature pipeline
 
@@ -143,7 +150,7 @@ Answer these in order. If a question has no answer, investigate before editing.
    harness-specific behavior in the adapter. Services should be constructible with injected
    dependencies so tests can fake the boundary.
 3. **Wire the user path.** Register commands in `extension.ts`, contribute them in
-   `package.json`, and decide whether they belong inline, in the `…` menu, or only in a
+   their manifest fragment (then `node scripts/build-manifest.mjs`), and decide whether they belong inline, in the `…` menu, or only in a
    context menu. Use `setContext` for availability, not enablement hacks.
 4. **Persist carefully.** Update `ChatSession` only when necessary. Migrate legacy records
    on read. Never drop a chat because a field is missing.
@@ -161,8 +168,10 @@ Answer these in order. If a question has no answer, investigate before editing.
 
 ## Adding a harness
 
-A harness is a slice, not one file. It ships with an adapter, usually a service and a
-watcher, a command and menu entries, icons, tests, and documentation.
+A harness is a slice, not one file. It ships as one folder, `src/harnesses/<id>/`, with an
+adapter, usually a service and a watcher, a `HarnessModule`, a manifest fragment, icons,
+tests, and documentation. The step-by-step checklist is
+[`src/harnesses/README.md`](src/harnesses/README.md) → "Add an agent".
 
 ### Questions to answer first
 
@@ -199,17 +208,21 @@ watcher, a command and menu entries, icons, tests, and documentation.
 
 ### What ships
 
-- `HarnessId` extended in `src/types.ts`.
-- `src/harnesses/<Harness>Harness.ts` implementing `HarnessAdapter`.
+- A folder `src/harnesses/<id>/` whose `index.ts` exports a `HarnessModule`, added to
+  `ALL_HARNESSES` in `src/harnesses/index.ts` and to `src/harnesses/enabled.json`.
+  (`HarnessId` is a string; core never lists the ids.)
+- `src/harnesses/<id>/<Harness>Harness.ts` implementing `HarnessAdapter`.
 - A service for the native API/protocol when the adapter would otherwise become an I/O
   layer, and a `<Harness>SessionWatcher` for new-session linkage. When the harness assigns
   session IDs in a separate process and the lifecycle matches one that already exists,
   extend that mechanism instead of copying its loop; when it does not, implement
   `HarnessSessionWatcher` directly.
-- Registration in `HarnessRegistry` and `HarnessWatcherRegistry` in `extension.ts`;
-  give a stateful adapter a `dispose()` so `HarnessRegistry.dispose()` releases it.
-- `pitwall.new<Harness>Chat` contributed in `package.json` (registered for every adapter by
-  `registerChatCommands`, so `src/commands/chat.ts` needs no edit), plus entries in both
+- The module's `create()` builds the adapter and watcher; `extension.ts` registers every
+  enabled module in `HarnessRegistry` and `HarnessWatcherRegistry`. Give a stateful adapter a
+  `dispose()` so `HarnessRegistry.dispose()` releases it.
+- Manifest entries in `src/harnesses/<id>/contributes.json`, merged into `package.json` by
+  `node scripts/build-manifest.mjs`: `pitwall.new<Harness>Chat` (registered for every adapter
+  by `registerChatCommands`, so `src/core/commands/chat.ts` needs no edit), plus entries in both
   **New Session** submenus gated on `pitwall.<harness>Installed`. The submenus themselves
   are gated on `pitwall.anyHarnessInstalled`, which activation sets.
 - `pitwall.harnessCommands.<harness>` with a default. Activation sets the
@@ -220,8 +233,8 @@ watcher, a command and menu entries, icons, tests, and documentation.
   `verify()` against the harness's own record, and `prepare()` when the records are not
   files) and `sessionSearchRunner` (a headless, read-only conversation that answers in
   text and takes follow-up messages, plus its default model and effort levels and a probe
-  for whether its CLI is available; add the id to the `pitwall.sessionSearch.harness`
-  enum). Shared code needs no edit; see
+  for whether its CLI is available; list `pitwall.sessionSearch.harness` under the
+  fragment's `x-harness-enum`). Shared code needs no edit; see
   `ARCHITECTURE.md` → Find Session and [ADR 0016](docs/adr/0016-find-session-sources-across-harnesses.md).
 - Adapter, service/watcher, menu, icon, and integration tests as applicable. Commands are
   harness-agnostic, so they need no per-harness test.
@@ -439,8 +452,9 @@ shortens the code but makes failure behavior less clear is a regression; revert 
 ## First ten minutes in the codebase
 
 1. Read `src/extension.ts` to see what is constructed, registered, and disposed.
-2. Read `src/harnesses/types.ts` — it is the contract every harness implements.
-3. Follow one path end to end: `pitwall.newCodexChat` → `createSession` →
-   `TerminalManager.openChat` → `CodexHarness.buildLaunchCommand` → the watcher.
-4. Read `src/services/StorageService.ts` before touching persisted state.
-5. Read `src/utils/paths.ts` before touching files, and `GitService` before touching git.
+2. Read `src/core/harness/types.ts` — it is the contract every harness implements.
+3. Read `src/harnesses/README.md` for the layout and the `enabled.json` switch.
+4. Follow one path end to end: `pitwall.newClaudeChat` → `createSession` →
+   `TerminalManager.openChat` → `ClaudeHarness.buildLaunchCommand` → the watcher.
+5. Read `src/core/services/StorageService.ts` before touching persisted state.
+6. Read `src/core/utils/paths.ts` before touching files, and `GitService` before touching git.
