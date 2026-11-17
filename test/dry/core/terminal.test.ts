@@ -859,6 +859,49 @@ test('Remove never closes either of two unmanaged tabs sharing the chat’s shor
   assert.deepEqual([first.disposed, second.disposed], [false, false], 'one of them may be the user’s own terminal');
 });
 
+test('after a quit, of two revived tabs sharing a short ID, neither is resumed, typed into, renamed or closed', async (t) => {
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab', status: 'closed' }] });
+  // After a quit every PID is new: neither tab's PID is the recorded one.
+  await f.storage.rememberTerminalPid('40de4f00-lab', 82260);
+  const first = f.restoredTab('Pitwall: Lab ready [40de4f]', 51001);
+  const second = f.restoredTab('Pitwall: Lab ready [40de4f]', 51002);
+  const warnings: unknown[][] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => warnings.push(args);
+  t.after(() => (console.warn = warn));
+
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  await flush();
+  assert.deepEqual([first.sent, second.sent], [[], []], 'nothing is typed into either');
+  assert.equal(f.manager.getTerminal('40de4f00-lab'), undefined, 'neither is taken as the chat’s tab');
+  assert.deepEqual([first.name, second.name], ['Pitwall: Lab ready [40de4f]', 'Pitwall: Lab ready [40de4f]'], 'neither is renamed');
+  assert.deepEqual([first.disposed, second.disposed], [false, false], 'neither is closed');
+  assert.equal(warnings.filter((w) => String(w[0]).includes('40de4f')).length, 1, 'one log line says why');
+});
+
+test('after a reload, an adopted background tab keeps its Pitwall title, never the shell default', async (t) => {
+  const f = setup(t, {
+    chats: [
+      { id: 'a1b2c300-front', name: 'Front', harnessSessionId: 'front', status: 'active' },
+      { id: 'd4e5f600-back', name: 'Back', harnessSessionId: 'back', status: 'active' },
+    ],
+  });
+  await f.storage.rememberTerminalPid('a1b2c300-front', 7801);
+  await f.storage.rememberTerminalPid('d4e5f600-back', 7802);
+  const front = f.restoredTab('Pitwall: Front [a1b2c3]', 7801);
+  // The reload re-tagged the background tab's title as the shell's.
+  const back = f.restoredTab('powershell', 7802);
+  stub.window.__setActiveTerminal(front);
+
+  const restore = f.manager.beginRestoreSync(() => WORKTREE);
+  await restore.adopted;
+  await restore.complete;
+  await waitFor(() => back.name === terminalTitle(f.chat('d4e5f600-back')), 'the background tab’s Pitwall title');
+  await waitFor(() => stub.window.activeTerminal === front, 'the front tab in front again');
+  assert.equal(front.name, terminalTitle(f.chat('a1b2c300-front')));
+  assert.deepEqual([front.sent, back.sent], [[], []], 'a live agent is never typed into');
+});
+
 test('a click while a reload tab’s PID is still pending waits for its adoption and focuses it, never a second agent (R1(a))', async (t) => {
   const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab', status: 'active' }] });
   await f.storage.rememberTerminalPid('40de4f00-lab', 82260);
