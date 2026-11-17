@@ -396,7 +396,10 @@ test('a window redraws stars, names and dismissals written by another window whe
   assert.equal(redraws, 1, 'losing focus does not');
 
   windowA.toggleStar(chat.id);
-  t.mock.timers.tick(60_000);
+  t.mock.timers.tick(58_000);
+  assert.equal(redraws, 1, 'nothing before the scan');
+  t.mock.timers.tick(1_000); // the 60 s scan
+  t.mock.timers.tick(1_000); // its debounced redraw
   assert.equal(redraws, 2, 'the 60 s scan redraws');
   assert.equal((await snapshot()).chat, 'After chat');
   assert.ok(keep);
