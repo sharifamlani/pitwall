@@ -48,11 +48,14 @@ function spyOnFileAccess(t: { mock: { method: (obj: object, name: string, impl: 
       return original.apply(this, args);
     });
   };
-  const promises = fs.promises as unknown as Record<string, unknown>;
+  // The real module object: the bundled `import * as fs` is a getter wrapper that cannot be mocked.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const realFs = require('fs') as typeof fs;
+  const promises = realFs.promises as unknown as Record<string, unknown>;
   for (const name of ['readFile', 'open', 'stat', 'lstat', 'access', 'readdir', 'opendir']) {
     wrap(promises, name);
   }
-  const sync = fs as unknown as Record<string, unknown>;
+  const sync = realFs as unknown as Record<string, unknown>;
   for (const name of ['readFileSync', 'openSync', 'statSync', 'lstatSync', 'existsSync', 'accessSync', 'createReadStream', 'readFile', 'open', 'stat', 'lstat']) {
     wrap(sync, name);
   }

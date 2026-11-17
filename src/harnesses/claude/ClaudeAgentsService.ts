@@ -12,6 +12,8 @@ export interface ClaudeAgentState {
   /** Raw waiting reason; "input needed" when Claude reports waiting without one. */
   waitingFor?: string;
   startedAt?: number;
+  /** The row's process status, when it is one Pitwall knows. */
+  status?: 'busy' | 'waiting' | 'idle';
 }
 
 /** One `claude agents --json` answer and when the call that produced it started. */
@@ -92,6 +94,9 @@ export function parseClaudeAgents(
       waitingFor: waitingFor || undefined,
       startedAt:
         typeof record.startedAt === 'number' ? record.startedAt : undefined,
+      ...(status === 'busy' || status === 'waiting' || status === 'idle'
+        ? { status }
+        : {}),
     };
 
     const existing = states.get(state.sessionId);

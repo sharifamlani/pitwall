@@ -154,6 +154,7 @@ test('live states come from the transcript tail plus the waiting reason from cla
     turnState: 'done',
     turnEndedAt: Date.parse('2026-01-01T00:00:03.000Z'),
     waitingFor: 'permission prompt',
+    liveStatus: 'waiting',
   }, 'a transcript written before the agents call keeps its waiting reason');
   assert.ok(observedAt! >= before && observedAt! <= Date.now(), 'stamped with the agents call start');
   assert.ok(writtenAt! > 0 && writtenAt! <= observedAt!, 'the transcript time comes with the waiting reason');
@@ -203,23 +204,34 @@ function liveHarness(
     };
   }
   let agentCalls = 0;
+  let clockOffset = 0;
   const harness = new ClaudeHarness({
     sessionService,
     sessionsFile: new ClaudeSessionsFile({ dir: () => sessionsDir, isAlive: () => true, pidDomain: async () => DOMAIN }),
     agentsService: new ClaudeAgentsService({
       command: () => 'fake-claude',
       enabled: () => true,
+      now: () => Date.now() + clockOffset,
       exec: async () => {
         agentCalls++;
         return JSON.stringify(options.agents ?? []);
       },
     }),
   });
-  return { harness, sessionsDir, stats, agentCalls: () => agentCalls };
+  return {
+    harness,
+    sessionsDir,
+    stats,
+    agentCalls: () => agentCalls,
+    /** Ages the agents cache past its 10 s TTL, so the next tick that needs the CLI calls it. */
+    expireAgentsCache: () => {
+      clockOffset += 20_000;
+    },
+  };
 }
 
 test('getLiveStates takes waitingFor from the sessions file and falls back to claude agents when it is unavailable', async (t) => {
-  const { harness, sessionsDir, agentCalls } = liveHarness(t, {
+  const { harness, sessionsDir, agentCalls, expireAgentsCache } = liveHarness(t, {
     agents: [{ sessionId: SESSION_ID, status: 'waiting', waitingFor: 'agents reason' }],
     transcriptWrittenAt: 0,
   });
@@ -232,12 +244,14 @@ test('getLiveStates takes waitingFor from the sessions file and falls back to cl
   assert.ok(fromFile.observedAt! >= before && fromFile.observedAt! <= Date.now(), 'observedAt is the read time');
   assert.equal(agentCalls(), 0, 'no CLI call while the file answers');
 
+  expireAgentsCache();
   writeSessionFile(sessionsDir, { pid: 4242, sessionId: SESSION_ID, status: 'busy', statusUpdatedAt: 2_000 });
   const busy = (await harness.getLiveStates([SESSION_ID])).get(SESSION_ID)!;
   assert.equal(busy.waitingFor, undefined, 'the file is current truth: busy clears the wait');
   assert.equal(busy.liveStatus, 'busy');
   assert.equal(agentCalls(), 0);
 
+  expireAgentsCache();
   fs.rmSync(sessionsDir, { recursive: true, force: true });
   const fallback = (await harness.getLiveStates([SESSION_ID])).get(SESSION_ID)!;
   assert.equal(fallback.waitingFor, 'agents reason');
@@ -247,16 +261,19 @@ test('getLiveStates takes waitingFor from the sessions file and falls back to cl
 
 test('a session absent from an available sessions folder is not live and costs no CLI call', async (t) => {
   const OTHER = '99999999-2222-3333-4444-555555555555';
-  const { harness, sessionsDir, agentCalls } = liveHarness(t, {
+  const { harness, sessionsDir, agentCalls, expireAgentsCache } = liveHarness(t, {
     sessionIds: [SESSION_ID, OTHER],
     agents: [{ sessionId: OTHER, status: 'waiting' }],
   });
   writeSessionFile(sessionsDir, { pid: 4242, sessionId: SESSION_ID, status: 'idle', statusUpdatedAt: 1_000 });
-  const live = await harness.getLiveStates([SESSION_ID, OTHER]);
-  assert.equal(live.get(SESSION_ID)?.liveStatus, 'idle');
-  assert.ok(live.has(OTHER), 'its transcript state is still reported');
-  assert.equal(live.get(OTHER)?.waitingFor, undefined);
-  assert.equal(live.get(OTHER)?.liveStatus, undefined);
+  for (const tick of [1, 2]) {
+    const live = await harness.getLiveStates([SESSION_ID, OTHER]);
+    assert.equal(live.get(SESSION_ID)?.liveStatus, 'idle');
+    assert.ok(live.has(OTHER), 'its transcript state is still reported');
+    assert.equal(live.get(OTHER)?.waitingFor, undefined, `tick ${tick}: the agents answer is not used`);
+    assert.equal(live.get(OTHER)?.liveStatus, undefined);
+    expireAgentsCache();
+  }
   assert.equal(agentCalls(), 0);
 });
 

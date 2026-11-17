@@ -46,16 +46,23 @@ export interface HarnessLiveState {
   /** Raw harness reason, e.g. "permission prompt". Undefined when not waiting. */
   waitingFor?: string;
   /**
-   * When the sample behind `waitingFor` was taken: the start of the call that
-   * produced it, which may be cached. Undefined means "now".
+   * When the sample behind `waitingFor` was taken: the read time of a fresh
+   * source, or the start of the (possibly cached) call that produced it.
+   * Undefined means "now".
    */
   observedAt?: number;
   /**
-   * When the session's transcript was last written, read alongside a
-   * waiting reason. Claude writes the tool call just before a prompt shows,
-   * so at a wait's first sighting this is the closest known time it began.
+   * The closest known time the current wait began, read alongside a waiting
+   * reason: the harness's own status timestamp when it has one, else the
+   * transcript's last write (Claude writes the tool call just before a prompt
+   * shows).
    */
   writtenAt?: number;
+  /**
+   * The process status the harness reports for a running session. Undefined
+   * when the session is not running or the harness does not say.
+   */
+  liveStatus?: 'busy' | 'waiting' | 'idle';
 }
 
 /**

@@ -3,7 +3,7 @@ import {
   toHarnessSession,
 } from './ClaudeSessionService';
 import { ClaudeAgentsService } from './ClaudeAgentsService';
-import { ClaudeSessionsFile } from './ClaudeSessionsFile';
+import { ClaudeSessionsFile, ClaudeSessionsSnapshot } from './ClaudeSessionsFile';
 import { ClaudeTurnReading } from './ClaudeTurnState';
 import { ClaudeUi } from './claudeUi';
 import { ClaudeSearchRunner, ClaudeSessionSearch } from './claudeSearch';
@@ -33,8 +33,9 @@ export interface ClaudeHarnessOptions {
 
 /**
  * Claude Code: sessions are JSONL transcripts (the only surface Claude
- * offers), new chats choose their ID up front, and needs-you comes from
- * `claude agents --json`.
+ * offers), new chats choose their ID up front, and live status and needs-you
+ * come from `~/.claude/sessions`, with `claude agents --json` as the fallback
+ * (ADR 0018).
  */
 export class ClaudeHarness implements HarnessAdapter {
   readonly id = 'claude' as const;
@@ -51,6 +52,7 @@ export class ClaudeHarness implements HarnessAdapter {
 
   private readonly sessionService: ClaudeSessionService;
   private readonly agentsService: ClaudeAgentsService;
+  private readonly sessionsFile: ClaudeSessionsFile;
 
   constructor(options: ClaudeHarnessOptions = {}) {
     this.sessionService =
@@ -58,6 +60,7 @@ export class ClaudeHarness implements HarnessAdapter {
     this.agentsService =
       options.agentsService ??
       new ClaudeAgentsService({ command: () => this.command });
+    this.sessionsFile = options.sessionsFile ?? new ClaudeSessionsFile();
     this.nativeUi = options.nativeUi ?? new ClaudeUi();
     this.sessionSearch = new ClaudeSessionSearch(this.sessionService);
     this.sessionSearchRunner = new ClaudeSearchRunner({
@@ -147,9 +150,23 @@ export class ClaudeHarness implements HarnessAdapter {
       return states;
     }
 
-    // Start the independent transcript reads immediately; the shared agents
-    // call may have to spawn the CLI and must not delay them.
-    const agentsPromise = this.agentsService.getSnapshot();
+    // The sessions folder is the live source (ADR 0018). `claude agents` is
+    // the fallback, per session: for all of them when the folder does not
+    // count (missing, or an older CLI), for one whose file has a status
+    // Pitwall does not know, and for one a torn file may be hiding. A session
+    // absent from a complete, available folder is simply not running.
+    const filePromise = this.sessionsFile.snapshot();
+    const needsFallback = (file: ClaudeSessionsSnapshot, sessionId: string) =>
+      !file.available ||
+      file.unknownStatus.has(sessionId) ||
+      (file.partial && !file.states.has(sessionId));
+    // Start the independent transcript reads immediately; the fallback call
+    // may have to spawn the CLI and must not delay them.
+    const agentsPromise = filePromise.then((file) =>
+      sessionIds.some((sessionId) => needsFallback(file, sessionId))
+        ? this.agentsService.getSnapshot()
+        : undefined
+    );
     const readings = await Promise.all(
       sessionIds.map(async (sessionId): Promise<
         [string, string, ClaudeTurnReading] | null
@@ -168,14 +185,35 @@ export class ClaudeHarness implements HarnessAdapter {
       })
     );
 
-    const { observedAt, states: agents } = await agentsPromise;
+    const file = await filePromise;
+    const agentsSnapshot = await agentsPromise;
     await Promise.all(
       readings.map(async (entry) => {
         if (!entry) {
           return;
         }
         const [sessionId, filePath, reading] = entry;
-        let waitingFor = agents.get(sessionId)?.waitingFor;
+
+        if (!agentsSnapshot || !needsFallback(file, sessionId)) {
+          // The file is read fresh each tick, so its status is current truth:
+          // no stale-wait drop (P4). statusUpdatedAt is when the wait began;
+          // it does not move during a wait, so it is only the wait's start,
+          // never a reason to drop it.
+          const live = file.states.get(sessionId);
+          const waiting = live?.status === 'waiting';
+          states.set(sessionId, {
+            ...reading,
+            waitingFor: waiting ? live.waitingFor : undefined,
+            observedAt: file.observedAt,
+            ...(waiting && live.statusUpdatedAt > 0 ? { writtenAt: live.statusUpdatedAt } : {}),
+            ...(live ? { liveStatus: live.status } : {}),
+          });
+          return;
+        }
+
+        const { observedAt, states: agents } = agentsSnapshot;
+        const agent = agents.get(sessionId);
+        let waitingFor = agent?.waitingFor;
         let writtenAt: number | undefined;
         // A "waiting" row may come from a cached call up to ~10 s old. Drop it
         // when the transcript was written after that call started. This
@@ -202,7 +240,19 @@ export class ClaudeHarness implements HarnessAdapter {
             writtenAt = mtime;
           }
         }
-        states.set(sessionId, { ...reading, waitingFor, observedAt, ...(writtenAt !== undefined ? { writtenAt } : {}) });
+        // A dropped wait leaves the status unknown until the next sample.
+        const liveStatus = waitingFor
+          ? 'waiting'
+          : agent?.status === 'waiting'
+            ? undefined
+            : agent?.status;
+        states.set(sessionId, {
+          ...reading,
+          waitingFor,
+          observedAt,
+          ...(writtenAt !== undefined ? { writtenAt } : {}),
+          ...(liveStatus ? { liveStatus } : {}),
+        });
       })
     );
 
