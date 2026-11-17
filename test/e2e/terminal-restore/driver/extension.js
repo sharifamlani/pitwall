@@ -8,6 +8,7 @@ const RUNS = process.env.PITWALL_E2E_RUNS;
 const CHATS = JSON.parse(process.env.PITWALL_E2E_CHATS);
 const EXPECT_RESUMES = Number(process.env.PITWALL_E2E_EXPECT_RESUMES || 3);
 const EXPECT_TITLES = process.env.PITWALL_E2E_EXPECT_TITLES !== '0';
+const EXTENSION_ID = process.env.PITWALL_E2E_EXTENSION_ID;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -257,6 +258,147 @@ function checkNoRestore(stageIndex, terminals) {
   );
 }
 
+/**
+ * R1(b): when each revived tab's shell integrated, when its resume command
+ * started, and when the harness ran, in ms after the driver activated (it
+ * activates on startup finished, like Pitwall). Logged as observations;
+ * nothing is asserted.
+ */
+function watchTiming(t0) {
+  const since = () => Date.now() - t0;
+  const events = [];
+  const lines = [];
+  for (const terminal of vscode.window.terminals) {
+    if (terminal.shellIntegration) events.push(`${terminal.name}: integration present when the driver ran`);
+  }
+  const subscriptions = [
+    vscode.window.onDidChangeTerminalShellIntegration(({ terminal }) =>
+      events.push(`${terminal.name}: shell integration at ${since()} ms`)
+    ),
+    vscode.window.onDidStartTerminalShellExecution(({ terminal, execution }) => {
+      const line = execution.commandLine && execution.commandLine.value;
+      lines.push(String(line));
+      // The whole line, so a resume line the starting shell only half read shows up.
+      events.push(`${terminal.name}: command start at ${since()} ms (${JSON.stringify(String(line))})`);
+    }),
+  ];
+  return {
+    report(extensionActiveAt) {
+      subscriptions.forEach((subscription) => subscription.dispose());
+      observe('timing: Pitwall active', `${extensionActiveAt - t0} ms after the driver activated`);
+      for (const event of events) observe('timing', event);
+      for (const run of readRuns().slice(-EXPECT_RESUMES)) {
+        observe('timing: harness ran', `${run.at - t0} ms (${runText(run).slice(-30)})`);
+      }
+    },
+    /**
+     * R42: each chat's resume line reached the shell with its change of
+     * directory whole. A shell that drops the line's first keystroke ran
+     * "et-Location ..." in Smoke 7; with the leading space it drops the space.
+     */
+    checkLines(stageIndex) {
+      for (const chat of CHATS) {
+        const resumeLines = lines.filter((line) => line.includes(chat.pendingHarnessSessionId));
+        const whole = (line) =>
+          isPowerShell()
+            ? line.includes(`Set-Location -LiteralPath '${chat.worktreePath.replace(/'/g, "''")}'`)
+            : /(^|\s)cd\s/.test(line) && line.includes(chat.worktreePath);
+        check(
+          `stage ${stageIndex}: ${chat.name}'s resume line reached the shell whole`,
+          resumeLines.length > 0 && resumeLines.every(whole),
+          JSON.stringify(resumeLines)
+        );
+      }
+    },
+  };
+}
+
+function isPowerShell() {
+  return /(^|[\\/])(powershell|pwsh)(\.exe)?$/i.test(vscode.env.shell || '');
+}
+
+/**
+ * The rename command, probed directly in this real editor:
+ * - the new name is reported to the extension host before the command
+ *   resolves (Pitwall's check-and-undo reads names right after it);
+ * - an empty name is refused, so there is no way back to a dynamic title;
+ * - with keyboard focus in one terminal and another shown without focus,
+ *   the focused terminal is the one renamed (root cause 1).
+ * Then a chat tab is shown without focus while the keyboard sits in a user's
+ * panel terminal: Pitwall's own rename must leave that terminal its name.
+ */
+async function renameProbe() {
+  const rename = (name) => vscode.commands.executeCommand('workbench.action.terminal.renameWithArg', { name });
+  const front = vscode.window.activeTerminal;
+  const panel = vscode.window.createTerminal({ name: 'e2e-panel', location: vscode.TerminalLocation.Panel });
+  panel.show(false);
+  await waitFor(() => vscode.window.activeTerminal === panel, 'the panel probe terminal to be active');
+
+  const rounds = 20;
+  let reportedAtOnce = 0;
+  for (let i = 0; i < rounds; i++) {
+    const name = `e2e-panel-${i}`;
+    await rename(name);
+    if (panel.name === name) reportedAtOnce++;
+  }
+  check(
+    `stage 0: a rename's new name is reported before the command resolves (${rounds} of ${rounds})`,
+    reportedAtOnce === rounds,
+    String(reportedAtOnce)
+  );
+  await rename('e2e-panel');
+
+  const before = panel.name;
+  await rename('');
+  check('stage 0: an empty name is refused, so a title cannot be reset to dynamic', panel.name === before, panel.name);
+
+  // Opening an editor terminal can itself take focus, so open it first,
+  // then put the keyboard back in the panel, then show it without focus.
+  const plain = vscode.window.createTerminal({ name: 'e2e-plain', location: vscode.TerminalLocation.Editor });
+  plain.show(true);
+  await waitFor(() => vscode.window.activeTerminal === plain, 'the plain tab to open');
+  panel.show(false);
+  await waitFor(() => vscode.window.activeTerminal === panel, 'the panel to be active again');
+  plain.show(true);
+  await waitFor(() => vscode.window.activeTerminal === plain, 'the plain tab to be active without focus');
+  await rename('e2e-focus-probe');
+  const focusFirst = panel.name === 'e2e-focus-probe';
+  observe(
+    'rename target with focus in the panel and another tab active',
+    focusFirst ? 'the focused panel terminal (focus-first)' : plain.name === 'e2e-focus-probe' ? 'the active tab' : 'neither'
+  );
+  if (focusFirst) await rename('e2e-panel');
+  plain.dispose();
+  await waitFor(() => !vscode.window.terminals.includes(plain), 'the plain tab to close');
+
+  // Pitwall re-applies a chat tab's title when the tab becomes active. With
+  // the keyboard in the panel that rename lands on the panel and is undone.
+  panel.show(false);
+  await waitFor(() => vscode.window.activeTerminal === panel, 'the panel to be active again');
+  const chatTab = vscode.window.terminals.find((terminal) => parseShortId(terminal.name));
+  if (chatTab) {
+    const chatTitle = chatTab.name;
+    chatTab.show(true);
+    await waitFor(() => vscode.window.activeTerminal === chatTab, 'the chat tab to be active without focus');
+    // Pitwall's rename raises no event to wait on, so watch for a stray title
+    // for a bounded window; one that stays is the bug.
+    const strayed = await waitFor(() => parseShortId(panel.name), 'a Pitwall title on the panel', 3000);
+    check(
+      'stage 0: with focus in a user terminal, Pitwall never leaves its title there',
+      !strayed && panel.name === 'e2e-panel' && chatTab.name === chatTitle,
+      `${panel.name} / ${chatTab.name}`
+    );
+  }
+  observe('focus-first reproduced in this run', String(focusFirst));
+  panel.dispose();
+  await waitFor(() => !vscode.window.terminals.includes(panel), 'the panel probe terminal to close');
+  // Put back the tab that was in front, which the next stage expects active.
+  if (front) {
+    front.show(true);
+    await waitFor(() => vscode.window.activeTerminal === front, 'the front tab to be active again');
+  }
+}
+
 async function quit() {
   await sleep(500);
   try {
@@ -268,7 +410,8 @@ async function quit() {
 
 exports.activate = async function activate() {
   const state = readState();
-  stage = state.stage || 0;
+  // Stage 1 reloads its window once; the reloaded window is stage "1r".
+  stage = state.stage === 1 && state.reload ? '1r' : state.stage || 0;
   log({ kind: 'observation', name: 'activate', detail: String(stage) });
 
   try {
@@ -292,6 +435,7 @@ exports.activate = async function activate() {
       const terminals = await snapshot();
       check('stage 0: the three chats settled', settled, String(terminals.length));
       checkRestored(0, terminals, target);
+      await renameProbe();
 
       writeState({
         stage: 1,
@@ -301,7 +445,39 @@ exports.activate = async function activate() {
       return;
     }
 
+    if (stage === '1r') {
+      // After Developer: Reload Window every pty survives; Pitwall adopts each
+      // tab by PID, keeps every title, and types into none of them.
+      const settled = await waitFor(async () => {
+        const names = (await readTerminals()).map((terminal) => terminal.name).sort();
+        return JSON.stringify(names) === JSON.stringify(state.reload.names);
+      }, 'the reloaded tabs to keep their titles', 30000);
+      const terminals = await snapshot();
+      check('stage 1r: the tab count is unchanged after a reload', terminals.length === state.reload.names.length, String(terminals.length));
+      check('stage 1r: every title is unchanged after a reload', settled, JSON.stringify(terminals.map((terminal) => terminal.name)));
+      check(
+        'stage 1r: every pty survived the reload',
+        JSON.stringify(terminals.map((terminal) => terminal.pid).sort()) === JSON.stringify(state.reload.pids),
+        JSON.stringify(terminals.map((terminal) => terminal.pid))
+      );
+      check('stage 1r: nothing was launched by the reload', readRuns().length === state.reload.runs, String(readRuns().length));
+      check(
+        'stage 1r: no two tabs share a short ID',
+        new Set(terminals.map((terminal) => parseShortId(terminal.name))).size === terminals.length,
+        JSON.stringify(terminals.map((terminal) => terminal.name))
+      );
+      writeState({ stage: 2, activeName: state.activeName });
+      await quit();
+      return;
+    }
+
     if (stage === 1 || stage === 2) {
+      const t0 = Date.now();
+      const timing = watchTiming(t0);
+      const pitwall = EXTENSION_ID ? vscode.extensions.getExtension(EXTENSION_ID) : undefined;
+      const pitwallActive = pitwall
+        ? Promise.resolve(pitwall.activate()).then(() => Date.now(), () => Date.now())
+        : Promise.resolve(t0);
       if (EXPECT_TITLES) {
         const expectedRuns = 3 + stage * EXPECT_RESUMES;
         const settled = await waitFor(
@@ -317,6 +493,8 @@ exports.activate = async function activate() {
           String(terminals.length)
         );
         checkRestored(stage, terminals, state);
+        timing.report(await pitwallActive);
+        timing.checkLines(stage);
       } else {
         // A resume that should not happen has no event to poll; give it time
         // to appear before asserting its absence.
@@ -325,6 +503,24 @@ exports.activate = async function activate() {
         checkNoRestore(stage, terminals);
       }
 
+      if (stage === 1 && EXPECT_TITLES) {
+        const terminals = await readTerminals();
+        writeState({
+          stage: 1,
+          activeName: state.activeName,
+          reload: {
+            names: terminals.map((terminal) => terminal.name).sort(),
+            pids: terminals.map((terminal) => terminal.pid).sort(),
+            runs: readRuns().length,
+          },
+        });
+        try {
+          await vscode.commands.executeCommand('workbench.action.reloadWindow');
+        } catch {
+          // The window is already reloading.
+        }
+        return;
+      }
       writeState({
         stage: stage + 1,
         activeName: state.activeName,

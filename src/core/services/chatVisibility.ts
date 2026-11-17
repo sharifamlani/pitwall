@@ -10,6 +10,8 @@ export interface ChatVisibilitySources {
   adapters(): readonly HarnessAdapter[];
   /** The chat an editor terminal tab belongs to, by the tab's title. */
   chatIdForTerminalName(name: string): string | undefined;
+  /** Whether the chat's tab is in front only because Pitwall showed it (R43). */
+  isPitwallActivation?(chatId: string): boolean;
 }
 
 /** The chat whose native-UI tab is the active editor tab, if any. */
@@ -49,7 +51,10 @@ export function chatIdInFront(sources: ChatVisibilitySources): string | undefine
     return undefined;
   }
   if (activeTab.input instanceof vscode.TabInputTerminal) {
-    return sources.chatIdForTerminalName(activeTab.label);
+    const chatId = sources.chatIdForTerminalName(activeTab.label);
+    // A tab Pitwall showed to rename it is in front, but the user did not
+    // bring it there (R43).
+    return chatId && sources.isPitwallActivation?.(chatId) ? undefined : chatId;
   }
   return activeNativeUiChatId(sources);
 }

@@ -9,6 +9,7 @@ import {
   commandInDirectory,
   isLiveTerminal,
   launchLine,
+  PROCESS_ID_TIMEOUT_MS,
   readProcessId,
   shellIntegrationEnabled,
   terminalTitle,
@@ -55,6 +56,13 @@ interface StartedTerminal {
 
 type CommandStartWatch = ReturnType<typeof watchCommandStart>;
 
+/** Rename whichever terminal the workbench's rename command targets (see `writeTitle`). */
+async function renameFocusedTerminal(name: string): Promise<void> {
+  await vscode.commands
+    .executeCommand('workbench.action.terminal.renameWithArg', { name })
+    .then(undefined, () => undefined);
+}
+
 /** What the user had in front before a background retitle showed a tab. */
 interface FrontView {
   terminal?: vscode.Terminal;
@@ -62,11 +70,12 @@ interface FrontView {
   viewColumn?: vscode.ViewColumn;
 }
 
-/** The two phases of terminal restore, split by what activation may await. */
+/** The two phases of terminal restore. Activation awaits neither. */
 export interface RestoreSync {
   /**
-   * Terminals whose pty survived a reload are adopted once this resolves.
-   * Bounded (PID reads and storage only), so activation waits for it.
+   * Every PID read has arrived or waited one bounded PID wait. A terminal
+   * whose pty survived a reload is adopted whenever its PID arrives, before
+   * or after this resolves; `openChat` waits for a pending adoption itself.
    */
   adopted: Promise<void>;
   /**
@@ -122,6 +131,34 @@ export class TerminalManager {
    */
   private backgroundActivation?: vscode.Terminal;
 
+  /**
+   * Terminals in front only because Pitwall showed them to rename them, with
+   * one count per show sequence still running (R43). The needs-you pipeline
+   * must not take such a show for the user looking at the chat. A sequence's
+   * count is released when it ends, however it ends; the user activating the
+   * terminal themselves clears it at once.
+   */
+  private readonly pitwallShows = new Map<vscode.Terminal, number>();
+
+  /**
+   * Restored terminals whose PID has not arrived yet, so their adoption is
+   * still open, and the PID records the restore pass started from.
+   */
+  private readonly pendingAdoptions = new Set<vscode.Terminal>();
+  private restoreRecordedPids: Record<string, number> = {};
+  /** Fires when a pending adoption maps a terminal or ends. */
+  private readonly adoptionEvents = new vscode.EventEmitter<void>();
+
+  /**
+   * Mapped terminals whose title landed on another terminal instead, and was
+   * taken back. Each is retried once per event after which keyboard focus can
+   * have moved (see `retryPendingTitles`), never in a loop.
+   */
+  private readonly pendingTitles = new Set<vscode.Terminal>();
+  private readonly queuedTitleRetries = new Set<vscode.Terminal>();
+  /** Terminal activations that were not Pitwall's own background shows. */
+  private userActivations = 0;
+
   private readonly stateEmitter = new vscode.EventEmitter<{ chatId: string; state: 'opened' | 'closed' }>();
   readonly onTerminalStateChange = this.stateEmitter.event;
 
@@ -138,14 +175,11 @@ export class TerminalManager {
         }
       }),
       // A restored terminal can appear after activation; adopt it if its pty
-      // is one Pitwall recorded.
+      // is one Pitwall recorded, whenever its PID arrives.
       vscode.window.onDidOpenTerminal((terminal) => {
-        void this.adoptRestoredTerminal(
-          terminal,
-          this.storageService.getTerminalPids(),
-          undefined,
-          this.getWorktreeById
-        ).catch((error) => console.error('Pitwall: could not adopt a restored terminal', error));
+        if (terminal.exitStatus === undefined && !this.terminalToChatId.has(terminal)) {
+          this.adoptWhenPidArrives(terminal, terminal.processId, () => this.storageService.getTerminalPids(), this.getWorktreeById);
+        }
       }),
       // A mapped terminal always shows Pitwall's title. Re-applying on focus
       // covers a title VS Code lost during a restore and a hand-renamed tab.
@@ -153,13 +187,24 @@ export class TerminalManager {
         if (!terminal) {
           return;
         }
-        if (this.backgroundActivation && terminal !== this.backgroundActivation) {
+        if (terminal === this.backgroundActivation) {
+          // Pitwall showed this tab to rename it; the queued work that showed
+          // it writes the title, and keyboard focus has not moved.
+          return;
+        }
+        if (this.backgroundActivation) {
           // Someone else took the active tab; a later focus of the expected
           // tab is the user's and must not be swallowed by the marker.
           this.backgroundActivation = undefined;
         }
+        this.userActivations += 1;
+        // The user brought it to the front: from now on it is their look.
+        this.pitwallShows.delete(terminal);
         void this.applyTitle(terminal);
+        this.retryPendingTitles(terminal);
       }),
+      // Switching windows or apps moves keyboard focus too.
+      vscode.window.onDidChangeWindowState(() => this.retryPendingTitles()),
       // Each cwd report re-tags the title as a config title, letting the
       // shell's own title win; re-apply after it, which also covers a slow
       // shell that started after the initial title.
@@ -197,6 +242,17 @@ export class TerminalManager {
         return restoring;
       }
       this.restoringChats.delete(chat.id);
+    }
+
+    // A tab that survived a reload may still be waiting for its PID, which is
+    // the only thing that proves it is this chat's agent. Wait for that, at
+    // most one PID wait, rather than launch a second agent beside it.
+    if (await this.waitForPendingAdoption(chat.id)) {
+      const adopted = this.terminals.get(chat.id);
+      if (adopted && isLiveTerminal(adopted)) {
+        adopted.show();
+        return adopted;
+      }
     }
 
     const launch = await this.prepareLaunch(chat, worktree.path, true);
@@ -318,7 +374,12 @@ export class TerminalManager {
       const lateStart = watchCommandStart(terminal);
       this.lateStarts.add(lateStart.cancel);
       const started = waitForCommandStart(terminal, RESTORED_SHELL_TIMEOUT_MS);
-      terminal.sendText(command);
+      // R42: a revived shell can report ready before it reads keystrokes (its
+      // shell integration is restored from the last session) and drop the
+      // first one: Smoke 7 saw "et-Location -LiteralPath ...". A leading space
+      // is harmless in PowerShell, cmd.exe and bash (and keeps the line out
+      // of bash history under ignorespace), so a dropped keystroke is the space.
+      terminal.sendText(` ${command}`);
       return { readiness, started, lateStart };
     });
 
@@ -505,14 +566,43 @@ export class TerminalManager {
         await this.writeTitle(terminal);
         return;
       }
+      if (!this.canShowInBackground(terminal)) {
+        // Showing it would replace what the user is looking at, and can take
+        // keyboard focus with it. Wait for a later trigger instead.
+        this.pendingTitles.add(terminal);
+        return;
+      }
       const front = this.captureFront();
-      await this.showForRetitle(terminal);
-      await this.writeTitle(terminal);
-      // Put back what the user had in front, unless they moved on meanwhile.
-      if (vscode.window.activeTerminal === terminal) {
-        await this.restoreFront(front, terminal);
+      const release = this.beginPitwallShow(terminal);
+      try {
+        await this.showForRetitle(terminal);
+        await this.writeTitle(terminal);
+        // Put back what the user had in front, unless they moved on meanwhile.
+        if (vscode.window.activeTerminal === terminal) {
+          await this.restoreFront(front, terminal);
+        }
+      } finally {
+        release();
       }
     });
+  }
+
+  /**
+   * Whether a tab can be shown, to rename it, without replacing what the user
+   * is looking at. Showing an editor terminal in the active editor group
+   * replaces that group's front tab: when the front tab is the user's (a
+   * file, a diff, a webview such as a chat panel), keyboard focus can go with
+   * it, and the editor moves it to the terminal. So a tab in that group is
+   * shown only while a terminal tab is in front there; a tab in another group
+   * (or a panel terminal) does not touch the front tab.
+   */
+  private canShowInBackground(terminal: vscode.Terminal): boolean {
+    const group = vscode.window.tabGroups.activeTabGroup;
+    const front = group?.activeTab;
+    if (!group || !front || front.input instanceof vscode.TabInputTerminal) {
+      return true;
+    }
+    return !group.tabs.some((tab) => tab.input instanceof vscode.TabInputTerminal && tab.label === terminal.name);
   }
 
   /**
@@ -590,6 +680,17 @@ export class TerminalManager {
     return this.titleWrites;
   }
 
+  /**
+   * Rename the active, mapped terminal to its chat's title, then check where
+   * the title landed. The rename command renames the terminal that holds
+   * keyboard focus, and only falls back to the active one when no terminal
+   * has focus (`TerminalService.activeInstance`). A tab shown without focus
+   * is active but not focused, so with the user's keyboard in another
+   * terminal the title lands there. That terminal is given its previous name
+   * back at once (focus has not moved, so that rename lands on it too), and
+   * the target is requeued. The editor reports a rename's new name before the
+   * command resolves; the terminal-restore e2e asserts it.
+   */
   private async writeTitle(terminal: vscode.Terminal): Promise<void> {
     if (this.isDisposed) {
       return;
@@ -599,11 +700,105 @@ export class TerminalManager {
     if (!chat || vscode.window.activeTerminal !== terminal) {
       return;
     }
-    await vscode.commands
-      .executeCommand('workbench.action.terminal.renameWithArg', {
-        name: terminalTitle(chat),
-      })
-      .then(undefined, () => undefined);
+    const title = terminalTitle(chat);
+    const before = new Map(vscode.window.terminals.map((candidate) => [candidate, candidate.name] as const));
+    await renameFocusedTerminal(title);
+    const strays = vscode.window.terminals.filter(
+      (candidate) => candidate !== terminal && candidate.name === title && before.has(candidate) && before.get(candidate) !== title
+    );
+    if (strays.length === 0) {
+      if (terminal.name === title) {
+        this.pendingTitles.delete(terminal);
+      }
+      return;
+    }
+    for (const stray of strays) {
+      // The command refuses an empty name and offers no way back to a dynamic
+      // title, so the previous name comes back as a fixed one.
+      const previous = before.get(stray) || 'Terminal';
+      await renameFocusedTerminal(previous);
+      if (stray.name !== previous) {
+        console.warn(`Pitwall: a chat title landed on another terminal and its name "${previous}" could not be put back`);
+      }
+    }
+    this.pendingTitles.add(terminal);
+  }
+
+  /**
+   * Retry each requeued title once, after an event that can have moved
+   * keyboard focus: a terminal became active (`except`, when the user focused
+   * it, is renamed by the focus handler instead) or the window gained or lost
+   * focus. One attempt per trigger, because until another such event focus
+   * is where it was, and a second attempt would land on the same terminal
+   * again. With the keyboard parked in a user's terminal, nothing retries.
+   */
+  private retryPendingTitles(except?: vscode.Terminal): void {
+    for (const terminal of [...this.pendingTitles]) {
+      if (terminal === except || this.queuedTitleRetries.has(terminal)) {
+        continue;
+      }
+      if (!isLiveTerminal(terminal) || !this.terminalToChatId.has(terminal)) {
+        this.pendingTitles.delete(terminal);
+        continue;
+      }
+      this.queuedTitleRetries.add(terminal);
+      void this.retitleInBackground(terminal).finally(() => this.queuedTitleRetries.delete(terminal));
+    }
+  }
+
+  /**
+   * Adopt a restored terminal once its PID arrives, however late (a reload's
+   * pty can report it after any bounded wait). The terminal counts as a
+   * pending adoption until then, so a click waits for it instead of opening
+   * a second agent.
+   */
+  private adoptWhenPidArrives(
+    terminal: vscode.Terminal,
+    read: Thenable<number | undefined>,
+    recordedPids: () => Record<string, number>,
+    getWorktree?: (worktreeId: string) => Worktree | undefined
+  ): void {
+    this.pendingAdoptions.add(terminal);
+    void Promise.resolve(read)
+      .then((pid) =>
+        pid === undefined || this.isDisposed
+          ? undefined
+          : this.adoptRestoredTerminal(terminal, recordedPids(), pid, getWorktree)
+      )
+      .catch((error) => console.error('Pitwall: could not adopt a restored terminal', error))
+      .finally(() => {
+        this.pendingAdoptions.delete(terminal);
+        if (!this.isDisposed) {
+          this.adoptionEvents.fire();
+        }
+      });
+  }
+
+  /**
+   * Wait, at most one PID wait, while a chat this workspace recorded could
+   * still be adopted by a restored terminal whose PID is pending. True when
+   * the chat has a terminal afterwards.
+   */
+  private async waitForPendingAdoption(chatId: string): Promise<boolean> {
+    if (
+      this.pendingAdoptions.size === 0 ||
+      this.terminals.has(chatId) ||
+      this.restoreRecordedPids[chatId] === undefined
+    ) {
+      return this.terminals.has(chatId);
+    }
+    return waitForEvent<boolean>(PROCESS_ID_TIMEOUT_MS, false, (done) => {
+      const check = () => {
+        if (this.terminals.has(chatId)) {
+          done(true);
+        } else if (this.pendingAdoptions.size === 0) {
+          done(false);
+        }
+      };
+      const subscription = this.adoptionEvents.event(check);
+      check();
+      return subscription;
+    });
   }
 
   /**
@@ -612,6 +807,33 @@ export class TerminalManager {
    * focus is handled normally. The tree uses this to ignore selection changes
    * caused by the background retitle pass.
    */
+  /**
+   * Whether the chat's tab is in front only because Pitwall showed it to
+   * rename it, so being in front is not the user looking at it (R43).
+   */
+  isPitwallActivation(chatId: string): boolean {
+    const terminal = this.terminals.get(chatId);
+    return terminal !== undefined && this.pitwallShows.has(terminal);
+  }
+
+  /** Count one show sequence for `terminal`; the returned release is idempotent. */
+  private beginPitwallShow(terminal: vscode.Terminal): () => void {
+    this.pitwallShows.set(terminal, (this.pitwallShows.get(terminal) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      const left = (this.pitwallShows.get(terminal) ?? 1) - 1;
+      if (left > 0) {
+        this.pitwallShows.set(terminal, left);
+      } else {
+        this.pitwallShows.delete(terminal);
+      }
+    };
+  }
+
   consumeBackgroundActivation(terminal: vscode.Terminal): boolean {
     if (this.backgroundActivation !== terminal) {
       return false;
@@ -653,7 +875,8 @@ export class TerminalManager {
    * Close a chat's terminal; the close event does the bookkeeping. A restored
    * tab Pitwall never resumed (an unlinked fork, a session that was gone) is
    * not mapped, so it is found by the short ID in its title, and only when no
-   * other stored chat shares that short ID.
+   * other stored chat shares that short ID and exactly one unmanaged tab
+   * carries it: of two, one may be the user's own terminal.
    */
   closeChat(chatId: string): void {
     const terminal = this.terminals.get(chatId);
@@ -668,14 +891,11 @@ export class TerminalManager {
     if (shared) {
       return;
     }
-    for (const orphan of [...vscode.window.terminals]) {
-      if (
-        isLiveTerminal(orphan) &&
-        !this.terminalToChatId.has(orphan) &&
-        titleShortId(orphan.name) === shortId
-      ) {
-        orphan.dispose();
-      }
+    const orphans = vscode.window.terminals.filter(
+      (orphan) => isLiveTerminal(orphan) && !this.terminalToChatId.has(orphan) && titleShortId(orphan.name) === shortId
+    );
+    if (orphans.length === 1) {
+      orphans[0].dispose();
     }
   }
 
@@ -823,20 +1043,23 @@ export class TerminalManager {
       cancel();
     }
     this.lateStarts.clear();
+    this.pendingAdoptions.clear();
+    this.pendingTitles.clear();
+    this.adoptionEvents.dispose();
     this.stateEmitter.dispose();
   }
 
   /**
-   * Reconcile terminals that survived an extension-host restart.
+   * Reconcile terminals that survived an extension-host restart. Activation
+   * awaits none of it.
    *
    * A window reload keeps every pty, so adoption is silent: the terminal with
-   * a chat's recorded PID is that chat's live agent. Adoption reads only PIDs
-   * and storage, so activation can wait for it without putting harness I/O in
-   * front of the tree. A quit revives each tab as a new shell, and resuming one
-   * asks the harness whether its session still exists; that native check can
-   * outlast startup, so it runs after the views and commands exist. Until it
-   * finishes, `openChat` treats a candidate tab as the chat's terminal, so a
-   * click cannot launch a second agent.
+   * a chat's recorded PID is that chat's live agent, adopted whenever that
+   * PID arrives. Until then `openChat` waits for it (at most one PID wait).
+   * A quit revives each tab as a new shell, and resuming one asks the harness
+   * whether its session still exists; that native check can outlast startup.
+   * Until it finishes, `openChat` treats a candidate tab as the chat's
+   * terminal, so a click cannot launch a second agent.
    */
   beginRestoreSync(
     getWorktree: (worktreeId: string) => Worktree | undefined
@@ -844,57 +1067,42 @@ export class TerminalManager {
     this.getWorktreeById = getWorktree;
     const chats = this.storageService.getChats();
     const recordedPids = this.storageService.getTerminalPids();
-    const terminals = vscode.window.terminals;
+    this.restoreRecordedPids = recordedPids;
+    const terminals = [...vscode.window.terminals];
     const pids = new Map<vscode.Terminal, number | undefined>();
     // Each terminal's PID read, kept so a late PID is waited for on the same
     // read rather than a second one.
     const pidReads = new Map<vscode.Terminal, Thenable<number | undefined>>();
 
-    const adopted = (async () => {
-      // Only terminals that can be adopted or resumed need their PID.
-      // Unrelated user terminals must not add their read timeout to startup.
-      const canAdopt = Object.keys(recordedPids).length > 0;
-      await Promise.all(
-        terminals.map(async (terminal) => {
-          if (terminal.exitStatus !== undefined) {
-            return;
-          }
-          if (
-            !canAdopt &&
-            !titleShortId(terminal.name)
-          ) {
-            return;
-          }
-          const read = terminal.processId;
-          pidReads.set(terminal, read);
-          pids.set(terminal, await waitForProcessId(read));
-        })
-      );
-
-      // Resolve each worktree once. The provider caches what it lists, so a
-      // cold lookup loads each repository at most once.
-      const worktrees = new Map<string, Worktree | undefined>();
-      const resolveWorktree = (
-        worktreeId: string
-      ): Worktree | undefined => {
-        if (!worktrees.has(worktreeId)) {
-          worktrees.set(worktreeId, getWorktree(worktreeId));
-        }
-        return worktrees.get(worktreeId);
-      };
-
-      if (canAdopt) {
-        for (const terminal of terminals) {
-          // The parallel read above already waited for this PID. Reading again
-          // would hold activation for another timeout per silent tab.
-          const pid = pids.get(terminal);
-          if (pid !== undefined) {
-            await this.adoptRestoredTerminal(terminal, recordedPids, pid, resolveWorktree);
-          }
-        }
+    // Resolve each worktree once. The provider caches what it lists, so a
+    // cold lookup loads each repository at most once.
+    const worktrees = new Map<string, Worktree | undefined>();
+    const resolveWorktree = (worktreeId: string): Worktree | undefined => {
+      if (!worktrees.has(worktreeId)) {
+        worktrees.set(worktreeId, getWorktree(worktreeId));
       }
-      return resolveWorktree;
-    })();
+      return worktrees.get(worktreeId);
+    };
+
+    // Only terminals that can be adopted or resumed need their PID.
+    // Unrelated user terminals must not add their read timeout to restore.
+    const canAdopt = Object.keys(recordedPids).length > 0;
+    const firstWaits: Promise<void>[] = [];
+    for (const terminal of terminals) {
+      if (terminal.exitStatus !== undefined || (!canAdopt && !titleShortId(terminal.name))) {
+        continue;
+      }
+      const read = terminal.processId;
+      pidReads.set(terminal, read);
+      // A surviving pty is adopted whenever its PID arrives, with no cut-off.
+      if (canAdopt) {
+        this.adoptWhenPidArrives(terminal, read, () => recordedPids, resolveWorktree);
+      }
+      firstWaits.push(waitForProcessId(read).then((pid) => void pids.set(terminal, pid)));
+    }
+    // A PID that arrived within the bound has been adopted by now: its
+    // continuation was chained on the read before this wait's.
+    const adopted = Promise.all(firstWaits).then(() => resolveWorktree);
 
     const complete = adopted.then(async (resolveWorktree) => {
       try {
@@ -928,23 +1136,19 @@ export class TerminalManager {
 
   /**
    * Adopt a restored terminal whose pty is the one recorded for a chat. Never
-   * type into an adopted terminal: the pty is the running agent. Without a
-   * known PID (a terminal that opened after activation) the PID is read here.
+   * type into an adopted terminal: the pty is the running agent.
+   * The caller passes the PID once it has arrived.
    */
   private async adoptRestoredTerminal(
     terminal: vscode.Terminal,
     recordedPids: Record<string, number>,
-    knownPid?: number,
+    pid: number,
     getWorktree?: (worktreeId: string) => Worktree | undefined
   ): Promise<void> {
     if (
       terminal.exitStatus !== undefined ||
       this.terminalToChatId.has(terminal)
     ) {
-      return;
-    }
-    const pid = knownPid ?? (await readProcessId(terminal));
-    if (pid === undefined) {
       return;
     }
 
@@ -957,6 +1161,7 @@ export class TerminalManager {
 
     this.terminals.set(chatId, terminal);
     this.terminalToChatId.set(terminal, chatId);
+    this.adoptionEvents.fire();
 
     const chat = this.storageService.getChat(chatId);
     if (chat && chat.status !== 'active') {
@@ -969,7 +1174,9 @@ export class TerminalManager {
       }
     }
     await this.storageService.rememberTerminalPid(chatId, pid);
-    await this.applyTitle(terminal);
+    // A reload can leave a background tab's title re-tagged as the shell's,
+    // which the next quit would then revive it as; rename it in the background.
+    await (vscode.window.activeTerminal === terminal ? this.applyTitle(terminal) : this.retitleInBackground(terminal));
     this.stateEmitter.fire({ chatId, state: 'opened' });
   }
 
@@ -977,8 +1184,8 @@ export class TerminalManager {
    * Resume every restored tab that VS Code revived as a new shell. A chat is
    * only resumed into its own tab: the workspace must have recorded a PID for
    * it and that PID must differ from the restored shell's, which proves this
-   * is not a live agent. Only one tab per chat is resumed; a duplicate title
-   * leaves the first tab as the chat's terminal and the rest unmanaged.
+   * is not a live agent. A chat whose short ID is on two or more unclaimed
+   * tabs is not resumed at all, and every such tab is left unmanaged.
    */
   private async resumeRevivedTerminals(
     chats: ChatSession[],
@@ -1068,17 +1275,30 @@ export class TerminalManager {
       }
     }
 
-    const candidates: Array<{ chat: ChatSession; terminal: vscode.Terminal }> =
-      [];
-    const claimedChats = new Set<string>();
-    for (const { chat, terminal } of matched) {
-      // A click or a close can have claimed the chat while PIDs were read.
-      if (
-        !isLiveTerminal(terminal) ||
-        this.terminalToChatId.has(terminal) ||
-        this.terminals.has(chat.id) ||
-        claimedChats.has(chat.id)
-      ) {
+    // A click, a close or an adoption can have claimed a chat while PIDs
+    // were read. Of what is left, a chat with two or more tabs carrying its
+    // short ID is ambiguous: after a quit every PID is new, so nothing tells
+    // its own tab from another terminal that carries the title. Resume none
+    // of them rather than guess.
+    const open = matched.filter(
+      ({ chat, terminal }) =>
+        isLiveTerminal(terminal) && !this.terminalToChatId.has(terminal) && !this.terminals.has(chat.id)
+    );
+    const tabsPerChat = new Map<string, number>();
+    for (const { chat } of open) {
+      tabsPerChat.set(chat.id, (tabsPerChat.get(chat.id) ?? 0) + 1);
+    }
+    for (const [chatId, count] of tabsPerChat) {
+      if (count > 1) {
+        console.warn(
+          `Pitwall: ${count} restored terminals carry the title of chat [${chatId.substring(0, 6)}]; none is resumed, because nothing tells the chat's own tab apart`
+        );
+      }
+    }
+
+    const candidates: Array<{ chat: ChatSession; terminal: vscode.Terminal }> = [];
+    for (const { chat, terminal } of open) {
+      if (tabsPerChat.get(chat.id) !== 1) {
         continue;
       }
       // Type only when the current pty is not the one the chat recorded.
@@ -1086,7 +1306,6 @@ export class TerminalManager {
       if (pid === undefined || pid === recordedPids[chat.id]) {
         continue;
       }
-      claimedChats.add(chat.id);
       candidates.push({ chat, terminal });
     }
 
@@ -1166,15 +1385,21 @@ export class TerminalManager {
       return;
     }
     const front = this.captureFront();
-    const previous = front.terminal;
+    // The pass stops once the user activates a terminal; Pitwall's own
+    // background shows (this pass, a late retitle, an adoption) do not count.
+    const userActivations = this.userActivations;
+    const userTookOver = () => this.userActivations !== userActivations;
     // Late-start watches not handed to `retitleOnLateStart` are cancelled
     // when the pass ends, however it ends.
     const unhanded = new Set(revived);
+    // Each tab this pass shows stays in front until the next one, so the
+    // shows are released only once the front is restored or the pass ends.
+    const releases: Array<() => void> = [];
+    const releaseShows = () => releases.forEach((release) => release());
     void (async () => {
-      let expected = previous;
       for (const item of revived) {
         const { terminal, integrated, started } = item;
-        if (this.isDisposed || vscode.window.activeTerminal !== expected) {
+        if (this.isDisposed || userTookOver()) {
           return;
         }
         // A shell without integration never re-tags the title, so its stored
@@ -1195,37 +1420,48 @@ export class TerminalManager {
         }
         if (
           this.isDisposed ||
-          vscode.window.activeTerminal !== expected ||
+          userTookOver() ||
           !vscode.window.terminals.includes(terminal)
         ) {
           return;
         }
-        let shown = false;
+        let outcome: 'shown' | 'deferred' | 'stopped' = 'stopped';
         await this.queueTitleWork(async () => {
           if (
             this.isDisposed ||
-            vscode.window.activeTerminal !== expected ||
+            userTookOver() ||
             !vscode.window.terminals.includes(terminal)
           ) {
             return;
           }
+          if (!this.canShowInBackground(terminal)) {
+            // The user's file or panel is in front of this tab's group.
+            this.pendingTitles.add(terminal);
+            outcome = 'deferred';
+            return;
+          }
+          releases.push(this.beginPitwallShow(terminal));
           await this.showForRetitle(terminal);
           await this.writeTitle(terminal);
-          shown = true;
+          outcome = 'shown';
         });
-        if (!shown) {
+        if (outcome === 'stopped') {
           return;
         }
-        expected = terminal;
       }
       await this.queueTitleWork(async () => {
-        if (!this.isDisposed) {
-          await this.restoreFront(front);
+        try {
+          if (!this.isDisposed) {
+            await this.restoreFront(front);
+          }
+        } finally {
+          releaseShows();
         }
       });
     })()
       .catch(() => undefined)
       .finally(() => {
+        releaseShows();
         for (const { lateStart } of unhanded) {
           void lateStart?.then((watch) => {
             if (watch) {

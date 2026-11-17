@@ -11,8 +11,11 @@ import { PROCESS_ID_TIMEOUT_MS, terminalTitle } from '../../../src/core/services
 import { quoteShellArgument } from '../../../src/core/harness/cli';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { ClaudeHarness } from '../../../src/harnesses/claude/ClaudeHarness';
-import { HarnessAdapter } from '../../../src/core/harness/types';
+import { HarnessAdapter, HarnessLiveState } from '../../../src/core/harness/types';
 import { ChatSession, STORAGE_KEYS } from '../../../src/core/types';
+import { SessionAttentionService } from '../../../src/core/services/SessionAttentionService';
+import { NotificationService } from '../../../src/core/services/NotificationService';
+import * as chatVisibility from '../../../src/core/services/chatVisibility';
 import { chatRecord, fakeAdapter, FakeTerminal, flush, makeStorage, memento, shown, stub, waitFor, worktreeRecord } from '../support';
 
 beforeEach(() => stub.__reset());
@@ -219,22 +222,38 @@ test('after a quit, each revived tab resumes its own chat in its worktree, quiet
     else selections.push(terminal);
   });
 
+  const warnings: unknown[][] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => warnings.push(args);
+  t.after(() => (console.warn = warn));
+
   const restore = f.manager.beginRestoreSync(() => WORKTREE);
   await restore.adopted;
   await restore.complete;
-  const cd = `cd '${WORKTREE.path}' && `;
+  // R42: a revived tab's line starts with one space.
+  const cd = ` cd '${WORKTREE.path}' && `;
   assert.deepEqual(
     [revived, unlinked, duplicateFirst, duplicateSecond, samePty, fork, gone].map((tab) => tab.sent[0]),
-    [`${cd}claude --resume linked`, `${cd}claude`, `${cd}claude --resume linked`, undefined, undefined, undefined, undefined]
+    [`${cd}claude --resume linked`, `${cd}claude`, undefined, undefined, undefined, undefined, undefined]
   );
-  assert.equal(f.manager.getTerminal('ffeedd00-duplicate'), duplicateFirst as unknown, 'the first same-titled tab owns the chat');
+  // After a quit every PID is new, so two tabs with one short ID cannot be told apart.
+  assert.equal(f.manager.getTerminal('ffeedd00-duplicate'), undefined, 'neither same-titled tab is guessed');
+  assert.deepEqual([duplicateFirst.disposed, duplicateSecond.disposed], [false, false], 'and neither is closed');
+  assert.equal(warnings.filter((w) => String(w[0]).includes('ffeedd')).length, 1, 'one log line says why');
   assert.equal(f.storage.getTerminalPids()['aabbcc00-revived'], 8001, 'the new pty replaces the old record');
   assert.deepEqual(f.registrations, [`cd34ef00-unlinked@${WORKTREE.path}`]);
   assert.equal(stub.__messages.length, 0, 'a missing session is skipped without a warning');
   assert.deepEqual([f.chat('99aabb00-stale').status, f.chat('77889900-foreign').status], ['idle', 'active']);
 
-  await waitFor(() => background >= 4, 'three retitles and the return to the previous tab');
-  assert.equal(stub.window.activeTerminal, previous);
+  // The adopted same-pty tab and the two resumed tabs are retitled in the
+  // background, each time followed by a return to the previous tab.
+  await waitFor(
+    () =>
+      background >= 5 &&
+      [revived, unlinked, samePty].every((tab) => tab.name === terminalTitle(f.chat(String(f.manager.getChatIdForTerminal(tab as never))))),
+    'three retitles and the returns to the previous tab'
+  );
+  await waitFor(() => stub.window.activeTerminal === previous, 'the previous tab in front again');
   assert.deepEqual(selections, [], 'retitling is not a user focus change');
   stub.window.__setActiveTerminal(revived);
   assert.deepEqual(selections, [revived], 'a real focus change still is');
@@ -295,7 +314,7 @@ test('adoption does not wait for a slow harness check, and a click meanwhile foc
 
   release(true);
   await restore.complete;
-  assert.equal(tab.sent[0], `cd '${WORKTREE.path}' && claude --resume slow`);
+  assert.equal(tab.sent[0], ` cd '${WORKTREE.path}' && claude --resume slow`);
   assert.ok(!f.manager.isResuming('5a5a5a00-slow'));
 });
 
@@ -370,7 +389,7 @@ test('a revived tab whose PID arrives late is still resumed in the background, a
   await restore.adopted;
   assert.equal(await f.open('c0c0c000-late'), tab, 'a click while the PID is pending focuses the revived tab');
   await restore.complete;
-  assert.deepEqual(tab.sent, [`cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s1`]);
+  assert.deepEqual(tab.sent, [` cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s1`]);
   assert.ok(f.manager.isActive('c0c0c000-late'));
   assert.equal(f.storage.getTerminalPids()['c0c0c000-late'], 8501, 'the late PID is recorded for a reload');
 
@@ -503,7 +522,7 @@ test('a revived tab is resumed only after its shell reports ready', async (t) =>
   stub.window.__integrateShell(tab);
   await waitFor(() => tab.sent.length > 0, 'the resume line');
   await flush();
-  assert.deepEqual(tab.sent, [`cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s2`]);
+  assert.deepEqual(tab.sent, [` cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s2`]);
 });
 
 test('with shell integration turned off, a revived tab is resumed at once', async (t) => {
@@ -515,7 +534,7 @@ test('with shell integration turned off, a revived tab is resumed at once', asyn
   const tab = f.restoredTab('Pitwall: No Integration [a2a2a2]', 8702);
 
   await f.manager.beginRestoreSync(() => WORKTREE).complete;
-  assert.deepEqual(tab.sent, [`cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s3`]);
+  assert.deepEqual(tab.sent, [` cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s3`]);
 });
 
 test('a revived tab whose shell never reports ready is still resumed, once, when the readiness cap runs out', async (t) => {
@@ -529,7 +548,7 @@ test('a revived tab whose shell never reports ready is still resumed, once, when
   const f = setup(t, { chats: [{ id: 'a3a3a300-never', harnessSessionId: 's4', status: 'closed' }] });
   await f.storage.rememberTerminalPid('a3a3a300-never', 7703);
   const tab = f.restoredTab('Pitwall: Never Ready [a3a3a3]', 8703);
-  const line = `cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s4`;
+  const line = ` cd ${quoteShellArgument(WORKTREE.path)} && claude --resume s4`;
 
   t.mock.timers.enable({ apis: ['setTimeout'] });
   await f.manager.beginRestoreSync(() => WORKTREE).complete;
@@ -545,6 +564,39 @@ test('a revived tab whose shell never reports ready is still resumed, once, when
   t.mock.timers.tick(REVIVED_SHELL_READY_CAP_MS);
   await flush();
   assert.deepEqual(tab.sent, [line], 'and never sent twice');
+});
+
+const POWERSHELL = 'C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+
+test('a resume line typed into a revived tab starts with one space, so a dropped first keystroke cannot break it (R42)', async (t) => {
+  // Smoke 7 load-4: a revived Windows PowerShell 5.1 still starting ran
+  // "et-Location -LiteralPath ..." because it ate the line's first keystroke.
+  const cases: [string, string][] = [
+    [POWERSHELL, ` Set-Location -LiteralPath '/work/repo with space'; if ($?) { claude --resume r42 }`],
+    ['/bin/bash', ` cd '/work/repo with space' && claude --resume r42`],
+  ];
+  for (const [shell, expected] of cases) {
+    stub.__reset();
+    stub.__setShell(shell);
+    const f = setup(t, { chats: [{ id: 'b4b4b400-r42', harnessSessionId: 'r42', status: 'closed' }] });
+    await f.storage.rememberTerminalPid('b4b4b400-r42', 7704);
+    const tab = f.restoredTab('Pitwall: Revived [b4b4b4]', 8704);
+    await f.manager.beginRestoreSync(() => WORKTREE).complete;
+    await waitFor(() => tab.sent.length > 0, 'the resume line');
+    assert.deepEqual(tab.sent, [expected], shell);
+    f.manager.dispose();
+  }
+});
+
+test('guard: a launch line typed into a tab Pitwall just created has no leading space (R42)', async (t) => {
+  for (const shell of [POWERSHELL, '/bin/bash', 'C:\\WINDOWS\\system32\\cmd.exe']) {
+    stub.__reset();
+    stub.__setShell(shell);
+    const f = setup(t, { chats: [{ id: 'new-tab' }, { id: 'resumed-tab', harnessSessionId: 'linked' }] });
+    assert.deepEqual((await f.open('new-tab'))!.sent, ['claude'], shell);
+    assert.deepEqual((await f.open('resumed-tab'))!.sent, ['claude --resume linked'], shell);
+    f.manager.dispose();
+  }
 });
 
 test('a revived tab whose command starts after the retitle wait still gets its restore title', async (t) => {
@@ -644,4 +696,510 @@ test('a background retitle brings back a custom or diff tab without focus; a web
   await flush();
   assert.equal(calls.length, before, 'nothing is reopened for a webview tab');
   assert.equal(stub.window.activeTerminal, webview.tab, 'the renamed terminal stays in front of it');
+});
+
+/**
+ * The workbench's rename, as the editor's own code runs it:
+ * `workbench.action.terminal.renameWithArg` renames
+ * `TerminalService.activeInstance`, which returns a terminal that holds
+ * keyboard focus first and the last active terminal only when none does.
+ * `show(true)` makes a tab active without moving focus, so with focus in
+ * another terminal the extension host's `activeTerminal` and the rename's
+ * target differ.
+ */
+function focusFirstRename() {
+  const renames: { name: string; target: FakeTerminal | undefined }[] = [];
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    const target = stub.window.__focusedTerminal ?? stub.window.activeTerminal;
+    renames.push({ name: arg.name, target });
+    if (target) target.name = arg.name;
+  });
+  return renames;
+}
+
+/** Terminals other than `owner` that carry a Pitwall title. */
+function pitwallTitledOthers(owner: FakeTerminal): string[] {
+  return stub.window.terminals.filter((t) => t !== owner && /^Pitwall: .*\[[a-f0-9]{6}\]$/.test(t.name)).map((t) => t.name);
+}
+
+test('a late title never lands on the user’s own terminal that holds keyboard focus (F-a)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab' }] });
+  const renames = focusFirstRename();
+  // Opened from its row; Windows PowerShell 5.1 integrates after openChat returns.
+  const tab = (await f.open('40de4f00-lab'))!;
+  // The user pastes the copied resume command into a panel terminal of their own.
+  const panel = stub.window.createTerminal({ name: 'powershell', location: vscode.TerminalLocation.Panel });
+  stub.window.__focusTerminal(panel);
+  const before = renames.length;
+  // The chat tab's slow command starts now, so its late title is applied.
+  stub.window.__integrateShell(tab);
+
+  await waitFor(() => renames.length > before, 'the late rename to run');
+  await waitFor(() => stub.window.activeTerminal === panel, 'the user’s terminal to be in front again');
+  assert.equal(panel.name, 'powershell', 'the user’s terminal keeps its own name');
+  assert.deepEqual(pitwallTitledOthers(tab), [], 'no other terminal carries the chat’s identity');
+});
+
+test('after a reload, adopting tabs never renames the tab that holds keyboard focus (R1(d))', async (t) => {
+  const f = setup(t, {
+    chats: [
+      { id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab', status: 'active' },
+      { id: '0ad61000-new', name: 'New Session', harnessSessionId: 'new', status: 'active' },
+    ],
+  });
+  await f.storage.rememberTerminalPid('40de4f00-lab', 82260);
+  await f.storage.rememberTerminalPid('0ad61000-new', 13740);
+  const lab = f.restoredTab('Pitwall: Lab ready [40de4f]', 82260);
+  const fresh = f.restoredTab('Pitwall: New Session [0ad610]', 13740);
+  // After the reload, keyboard focus is in Lab ready's tab while the window's
+  // last active terminal is New Session (shown without focus).
+  stub.window.__focusTerminal(lab);
+  stub.window.__setActiveTerminal(fresh);
+  const renames = focusFirstRename();
+
+  const restore = f.manager.beginRestoreSync(() => WORKTREE);
+  await restore.adopted;
+  await restore.complete;
+  await waitFor(() => renames.length > 0, 'an adoption rename to run');
+  await flush();
+  assert.ok(f.manager.isActive('40de4f00-lab') && f.manager.isActive('0ad61000-new'), 'both live tabs are adopted');
+  assert.equal(lab.name, 'Pitwall: Lab ready [40de4f]', 'Lab ready keeps its own title');
+  assert.equal(new Set(stub.window.terminals.map((t) => t.name)).size, 2, 'no two tabs share a title');
+});
+
+test('after a reload, a live tab whose PID arrives after the wait is still adopted, and a click focuses it (R1(d))', async (t) => {
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab', status: 'active' }] });
+  await f.storage.rememberTerminalPid('40de4f00-lab', 82260);
+  // The surviving pty reports its PID after activation's bounded read gave up.
+  const lab = stub.window.createTerminal({
+    name: 'Pitwall: Lab ready [40de4f]',
+    __pid: 82260,
+    __pidDelayMs: PROCESS_ID_TIMEOUT_MS + 500,
+  });
+
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  await waitFor(() => f.manager.isActive('40de4f00-lab'), 'the late live tab to be adopted', PROCESS_ID_TIMEOUT_MS);
+  assert.equal(f.chat('40de4f00-lab').status, 'active', 'the row does not fall back to idle');
+  assert.equal(await f.open('40de4f00-lab'), lab, 'a click focuses the live tab');
+  assert.deepEqual([stub.window.terminals.length, lab.sent.length], [1, 0], 'no second tab, and the live agent is never typed into');
+});
+
+test('guard: a tab activated between the retitle’s show and its rename is never renamed (active-only rename)', async (t) => {
+  // The suspect in R37: something else becomes active after the queue shows
+  // the tab and before the rename runs. writeTitle re-checks the active tab
+  // in the same turn as the rename, so this passes before and after the fix.
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: '7a7a7a00-slow', name: 'Slow', harnessSessionId: 'slow' }] });
+  const renames: { name: string; target: unknown }[] = [];
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    renames.push({ name: arg.name, target: stub.window.activeTerminal });
+    if (stub.window.activeTerminal) stub.window.activeTerminal.name = arg.name;
+  });
+  const tab = (await f.open('7a7a7a00-slow'))!;
+  const other = f.restoredTab('the user’s shell', 9300);
+  stub.window.__setActiveTerminal(other);
+  // The moment the retitle shows the slow tab, another tab takes the front.
+  let stolen = false;
+  vscode.window.onDidChangeActiveTerminal((active) => {
+    if (active === (tab as unknown) && !stolen) {
+      stolen = true;
+      queueMicrotask(() => stub.window.__setActiveTerminal(other));
+    }
+  });
+  stub.window.__integrateShell(tab);
+  await waitFor(() => stolen, 'the retitle to show the slow tab');
+  await flush();
+  await flush();
+  assert.equal(other.name, 'the user’s shell');
+  assert.ok(renames.every((r) => r.target === tab));
+});
+
+test('a user terminal the title landed on gets its own name back, the only name the rename command can give (no empty-name reset)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab' }] });
+  const renames = focusFirstRename();
+  const tab = (await f.open('40de4f00-lab'))!;
+  // The shell's cwd report re-tags the tab with its own title (why the late rename exists).
+  tab.name = 'Windows PowerShell';
+  const panel = stub.window.createTerminal({ name: 'powershell', location: vscode.TerminalLocation.Panel });
+  stub.window.__focusTerminal(panel);
+  const before = renames.length;
+  stub.window.__integrateShell(tab);
+
+  const title = terminalTitle(f.chat('40de4f00-lab'));
+  await waitFor(() => renames.slice(before).some((r) => r.target === panel && r.name === 'powershell'), 'the undo rename');
+  await flush();
+  const onPanel = renames.slice(before).filter((r) => r.target === panel).map((r) => r.name);
+  assert.deepEqual(onPanel, [title, 'powershell'], 'the stray rename, then the user’s previous name, never an empty one');
+  assert.equal(panel.name, 'powershell');
+  assert.notEqual(tab.name, title, 'the chat tab keeps its revived title until a later trigger');
+});
+
+test('with the user’s keyboard staying in their own terminal, a requeued title is retried once per focus or window event, never in a loop', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab' }] });
+  const renames = focusFirstRename();
+  const tab = (await f.open('40de4f00-lab'))!;
+  // The shell's cwd report re-tags the tab with its own title (why the late rename exists).
+  tab.name = 'Windows PowerShell';
+  const panel = stub.window.createTerminal({ name: 'powershell', location: vscode.TerminalLocation.Panel });
+  stub.window.__focusTerminal(panel);
+  const title = terminalTitle(f.chat('40de4f00-lab'));
+  const attempts = () => renames.filter((r) => r.name === title).length;
+  const settle = async () => {
+    for (let i = 0; i < 5; i++) await flush();
+  };
+
+  const before = attempts();
+  stub.window.__integrateShell(tab);
+  await waitFor(() => attempts() === before + 1 && panel.name === 'powershell', 'the first attempt and its undo');
+  await settle();
+  assert.equal(attempts(), before + 1, 'no further attempt while nothing can have moved focus');
+
+  stub.window.__fireWindowState(true);
+  await waitFor(() => attempts() === before + 2 && panel.name === 'powershell', 'one retry after a window focus change');
+  await settle();
+  assert.equal(attempts(), before + 2, 'one attempt per trigger');
+
+  // The user clicks into the chat tab: the rename lands on it.
+  stub.window.__focusTerminal(tab);
+  await waitFor(() => tab.name === title, 'the title once the tab itself has focus');
+  assert.equal(renames.at(-1)?.target, tab);
+  const done = attempts();
+  stub.window.__fireWindowState(false);
+  await settle();
+  assert.equal(attempts(), done, 'nothing is requeued once the title landed');
+  assert.equal(panel.name, 'powershell');
+});
+
+test('after a reload, of two tabs sharing a short ID, the one with the recorded PID is the chat’s and the other is left alone', async (t) => {
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab', status: 'active' }] });
+  await f.storage.rememberTerminalPid('40de4f00-lab', 82260);
+  const stray = f.restoredTab('Pitwall: Lab ready [40de4f]', 51000);
+  const lab = f.restoredTab('Pitwall: Lab ready [40de4f]', 82260);
+
+  const restore = f.manager.beginRestoreSync(() => WORKTREE);
+  await restore.complete;
+  assert.equal(f.manager.getTerminal('40de4f00-lab'), lab as unknown);
+  assert.deepEqual([stray.sent, lab.sent], [[], []], 'nothing is typed into either');
+  assert.equal(await f.open('40de4f00-lab'), lab, 'a click focuses the PID-matched tab');
+  f.manager.closeChat('40de4f00-lab');
+  assert.deepEqual([lab.disposed, stray.disposed], [true, false], 'Remove closes the chat’s tab, never the stray');
+});
+
+test('Remove never closes either of two unmanaged tabs sharing the chat’s short ID', async (t) => {
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab', status: 'closed' }] });
+  const first = f.restoredTab('Pitwall: Lab ready [40de4f]', 51001);
+  const second = f.restoredTab('Pitwall: Lab ready [40de4f]', 51002);
+  f.manager.closeChat('40de4f00-lab');
+  assert.deepEqual([first.disposed, second.disposed], [false, false], 'one of them may be the user’s own terminal');
+});
+
+test('after a quit, of two revived tabs sharing a short ID, neither is resumed, typed into, renamed or closed', async (t) => {
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab', status: 'closed' }] });
+  // After a quit every PID is new: neither tab's PID is the recorded one.
+  await f.storage.rememberTerminalPid('40de4f00-lab', 82260);
+  const first = f.restoredTab('Pitwall: Lab ready [40de4f]', 51001);
+  const second = f.restoredTab('Pitwall: Lab ready [40de4f]', 51002);
+  const warnings: unknown[][] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => warnings.push(args);
+  t.after(() => (console.warn = warn));
+
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  await flush();
+  assert.deepEqual([first.sent, second.sent], [[], []], 'nothing is typed into either');
+  assert.equal(f.manager.getTerminal('40de4f00-lab'), undefined, 'neither is taken as the chat’s tab');
+  assert.deepEqual([first.name, second.name], ['Pitwall: Lab ready [40de4f]', 'Pitwall: Lab ready [40de4f]'], 'neither is renamed');
+  assert.deepEqual([first.disposed, second.disposed], [false, false], 'neither is closed');
+  assert.equal(warnings.filter((w) => String(w[0]).includes('40de4f')).length, 1, 'one log line says why');
+});
+
+test('after a reload, an adopted background tab keeps its Pitwall title, never the shell default', async (t) => {
+  const f = setup(t, {
+    chats: [
+      { id: 'a1b2c300-front', name: 'Front', harnessSessionId: 'front', status: 'active' },
+      { id: 'd4e5f600-back', name: 'Back', harnessSessionId: 'back', status: 'active' },
+    ],
+  });
+  await f.storage.rememberTerminalPid('a1b2c300-front', 7801);
+  await f.storage.rememberTerminalPid('d4e5f600-back', 7802);
+  const front = f.restoredTab('Pitwall: Front [a1b2c3]', 7801);
+  // The reload re-tagged the background tab's title as the shell's.
+  const back = f.restoredTab('powershell', 7802);
+  stub.window.__setActiveTerminal(front);
+
+  const restore = f.manager.beginRestoreSync(() => WORKTREE);
+  await restore.adopted;
+  await restore.complete;
+  await waitFor(() => back.name === terminalTitle(f.chat('d4e5f600-back')), 'the background tab’s Pitwall title');
+  await waitFor(() => stub.window.activeTerminal === front, 'the front tab in front again');
+  assert.equal(front.name, terminalTitle(f.chat('a1b2c300-front')));
+  assert.deepEqual([front.sent, back.sent], [[], []], 'a live agent is never typed into');
+});
+
+test('a click while a reload tab’s PID is still pending waits for its adoption and focuses it, never a second agent (R1(a))', async (t) => {
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab', status: 'active' }] });
+  await f.storage.rememberTerminalPid('40de4f00-lab', 82260);
+  // A title the user typed: only the PID identifies this tab.
+  const lab = stub.window.createTerminal({ name: 'my claude', __pid: 82260, __pidDelayMs: PROCESS_ID_TIMEOUT_MS / 2 });
+
+  const restore = f.manager.beginRestoreSync(() => WORKTREE);
+  const clicked = await f.open('40de4f00-lab');
+  assert.equal(clicked, lab, 'the click focuses the surviving tab once it is adopted');
+  assert.deepEqual([stub.window.terminals.length, lab.sent.length], [1, 0], 'no second tab, nothing typed');
+  await restore.complete;
+});
+
+test('after a quit, a chat whose stored PID belongs to no live terminal is left idle, and a click opens exactly one tab (run 9 leftovers)', async (t) => {
+  const f = setup(t, {
+    chats: [
+      { id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab', status: 'active' },
+      { id: '0ad61000-new', name: 'New Session', harnessSessionId: 'new', status: 'active' },
+    ],
+  });
+  // Run 9's swap left Lab ready's record stale and two tabs carrying New Session's title.
+  await f.storage.rememberTerminalPid('40de4f00-lab', 86112);
+  await f.storage.rememberTerminalPid('0ad61000-new', 13740);
+  const first = f.restoredTab('Pitwall: New Session [0ad610]', 91001);
+  const second = f.restoredTab('Pitwall: New Session [0ad610]', 91002);
+  const warn = console.warn;
+  console.warn = () => undefined;
+  t.after(() => (console.warn = warn));
+
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  assert.deepEqual([first.sent, second.sent], [[], []], 'nothing is typed into either same-titled tab');
+  assert.deepEqual([f.manager.isActive('40de4f00-lab'), f.manager.isActive('0ad61000-new')], [false, false]);
+  assert.equal(f.chat('40de4f00-lab').status, 'idle');
+
+  const opened = (await f.open('40de4f00-lab'))!;
+  assert.equal(stub.window.terminals.length, 3, 'one new tab for Lab ready');
+  assert.equal(await f.open('40de4f00-lab'), opened, 'a second click focuses it');
+  assert.equal(stub.window.terminals.length, 3);
+  assert.deepEqual([first.disposed, second.disposed], [false, false]);
+});
+
+/**
+ * One editor group holding the chat's terminal tab and a file the user is
+ * reading in front of it, as `tabGroups` reports it.
+ */
+function fileInFrontOfChatTab(chatTab: FakeTerminal, uri: unknown) {
+  const terminalTab = { input: new vscode.TabInputTerminal(), label: chatTab.name, isPreview: false, isActive: false };
+  const fileTab = { input: new vscode.TabInputText(uri as never), label: 'README.md', isPreview: false, isActive: true };
+  stub.window.tabGroups.all = [{ isActive: true, viewColumn: 1, tabs: [terminalTab, fileTab], activeTab: fileTab }];
+  const editor = { document: { uri }, viewColumn: 1 };
+  stub.window.__focusTextEditor(editor);
+  return editor;
+}
+
+/** Record every `show()` call on a terminal, with its `preserveFocus` argument. */
+function recordShows(terminal: FakeTerminal): (boolean | undefined)[] {
+  const calls: (boolean | undefined)[] = [];
+  const show = terminal.show.bind(terminal);
+  terminal.show = (preserveFocus?: boolean) => {
+    calls.push(preserveFocus);
+    show(preserveFocus);
+  };
+  return calls;
+}
+
+test('R39 addendum: a command start while the user reads a file in the chat tab’s group never brings the tab to the front or takes focus', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab' }] });
+  const renames = focusFirstRename();
+  const tab = (await f.open('40de4f00-lab'))!;
+  tab.name = 'Windows PowerShell';
+  // The user worked in another terminal last, then clicked a file in the
+  // group that also holds the chat's tab.
+  const other = f.restoredTab('the user’s shell', 9400);
+  stub.window.__focusTerminal(other);
+  const readme = vscode.Uri.file('/work/README.md');
+  const editor = fileInFrontOfChatTab(tab, readme);
+  const shows = recordShows(tab);
+
+  // The chat tab's command starts (for example, a late PowerShell start).
+  stub.window.__integrateShell(tab);
+  for (let i = 0; i < 5; i++) await flush();
+  assert.deepEqual(shows, [], 'the chat tab is not shown at all, so it cannot replace the file');
+  assert.equal(stub.window.activeTextEditor, editor, 'the file is still the active editor');
+  assert.equal(stub.window.__focusedTerminal, undefined, 'and keyboard focus is still in it');
+  assert.ok(renames.every((r) => r.target !== other), 'the user’s other terminal is never renamed');
+
+  // Once the user comes back to the chat tab, its title lands there.
+  stub.window.__focusTerminal(tab);
+  const title = terminalTitle(f.chat('40de4f00-lab'));
+  await waitFor(() => tab.name === title, 'the title once the user is back in the chat tab');
+});
+
+test('R39 addendum: a command start in the active terminal while the user reads a file renames it in place, with no show', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab' }] });
+  const renames = focusFirstRename();
+  const tab = (await f.open('40de4f00-lab'))!;
+  tab.name = 'Windows PowerShell';
+  // The user typed in the chat tab, then clicked a file: the chat tab is
+  // still the window's active terminal.
+  const readme = vscode.Uri.file('/work/README.md');
+  const editor = fileInFrontOfChatTab(tab, readme);
+  const shows = recordShows(tab);
+  const before = renames.length;
+
+  stub.window.__integrateShell(tab);
+  const title = terminalTitle(f.chat('40de4f00-lab'));
+  await waitFor(() => renames.length > before, 'the rename');
+  await flush();
+  assert.deepEqual(shows, [], 'no show');
+  assert.equal(tab.name, title, 'renamed in place');
+  assert.equal(stub.window.activeTextEditor, editor);
+  assert.equal(stub.window.__focusedTerminal, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// R43: Pitwall's own background shows are not the user looking at a chat.
+// The attention pipeline runs over the real TerminalManager, wired as in
+// extension.ts (visibility sources and onFrontMayChange → noteFront).
+// ---------------------------------------------------------------------------
+
+/**
+ * Needs-you attention over chat `chatId` with the extension's wiring. Every
+ * active-terminal change puts that terminal's tab in front of the one editor
+ * group, as the workbench does for an editor terminal, before the front-change
+ * listener reads it.
+ */
+function attentionOverTerminals(t: { after(fn: () => void): void }, f: ReturnType<typeof setup>, chatId: string) {
+  stub.window.__fireWindowState(true);
+  const realNow = Date.now;
+  let offset = 0;
+  Date.now = () => realNow() + offset;
+  t.after(() => (Date.now = realNow));
+
+  const tabFor = (terminal: vscode.Terminal, isActive: boolean) => ({
+    get label() {
+      return terminal.name;
+    },
+    input: new vscode.TabInputTerminal(),
+    isPreview: false,
+    isActive,
+  });
+  const putInFront = (front: vscode.Terminal | undefined) => {
+    if (!front) return;
+    const tabs = stub.window.terminals.map((terminal) => tabFor(terminal as never, (terminal as unknown) === front));
+    stub.window.tabGroups.all = [{ isActive: true, viewColumn: 1, tabs, activeTab: tabs.find((tab) => tab.isActive) }] as never;
+  };
+  const tabs = vscode.window.onDidChangeActiveTerminal(putInFront);
+
+  let live: HarnessLiveState = { turnState: 'working', turnEndedAt: null };
+  const sessionId = f.chat(chatId).harnessSessionId!;
+  const adapter = fakeAdapter('claude', { getLiveStates: async () => new Map([[sessionId, live]]) });
+  const sources = {
+    getChats: () => f.storage.getChats(),
+    adapters: () => [],
+    chatIdForTerminalName: (name: string) => f.manager.getChatIdForTerminalName(name),
+    isPitwallActivation: (id: string) => f.manager.isPitwallActivation(id),
+  };
+  const isChatVisible = (id: string) => chatVisibility.isChatVisible(sources, id);
+  const service = new SessionAttentionService(
+    f.storage,
+    { get: () => adapter } as never,
+    new NotificationService(() => undefined, isChatVisible),
+    () => WORKTREE,
+    () => undefined,
+    () => true,
+    isChatVisible
+  );
+  const fronts = chatVisibility.onFrontMayChange(() => service.noteFront());
+  t.after(() => {
+    tabs.dispose();
+    fronts.forEach((subscription) => subscription.dispose());
+    service.dispose();
+  });
+  return {
+    service,
+    putInFront,
+    wait: () => (live = { turnState: 'working', turnEndedAt: null, waitingFor: 'permission prompt' }),
+    /** Poll on a 4 s tick, like the service's timer. */
+    ticks: async (count: number) => {
+      for (let i = 0; i < count; i++) {
+        offset += 4_000;
+        await service.poll();
+      }
+    },
+  };
+}
+
+const needsYouToasts = () => stub.__messages.map((args) => String(args[0])).filter((text) => text.includes('needs your input'));
+
+test('a background retitle of a waiting chat is not the user looking at it: its toast still fires, once (R43)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: 'c43c4300-wait', name: 'Waiting', harnessSessionId: 'wait-1' }] });
+  const { tab, title } = await slowChat(f, 'c43c4300-wait');
+  tab.name = 'Windows PowerShell'; // the shell's title, so the late start retitles it
+  const other = f.restoredTab('the user’s shell', 9431);
+  const a = attentionOverTerminals(t, f, 'c43c4300-wait');
+  stub.window.__setActiveTerminal(other);
+  assert.equal(vscode.window.tabGroups.activeTabGroup?.activeTab?.label, 'the user’s shell', 'another terminal is in front');
+  await a.service.poll(true);
+
+  a.wait(); // the prompt appears while the user looks at their own shell
+  const shows = recordShows(tab);
+  stub.window.__integrateShell(tab); // its late command start retitles it in the background
+  await waitFor(() => tab.name === title && stub.window.activeTerminal === other, 'the retitle and the return to the user’s shell');
+  assert.deepEqual(shows, [true], 'Pitwall showed the chat tab once, without focus');
+
+  await a.ticks(10);
+  assert.equal(needsYouToasts().length, 1, 'the wait began unseen, so it toasts exactly once');
+  assert.ok(a.service.needsYou('c43c4300-wait'), 'still marked needs-you');
+  assert.deepEqual(a.service.sessionsNeedingYou(), ['c43c4300-wait']);
+});
+
+test('guard: the user activating a waiting chat during the wait still holds its toast back (R43)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: 'c43c4300-seen', name: 'Seen', harnessSessionId: 'seen-1' }] });
+  const { tab } = await slowChat(f, 'c43c4300-seen');
+  const other = f.restoredTab('the user’s shell', 9432);
+  const a = attentionOverTerminals(t, f, 'c43c4300-seen');
+  stub.window.__setActiveTerminal(other);
+  await a.service.poll(true);
+
+  a.wait();
+  stub.window.__focusTerminal(tab); // the user clicks the chat's tab and reads the prompt
+  await flush();
+  stub.window.__focusTerminal(other); // and goes back to their shell without answering
+  await flush();
+
+  await a.ticks(10);
+  assert.deepEqual(needsYouToasts(), [], 'the user saw the prompt: no toast');
+  assert.deepEqual(a.service.sessionsNeedingYou(), ['c43c4300-seen'], 'still listed for Go to Next');
+});
+
+test('guard: a title write that throws during a background retitle never leaves the chat marked as shown by Pitwall (R43)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: 'c43c4300-throw', name: 'Throws', harnessSessionId: 'throw-1' }] });
+  const { tab } = await slowChat(f, 'c43c4300-throw');
+  tab.name = 'Windows PowerShell';
+  const other = f.restoredTab('the user’s shell', 9433);
+  stub.window.__setActiveTerminal(other);
+  // The rename command fails (Pitwall ignores that), and the title write
+  // itself throws while the chat's tab is shown, so the show sequence ends
+  // with an error.
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', () => {
+    throw new Error('rename failed');
+  });
+  const getChat = f.storage.getChat.bind(f.storage);
+  let markedWhileShown: boolean | undefined;
+  f.storage.getChat = (id: string) => {
+    if (stub.window.activeTerminal === tab) {
+      markedWhileShown = f.manager.isPitwallActivation('c43c4300-throw');
+      throw new Error('storage unavailable');
+    }
+    return getChat(id);
+  };
+  const shows = recordShows(tab);
+
+  stub.window.__integrateShell(tab);
+  await waitFor(() => shows.length > 0 && markedWhileShown !== undefined, 'the background show and the failing write');
+  for (let i = 0; i < 5; i++) await flush();
+  assert.equal(markedWhileShown, true, 'the chat counted as shown by Pitwall during the sequence');
+  assert.equal(f.manager.isPitwallActivation('c43c4300-throw'), false, 'and the mark cleared when the sequence threw');
 });

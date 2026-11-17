@@ -281,7 +281,15 @@ const tabChangeListeners = new Set();
 const tabGroupChangeListeners = new Set();
 const windowStateListeners = new Set();
 const configurationChangeListeners = new Set();
+const treeViews = [];
+let treeViewsVisible = false;
 let activeTerminal;
+/**
+ * The terminal holding keyboard focus, if any. The workbench's rename command
+ * renames this terminal before the active one (`TerminalService.activeInstance`
+ * returns a focused host terminal first), and `show(true)` leaves it alone.
+ */
+let focusedTerminal;
 let activeTextEditor;
 const shownDocuments = [];
 let nextTerminalPid = 4100;
@@ -381,6 +389,15 @@ module.exports = {
     __setActiveTextEditor: (editor) => {
       activeTextEditor = editor;
     },
+    /**
+     * Test helper: the user clicks into a text editor. It becomes the active
+     * editor and takes keyboard focus from any terminal; the window's active
+     * terminal stays what it was, as in the editor.
+     */
+    __focusTextEditor: (editor) => {
+      activeTextEditor = editor;
+      focusedTerminal = undefined;
+    },
     state: { focused: false },
     onDidChangeWindowState: (listener) => {
       windowStateListeners.add(listener);
@@ -393,11 +410,46 @@ module.exports = {
         listener(state);
       }
     },
+    /** Test helper: `__setWindowState({ focused })`, by its focus flag alone. */
+    __fireWindowState: (focused) => module.exports.window.__setWindowState({ focused }),
     /** Test helper: announce a tab change after a test rearranged `tabGroups.all`. */
     __fireTabsChanged: () => {
       for (const listener of [...tabChangeListeners]) {
         listener({ opened: [], closed: [], changed: [] });
       }
+    },
+    /**
+     * A tree view that records reveals. Views start hidden unless
+     * `__setTreeViewsVisible(true)` was called; `__setVisible` on a view
+     * fires its visibility event.
+     */
+    createTreeView: (id, options) => {
+      const visibility = new EventEmitter();
+      const selection = new EventEmitter();
+      const view = {
+        id,
+        options,
+        visible: treeViewsVisible,
+        title: '',
+        selection: [],
+        reveals: [],
+        reveal: async (item, revealOptions) => {
+          view.reveals.push({ item, options: revealOptions });
+        },
+        onDidChangeVisibility: visibility.event,
+        onDidChangeSelection: selection.event,
+        /** The view shows (or hides); a shown view renders its root rows, like the workbench. */
+        __setVisible: (visible) => {
+          view.visible = visible;
+          visibility.fire({ visible });
+          if (visible) {
+            void Promise.resolve(options?.treeDataProvider?.getChildren?.()).catch(() => undefined);
+          }
+        },
+        dispose: () => undefined,
+      };
+      treeViews.push(view);
+      return view;
     },
     tabGroups: {
       all: [],
@@ -475,6 +527,18 @@ module.exports = {
         }
       }
     },
+    /** Test helper: the user clicks into a terminal: it takes keyboard focus and becomes active. */
+    __focusTerminal: (terminal) => {
+      focusedTerminal = terminal;
+      activeTerminal = terminal;
+      for (const listener of activeTerminalListeners) {
+        listener(terminal);
+      }
+    },
+    /** The terminal holding keyboard focus (see `focusedTerminal`). */
+    get __focusedTerminal() {
+      return focusedTerminal;
+    },
     __setActiveTerminal: (terminal) => {
       activeTerminal = terminal;
       for (const listener of activeTerminalListeners) {
@@ -507,9 +571,12 @@ module.exports = {
             listener({ terminal: this, execution: { commandLine: text } });
           }
         },
-        show() {
+        show(preserveFocus) {
           this.shown += 1;
           activeTerminal = this;
+          if (!preserveFocus) {
+            focusedTerminal = this;
+          }
           // An editor-area terminal takes the text editor's place in front.
           if (options.location === 2) {
             activeTextEditor = undefined;
@@ -523,6 +590,9 @@ module.exports = {
           const index = openTerminals.indexOf(this);
           if (index >= 0) {
             openTerminals.splice(index, 1);
+          }
+          if (focusedTerminal === this) {
+            focusedTerminal = undefined;
           }
           if (activeTerminal === this) {
             activeTerminal = undefined;
@@ -635,6 +705,7 @@ module.exports = {
       outputChannels,
       deletedUris,
       shownDocuments,
+      treeViews,
     ]) {
       list.length = 0;
     }
@@ -658,6 +729,8 @@ module.exports = {
     quickPickHandler = null;
     clipboardText = '';
     activeTerminal = undefined;
+    focusedTerminal = undefined;
+    treeViewsVisible = false;
     activeTextEditor = undefined;
     silentExecutionEvents = false;
     defaultPidDelayMs = undefined;
@@ -670,6 +743,11 @@ module.exports = {
     module.exports.env.shell = '/bin/bash';
   },
   __deleted: deletedUris,
+  __treeViews: treeViews,
+  /** Test helper: tree views created from now on start visible (or hidden). */
+  __setTreeViewsVisible: (visible) => {
+    treeViewsVisible = Boolean(visible);
+  },
   __shownDocuments: shownDocuments,
   __commandHandlers: commandHandlers,
   __outputChannels: outputChannels,
