@@ -354,7 +354,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       waiters.forEach((resolve) => resolve());
       if (!this.firstRenderLogged) {
         this.firstRenderLogged = true;
-        console.log('[Pitwall] first render');
+        logOperation('[Pitwall] first render');
       }
       return rows;
     }

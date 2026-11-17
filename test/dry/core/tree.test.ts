@@ -346,7 +346,8 @@ test('a tick with no status change does not reorder rows even when activity time
   storage.createChat('wt-beta', 'claude', 'Another', { harnessSessionId: 'c' });
   await order();
   assert.equal(orderLines().length, 3, 'a row added re-sorts');
-  assert.equal(log.filter((line) => line === '[Pitwall] first render').length, 1, 'first render is logged once');
+  assert.equal(operations.filter((line) => line === '[Pitwall] first render').length, 1, 'first render is logged once');
+  assert.ok(!log.includes('[Pitwall] first render'), 'in the channel, not console.log');
 });
 
 test('the activity badge counts needs-you sessions and hides at 0', async (t) => {

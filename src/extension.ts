@@ -13,7 +13,7 @@ import { NotificationService } from './core/services/NotificationService';
 import { SessionAttentionService } from './core/services/SessionAttentionService';
 import { SessionSearchService } from './core/services/SessionSearchService';
 import * as chatVisibility from './core/services/chatVisibility';
-import { disposeOperationLog } from './core/services/OperationLog';
+import { disposeOperationLog, logOperation } from './core/services/OperationLog';
 import { HarnessRegistry } from './core/harness/HarnessRegistry';
 import { enabledHarnesses } from './harnesses';
 import { chatNativeSessionIds } from './core/harness/sessionUtils';
@@ -36,8 +36,9 @@ import { samePath } from './core/utils/paths';
 const FILE_CHANGE_DEBOUNCE_MS = 300;
 
 export async function activate(context: vscode.ExtensionContext) {
-  // Startup timing (E16): this line and the tree's "first render" bracket activation.
-  console.log('[Pitwall] activate');
+  // Startup timing (E16): this line and the tree's "first render" bracket
+  // activation, in a channel an installed build shows.
+  logOperation('[Pitwall] activate');
   const config = () => vscode.workspace.getConfiguration('pitwall');
   const register = commandRegistrar(context);
   const setContext = (key: string, value: unknown) =>
