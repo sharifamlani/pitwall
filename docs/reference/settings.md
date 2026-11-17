@@ -11,7 +11,8 @@ Pitwall works without any configuration. To change how it behaves, choose **Pitw
 | `pitwall.defaultHarness` | Ask every time | The agent that **New Session** (**+**) starts in one click: **Claude Code**, **opencode**, **Codex**, or **Pi**. Left on **Ask every time**, **+** opens a menu of installed agents. **Set Default Agent…** changes it from the sidebar. In `settings.json` the values are `""`, `claude`, `opencode`, `codex`, and `pi`. |
 | `pitwall.defaultSessionSurface` | `terminal` | Where a session opens when you click its row or start a new one: **Terminal**, or **Agent's VS Code panel** (`ui`) for Claude Code and Codex. Agents without a panel, and sessions a panel cannot open, use the terminal. The **In Terminal** and **In UI** commands always override it. See [Agent panels](../agent-panels.md). |
 | `pitwall.autoImport.enabled` | `true` | Show sessions you started outside Pitwall, in a plain terminal or in an agent's own VS Code panel, as rows under their worktree. Off: only sessions started from Pitwall are listed, rows no longer age out, and **Import Existing Sessions…** still adds others by hand. |
-| `pitwall.autoImport.retentionDays` | `15` | Session rows leave the tree after this many days without activity. Starred sessions always stay. Only the row is removed; the agent keeps the conversation. Minimum `1`. |
+| `pitwall.autoImport.retentionDays` | `14` | Session rows leave the tree after this many days without activity, and repos with a session in this many days are found automatically. Starred sessions always stay. Only the row is removed; the agent keeps the conversation. Minimum `1`. |
+| `pitwall.discovery.enabled` | `true` | List every repo with a Claude Code session in the retention window, found from `~/.claude/projects/`, without adding it by hand. Right-click a repo and choose **Dismiss from Pitwall** to hide it until a new session starts in it. |
 
 ## Notifications
 

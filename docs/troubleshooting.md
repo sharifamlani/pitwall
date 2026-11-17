@@ -17,7 +17,7 @@ To find the full path, run `which claude` (or `where claude` on Windows).
 ## Sessions do not appear
 
 - **The folder is not in Pitwall.** Sessions are listed for the folders and repositories you added. Add the folder, or use [Find Session](find-session.md) to look everywhere.
-- **The session is older than the retention window.** Automatic import adds sessions that were active in the last 15 days. Right-click the worktree and choose **Import Existing Sessions…** for older ones.
+- **The session is older than the retention window.** Automatic import adds sessions that were active in the last 14 days. Right-click the worktree and choose **Import Existing Sessions…** for older ones.
 - **You removed it before.** A session you removed from the list is not imported again automatically. **Import Existing Sessions…** brings it back.
 - **Automatic import is off.** Check `pitwall.autoImport.enabled`.
 - **The session has no prompt yet.** Agents create a session only when you send the first message. Until then the row says `new`.

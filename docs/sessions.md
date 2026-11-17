@@ -87,7 +87,7 @@ Removing a row never deletes the conversation. The agent keeps it, and **Import 
 
 ### Rows age out by themselves
 
-A session row leaves the list after 15 days without activity, whether Pitwall started it or imported it. This keeps the tree to what you are working on.
+A session row leaves the list after 14 days without activity, whether Pitwall started it or imported it. This keeps the tree to what you are working on.
 
 - A **starred** session stays for good.
 - A session that is **open** in a terminal or panel is never removed.

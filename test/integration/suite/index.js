@@ -75,8 +75,8 @@ exports.run = async function run() {
   );
   check(
     config.get('autoImport.enabled') === true &&
-      config.get('autoImport.retentionDays') === 15,
-    'auto-import defaults to on with a fifteen-day retention'
+      config.get('autoImport.retentionDays') === 14,
+    'auto-import defaults to on with a fourteen-day retention'
   );
 
   console.log('\n== manifest ==');
