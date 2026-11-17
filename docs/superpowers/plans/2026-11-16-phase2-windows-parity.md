@@ -539,6 +539,7 @@ Waves (independent work runs in parallel; QA tests every open PR merged together
 - [ ] **Step 6: Implement (e) resume line.** `shellKind`, the new `commandInDirectory`, and switch `chat.ts:887` and `sessionSearch.ts:321` to it.
 - [ ] **Step 7: e2e on Windows.** In `test/e2e/terminal-restore/run.js` `writeFakeCommand`, on win32: return the bare name `fake-claude` and prepend `root` to `PATH` in the launch `env`. Comment: a quoted full CLI path does not parse in PowerShell without `&` (finding F1, Out of scope). Run Smoke 7.
 - [ ] **Step 8: Run** Smoke 6. Expected as written there.
+- [ ] **Step 8b (F1, ROADMAP 2.13, lead ruling R20):** new-chat launches with a custom full-path Claude command must also run in PowerShell. When the target shell is PowerShell and the command is a quoted path, prefix the call operator `& `; cmd.exe and bash keep today's form. TDD: a dry test builds the launch line for `C:\Program Files\Claude\claude.exe` with a PowerShell shell and asserts it starts with `& '`. Watch it fail first, then implement. The live check is in Smoke 12 (the testing agent sets `pitwall.harnessCommands.claude` to the full path of `claude.exe` in its own profile and starts a new chat).
 - [ ] **Step 9: Commit** `fix: resume revived tabs on Windows (one PID wait, late PIDs, shell-aware resume line); Remove closes orphaned tabs`. Closing block. Message the testing agent for R1–R3 on the merged sha.
 
 ### Task 7: Manifest builder refuses duplicates (`phase2/task-7-manifest-uniqueness`)
@@ -632,7 +633,7 @@ Waves (independent work runs in parallel; QA tests every open PR merged together
 
 ## Out of scope (later phases)
 
-- **Finding F1, proposed as a new row (lead to place, likely Phase 4 near 4.1):** a custom `pitwall.harnessCommands.claude` set to a full path (`C:\…\claude.exe`) is sent single-quoted. That does not parse as a command in PowerShell without the call operator `&`, so new-chat launches with a custom path fail on Windows. Phase 2 fixes only the revived-tab line (Task 6), because 2.11 needs it.
+- **Finding F1, placed by the lead in Phase 2 as row 2.13 and fixed in Task 6 Step 8b (ruling R20):** a custom `pitwall.harnessCommands.claude` set to a full path (`C:\…\claude.exe`) is sent single-quoted. That does not parse as a command in PowerShell without the call operator `&`, so new-chat launches with a custom path fail on Windows. Phase 2 fixes only the revived-tab line (Task 6), because 2.11 needs it.
 - **Phase 3 Sidebar v1:** repos from `~/.claude` with no repo open, inbox order, branch on every row, status dots, "+" and history, hiding Changes/worktree/PR panels, hotkeys, search, brand (D12–D14, D17–D19, D21, D24, D28, D33, D34, D36, D37). The upstream copy pass ("for main" → "for <repo> / main").
 - **Phase 4 Windows and tabs:** `vscode.env.uriScheme` instead of the hardcoded `vscode://` (4.1), one window per folder (D35, D36), tab matching (T10), repo + branch under tabs (D26), FILES across repos (D22, D23), Claude Code's "Trust this folder?" prompt.
 - **Phase 5 Status + pop-ups:** hooks and status files, Windows pop-ups, sound, jump list, first-run notification check.

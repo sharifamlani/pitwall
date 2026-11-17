@@ -147,7 +147,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 **Entry gate:** Phase 1 ✅ (`v0.2.0`), with the triage doc.
 **Exit gate:** Windows CI runs the full test suite green (env-limit tests skip with a stated reason); tag `v0.3.0`.
 **Status:** ⏸ planned.
-**Plan:** ⏸ to write
+**Plan:** [2026-11-16-phase2-windows-parity.md](docs/superpowers/plans/2026-11-16-phase2-windows-parity.md)
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
@@ -163,6 +163,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 2.10 | CI runs the privacy gate, gitleaks and the vsix allowlist check (final review I4) | ⏸ | ⏸ | — | final review |
 | 2.11 | Windows quit/restore with a live chat: ~4 s activation wait, revived tab not resumed, row click opens a duplicate tab, reload then loses the duplicate (testing UJ run 6) | ⏸ | ⏸ | — | testing UJ run 6 |
 | 2.12 | 9 Minor findings from the Phase 1 final review (`docs/progress_reports/phase1-final-review.md`) and the "No tree item with id" log line after reload | ⏸ | ⏸ | — | final review, UJ run 6 |
+| 2.13 | New-chat launch with a custom full-path Claude command (`C:\...\claude.exe`) fails in PowerShell (a single-quoted path needs the call operator `&`); finding F1 from the Phase 2 plan | ⏸ | ✅ | Phase 2 plan Task 6 | Phase 2 plan F1 |
 
 ### Phase 3 — Sidebar v1: repos and sessions
 **Goal:** The Pitwall list as designed on the canvas: every repo and chat from one window, sorted by who needs you.
