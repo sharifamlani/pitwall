@@ -12,8 +12,9 @@ const TICK_MS = 4_000;
 export const NEEDS_INPUT_COOLDOWN_MS = 60_000;
 
 /**
- * A changed reason is news immediately; the same reason re-notifies at most
- * once per cooldown so a long wait is not repeated every tick.
+ * A changed reason is news immediately; a toast retried under the same reason
+ * (one the settings held back) waits out the cooldown since the chat's last
+ * toast. Each wait still toasts at most once.
  */
 export function shouldNotifyNeedsInput(
   previous: string | undefined,
@@ -57,9 +58,10 @@ export class SessionAttentionService {
   /** When each chat's current wait was first seen; gone when the wait ends. */
   private readonly waitingSince = new Map<string, number>();
   /**
-   * Chats whose current wait began after activation while the user was
-   * looking elsewhere. Only these toast; a wait first seen in front of the
-   * user, or already there at activation, is left to the row and the list.
+   * Chats whose current wait may still toast: it began after activation
+   * while the user was looking elsewhere, has not toasted, and has not been
+   * in front of the user since. A wait first seen in front of the user, or
+   * already there at activation, is left to the row and the list.
    */
   private readonly toastableWaits = new Set<string>();
 
@@ -333,7 +335,9 @@ export class SessionAttentionService {
       this.needsYouSince.set(chat.id, since);
     }
 
-    // A changed reason is a new wait; it may toast only if it began unseen.
+    // A wait starts on the first tick that sees its reason, so a changed
+    // reason is a new wait. Each wait toasts at most once: only if it began
+    // unseen after activation, and never once it has toasted or been seen.
     if (waitingFor !== previous) {
       if (prime || visible) {
         this.toastableWaits.delete(chat.id);
@@ -341,11 +345,13 @@ export class SessionAttentionService {
         this.toastableWaits.add(chat.id);
       }
     }
-    // A held-back toast does not start the cooldown, so the reminder fires
-    // on the first tick the user is looking elsewhere again.
+    if (visible) {
+      this.toastableWaits.delete(chat.id);
+    }
+    // A toast held back by the settings does not start the cooldown, so it
+    // fires on the first tick the settings allow it.
     if (
       !this.toastableWaits.has(chat.id) ||
-      visible ||
       !shouldNotifyNeedsInput(previous, waitingFor, this.lastNeedsInputAt.get(chat.id), now)
     ) {
       return;
@@ -357,6 +363,7 @@ export class SessionAttentionService {
     });
     if (shown) {
       this.lastNeedsInputAt.set(chat.id, now);
+      this.toastableWaits.delete(chat.id);
     }
   }
 
