@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.17 · 2026-11-17
+> v0.18 · 2026-11-17
 
 ---
 
@@ -164,7 +164,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 2.11 | Windows quit/restore with a live chat: ~4 s activation wait, revived tab not resumed, row click opens a duplicate tab, reload then loses the duplicate (testing UJ run 6) | ⏸ | ⏸ | — | testing UJ run 6 |
 | 2.12 | 9 Minor findings from the Phase 1 final review (`docs/progress_reports/phase1-final-review.md`) and the "No tree item with id" log line after reload | ✅ (M1–M3, M5 PR #13; M4 PR #9; M6–M8 PR #7; M9 + log line PR #12, live-verified UJ run 8: 0 "No tree item" in 5 starts + hidden-view start) | ✅ | 2026-11-17 · merges `1830558`, `0d520bb`, `131a2d5`, `0095508` | final review, UJ run 6 |
 | 2.13 | New-chat launch with a custom full-path Claude command (`C:\...\claude.exe`) fails in PowerShell (a single-quoted path needs the call operator `&`); finding F1 from the Phase 2 plan | ⏸ | ✅ | Phase 2 plan Task 6 | Phase 2 plan F1 |
-| 2.14 | The Claude agents poll (`claude agents --json`, behind "needs you", ADR 0006) runs on Windows: `ClaudeAgentsService` calls `execFile` directly, so an npm `claude.cmd` fails (ENOENT / EINVAL); route it through `harnessInvocation` (finding F2, QA) | ⏸ | ✅ | Phase 2 plan Task 12 | QA wave B, ruling R30 |
+| 2.14 | The Claude agents poll (`claude agents --json`, behind "needs you", ADR 0006) runs on Windows: `ClaudeAgentsService` calls `execFile` directly, so an npm `claude.cmd` fails (ENOENT / EINVAL); route it through `harnessInvocation` (finding F2, QA). Ruling R31: already routed through `harnessInvocation` at `fetchStates`; F2 did not reproduce through the service, so guards only | ✅ (pinned: already worked; regression guards added) | ✅ | 2026-11-17 · PR #16 `d255e13` → merge `34003bd` | QA wave B, rulings R30, R31 |
 
 ### Phase 3 — Sidebar v1: repos and sessions
 **Goal:** The Pitwall list as designed on the canvas: every repo and chat from one window, sorted by who needs you.
@@ -306,3 +306,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.15 · 2026-11-17.** Task 8 merged → `131a2d5`, closing rows 2.9 and 2.10. The `.vsix` is built from a `files` allowlist: 41 paths from the real checkout, with `.env` and `.packages/` present, all allowlisted; `check_vsix` also fails on missing required files. CI has a `privacy` job (path gate, full-history gitleaks, tool tests, `check_vsix`) with SHA-pinned actions. Probe PR #14 (force-added `probe/dummy.key`) failed at the path gate (`LEAKED: probe/dummy.key`), then closed.
 - **v0.16 · 2026-11-17.** Row 2.12 closed: UJ run 8 on `6adf95e` showed 0 "No tree item with id" lines across 5 starts (view hidden and visible) and a hidden-view start that reveals when the view opens; `ELECTRON_RUN_AS_NODE=1 scripts/cursor-cli.sh --version` → Cursor 3.14.27. Note for Phase 3 (D36): Cursor opens on the Explorer unless `pitwall.focusOnStartup` is on.
 - **v0.17 · 2026-11-17.** Task 4 (Windows fake CLIs; triage rows 13–25, 27–29) merged → `b4c85bb`. Windows skips 17 → 9 (8 dormant opencode, 1 `/proc`), each with a reason. QA finding F2 becomes row 2.14 (ruling R30): the "needs you" poll never runs on Windows. Backlog for when D9 enables opencode: its spawns hit the same EINVAL.
+- **v0.18 · 2026-11-17.** Task 12 merged: row 2.14 closed as a regression guard (R31; F2 did not reproduce through `ClaudeAgentsService`, whose poll already runs through `harnessInvocation`). Left in Phase 2: Task 6 (restore), Task 5 (de-flake), Task 11 (close).
