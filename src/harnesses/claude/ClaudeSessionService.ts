@@ -283,6 +283,15 @@ export class ClaudeSessionService {
     return this.tailCache.get(filePath, () => readTurnStateTail(filePath), { cacheNull: false });
   }
 
+  /** When the transcript was last written (its mtime in ms), or null if it cannot be read. */
+  async transcriptWrittenAt(filePath: string): Promise<number | null> {
+    try {
+      return (await fs.promises.stat(filePath)).mtimeMs;
+    } catch {
+      return null;
+    }
+  }
+
   async getSessionById(sessionId: string): Promise<ClaudeSession | null> {
     const filePath = this.getSessionFilePath(sessionId);
     return filePath ? this.parseSessionFileCached(filePath, sessionId) : null;

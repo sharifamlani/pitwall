@@ -283,6 +283,8 @@ export async function activate(context: vscode.ExtensionContext) {
   );
   markChatSeen = (chatId) => attentionService.markSeen(chatId);
   attentionService.start();
+  // Records what the user looks at between ticks, for needs-you toasts; never polls.
+  context.subscriptions.push(...chatVisibility.onFrontMayChange(() => attentionService.noteFront()));
   workspacesProvider.setTurnStateProvider((chatId) => attentionService.getTurnState(chatId));
   workspacesProvider.setNeedsYouProvider((chatId) => attentionService.needsYou(chatId));
 

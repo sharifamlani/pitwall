@@ -14,6 +14,12 @@ export interface ClaudeAgentState {
   startedAt?: number;
 }
 
+/** One `claude agents --json` answer and when the call that produced it started. */
+export interface ClaudeAgentsSnapshot {
+  observedAt: number;
+  states: Map<string, ClaudeAgentState>;
+}
+
 export type ClaudeAgentsExec = (
   command: string,
   args: string[],
@@ -123,10 +129,8 @@ export class ClaudeAgentsService {
   private readonly env: NodeJS.ProcessEnv;
   private readonly now: () => number;
 
-  private cache:
-    | { at: number; states: Map<string, ClaudeAgentState> }
-    | undefined;
-  private inFlight: Promise<Map<string, ClaudeAgentState>> | undefined;
+  private cache: { at: number; snapshot: ClaudeAgentsSnapshot } | undefined;
+  private inFlight: Promise<ClaudeAgentsSnapshot> | undefined;
   private unavailable = false;
 
   constructor(options: ClaudeAgentsServiceOptions = {}) {
@@ -140,27 +144,37 @@ export class ClaudeAgentsService {
           .get<boolean>('notifications.onNeedsInput', true));
     this.exec = options.exec ?? execClaudeAgents;
     this.env = options.env ?? process.env;
-    this.now = options.now ?? Date.now;
+    this.now = options.now ?? (() => Date.now());
   }
 
   async getStates(): Promise<Map<string, ClaudeAgentState>> {
+    return (await this.getSnapshot()).states;
+  }
+
+  /**
+   * The states plus `observedAt`, the start of the call that produced them.
+   * A cached answer keeps its original stamp, so callers can tell how old a
+   * "waiting" row may be.
+   */
+  async getSnapshot(): Promise<ClaudeAgentsSnapshot> {
     if (!this.enabled() || this.unavailable) {
-      return new Map();
+      return { observedAt: this.now(), states: new Map() };
     }
 
     if (this.cache && this.now() - this.cache.at < CACHE_TTL_MS) {
-      return this.cache.states;
+      return this.cache.snapshot;
     }
     if (this.inFlight) {
       return this.inFlight;
     }
 
-    const request = this.fetchStates();
+    const observedAt = this.now();
+    const request = this.fetchStates().then((states) => ({ observedAt, states }));
     this.inFlight = request;
     try {
-      const states = await request;
-      this.cache = { at: this.now(), states };
-      return states;
+      const snapshot = await request;
+      this.cache = { at: this.now(), snapshot };
+      return snapshot;
     } finally {
       this.inFlight = undefined;
     }

@@ -279,8 +279,8 @@ const activeTerminalListeners = new Set();
 const executionStartListeners = new Set();
 const tabChangeListeners = new Set();
 const tabGroupChangeListeners = new Set();
-const configurationChangeListeners = new Set();
 const windowStateListeners = new Set();
+const configurationChangeListeners = new Set();
 const treeViews = [];
 let treeViewsVisible = false;
 let activeTerminal;
@@ -403,11 +403,19 @@ module.exports = {
       windowStateListeners.add(listener);
       return { dispose: () => windowStateListeners.delete(listener) };
     },
-    /** Test helper: the window gains or loses focus. */
-    __fireWindowState: (focused) => {
-      module.exports.window.state = { focused };
+    /** Test helper: the window gains or loses focus; `window.state` changes before listeners run. */
+    __setWindowState: (state) => {
+      module.exports.window.state = state;
       for (const listener of [...windowStateListeners]) {
-        listener({ focused });
+        listener(state);
+      }
+    },
+    /** Test helper: `__setWindowState({ focused })`, by its focus flag alone. */
+    __fireWindowState: (focused) => module.exports.window.__setWindowState({ focused }),
+    /** Test helper: announce a tab change after a test rearranged `tabGroups.all`. */
+    __fireTabsChanged: () => {
+      for (const listener of [...tabChangeListeners]) {
+        listener({ opened: [], closed: [], changed: [] });
       }
     },
     /**
@@ -709,10 +717,10 @@ module.exports = {
       shellIntegrationListeners,
       tabChangeListeners,
       tabGroupChangeListeners,
+      windowStateListeners,
       configurationChangeListeners,
       extensionChangeListeners,
       installedExtensions,
-      windowStateListeners,
     ]) {
       set.clear();
     }
@@ -723,7 +731,6 @@ module.exports = {
     activeTerminal = undefined;
     focusedTerminal = undefined;
     treeViewsVisible = false;
-    module.exports.window.state = { focused: false };
     activeTextEditor = undefined;
     silentExecutionEvents = false;
     defaultPidDelayMs = undefined;
