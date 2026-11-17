@@ -118,6 +118,14 @@ export interface FakeTreeView {
   /** How long a refresh takes to reach the workbench, which then re-renders the rows. */
   __renderDelayMs: number;
   __setVisible(visible: boolean): void;
+  /** The user selects rows: sets `selection` and fires the selection event. */
+  __select(items: unknown[]): void;
+  options: { treeDataProvider?: { getChildren(element?: unknown): Promise<unknown[]> } };
+  selection: unknown[];
+  title: string;
+  description?: string;
+  message?: string;
+  badge?: { value: number; tooltip: string };
 }
 
 /** The `vscode` stub's test controls. */

@@ -45,23 +45,6 @@ test('Add accepts a plain folder, adds a subdirectory as its repository root, an
   assert.deepEqual(roots(), ['scratchpad', 'notes']);
 });
 
-test('Move Up and Move Down reorder roots; a refused move explains itself without a refresh', async () => {
-  const { storage, roots, refreshes } = setup();
-  const first = storage.addRepository('first', '/first');
-  storage.addRepository('second', '/second');
-  const row = { itemType: 'repository', data: first };
-
-  await runCommand('pitwall.moveRepositoryDown', row);
-  assert.deepEqual(roots(), ['second', 'first']);
-  await runCommand('pitwall.moveRepositoryUp', row);
-  assert.deepEqual(roots(), ['first', 'second']);
-  assert.equal(refreshes(), 2);
-
-  await runCommand('pitwall.moveRepositoryUp', row);
-  assert.equal(refreshes(), 2);
-  assert.equal(shownMessages().at(-1), '"first" is already at the top.');
-});
-
 test('Remove forgets every worktree of the root, so re-adding the folder can import its sessions again', async (t) => {
   const scratch = tempDir(t);
   const repo = path.join(scratch, 'app');

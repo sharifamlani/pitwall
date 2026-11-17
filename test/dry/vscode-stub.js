@@ -512,6 +512,11 @@ module.exports = {
         },
         onDidChangeVisibility: visibility.event,
         onDidChangeSelection: selection.event,
+        /** Test helper: the user selects rows; `selection` changes before listeners run. */
+        __select: (items) => {
+          view.selection = items;
+          selection.fire({ selection: items });
+        },
         /** The view shows (or hides); a shown view renders its root rows, like the workbench. */
         __setVisible: (visible) => {
           view.visible = visible;
