@@ -2,7 +2,7 @@
   "name": "pitwall",
   "displayName": "Pitwall",
   "description": "Every Claude Code session across your repos, in one sidebar.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "sharifamlani",
   "author": {
     "name": "Subhash Khileri",
