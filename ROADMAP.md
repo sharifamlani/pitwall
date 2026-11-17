@@ -11,7 +11,7 @@
 ## §0 You are here
 
 - **Current phase:** Phase 1 — Import Agntree (harness-modular, Claude-only)
-- **Current step:** 1.4 reorganize into core/ + harnesses/<id>/ (1.1–1.3 merged)
+- **Current step:** 1.5 Claude-only switch + manifest fragments + registry safety (1.1–1.4 merged)
 - **Last update:** 2026-11-16
 - **Next action:** Autonomous build running (Sharif go, 2026-11-16): Phase 1 Task 1, the import, via subagent-driven development; QA → merge → testing flywheel per D39.
 
@@ -138,7 +138,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 1.1 | Import Agntree `47124cd` with full history; resolve root files; keep both copyright lines; `THIRD_PARTY_NOTICES.md`; allow only `.claude/skills/pitwall-*/` | ✅ | — | 2026-11-16 · PR #1 `4e26461` → merge `ea78755` (QA APPROVE; Linux 182/182) | D2, D7 |
 | 1.2 | Triage every Windows-failing/skipped upstream test into `docs/windows-test-triage.md` (no fixes) | ✅ | — | 2026-11-16 · PR #2 `6911dd3` → merge `efa93e6` (29 rows = 12 fail + 17 skip; 5 suspected product bugs incl. Windows worktree paths) | tests doc T16 |
 | 1.3 | Scripted rename `agntree` → `pitwall` (ids, package, docs); `version` → `0.2.0` | ✅ | — | 2026-11-16 · PR #3 `ee6e36a` → merge `f94f66f` (1612 replacements, idempotent; behaviour-neutral proven by reverse-map) | D5, D8 |
-| 1.4 | Reorganize into `src/core/` + `src/harnesses/<id>/` behind `HarnessModule` (moves only); architecture test | ⏸ | ✅ | plan Task 4 | D9 |
+| 1.4 | Reorganize into `src/core/` + `src/harnesses/<id>/` behind `HarnessModule` (moves only); architecture test | ✅ | — | 2026-11-16 · PR #4 `88ea364` → merge `85d14d7` (182 → 184 tests, 0 dropped by name; architecture test proven to catch violations) | D9 |
 | 1.5 | One switch `enabled.json = ["claude"]`; manifest fragments; disabled-agent records can't crash the tree | ⏸ | ✅ | plan Task 5 | D9 |
 | 1.6 | CI (ubuntu + windows), package, install in Cursor, evaluator E1–E12, tag `v0.2.0` | ⏸ | ✅ | plan Task 6 | D8 |
 
