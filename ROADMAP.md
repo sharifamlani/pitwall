@@ -4,14 +4,14 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.42 · 2026-11-17
+> v0.43 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 3 — Sidebar v1 (planning). Development resumed by Sharif on 2026-11-17.
-- **Current step:** Phase 3: rows 3.0, 3.2, 3.3, 3.4, 3.6 ✅; 3.1 and 3.10 partial (3.1: lowercase-drive import fix in flight). Waves A and B merged. In flight: PR #33 (T7) at QA, T8 building. Then Wave C (T7 repo row, T8 keys), Wave D (T9 search), close (T10).
+- **Current step:** Phase 3: rows 3.0, 3.2, 3.3, 3.4, 3.6 ✅; 3.1 and 3.10 partial (3.1: lowercase-drive import fix in flight). Waves A and B merged. 3.5 ✅ (T7). In flight: PR #34 (T8 keys) rebasing + S5/S6 live check; PR #35 (lowercase-drive fix) at QA. Then Wave C (T7 repo row, T8 keys), Wave D (T9 search), close (T10).
 - **Last update:** 2026-11-17
 - **Next action:** testing walks `6698045` (discovery, Remove/Dismiss, O2 re-walk, P23); dispatch T7 + T8. State: `.superpowers/sdd/2026-11-17-phase3-sidebar-v1/progress.md` (latest STATE block).
 
@@ -180,7 +180,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 3.2 | Sessions from the last 14 days (incl. the Cursor panel's); branch on every row; ⧉ on worktree chats | ✅ | ✅ | 2026-11-17 · PR #32 `a0b26a9` → merge `af1bd26`; 14-day default PR #31 → `6698045` (QA APPROVE; main CI green) | D14, D18, D35 |
 | 3.3 | Status dots from `~/.claude/sessions` (busy / waiting / idle) + finished → seen when opened. Note: the needs-you (waiting) mark, orange #f0883e, landed early in Phase 2 (row 2.14, ruling R38); 3.3 adds the rest | ✅ (source Task 2; dots on every row, finished → idle on seen, Task 5) | ✅ | 2026-11-17 · PR #32 `a0b26a9` → merge `af1bd26` (QA APPROVE; main CI green) · PR #29 `0d36976` → merge `03e4313` (QA APPROVE; main CI green; ADR 0018; real data 10/10 agree with `claude agents`) | D4, D18, T1 |
 | 3.4 | Inbox order: repos Needs you → Finished → Working → Idle; in-repo order; rows move only on status change | ✅ | ✅ | 2026-11-17 · PR #32 `a0b26a9` → merge `af1bd26` (QA APPROVE; main CI green) | D18, D21 |
-| 3.5 | Repo row: "+" new chat, 🕘 session history (older + worktree chats; resume) | ⏸ | ⏸ | — | D28, D34 |
+| 3.5 | Repo row: "+" new chat, 🕘 session history (older + worktree chats; resume) | ✅ | ✅ | 2026-11-17 · PR #33 `e34b952` → merge `6e71472` (QA APPROVE; main CI green) | D28, D34 |
 | 3.6 | Hide Changes, worktree create/delete, PR badges; keep FILES, Find Session, Fork | ✅ | ✅ | 2026-11-17 · PR #26 `f0e1bce` → merge `16a2d12` (QA APPROVE; main CI green; 8+3 tests parked in `test/dry/core/dormant/`) · fix PR #30 `976aed8` → merge `7f4a18a`: Files actions refused on Windows (drive-letter case), found by the testing walk | D19 |
 | 3.7 | Hotkeys Ctrl+Alt+1–9 / 0 / R / F / O / Shift+1–9, latent (hover); confirm Ctrl+Alt+F beats Cursor's `list.find` | ⏸ | ⏸ | — | D12, D15, T13 |
 | 3.8 | List keyboard: ↓/↑ highlight, Ctrl+↓/↑ open, Enter | ⏸ | ⏸ | — | D37 |
@@ -333,3 +333,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.40 · 2026-11-17.** Rows 3.3 and 3.4 ✅, 3.2 rows (PR #32 → `af1bd26`): repo → session list with branch and ⧉, four status dots on every chat, inbox order that moves only on status change, needs-you badge, FILES follows the clicked repo, cross-window redraw (P23). Bug found by the Task 3 builder: since #28 new chats are saved twice (duplicate rows after reload; likely the cause of testing O2); fix in PR #31.
 - **v0.41 · 2026-11-17.** Rows 3.1 and 3.2 ✅ (PR #31 → `6698045`): repos found from `~/.claude/projects` (last 14 days), Dismiss and Remove both stick until a new session or a manual add (ADR 0019). Fixes the chats-saved-twice bug from #28: duplicates collapse on read, so no duplicate rows, tree ids, badge double counts or duplicate restored tabs (testing O2). Unblocks Wave C (T7, T8).
 - **v0.42 · 2026-11-17.** Row 3.1 back to ~: the testing walk of `6698045` found that sessions started from a lowercase drive (`c:\`, what the Cursor panel uses) are never imported, so 10 of 15 real repos showed "0 sessions". Fix PR in flight. PR #33 (T7 repo row, history, menus) at QA.
+- **v0.43 · 2026-11-17.** Row 3.5 ✅ (PR #33 → `6e71472`): repo row "+" and session history, the canvas repo menu (New session, Session history, Open its window, Copy Path, Reveal, Dismiss), and session-row hover icons bell (needs you) / terminal / fork. A new test checks every contributed command is registered. Lowercase-drive fix is PR #35.
