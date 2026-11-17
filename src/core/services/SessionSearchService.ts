@@ -5,7 +5,6 @@ import { HarnessRegistry } from '../harness/HarnessRegistry';
 import { HarnessAdapter, SessionSearchRunner, SessionSearchSource } from '../harness/types';
 import { harnessSessionKey, sessionDisplayName } from '../harness/sessionUtils';
 import {
-  HARNESS_IDS,
   HarnessId,
   SessionSearchEngine,
   SessionSearchMatch,
@@ -133,7 +132,7 @@ export class SessionSearchService implements vscode.Disposable {
   ): Promise<{ model: string; effort: string }> {
     let model = config.get<string>('sessionSearch.model', '').trim();
     let effort = config.get<string>('sessionSearch.effort', '').trim();
-    if (!(HARNESS_IDS as readonly string[]).includes(configured)) {
+    if (!this.registry.has(configured)) {
       return { model, effort };
     }
     const harness = configured as HarnessId;

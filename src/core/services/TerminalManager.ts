@@ -241,6 +241,10 @@ export class TerminalManager {
     worktreePath: string,
     announce: boolean
   ): Promise<{ command: string; icon: string } | undefined> {
+    // A chat whose harness this build has switched off cannot be launched.
+    if (!this.harnessRegistry.has(chat.harness)) {
+      return undefined;
+    }
     const adapter = this.harnessRegistry.get(chat.harness);
     const pendingId = chat.pendingHarnessSessionId ?? undefined;
     // A terminal fork that has not linked yet keeps its source on the chat, so
@@ -541,6 +545,9 @@ export class TerminalManager {
    * wherever the source has moved to since.
    */
   private async dropUnusedFork(chat: ChatSession): Promise<void> {
+    if (!this.harnessRegistry.has(chat.harness)) {
+      return;
+    }
     const adapter = this.harnessRegistry.get(chat.harness);
     const pendingId = chat.pendingHarnessSessionId;
     if (pendingId && (await this.isResumable(adapter, pendingId))) {
@@ -747,6 +754,10 @@ export class TerminalManager {
       }
       const chat = chatsByShortId.get(shortId);
       if (!chat || this.terminals.has(chat.id) || claimedChats.has(chat.id)) {
+        continue;
+      }
+      // Its harness is switched off in this build: leave the tab alone.
+      if (!this.harnessRegistry.has(chat.harness)) {
         continue;
       }
 

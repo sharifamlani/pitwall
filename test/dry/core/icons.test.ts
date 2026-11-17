@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 import { harnessTreeIcons } from '../../../src/core/harness/treeIcons';
-import { HARNESS_IDS } from '../../../src/core/types';
+import { HARNESS_IDS } from '../../../src/harnesses';
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const read = (relative: string) => fs.readFileSync(path.join(ROOT, relative), 'utf8');

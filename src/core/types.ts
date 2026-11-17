@@ -36,8 +36,13 @@ export interface RepositoryWorktrees {
   worktrees: Worktree[];
 }
 
-export const HARNESS_IDS = ['claude', 'opencode', 'codex', 'pi'] as const;
-export type HarnessId = (typeof HARNESS_IDS)[number];
+/**
+ * A harness id: a key of `ALL_HARNESSES` (listed as `HARNESS_IDS` in
+ * src/harnesses/index.ts). Core never enumerates them: whether an id is usable
+ * is `HarnessRegistry.has(id)`, because stored records can name a harness this
+ * build has switched off.
+ */
+export type HarnessId = string;
 
 /** A session row Pitwall stores. The native session lives in the harness. */
 export interface ChatSession {

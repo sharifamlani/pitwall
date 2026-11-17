@@ -15,6 +15,16 @@ export class HarnessRegistry {
     }
   }
 
+  /**
+   * Whether the harness is registered, i.e. enabled in this build. Anything
+   * that reads a harness id from stored data checks this first: a record can
+   * name a harness a later build switched off.
+   */
+  has(id: string): boolean {
+    return this.adapters.has(id);
+  }
+
+  /** The adapter for a registered harness. An unknown id is a programmer error. */
   get(id: HarnessId): HarnessAdapter {
     const adapter = this.adapters.get(id);
     if (!adapter) {

@@ -38,12 +38,15 @@ export async function activate(context: vscode.ExtensionContext) {
   const setContext = (key: string, value: unknown) =>
     void vscode.commands.executeCommand('setContext', key, value);
 
-  // Services and harnesses
-  const storageService = new StorageService(context);
+  // Services and harnesses. Only enabled harnesses are built, so the registry
+  // holds exactly these ids; storage skips records that name any other.
+  const harnessModules = enabledHarnesses();
+  const enabledIds = new Set<string>(harnessModules.map((m) => m.id));
+  const storageService = new StorageService(context, (id) => enabledIds.has(id));
   const gitService = new GitService();
   const worktreeCatalog = new WorktreeCatalog(storageService, gitService);
   const gitHubService = new GitHubService();
-  const modules = enabledHarnesses().map((m) => m.create({ storageService, worktreeCatalog }));
+  const modules = harnessModules.map((m) => m.create({ storageService, worktreeCatalog }));
   const harnessRegistry = new HarnessRegistry(modules.map((m) => m.adapter));
   const harnessWatcherRegistry = new HarnessWatcherRegistry(
     modules.flatMap((m) => (m.watcher ? [m.watcher] : []))
@@ -51,6 +54,9 @@ export async function activate(context: vscode.ExtensionContext) {
   const terminalManager = new TerminalManager(storageService, harnessRegistry, harnessWatcherRegistry);
 
   const hasOpenNativeUi = (chat: ChatSession): boolean => {
+    if (!harnessRegistry.has(chat.harness)) {
+      return false;
+    }
     const surfaces = harnessRegistry.get(chat.harness).nativeUi?.surfaces;
     return Boolean(surfaces && chatNativeSessionIds(chat).some((id) => surfaces.isOpen(id)));
   };

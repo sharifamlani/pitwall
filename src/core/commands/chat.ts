@@ -114,7 +114,7 @@ export function registerChatCommands(
         : [item];
     return rows.flatMap((row) => {
       const current = row.itemType === 'chat' ? storageService.getChat((row.data as ChatSession).id) : undefined;
-      return current ? [current] : [];
+      return current && harnessRegistry.has(current.harness) ? [current] : [];
     });
   };
 
@@ -125,7 +125,9 @@ export function registerChatCommands(
       return chat;
     }
     const activeId = storageService.getActiveChatId();
-    const active = activeId ? storageService.getChat(activeId) : undefined;
+    const stored = activeId ? storageService.getChat(activeId) : undefined;
+    // A stored chat of a harness this build has switched off is not selectable.
+    const active = stored && harnessRegistry.has(stored.harness) ? stored : undefined;
     if (!active) {
       vscode.window.showInformationMessage('Select a session first.');
     }
@@ -511,8 +513,12 @@ export function registerChatCommands(
       );
     }
   }
-  // Backwards-compatible alias; hidden from menus.
-  register('pitwall.newChat', (item?: WorkspaceTreeItem) => createSession(item, 'claude'));
+  // Backwards-compatible alias; hidden from menus. It starts the first enabled
+  // harness: the registry holds src/harnesses/enabled.json in order.
+  register('pitwall.newChat', (item?: WorkspaceTreeItem) => {
+    const [first] = harnessRegistry.all();
+    return first ? createSession(item, first.id) : undefined;
+  });
 
   /** The configured default agent, when it names a registered harness. */
   const defaultHarness = (): HarnessId | undefined => {
@@ -890,7 +896,7 @@ export function registerChatCommands(
   register('pitwall.openNextSessionNeedingYou', async () => {
     for (const chatId of sessionsNeedingYou()) {
       const chat = storageService.getChat(chatId);
-      const worktree = chat && workspacesProvider.getWorktreeById(chat.worktreeId);
+      const worktree = chat && harnessRegistry.has(chat.harness) && workspacesProvider.getWorktreeById(chat.worktreeId);
       if (chat && worktree) {
         await openChatPrimary(chat, worktree);
         activateChat(chat);
@@ -901,7 +907,7 @@ export function registerChatCommands(
   });
 
   register('pitwall.showStarredSessions', async () => {
-    const starredChats = storageService.getStarredChats();
+    const starredChats = storageService.getStarredChats().filter((chat) => harnessRegistry.has(chat.harness));
     if (starredChats.length === 0) {
       vscode.window.showInformationMessage(
         'No starred sessions. Star a session from the tree view to bookmark it.'
@@ -946,7 +952,7 @@ export function registerChatCommands(
       matchOnDescription: true,
     });
     const chat = selected?.chatId ? storageService.getChat(selected.chatId) : undefined;
-    if (!chat) {
+    if (!chat || !harnessRegistry.has(chat.harness)) {
       return;
     }
     const worktree = chatWorktree(chat);

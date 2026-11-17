@@ -1,4 +1,5 @@
 import { HarnessModule } from '../core/harness/module';
+import { HarnessId } from '../core/types';
 import { claudeModule } from './claude';
 import { opencodeModule } from './opencode';
 import { codexModule } from './codex';
@@ -12,6 +13,9 @@ export const ALL_HARNESSES: Record<string, HarnessModule> = {
   codex: codexModule,
   pi: piModule,
 };
+
+/** Every harness id in this repo, enabled or not. */
+export const HARNESS_IDS: readonly HarnessId[] = Object.keys(ALL_HARNESSES);
 
 /** The modules named in `enabled.json`, in declared order. Throws on an unknown id. */
 export function enabledHarnesses(): HarnessModule[] {

@@ -174,6 +174,9 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       return item;
     }
     const chat = element.data as ChatSession;
+    if (!this.harnessRegistry.has(chat.harness)) {
+      return item;
+    }
     const adapter = this.harnessRegistry.get(chat.harness);
     let meta: SessionMetadata | null = null;
     if (chat.harnessSessionId) {
@@ -222,7 +225,9 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   private repositoryRow(repo: Repository): WorkspaceTreeItem {
     const { isGit, worktrees } = this.getRepoWorktrees(repo);
     // A plain folder with no sessions has nothing to expand into.
-    const canExpand = isGit || this.storageService.getChatsByWorktree(worktrees[0].id).length > 0;
+    const canExpand =
+      isGit ||
+      this.storageService.getChatsByWorktree(worktrees[0].id).some((chat) => this.harnessRegistry.has(chat.harness));
     const item = this.repositoryItem(
       repo,
       canExpand ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
@@ -310,7 +315,11 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   }
 
   private async chatRows(worktree: Worktree): Promise<WorkspaceTreeItem[]> {
-    const chats = this.storageService.getChatsByWorktree(worktree.id);
+    // A chat whose harness this build has switched off stays stored but has
+    // no row: its adapter is not registered.
+    const chats = this.storageService
+      .getChatsByWorktree(worktree.id)
+      .filter((chat) => this.harnessRegistry.has(chat.harness));
     const starredIds = this.storageService.getStarredChatIds();
 
     // Adapters answer from their caches; a lazy-preview harness leaves the
@@ -376,7 +385,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       'chat',
       chat,
       chatContextValue(
-        this.harnessRegistry.get(chat.harness),
+        this.harnessRegistry.has(chat.harness) ? this.harnessRegistry.get(chat.harness) : undefined,
         this.chatOpenProvider(chat),
         this.storageService.isStarred(chat.id)
       )
@@ -447,7 +456,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
  * The context value names the row state for menus; an adapter with a native
  * UI appends its own suffix so that UI's entry targets only its rows.
  */
-function chatContextValue(adapter: HarnessAdapter, isOpen: boolean, isStarred: boolean): string {
+function chatContextValue(adapter: HarnessAdapter | undefined, isOpen: boolean, isStarred: boolean): string {
   const base = isOpen ? (isStarred ? 'runningStarredChat' : 'runningChat') : isStarred ? 'starredChat' : 'chat';
-  return `${base}${adapter.nativeUi?.contextValueSuffix ?? ''}`;
+  return `${base}${adapter?.nativeUi?.contextValueSuffix ?? ''}`;
 }
