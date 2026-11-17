@@ -7,10 +7,11 @@
  *
  * Bundles first-render-bench.entry.ts with the dry-test `vscode` stub, builds
  * a profile of 17 repos and 129 Claude chats with realistic transcripts in a
- * temp folder, activates the extension over it three times (a reload: repos
- * and chats already stored) and reports the median of each measure. It
- * asserts E16: the Repos list answers its first request within 1 s of
- * activation.
+ * temp folder, and three times activates the extension over it twice: a
+ * first start with repos and chats already stored (as after an upgrade),
+ * then a reload over the state that start left. It reports the median of
+ * each measure per kind and asserts E16 for both: the Repos list answers its
+ * first request within 1 s of activation.
  */
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -39,33 +40,39 @@ test('the Repos list renders within 1 s of activation with 17 repos and 129 chat
     alias: { vscode: STUB },
     logLevel: 'error',
   });
-  const { buildFixture, runOnce } = require(outfile);
+  const { buildFixture, runOnce, storedRepos } = require(outfile);
   const fixture = buildFixture(dir);
   const megabytes = fixture.transcripts.reduce((sum, t) => sum + t.bytes, 0) / 1e6;
   console.log(
     `[bench] ${fixture.repos.length} repos, ${fixture.transcripts.length} transcripts, ${megabytes.toFixed(0)} MB (mean ${(megabytes / fixture.transcripts.length).toFixed(2)} MB)`
   );
 
-  const runs = [];
+  // Each run: the first start over stored repos and chats only (as after an
+  // upgrade), then a reload over the state that start left.
+  const runs = { 'first start': [], reload: [] };
+  const line = (run) =>
+    `activate ${run.activateMs.toFixed(0)} ms, first render ${run.firstRenderMs.toFixed(0)} ms (${run.firstRenderRows} rows), longest block ${run.maxBlockMs.toFixed(0)} ms, first scan ${run.scanMs.toFixed(0)} ms`;
   for (let i = 0; i < RUNS; i++) {
-    const run = await runOnce(fixture);
-    runs.push(run);
-    console.log(
-      `[bench] run ${i + 1}: activate ${run.activateMs.toFixed(0)} ms, first render ${run.firstRenderMs.toFixed(0)} ms (${run.firstRenderRows} rows), longest block ${run.maxBlockMs.toFixed(0)} ms, first scan ${run.scanMs.toFixed(0)} ms`
-    );
+    const first = await runOnce(fixture, await storedRepos(fixture));
+    const reload = await runOnce(fixture, first.state);
+    runs['first start'].push(first);
+    runs.reload.push(reload);
+    console.log(`[bench] run ${i + 1} first start: ${line(first)}`);
+    console.log(`[bench] run ${i + 1} reload:      ${line(reload)}`);
   }
-  const median = (key) => [...runs.map((run) => run[key])].sort((a, b) => a - b)[Math.floor(runs.length / 2)];
-  const summary = {
-    activateMs: median('activateMs'),
-    firstRenderMs: median('firstRenderMs'),
-    maxBlockMs: median('maxBlockMs'),
-    scanMs: median('scanMs'),
-  };
-  console.log(
-    `[bench] median of ${RUNS}: activate ${summary.activateMs.toFixed(0)} ms, first render ${summary.firstRenderMs.toFixed(0)} ms, longest block ${summary.maxBlockMs.toFixed(0)} ms, first scan ${summary.scanMs.toFixed(0)} ms`
-  );
-  assert.ok(runs.every((run) => run.firstRenderRows === fixture.repos.length), 'the first render shows every stored repo');
-  assert.ok(summary.firstRenderMs <= E16_LIMIT_MS, `first render ${summary.firstRenderMs.toFixed(0)} ms > ${E16_LIMIT_MS} ms`);
+  for (const [kind, list] of Object.entries(runs)) {
+    const median = (key) => [...list.map((run) => run[key])].sort((a, b) => a - b)[Math.floor(list.length / 2)];
+    const summary = {
+      activateMs: median('activateMs'),
+      firstRenderMs: median('firstRenderMs'),
+      firstRenderRows: fixture.repos.length,
+      maxBlockMs: median('maxBlockMs'),
+      scanMs: median('scanMs'),
+    };
+    console.log(`[bench] median of ${RUNS}, ${kind}: ${line(summary)}`);
+    assert.ok(list.every((run) => run.firstRenderRows === fixture.repos.length), `${kind}: the first render shows every stored repo`);
+    assert.ok(summary.firstRenderMs <= E16_LIMIT_MS, `${kind}: first render ${summary.firstRenderMs.toFixed(0)} ms > ${E16_LIMIT_MS} ms`);
+  }
   // Timers left by the extension's services must not keep the bench alive.
   setImmediate(() => process.exit(process.exitCode ?? 0));
 });

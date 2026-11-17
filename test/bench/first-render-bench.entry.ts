@@ -40,7 +40,15 @@ export interface Fixture {
   transcripts: { sessionId: string; cwd: string; file: string; bytes: number }[];
 }
 
+/** Pitwall's stored state, carried from one activation to the next like a reload. */
+export interface BenchState {
+  globalState: ReturnType<typeof memento>;
+  workspaceState: ReturnType<typeof memento>;
+}
+
 export interface BenchRun {
+  /** The state this activation left, for a following reload. */
+  state: BenchState;
   activateMs: number;
   firstRenderMs: number;
   firstRenderRows: number;
@@ -125,8 +133,11 @@ export function buildFixture(dir: string): Fixture {
   return { dir, configDir, repos, transcripts };
 }
 
-/** Storage as a reload finds it: every repo and chat already stored. */
-async function reloadStorage(fixture: Fixture) {
+/**
+ * Storage as a reload of a build without this one's caches finds it: every
+ * repo and chat already stored, nothing else.
+ */
+export async function storedRepos(fixture: Fixture): Promise<BenchState> {
   const globalState = memento();
   const workspaceState = memento();
   const storage = makeStorage(globalState, workspaceState);
@@ -173,7 +184,8 @@ function watchTranscriptReads(): { reads: Set<string>; restore: () => void } {
   };
 }
 
-export async function runOnce(fixture: Fixture): Promise<BenchRun> {
+/** One activation over `state`, which it updates as the real storage would. */
+export async function runOnce(fixture: Fixture, state: BenchState): Promise<BenchRun> {
   process.env.CLAUDE_CONFIG_DIR = fixture.configDir;
   delete process.env.CLAUDE_CODE_PROJECT_DIR_NAME;
   const stub = vscode as unknown as {
@@ -191,7 +203,7 @@ export async function runOnce(fixture: Fixture): Promise<BenchRun> {
     view.visible = true;
     return view;
   };
-  const { globalState, workspaceState } = await reloadStorage(fixture);
+  const { globalState, workspaceState } = state;
   const context = {
     subscriptions: [] as { dispose(): unknown }[],
     globalState,
@@ -229,7 +241,10 @@ export async function runOnce(fixture: Fixture): Promise<BenchRun> {
     const scanMs = performance.now() - start;
     // Let the interval take its sample after the last block.
     await new Promise((resolve) => setTimeout(resolve, 20));
-    return { activateMs, firstRenderMs: rendered.at - start, firstRenderRows: rendered.rows, maxBlockMs, scanMs };
+    // Let background listings and writes that follow the scan land, as they
+    // would before a later reload.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return { state, activateMs, firstRenderMs: rendered.at - start, firstRenderRows: rendered.rows, maxBlockMs, scanMs };
   } finally {
     clearInterval(lag);
     watch.restore();
