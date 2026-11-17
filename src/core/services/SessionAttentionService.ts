@@ -75,6 +75,8 @@ export class SessionAttentionService {
    * its first sighting; see beganUnseen.
    */
   private readonly waitStartAt = new Map<string, number>();
+  /** When this service started: waits that may predate it are pre-existing (R45). */
+  private readonly activatedAt = Date.now();
   /** Per chat, the last time it was seen in front of the user. */
   private readonly lastFrontAt = new Map<string, number>();
   /** Chats in front at the last look, so leaving is stamped when it is noticed. */
@@ -420,13 +422,20 @@ export class SessionAttentionService {
     // unseen after activation (judged over the whole window in which it could
     // have started), and never once it has toasted or been seen.
     if (waitingFor !== previous && !prime) {
-      this.toastableWaits.add(chat.id);
+      // R45: a wait may toast only if it cannot predate activation: this
+      // session saw the chat without a wait since it started, or the chat was
+      // launched after it started. Otherwise it is pre-existing (a reload):
+      // marked and listed, never toasted. The transcript time only narrows
+      // the window from that floor, it never makes a wait eligible.
       const clear = this.lastClearAt.get(chat.id);
-      const start = Math.max(clear ?? -Infinity, writtenAt ?? -Infinity);
-      if (start === -Infinity) {
+      const launched = chat.createdAt >= this.activatedAt ? chat.createdAt : undefined;
+      const floor = clear ?? launched;
+      if (floor === undefined) {
+        this.toastableWaits.delete(chat.id);
         this.waitStartAt.delete(chat.id);
       } else {
-        this.waitStartAt.set(chat.id, start);
+        this.toastableWaits.add(chat.id);
+        this.waitStartAt.set(chat.id, Math.max(floor, writtenAt ?? -Infinity));
       }
     }
     if (prime || visible || !this.beganUnseen(chat.id)) {
