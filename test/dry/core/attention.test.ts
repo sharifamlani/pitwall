@@ -796,3 +796,77 @@ test('the front-change events are the active terminal, tabs, tab groups and wind
   window.__fireTabsChanged();
   assert.equal(notes, 3, 'disposed with the extension');
 });
+
+// ---------------------------------------------------------------------------
+// R41: the wait is anchored at the transcript write that comes just before
+// the prompt (the tool call), so only a look AFTER the prompt appeared holds
+// the toast back. The front history comes from the tab events, as wired in
+// extension.ts; the events still never poll.
+// ---------------------------------------------------------------------------
+
+/** timedFlow with the extension's front-change wiring; `tabsAt` moves the tabs and fires the event. */
+function timedFlowWithEvents(t: TestContext, options: TimedOptions) {
+  const flow = timedFlow(t, options);
+  const subscriptions = chatVisibility.onFrontMayChange(() => flow.service.noteFront());
+  t.after(() => subscriptions.forEach((subscription) => subscription.dispose()));
+  const tabsChanged = () => (stub.window as unknown as { __fireTabsChanged(): void }).__fireTabsChanged();
+  return {
+    ...flow,
+    awayWithEvent: () => (flow.away(), tabsChanged()),
+  };
+}
+
+test('S1-b as walked: the user leaves 0.3 s after sending, the prompt shows 2 s later; it marks and toasts exactly once', async (t) => {
+  windowState().state = { focused: true };
+  // Enter at +6.0 s with the chat in front, a file in front from +6.3 s, the
+  // tool call written at +7.999 s and the prompt at +8.0 s.
+  const flow = timedFlowWithEvents(t, { waits: [[8_000, 120_000]], writes: [7_999] });
+  flow.front();
+  flow.service.start();
+  await flow.runTo(90_000, [[6_300, flow.awayWithEvent]]);
+
+  assert.ok(flow.marks.some((mark) => mark.needs), 'the row shows needs-you');
+  assert.deepEqual(flow.service.sessionsNeedingYou(), [flow.chat.id], 'listed for Go to Next');
+  assert.equal(toasts().length, 1, 'the chat was not in front after the prompt appeared: exactly one toast');
+});
+
+test('S1-a with the tab events: the prompt shows in front and the user leaves 0.4 s later; it marks with no toast', async (t) => {
+  windowState().state = { focused: true };
+  const flow = timedFlowWithEvents(t, { waits: [[8_000, 120_000]], writes: [7_999] });
+  flow.front();
+  flow.service.start();
+  await flow.runTo(40_000, [[8_400, flow.awayWithEvent]]);
+
+  assert.ok(flow.marks.some((mark) => mark.needs), 'the row shows needs-you');
+  assert.deepEqual(flow.service.sessionsNeedingYou(), [flow.chat.id]);
+  assert.deepEqual(toasts(), [], 'the user had the prompt in front: no toast');
+});
+
+test('with no transcript time (missing file or failed stat), the wait falls back to the window since the last no-wait sample', async (t) => {
+  windowState().state = { focused: true };
+  // The S1-b-as-walked timeline again, but the stat finds nothing: the chat
+  // was in front inside [last no-wait fetch, now], so no toast.
+  const flow = timedFlowWithEvents(t, { waits: [[8_000, 120_000]], writes: [] });
+  flow.front();
+  flow.service.start();
+  await flow.runTo(40_000, [[6_300, flow.awayWithEvent]]);
+
+  assert.ok(flow.marks.some((mark) => mark.needs), 'the row still shows needs-you');
+  assert.deepEqual(toasts(), [], 'fallback window includes the time in front');
+});
+
+test('a transcript older than the last no-wait fetch anchors the wait at that fetch: an earlier glance does not suppress the toast', async (t) => {
+  windowState().state = { focused: true };
+  // The transcript was last written at +1 s; the user had the chat in front
+  // until +3 s. Fetches at 0 and 12 s find no wait; the prompt shows at +20 s
+  // and the 24 s fetch reports it. The wait start is max(mtime, last no-wait
+  // fetch) = 12 s, so R41 can only narrow R40's window: the glance before
+  // 12 s does not count.
+  const flow = timedFlowWithEvents(t, { waits: [[20_000, 120_000]], writes: [1_000] });
+  flow.front();
+  flow.service.start();
+  await flow.runTo(60_000, [[3_000, flow.awayWithEvent]]);
+
+  assert.ok(flow.marks.some((mark) => mark.needs), 'the row shows needs-you');
+  assert.equal(toasts().length, 1, 'anchored at the 12 s fetch, after the glance: one toast');
+});
