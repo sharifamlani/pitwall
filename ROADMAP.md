@@ -11,9 +11,9 @@
 ## §0 You are here
 
 - **Current phase:** Phase 3 — Sidebar v1 (planning). Development resumed by Sharif on 2026-11-17.
-- **Current step:** Phase 3 plan written and passed QA pre-flight (`e955a7e`); waiting on Sharif's go to start Wave A (T1 storage overlay, T2 sessions-file status, T4 hide extras, T6 brand icons).
+- **Current step:** Phase 3 Wave A in flight (Sharif GO 2026-11-17): T1 storage overlay (3.0), T2 sessions-file status (3.3), T4 hide extras (3.6), T6 brand icons (3.10); testing agent running S1 (F3 live repro).
 - **Last update:** 2026-11-17
-- **Next action:** on Sharif's go, dispatch Wave A builders and brief testing for S1 (F3 live repro).
+- **Next action:** QA each Wave A PR at its exact sha, merge on green CI, then Wave B (T3 discovery after T1+T4; T5 rows after T1+T2+T6).
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -170,7 +170,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 **Goal:** The Pitwall list as designed on the canvas: every repo and chat from one window, sorted by who needs you.
 **Entry gate:** Phase 2 ✅ (`v0.3.0`).
 **Exit gate:** Walkthrough of the canvas prototype's sidebar flows passes in real Cursor against Sharif's real repos; tag `v0.4.0`.
-**Status:** ⏳ planning.
+**Status:** ⏳ in flight (Wave A).
 **Plan:** ✅ [2026-11-17-phase3-sidebar-v1.md](docs/superpowers/plans/2026-11-17-phase3-sidebar-v1.md) (QA pre-flight OK `e955a7e`)
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
