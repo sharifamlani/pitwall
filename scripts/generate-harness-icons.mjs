@@ -16,7 +16,7 @@
  *
  * The claude harness is different: its icons are plain D17 status dots
  * (working and needs you: solid with a 22% glow ring; finished: solid; idle:
- * a 1.5px ring with fill="none"). Its `new` icon keeps the mark plus ring.
+ * a 1.5px ring with fill="none"). Its `new` icon is a dashed hollow idle-grey ring (no Claude mark or clay).
  * - `new`: the mark plus a hollow ring for a session that has not started.
  *
  * Usage: npm run generate:icons
@@ -122,9 +122,12 @@ function wrapMark(svg) {
 function claudeDot(state, theme) {
   const c = D17[theme][state];
   const open = '<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" role="img">';
-  const title = `<title>Claude: ${state}</title>`;
+  const title = `<title>Session: ${state}</title>`;
   let body;
-  if (state === 'working') {
+  if (state === 'new') {
+    // Brand book: no Claude name/mark/clay. A fresh session is a dashed hollow ring in idle grey.
+    body = `<circle cx="8" cy="8" r="4" fill="none" stroke="${D17[theme].idle}" stroke-width="1.5" stroke-dasharray="2 1.6"/>`;
+  } else if (state === 'working') {
     body =
       `<g class="pitwall-mark"><circle cx="8" cy="8" r="7" fill="${c}" opacity=".22"/>` +
       `<circle cx="8" cy="8" r="4.5" fill="${c}"/></g>${BEAT_CSS}`;
@@ -152,7 +155,7 @@ for (const harness of HARNESSES) {
     }
 
     for (const state of STATES) {
-      if (harness.id === 'claude' && state !== 'new') {
+      if (harness.id === 'claude') {
         fs.writeFileSync(
           path.join(outDir, `claude-${theme}-${state}.svg`),
           claudeDot(state, theme)

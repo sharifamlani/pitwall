@@ -60,13 +60,15 @@ test('glow ring on working and needs at 22% opacity; finished is solid; idle is 
   }
 });
 
-test('working animates (honoring reduced motion); new keeps the mark plus a hollow ring; dormant harnesses keep their tint', () => {
+test('working animates (honoring reduced motion); non-claude new keeps the mark plus a hollow ring; dormant harnesses keep their tint', () => {
   for (const id of HARNESS_IDS) {
     const icons = harnessTreeIcons(id).light;
     const working = read(icons.working);
     assert.match(working, /@keyframes/);
     assert.match(working, /prefers-reduced-motion/);
-    assert.match(read(icons.new), /stroke="#8a8a8a"/, `${id} new mark is a hollow ring`);
+    if (id !== 'claude') {
+      assert.match(read(icons.new), /stroke="#8a8a8a"/, `${id} new mark is a hollow ring`);
+    }
     assert.doesNotMatch(read(icons.finished), /@keyframes/, `${id} finished is static`);
   }
   assert.match(read('resources/icons/harness/codex-light-idle.svg'), /fill="#8a8a8a"|fill="none"/);

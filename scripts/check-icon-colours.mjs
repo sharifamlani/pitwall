@@ -48,6 +48,31 @@ for (const theme of Object.keys(D17)) {
   }
 }
 
+// Brand book: claude status SVGs are circles only, never Claude clay, and `new`
+// is a dashed hollow ring in the idle grey.
+for (const theme of Object.keys(D17)) {
+  for (const state of [...Object.keys(D17[theme]), 'new']) {
+    const file = `claude-${theme}-${state}.svg`;
+    let svg;
+    try {
+      svg = fs.readFileSync(path.join(dir, file), 'utf8');
+    } catch {
+      problems.push(`${file}: missing`);
+      continue;
+    }
+    const shape = /<(path|rect|polygon|polyline|ellipse|line|use|image)\b/i.exec(svg);
+    if (shape) problems.push(`${file}: <${shape[1]}> not allowed, circles only`);
+    if (/#D97757/i.test(svg)) problems.push(`${file}: contains Claude clay #D97757`);
+    if (state === 'new') {
+      if (!attrs(svg, 'fill').includes('none')) problems.push(`${file}: new must be hollow (fill="none")`);
+      if (attrs(svg, 'stroke-dasharray').length === 0) problems.push(`${file}: new must be dashed`);
+      if (!attrs(svg, 'stroke').every((v) => v.toLowerCase() === D17[theme].idle) || attrs(svg, 'stroke').length === 0) {
+        problems.push(`${file}: new must be stroked in idle grey ${D17[theme].idle}`);
+      }
+    }
+  }
+}
+
 const bar = fs.readFileSync(path.join(root, 'resources', 'icons', 'pitwall-activitybar.svg'), 'utf8');
 const circles = [...bar.matchAll(/<circle\b[^>]*>/g)].map((m) => m[0]);
 if (circles.length !== 4) {
