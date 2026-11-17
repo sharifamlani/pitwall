@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { STATUS_WORDS, sessionStatus, statusIconState } from '../../../src/core/providers/sessionStatus';
+import { STATUS_WORDS, lastTurnEnd, sessionStatus, statusIconState } from '../../../src/core/providers/sessionStatus';
 import { HarnessLiveState } from '../../../src/core/harness/types';
 
 const done = (turnEndedAt: number, extra: Partial<HarnessLiveState> = {}): HarnessLiveState => ({
@@ -34,6 +34,19 @@ test('sessionStatus covers the four statuses and the waiting/busy/turn combinati
   for (const [what, input, expected] of cases) {
     assert.equal(sessionStatus(input), expected, what);
   }
+});
+
+test('a denied prompt leaves the session idle, not working, when the sessions file says idle', () => {
+  // A denied tool call leaves the transcript tail looking mid-turn; the
+  // sessions file is current truth whenever it covers the session (O1).
+  const denied = working({ liveStatus: 'idle', statusUpdatedAt: 2_000 });
+  assert.equal(sessionStatus({ live: denied, needsYou: false, seenAt: 3_000 }), 'idle', 'seen after the deny');
+  assert.equal(sessionStatus({ live: denied, needsYou: false, seenAt: 1_000 }), 'finished', 'statusUpdatedAt is the turn end');
+  assert.equal(lastTurnEnd(denied), 2_000);
+  assert.equal(lastTurnEnd(done(1_500, { liveStatus: 'idle', statusUpdatedAt: 2_000 })), 1_500, 'a finished transcript keeps its own end');
+  assert.equal(sessionStatus({ live: done(500, { liveStatus: 'busy' }), needsYou: false, seenAt: 1_000 }), 'working', 'busy → working');
+  assert.equal(sessionStatus({ live: done(500, { liveStatus: 'waiting' }), needsYou: false, seenAt: 1_000 }), 'needs', 'waiting → needs');
+  assert.equal(sessionStatus({ live: working(), needsYou: false, seenAt: 1_000 }), 'working', 'no live file: the transcript decides');
 });
 
 test('finished turns idle once the chat is seen', () => {

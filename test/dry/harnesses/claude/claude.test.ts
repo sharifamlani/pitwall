@@ -354,6 +354,14 @@ test('a torn read that hides a session waiting on the previous tick keeps its pr
   assert.equal(agentCalls(), 1);
 });
 
+test('a sessions-file sample carries its statusUpdatedAt, so an idle file can date a turn the transcript leaves open (O1)', async (t) => {
+  const { harness, sessionsDir } = liveHarness(t, { transcriptWrittenAt: 0 });
+  writeSessionFile(sessionsDir, { pid: 4242, sessionId: SESSION_ID, status: 'idle', statusUpdatedAt: 1_700_000_000_500 });
+  const live = (await harness.getLiveStates([SESSION_ID])).get(SESSION_ID)!;
+  assert.equal(live.liveStatus, 'idle');
+  assert.equal(live.statusUpdatedAt, 1_700_000_000_500);
+});
+
 test('liveSessionIds lists the live sessions in the sessions file, and the tick that follows reuses that read', async (t) => {
   const { harness, sessionsDir } = liveHarness(t, { transcriptWrittenAt: 0 });
   writeSessionFile(sessionsDir, { pid: 4242, sessionId: SESSION_ID, status: 'busy', statusUpdatedAt: 1 });

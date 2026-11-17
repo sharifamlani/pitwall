@@ -63,6 +63,12 @@ export interface HarnessLiveState {
    * when the session is not running or the harness does not say.
    */
   liveStatus?: 'busy' | 'waiting' | 'idle';
+  /**
+   * When the harness last changed `liveStatus` (Claude: the sessions file's
+   * `statusUpdatedAt`). An idle status with a transcript that looks mid-turn
+   * (a denied prompt) dates the turn's end from this.
+   */
+  statusUpdatedAt?: number;
 }
 
 /**
