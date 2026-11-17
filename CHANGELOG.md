@@ -2,6 +2,16 @@
 
 All notable changes to Pitwall are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Hotkeys: Ctrl+Alt+1 to 9 jump to the nth repo (again opens its next session), Ctrl+Alt+Shift+1 to 9 and Ctrl+Alt+O open a repo in its own window, Ctrl+Alt+0 goes to the session waiting longest, and Ctrl+Down and Ctrl+Up move through the list and open the row.
+
+### Changed
+
+- Ctrl+Alt+F now shows or hides FILES. Find Session is still in the Command Palette. Ctrl+Alt+N stays as an alias of Ctrl+Alt+0.
+
 ## [0.3.0] - 2026-11-17
 
 Windows parity (ROADMAP Phase 2).

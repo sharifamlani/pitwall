@@ -30,7 +30,7 @@ test('the commands reference names every command the manifest contributes', () =
 
 test('the shortcuts reference lists every default key binding for both platforms', () => {
   const doc = read('docs/reference/keyboard-shortcuts.md');
-  const NAMES: Record<string, string> = { ctrl: 'Ctrl', alt: 'Alt', cmd: 'Cmd', shift: 'Shift', enter: 'Enter', delete: 'Delete', backspace: 'Backspace' };
+  const NAMES: Record<string, string> = { ctrl: 'Ctrl', alt: 'Alt', cmd: 'Cmd', shift: 'Shift', enter: 'Enter', delete: 'Delete', backspace: 'Backspace', down: 'Down', up: 'Up' };
   const written = (key: string) => key.split('+').map((part) => NAMES[part] ?? part.toUpperCase()).join('+');
   const keys = new Set(keybindings.flatMap((binding) => [binding.key, binding.mac ?? binding.key]).map(written));
   assert.deepEqual([...keys].filter((key) => !doc.includes(`\`${key}\``)), []);

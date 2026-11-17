@@ -189,8 +189,8 @@ test('global shortcuts use Ctrl+Alt (Ctrl+Cmd on macOS); plain keys work only in
     if (binding.when) {
       assert.match(binding.when, /^focusedView == 'pitwall\.(workspaces|files)View' && !inputFocus/, binding.command);
     } else {
-      assert.match(binding.key, /^ctrl\+alt\+\w+$/, binding.command);
-      assert.match(binding.mac ?? '', /^ctrl\+cmd\+\w+$/, binding.command);
+      assert.match(binding.key, /^ctrl\+alt\+(shift\+)?\w+$/, binding.command);
+      assert.match(binding.mac ?? '', /^ctrl\+cmd\+(shift\+)?\w+$/, binding.command);
     }
   }
   const known = new Set([...commands.map((entry) => entry.command), 'workbench.view.extension.pitwall']);
