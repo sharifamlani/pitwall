@@ -209,14 +209,14 @@ AFTER:  Pitwall: New Claude Code Session · … (0 Codex/opencode/Pi entries)
 
 **Smoke 1 — history imported intact**
 - Proves: upstream's 104 commits and authorship are reachable.
-- Command: `git rev-list --count HEAD ^$(git rev-list --max-parents=0 HEAD | tail -1) ; git log --format=%an | grep -c "Subhash"`
-- Expected: first ≥ 104 + our 16; second ≥ 1. `git merge-base --is-ancestor 47124cd HEAD && echo OK` → `OK`.
+- Command: `git merge-base --is-ancestor 47124cd HEAD && echo OK ; git log --format=%an | grep -c "Subhash"`
+- Expected: `OK`, and the count ≥ 1. (No commit-count check: `main` already has our own commits and two root commits, so a count doesn't measure the import.)
 - If it fails → re-run the merge from a clean tree with `git fetch upstream` first.
 
 **Smoke 2 — unmodified import builds and matches the Linux baseline**
 - Proves: the merge itself broke nothing. Run before any rename or move.
 - Command: `bash scripts/verify.sh --skip-docker` (npm part) and `bash scripts/run-linux-tests.sh`
-- Expected: typecheck/compile exit 0; Linux `ℹ pass 183`, `ℹ fail ≤ 1` (the known opencode timing test, named).
+- Expected: typecheck/compile exit 0; Linux `ℹ pass 183`, `ℹ fail ≤ 1`, and the only allowed failure is the known timing test "stopping an opencode snapshot ends the session listing and unblocks preparation".
 - If it fails → diff against the clean clone in `%TEMP%/agntree-src`; a merge resolution dropped something.
 
 **Smoke 3 — rename is complete and behavior-neutral**
@@ -228,7 +228,7 @@ AFTER:  Pitwall: New Claude Code Session · … (0 Codex/opencode/Pi entries)
 **Smoke 4 — reorg moved everything and lost no test**
 - Proves: core/harness layout compiles; every test still runs.
 - Command: `npm run typecheck && npm run compile && bash scripts/run-linux-tests.sh`
-- Expected: same `ℹ tests` total and pass count as Smoke 3; `architecture.test.ts` passes.
+- Expected: `ℹ tests` = Smoke 3's total + k (k = test cases in `architecture.test.ts`); pass count = Smoke 3's pass count + k; `architecture.test.ts` passes.
 - If it fails → count mismatch = run.js recursion; type error = a missed import path.
 
 **Smoke 5 — the one switch works both ways (additivity proof)**
@@ -239,7 +239,7 @@ AFTER:  Pitwall: New Claude Code Session · … (0 Codex/opencode/Pi entries)
 
 **Smoke 6 — extension activates in a real VS Code (Windows host)**
 - Proves: activation, view registration and command registration under the real API.
-- Command: `npm run test:integration`
+- Command: `env -u ELECTRON_RUN_AS_NODE -u VSCODE_ESM_ENTRYPOINT -u VSCODE_CRASH_REPORTER_PROCESS_TYPE npm run test:integration` (shells started from Cursor inherit `ELECTRON_RUN_AS_NODE=1`, which stops Electron from starting)
 - Expected: integration suite passes (assertions trimmed to Claude-only); exit 0.
 - If it fails → read the Extension Host log the runner prints; most likely an id still `agntree.*` in a `when` clause.
 
@@ -249,14 +249,14 @@ AFTER:  Pitwall: New Claude Code Session · … (0 Codex/opencode/Pi entries)
 - Expected: `cursor --list-extensions --show-versions` shows `sharifamlani.pitwall@0.2.0`; exthost log shows activation and 0 lines matching `pitwall.*(Error|failed)`. Screenshot of the Pitwall sidebar with this repo's row (cua-driver) saved to `docs/evidence/phase1-sidebar.png`.
 - If it fails → the exthost log names the throwing module.
 
-**Ground truth after Smoke 7:** the session row count in the sidebar for `pitwall` equals `ls ~/.claude/projects/*pitwall*/ | grep -c .jsonl` (minus sidechains), read from the screenshot plus that count.
+**Ground truth after Smoke 7:** Phase 1 still builds rows only from Pitwall's own stored chats (upstream `WorkspacesTreeProvider` reads `storageService.getChatsByWorktree`), and the renamed storage starts empty. So, after adding the `pitwall` repo, a fresh install shows **0 session rows**. Then run *Pitwall: Import Existing Sessions…* and import exactly one known session by id. Expect exactly **1 row**, whose title matches that session's `ai-title` in its `.jsonl`. Reading every chat from `~/.claude` is Phase 3 (rows 3.1–3.2).
 
 ## 5. Evaluation criteria (definition of done; graded by an independent evaluator sub-agent)
 
 | # | Criterion | Metric + threshold | How measured | Evidence |
 |---|---|---|---|---|
 | E1 | Agntree's history and credit are kept | `47124cd` is an ancestor of `main`; LICENSE has both copyright lines; README has the credit + link | `git merge-base --is-ancestor`; `grep` | outputs |
-| E2 | Linux suite green | all tests pass except ≤1 named known-flaky test, in a fresh clone | `bash scripts/run-linux-tests.sh` on a fresh clone | `ℹ` summary lines |
+| E2 | Linux suite green | all tests pass except at most the one known-flaky test "stopping an opencode snapshot ends the session listing and unblocks preparation" (any other failure = FAIL), in a fresh clone | `bash scripts/run-linux-tests.sh` on a fresh clone | `ℹ` summary lines |
 | E3 | Core is agent-agnostic | `architecture.test.ts` passes: no file under `src/core/` imports `src/harnesses/**`; only `src/extension.ts` imports `src/harnesses/index.ts` | `npm test` | test line |
 | E4 | Adding an agent is one switch | `--enabled claude,codex` build yields Codex commands + settings; `["claude"]` yields none; dormant harness tests still run and pass | Smoke 5 + test counts per folder | outputs |
 | E5 | Shipped build is Claude-only | 0 occurrences of `codex`, `opencode`, `"pi"` / `Pi ` agent ids in shipped `package.json` contributes | `node -e` scan of package.json | count |
@@ -305,7 +305,7 @@ AFTER:  Pitwall: New Claude Code Session · … (0 Codex/opencode/Pi entries)
 - [ ] Record `ℹ tests N` before moving. `git mv` files per §1. Move `commandUtils.ts` → `core/harness/cli.ts`, Claude encoders → `harnesses/claude/paths.ts`, Pi encoders → `harnesses/pi/paths.ts`. Keep `import type` for the StorageService ↔ sessionUtils cycle.
 - [ ] Update `test/dry/run.js` to collect `*.test.ts` recursively. Move tests to `core/`, `shared/`, `harnesses/<id>/` with their fixtures. Fix relative imports.
 - [ ] Create `module.ts`, the four `index.ts` modules, `harnesses/index.ts`, and `enabled.json` = `["claude","codex","opencode","pi"]` **for this task only**, so behavior is identical. Rewrite `extension.ts:55-71` to `enabledHarnesses().map(m => m.create(deps))` feeding both registries.
-- [ ] Run Smoke 4: `ℹ tests` equals N (Review Focus #5); architecture test passes. Commit `refactor: core/ + harnesses/<id>/ layout behind HarnessModule (moves only)`.
+- [ ] Run Smoke 4: `ℹ tests` equals **N + k**, where N was recorded before any move and before `architecture.test.ts` existed, and k is the number of `test(` cases in `architecture.test.ts` (state k in the PR). Architecture test passes. (Review Focus #5.) Commit `refactor: core/ + harnesses/<id>/ layout behind HarnessModule (moves only)`.
 
 ### Task 5: Claude-only switch, manifest fragments, registry safety
 **Files:** `enabled.json` → `["claude"]`; create `manifest/core.contributes.json`, `src/harnesses/{claude,codex,opencode,pi}/contributes.json`, `scripts/build-manifest.mjs`, `src/harnesses/README.md`, tests `test/dry/core/manifest.test.ts`, `test/dry/core/registry-safety.test.ts`; modify `HarnessRegistry.ts` (+`has(id)`), callers listed in Review Focus #1, `core/types.ts`, `StorageService.ts:469`, `SessionSearchService.ts:136`, `chat.ts:515`, `package.json`, integration suite assertions.
