@@ -1,0 +1,446 @@
+# AGENTS.md
+
+Agntree is a VS Code extension that manages CLI coding-agent sessions (Claude Code,
+opencode, Codex, and Pi) across git repositories and worktrees. This is the working agreement
+for anyone changing the repository — human contributors and the coding agents working with
+them. It covers the taste behind the code, the questions to answer before writing any, and
+the checklist a change must pass before it is done.
+
+Deeper references:
+
+| Document | Use it for |
+| --- | --- |
+| [`docs/`](docs/README.md) | User documentation, one page per feature, agent, and reference; published as the website by `site/` |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Deep reference: subsystem map, harness internals, session discovery, notifications, worktrees, PR checkout |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Setup and the PR process for human contributors |
+| [`test/README.md`](test/README.md) | Test suites, coverage matrix, fakes, and environment variables |
+| [`ROADMAP.md`](ROADMAP.md) | Deferred and experimental work; check it before proposing a large design |
+| [`docs/adr/`](docs/adr/README.md) | Accepted decisions and the evidence behind them; read before changing session identity, discovery, or turn state |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release-note format; user-visible changes land under `Unreleased` |
+
+This is the only instruction file: Claude Code (v2.1.277+), Codex, opencode, and other
+`AGENTS.md`-aware tools load it automatically. `ARCHITECTURE.md` is reference material and
+is not loaded every session; read the relevant section when you touch that subsystem.
+
+## How we think
+
+- **One seam per harness.** Claude Code, opencode, Codex, and Pi disagree about session
+  identity, discovery, forking, and live state. Those disagreements belong in
+  `src/harnesses/` and in each harness's watcher. Commands, providers, and shared services
+  stay harness-agnostic so adding support for another agent does not touch the core.
+- **One mechanism per job.** When two paths share a lifecycle or an invariant, name the
+  shared mechanism and keep the differences at the edges. Do not copy a flow to vary one
+  step, and do not abstract two similar lines that share no invariant.
+- **Native interfaces, not internals.** Prefer a harness's documented CLI or API. Claude
+  Code only offers its JSONL transcripts, so we read those; opencode and Codex offer APIs,
+  so we never touch opencode's SQLite database or Codex's state database. An experimental
+  API that fails with a clear error is better than a schema we guessed.
+- **Quiet UI.** Session rows show only what changes: a short relative time or `new`, a star,
+  and the harness mark. Detail lives in the tooltip. Destructive and occasional actions live
+  in the `…` and context menus, not in the hover row. Dialogs end in `…`, and only the
+  primary actions stay inline.
+- **Cheap by default.** The tree renders often, so nothing on that path may block. Cache
+  with a short TTL, share in-flight requests, read logs incrementally, fetch previews only
+  for the row under the cursor, poll only while a chat is pending, and shut external
+  processes down when idle.
+- **Narrow destructiveness.** Deleting, discarding, renaming, and pasting are scoped to the
+  active worktree, refuse dangerous paths, never overwrite silently, and are logged. A
+  confirmation must say exactly what will be lost.
+- **Local-first.** Agntree has no telemetry and stores its state in VS Code's
+  `globalState`. Network work happens through tools the user invoked — `git`, `gh`, and the
+  harness CLIs themselves.
+- **Tests are executable specifications.** They prove behavior without a model turn, a
+  network call, a real CLI, or the developer's own sessions: a fake at the process
+  boundary does the job.
+- **Docs are part of the change, and each fact lives in one place.** User-facing behavior
+  goes in the matching page under `docs/` and in `CHANGELOG.md`, and `README.md` carries
+  only the overview that links there; architecture goes in `ARCHITECTURE.md`; test
+  coverage goes in `test/README.md`; deferred work goes in `ROADMAP.md`; a decision with a
+  lasting trade-off goes in `docs/adr/`. Link to a fact instead of restating it. When code an ADR
+  names moves or is renamed, update the reference; when the decision itself changes, write
+  a new ADR that supersedes it.
+- **Small, focused diffs.** One feature or fix per PR. Follow the surrounding patterns
+  instead of introducing a second way to do the same thing.
+
+## Non-negotiables
+
+1. **No harness conditionals outside the harness layer.** Commands, providers, and shared
+   services must not branch on `chat.harness`. If behavior differs by harness, put it behind
+   `HarnessAdapter` (a method or a capability flag). Per-harness watchers may compare their
+   own `harness` field.
+2. **Never read internal storage directly.** opencode's `opencode.db` and Codex's state
+   database are off limits. Claude's JSONL is the only supported surface it offers.
+3. **Never interpolate user input into a shell command.** Git runs through argument arrays
+   (`GitService`). Terminal launch commands use `quoteShellArgument`; Windows quoting is a known
+   gap tracked in `ROADMAP.md`.
+4. **Destructive operations stay narrow.** Files must be inside the active worktree, names
+   must be one path segment, deletes use the Trash, creates and pastes never overwrite, and
+   `GitService.forceRemoveWorktree()` refuses the filesystem root, the repository, the home
+   directory, their ancestors, and paths git does not report as worktrees. Log user-triggered
+   actions and refusals with `logOperation()`.
+5. **Stored state is a compatibility surface.** Never require users to reinstall or re-add
+   repositories to get a new field. Read old shapes through `StorageService`, migrate them on
+   read (as `claudeSessionId` was migrated), and write the new shape back.
+6. **Background work has an owner and a lifetime.** Every listener, timer, watcher, child
+   process, and cache entry must be disposed or bounded. Processes start lazily, have
+   timeouts, and stop when idle. Do not leave an unhandled promise or an orphaned process.
+7. **Do not edit generated files.** Harness icons are generated from
+   `resources/icons/harness/base/` by `npm run generate:icons`. Edit the base mark and
+   regenerate.
+8. **Tests must stay runnable by anyone.** No model turns, no network, no installed harness
+   CLI, and no dependency on a maintainer's local sessions.
+9. **Ship the documentation with the code.** A user-visible change without a `CHANGELOG.md`
+   entry and the relevant `docs/` or architecture update is incomplete.
+
+## Before writing code
+
+Answer these in order. If a question has no answer, investigate before editing.
+
+1. **What behavior changes?** State it in one sentence, plus the edge cases and what is
+   explicitly out of scope.
+2. **Which layer owns it?** Trace the current path — command → provider/service → adapter →
+   native tool — and put the change at the lowest layer that can own it. See the table
+   below.
+3. **Does the native tool actually support it?** Run the CLI or API and record the version,
+   method, and exact fields. Do not code from memory or a blog post. Note whether the
+   surface is documented, experimental, or internal.
+4. **What happens when it is unavailable?** Missing binary, not logged in, older or newer
+   version, malformed or missing file, restart mid-operation. Decide the user-visible
+   behavior before writing the happy path.
+5. **What does it cost?** How often is it called? What is cached, for how long, and what is
+   read per tree render? Does anything need pagination, incremental reads, lazy loading, or
+   an idle shutdown?
+6. **What state does it touch?** Stored chats, worktrees, terminals, open files, git. If it
+   changes a persisted shape, plan the migration and the downgrade behavior.
+7. **Is it destructive?** If it deletes, moves, copies, renames, or overwrites, define the
+   scope guard, the confirmation wording, and the operation-log entry first.
+8. **Can it be tested cheaply?** Identify the boundary where a fake proves the behavior
+   without hiding the logic under test.
+9. **What documentation changes?** A `docs/` page, README, changelog, architecture, test matrix, roadmap, or
+   a combination.
+
+### Where a change belongs
+
+| Kind of change | Home | Notes |
+| --- | --- | --- |
+| Behavior that differs per harness | `src/harnesses/<Harness>Harness.ts` | Add a method or capability to the shared interface first; do not leak the branch. |
+| Handoff to an agent's own VS Code UI | `src/harnesses/<harness>Ui.ts` | Implement `NativeUiCapability`; tab tracking is a policy over `NativeUiTabSurfaceService`. |
+| New-session linkage and naming | `src/services/<Harness>SessionWatcher.ts` | Register it in `HarnessWatcherRegistry`. Reuse shared polling machinery when the lifecycle matches; implement the interface directly when it does not. A session started in an agent's VS Code UI or outside Agntree is reconciled by `src/services/SessionImportService.ts`; the exact-ID watchers remain the fast path. |
+| User action or multi-step flow | `src/commands/*.ts` | Register with `commandRegistrar()` from the module's `register*Commands()` and contribute it in `package.json`. Shared prompts and helpers live in `commands/common.ts`. |
+| Tree row, tooltip, icon state | `src/providers/*.ts`, `src/harnesses/sessionUtils.ts` | Stable row ids, `contextValue`, and quiet labels matter. |
+| Persistence or migration | `src/services/StorageService.ts` | Read old shapes, migrate on read, write back. |
+| Git or path safety | `src/services/GitService.ts`, `src/utils/paths.ts` | Argument arrays; `isWithin` / `isStrictlyWithin`. |
+| Cross-cutting timing or notifications | `src/services/*` | The adapter supplies turn state; the service stays harness-agnostic. |
+| External process or protocol | A service in `src/services/` | Lazy start, request timeouts, restart, idle shutdown, stderr tail. |
+| Command, menu, setting, context key | `package.json` + `src/extension.ts` | Gate harness entries on `agntree.<harness>Installed`; end dialog titles with `…`. |
+
+### The feature pipeline
+
+1. **Shape the seam.** If the change is new behavior shared by all harnesses, change
+   `HarnessAdapter`, `HarnessSession`, or `SessionMetadata` first. Keep the interface as
+   small as the feature allows.
+2. **Implement the lower layer.** Put external I/O and parsing in a service; put
+   harness-specific behavior in the adapter. Services should be constructible with injected
+   dependencies so tests can fake the boundary.
+3. **Wire the user path.** Register commands in `extension.ts`, contribute them in
+   `package.json`, and decide whether they belong inline, in the `…` menu, or only in a
+   context menu. Use `setContext` for availability, not enablement hacks.
+4. **Persist carefully.** Update `ChatSession` only when necessary. Migrate legacy records
+   on read. Never drop a chat because a field is missing.
+5. **Render quietly.** Give tree rows stable ids and a `contextValue` that matches their menu
+   entries. Put detail in the tooltip, not the label. Use the harness's generated mark.
+6. **Test at the cheapest layer.** A pure helper needs a direct unit test. A service needs a
+   stubbed `vscode` and a temp directory. A harness needs a fake process or injected
+   adapter. Manifest, activation, command registration, and menu gating need the integration
+   suite.
+7. **Update the docs.** Add an `Unreleased` changelog entry in the user's terms. Update
+   the `docs/` page for behavior, `ARCHITECTURE.md` for subsystem details, `test/README.md` for
+   coverage, and `ROADMAP.md` if part of the design is deliberately deferred.
+8. **Verify, then review your own diff.** Run the full checklist below and the
+   [self-review pass](#reviewing-your-own-diff); read the diff as if someone else wrote it.
+
+## Adding a harness
+
+A harness is a slice, not one file. It ships with an adapter, usually a service and a
+watcher, a command and menu entries, icons, tests, and documentation.
+
+### Questions to answer first
+
+1. **Identity.** What is a session ID? Is it stable and unique? Can it be predicted, or is
+   it assigned by the tool? Is there a thread/session object separate from its log file?
+2. **Creation.** Can a resumable session exist before the first prompt? If not, new chats
+   launch the TUI in a terminal and a watcher links the native session after the first user
+   message. Does creation require a working directory?
+3. **Discovery.** What lists sessions, and how do you scope by worktree directory? Is
+   pagination cursor-based? Are subagents, ephemeral sessions, or archived sessions mixed
+   into the same list? Can rows be duplicated? Which mode is cheapest and most reliable?
+4. **Resume.** What is the exact terminal command, and how is the working directory passed?
+   What happens when the native session no longer exists?
+5. **Fork.** Is there a native fork API or only a terminal flag? Does it return a new ID
+   synchronously or must a watcher discover it? Is history preserved? Can it target a new
+   directory? What cleanup is needed if the destination step fails?
+6. **Move.** Can a session move between directories? Only fork-to-worktree needs it, and
+   it stays inside the adapter's `prepareForkToNewWorktree()`; never fake it by copying
+   files.
+7. **Previews and metadata.** Where do title, preview, model, agent, recap, and message
+   count come from? Which are cheap, which are expensive, and which need lazy loading or a
+   TTL cache?
+8. **Live turn state.** Can the API report whether a session owned by a separate TUI
+   process is working? If not, what file or event stream is the live signal? What marks the
+   start and end of a turn? How do you read only what was appended since the last poll?
+9. **Watcher behavior.** How does a new session appear? Poll or file watch? How do you avoid
+   claiming an existing session? What is the TTL, and how does naming fall back?
+10. **Installation and versioning.** How is the CLI detected? Which setting overrides the
+    command? Is the API experimental or versioned? What changes across CLI upgrades?
+11. **Platform and quoting.** Are paths passed as arguments or through a shell? Does Windows
+    need different quoting? Where do the tool's own files live?
+12. **Failure modes and cost.** What does the user see when the CLI is missing, the API
+    fails, or the log is corrupt? What is the process RSS and the per-render cost?
+
+### What ships
+
+- `HarnessId` extended in `src/types.ts`.
+- `src/harnesses/<Harness>Harness.ts` implementing `HarnessAdapter`.
+- A service for the native API/protocol when the adapter would otherwise become an I/O
+  layer, and a `<Harness>SessionWatcher` for new-session linkage. When the harness assigns
+  session IDs in a separate process and the lifecycle matches one that already exists,
+  extend that mechanism instead of copying its loop; when it does not, implement
+  `HarnessSessionWatcher` directly.
+- Registration in `HarnessRegistry` and `HarnessWatcherRegistry` in `extension.ts`;
+  give a stateful adapter a `dispose()` so `HarnessRegistry.dispose()` releases it.
+- `agntree.new<Harness>Chat` contributed in `package.json` (registered for every adapter by
+  `registerChatCommands`, so `src/commands/chat.ts` needs no edit), plus entries in both
+  **New Session** submenus gated on `agntree.<harness>Installed`. The submenus themselves
+  are gated on `agntree.anyHarnessInstalled`, which activation sets.
+- `agntree.harnessCommands.<harness>` with a default. Activation sets the
+  `agntree.<harness>Installed` context key for every registered adapter.
+- A base mark in `resources/icons/harness/base/`, registration in
+  `scripts/generate-harness-icons.mjs`, and generated light/dark × state files.
+- For Find Session, optionally `sessionSearch` (search instructions, readable directories,
+  `verify()` against the harness's own record, and `prepare()` when the records are not
+  files) and `sessionSearchRunner` (a headless, read-only conversation that answers in
+  text and takes follow-up messages, plus its default model and effort levels and a probe
+  for whether its CLI is available; add the id to the `agntree.sessionSearch.harness`
+  enum). Shared code needs no edit; see
+  `ARCHITECTURE.md` → Find Session and [ADR 0016](docs/adr/0016-find-session-sources-across-harnesses.md).
+- Adapter, service/watcher, menu, icon, and integration tests as applicable. Commands are
+  harness-agnostic, so they need no per-harness test.
+- A `docs/agents/<harness>.md` page listed in `site/pages.mjs`, the agent tables in
+  `README.md`, `docs/README.md`, and `site/landing.html`, `CHANGELOG.md`, `ARCHITECTURE.md`,
+  `test/README.md`, and a `ROADMAP.md` entry for anything intentionally unsupported.
+
+### How the harnesses solved it
+
+| Concern | Claude Code | opencode | Codex | Pi |
+| --- | --- | --- | --- | --- |
+| Discovery | JSONL under `~/.claude/projects/` | `opencode api session.list` | `codex app-server` `thread/list` | JSONL under `~/.pi/agent/sessions/` (honors `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, and `sessionDir`) |
+| New session | Launch `claude --session-id <uuid>`; the watcher links that exact ID | Launch `opencode`, watcher links the session | Launch `codex`, watcher links the thread after the first prompt | Launch `pi --session-id <uuid>`; the watcher links that exact ID |
+| Fork | `--resume <source> --fork-session --session-id <new>` | Native fork, then move into a new worktree | `thread/fork` into the destination `cwd` | `--fork <source> --session-id <new>` into the destination `cwd` |
+| Live turn state | Transcript tail: `stop_reason` + `turn_duration`; `agents --json` supplies waiting | `time.idle` vs `time.updated` | Rollout `task_started` / `task_complete` / `turn_aborted` | Session tail: last user/tool-result or `toolUse` means working; a terminal assistant `stopReason` means done |
+| Previews | Transcript parse | Lazy `session export`, cached | `thread/items/list` | Transcript parse |
+| Find Session | Source: transcripts read with Read/Grep/Glob; runner: `claude --print` with an empty strict MCP config, read-only | Source: a short-lived snapshot made with `opencode api session.list` + `session.message.list`; no read-only runner | Source: rollouts read with Read/Grep/Glob; runner: ephemeral `codex exec` with the user's config and MCP servers disabled per run | Source: JSONL records read with Read/Grep/Glob; runner: `pi --print` with `read,grep,find,ls` and MCP tools denied |
+
+The pattern behind the table: use the native lifecycle where one exists, fall back to a
+watcher or a tailed log only for the gaps the tool does not expose, and put the fallback in
+the harness layer. A session started in the agent's own VS Code UI cannot use a chosen ID:
+Agntree creates a `pendingUiLaunch` placeholder and `SessionImportService` links the real
+session after the first prompt, with a bounded snapshot (persisted as
+`pendingUiKnownSessionIds`) so an older session in the same worktree is not claimed, even
+across a reload. The same service imports sessions started outside Agntree and
+applies the `agntree.autoImport.*` retention and removal tombstones. It pauses its slow
+discovery pass while the tree view is hidden, so it must keep working with `isVisible`
+reporting `false` except when a launch is still linking. Do not add a second
+ad-hoc claimer for either case.
+
+**Claude Code 2.1.310 or newer is the only supported target.** Do not add version probes,
+capability flags, legacy linkage, or older-transcript fallbacks. New chats choose the
+session ID up front (`--session-id`), so linkage matches the exact ID instead of claiming
+the first unseen transcript. The only exception is a conversation started in the Claude
+extension UI, where the extension assigns the ID; that path uses `pendingUiLaunch` and
+`SessionImportService`, never a guessed pending ID. Forks use the native flag in the
+destination directory; never copy a project directory. Needs-you comes from
+`claude agents --json`; the hook integration is gone, so do not write to
+`~/.claude/settings.json`. Claude's parsed metadata is
+deliberately lean — summary, preview, last exchange, last activity, turn state, and
+`hasMessages` for resume validation; do not reintroduce recap, usage metrics,
+`gitBranch`, or message counts. The 4-second attention tick reads the transcript tail
+progressively, not the whole file.
+
+## Build and verify
+
+```bash
+npm install                      # install dependencies
+npm run compile                  # bundle src/ into out/extension.js with esbuild
+npm run watch                    # rebuild on changes
+npm run typecheck                # tsc --noEmit for src and test/dry
+npm run test:dry                 # plain Node, stubbed vscode, no extension install
+npm run test:dry -- codex        # only test files whose name contains "codex"
+npm run test:integration         # real VS Code host; commands, settings, menus, activation
+npm run test:e2e                 # optional; real VS Code terminal-restore check
+npx @vscode/vsce package         # package as .vsix
+code --install-extension *.vsix  # install the packaged extension
+```
+
+For UI work, press F5 to launch the Extension Development Host. After installing a VSIX,
+tell the user to run **Developer: Reload Window**; an already-open window keeps the old code
+until it reloads. `test:e2e` is not part of the default checks: run it when terminal
+persistence, activation sync, or VS Code restore behavior changes. Suites, fakes, and
+environment variables are described in [`test/README.md`](test/README.md).
+
+## Testing doctrine
+
+**Choose the cheapest layer that can prove the behavior.**
+
+| Target | Test shape |
+| --- | --- |
+| Pure helper | Import the module directly. No `vscode`, no files. |
+| Service or provider | Bundle under the `vscode` stub, use temp directories, drive public methods. |
+| Harness adapter | Inject a fake app-server/CLI or write synthetic transcripts and rollouts. |
+| Service with a child process | Run a fake Node process from `test/dry/fixtures/` and assert the protocol. |
+| Command flow | Register on the stub, fake storage/terminals, execute the command. |
+| Manifest, activation, menu gating | `npm run test:integration`. |
+
+Rules:
+
+- **Fake at the boundary, not the logic.** Do not mock the adapter or service you are
+  testing; fake the process, filesystem, or `vscode` surface around it.
+- **No network, no model turns, and no real CLI requirement.** A harness CLI is replaced
+  by a fake process (`test/dry/fixtures/`); a test never reads the developer's own
+  sessions or profile.
+- **One scenario per test.** A `node:test` test states one behavior in its name, builds its
+  own fixture, and asserts everything that behavior promises. Do not add a test per field,
+  per harness when commands are harness-agnostic, or for a constant the code declares.
+- **Clean up.** Register temp directories, services, and child processes with `t.after()`,
+  so they are removed even when an assertion fails.
+- **Test observable behavior.** Assert launch commands, returned shapes, tree labels,
+  warnings, and persisted records — not private method calls.
+- **Avoid sleeps.** Await the operation that establishes the precondition when the API
+  exposes it; otherwise prefer deterministic inputs, explicit polling helpers, or fake
+  timers over adding latency to the suite. A negative claim ("was not linked") needs a
+  barrier that proves the check ran — a sibling that does link, or a completed scan.
+- **Maintain the matrix.** A new `*.test.ts` gets a row in `test/README.md`.
+- **A flaky test is a bug.** Do not paper over it with retries.
+
+- **Reuse the plumbing.** Stub controls, in-memory storage, temp directories, `waitFor`,
+  and fake adapters live in `test/dry/support.ts`. If the `vscode` stub lacks a surface,
+  extend `test/dry/vscode-stub.js`; never add a production conditional for tests.
+
+## Reviewing your own diff
+
+Read the diff as if someone else wrote it. Look for structural cost rather than style:
+duplicated mechanisms, invariants enforced in several places, work added to a hot path,
+resources without an owner. These are prompts for judgment, not a checklist. If the simple
+shape is different on purpose, explain why in the PR rather than forcing a row to fit.
+
+| Smell | Usual move |
+| --- | --- |
+| The same flow is implemented twice with small differences | Extract the stable mechanism; leave the differences as hooks or policy at the edges. |
+| The same invariant is checked in several places | Move it to the layer that owns the data, or to one shared helper both callers use. |
+| A cache, map, or list grows without a stated bound | Bound it, state the eviction rule, and match the TTL to how often the data changes. |
+| A synchronous read, scan, or spawn sits on a render or activation path | Make it async, cache it, or coalesce concurrent callers. |
+| A fallback, option, or protocol method has no caller and no test | Delete it until a real caller exists. |
+| An object captures a large scope for its lifetime | Copy the fields it needs; do not keep a buffer, request, or service alive. |
+| Shared code names individual harnesses, commands, or services | Derive the list from the registry that owns them. |
+| A test waits on a fixed sleep | Await the precondition or poll an explicit condition. |
+| A generic helper has one caller | Keep the direct code until a second real caller appears. |
+| A new abstraction only renames existing behavior | Collapse it into the caller; abstraction should remove more reading than it adds. |
+
+Two copies of a lifecycle, protocol, or invariant are a seam worth naming. Two copies of a
+trivial expression usually are not. Prefer one small shared mechanism with explicit policy
+hooks over a framework that anticipates callers you do not have.
+
+None of this outranks correctness, safety, or using the native interface. A pass that
+shortens the code but makes failure behavior less clear is a regression; revert it.
+
+## Definition of done
+
+- [ ] The behavior works for every installed harness, and a missing harness is gated or
+      explained rather than broken.
+- [ ] `npm run typecheck`, `npm run compile`, and `npm run test:dry` pass.
+- [ ] `npm run test:integration` passes when commands, menus, settings, activation, or the
+      manifest changed.
+- [ ] UI changes were checked in the Extension Development Host in both themes; icon work
+      was checked at 16px, including reduced motion.
+- [ ] Failure paths are handled: missing session, missing CLI, malformed data, timeout,
+      process exit, extension-host restart.
+- [ ] No harness conditionals outside adapters/watchers, no internal database reads, no
+      shell interpolation, and no unguarded destructive operation.
+- [ ] Caches are bounded, timers and listeners are disposed, and child processes are stopped.
+- [ ] New behavior has a test at the cheapest useful layer, and the full suite is green.
+- [ ] `CHANGELOG.md` has an `Unreleased` entry; `docs/`, README, and the architecture/test docs are
+      updated, or the change does not affect them.
+- [ ] The diff is focused, contains no build artifacts (`out/`, `*.vsix`,
+      `test/dry/.build/`), and the documentation matches the code.
+- [ ] The [self-review pass](#reviewing-your-own-diff) was run; any remaining structural
+      smell is explained in the PR.
+
+## Gotchas
+
+- **Extension host restarts on workspace switch.** `vscode.workspace.updateWorkspaceFolders()`
+  tears down the host. Persist the active chat to `globalState` before the switch;
+  `activate()` restores the active worktree from the new first workspace folder.
+- **Restored terminals carry two identities.** The custom title
+  `Agntree: <name> [<shortId>]` identifies a tab after a quit; the PID recorded per
+  workspace folder (`agntree.terminalPids` in `globalState`) identifies a live pty after a
+  reload. `TerminalManager.beginRestoreSync()` adopts by PID and resumes revived tabs by
+  title. Never type into a terminal whose PID matches the record — it is the running
+  agent. A rename is durable only after the command starts and only for the active tab.
+  See [ADR 0009](docs/adr/0009-restored-terminals-keep-their-chat.md).
+- **`treeView.reveal()` needs stable ids, `getParent()`, and a visible tree.** See the
+  pattern in `ARCHITECTURE.md`.
+- **A tree item shows one icon.** Working/done/closed/new are baked into generated SVGs;
+  the animation is CSS inside the SVG and must honor `prefers-reduced-motion`.
+- **Path checks are symlink-aware.** Use `isWithin` / `isStrictlyWithin`; do not compare
+  strings.
+- **Claude project paths encode every non-alphanumeric character as `-`.** A directory
+  name longer than 200 characters truncates the encoded prefix and appends a hash Claude
+  does not document; match the first 200 characters and verify the session's `cwd`.
+  `CLAUDE_CONFIG_DIR` moves the profile; `CLAUDE_CODE_PROJECT_DIR_NAME` is honored only
+  alongside an explicit config dir.
+- **Claude `agents --json` is process-level.** It reports `idle` while a background agent
+  outlives the parent turn, so turn state comes from the transcript tail
+  (`turn_duration.pendingBackgroundAgentCount` plus the last `stop_reason`). The same call
+  supplies `waitingFor`; it can name one `sessionId` under two PIDs, so merge
+  deterministically (waiting wins, else newest `startedAt`).
+- **Claude `--bg` ignores `--session-id`.** A chosen ID is only authoritative for an
+  interactive launch.
+- **Claude writes no transcript until the first prompt.** A fork that was never prompted
+  exists only inside the running process, so reopening it would fork from the source's
+  current state. `TerminalManager` drops that chat when its terminal closes; a plain
+  pending chat is kept, because relaunching it with the same ID is deterministic.
+- **Codex `thread/list` needs `useStateDbOnly: true`.** The default scan path is slower,
+  returns duplicates, and can block pagination. A new thread is not materialized until the
+  first user message, so `thread/start` is not a new-session mechanism.
+- **Codex live state comes from the rollout.** `thread/list` reports `notLoaded` for
+  TUI-owned threads; read only appended bytes and skip `.zst`.
+- **Codex app-server holds a writer lock on loaded threads.** A fork stays loaded after
+  `thread/fork` for the default 30-minute unload delay. The private server starts with
+  `thread_unload_delay_secs=0` and unsubscribes immediately after forking; otherwise the
+  terminal reports the conversation as already open in another app.
+- **opencode export truncates on a pipe.** `execToFile()` redirects stdout to a temp file.
+- **App-server children can exit after replacement.** Ignore exit events from a child that
+  is no longer `this.child`; otherwise a stale SIGTERM rejects the new process's requests.
+- **`StorageService.getChats()` migrates on read.** Any code reading chats gets the new
+  shape, but the write-back is asynchronous; do not assume the raw `globalState` value is
+  current.
+
+## Commits and pull requests
+
+- Commit subjects use a conventional prefix (`feat:`, `fix:`, `docs:`, `refactor:`,
+  `chore:`, `ci:`) and an imperative summary. The body explains why the change exists and
+  what it replaces; put the user-visible outcome in the changelog, not only the commit.
+- If a coding agent wrote the change, end the commit with an `Assisted-by: <agent>` trailer.
+  Claude Code commits also include `Co-Authored-By: Claude Code`. PR descriptions end with
+  `Assisted-by: <agent>`.
+- Version bumps, tags, and Marketplace publishing are maintainer work. Release notes are
+  generated from `CHANGELOG.md`, so do not duplicate them in the PR.
+- Do not commit `out/`, `*.vsix`, `node_modules/`, or `test/dry/.build/`.
+
+## First ten minutes in the codebase
+
+1. Read `src/extension.ts` to see what is constructed, registered, and disposed.
+2. Read `src/harnesses/types.ts` — it is the contract every harness implements.
+3. Follow one path end to end: `agntree.newCodexChat` → `createSession` →
+   `TerminalManager.openChat` → `CodexHarness.buildLaunchCommand` → the watcher.
+4. Read `src/services/StorageService.ts` before touching persisted state.
+5. Read `src/utils/paths.ts` before touching files, and `GitService` before touching git.
