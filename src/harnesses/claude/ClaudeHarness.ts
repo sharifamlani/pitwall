@@ -279,6 +279,7 @@ export class ClaudeHarness implements HarnessAdapter {
             observedAt: file.observedAt,
             ...(waiting && live.statusUpdatedAt > 0 ? { writtenAt: live.statusUpdatedAt } : {}),
             ...(live ? { liveStatus: live.status } : {}),
+            ...(live && live.statusUpdatedAt > 0 ? { statusUpdatedAt: live.statusUpdatedAt } : {}),
           });
           return;
         }

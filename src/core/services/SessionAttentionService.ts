@@ -7,7 +7,7 @@ import {
   TurnState,
 } from '../harness/types';
 import { HarnessRegistry } from '../harness/HarnessRegistry';
-import { SessionStatus, sessionStatus } from '../providers/sessionStatus';
+import { SessionStatus, lastTurnEnd, sessionStatus } from '../providers/sessionStatus';
 import { NotificationService } from './NotificationService';
 import { StorageService } from './StorageService';
 
@@ -19,7 +19,7 @@ export interface ChatStatus {
 
 const IDLE: ChatStatus = { status: 'idle', statusSince: 0 };
 
-type RowState = Pick<HarnessLiveState, 'turnState' | 'turnEndedAt' | 'liveStatus' | 'waitingFor' | 'writtenAt' | 'observedAt'>;
+type RowState = Pick<HarnessLiveState, 'turnState' | 'turnEndedAt' | 'liveStatus' | 'waitingFor' | 'writtenAt' | 'observedAt' | 'statusUpdatedAt'>;
 
 /**
  * A row state with nothing running behind it: no process status, no wait,
@@ -29,7 +29,7 @@ type RowState = Pick<HarnessLiveState, 'turnState' | 'turnEndedAt' | 'liveStatus
 function settled(state: RowState): RowState {
   return {
     turnState: state.turnState === 'working' ? 'done' : state.turnState,
-    turnEndedAt: state.turnEndedAt,
+    turnEndedAt: lastTurnEnd(state) ?? state.turnEndedAt,
   };
 }
 
@@ -43,7 +43,7 @@ function statusSince(status: SessionStatus, state: RowState | undefined, chat: C
     case 'needs':
       return state?.writtenAt ?? (first ? state?.observedAt : undefined) ?? now;
     case 'finished':
-      return state?.turnEndedAt ?? now;
+      return lastTurnEnd(state) ?? now;
     case 'working':
       return now;
     case 'idle':
@@ -289,15 +289,17 @@ export class SessionAttentionService {
   /** Store a seen time for a chat whose turn ended unseen; at most one write per finished turn. */
   private markFinishedSeen(chat: ChatSession, now: number): void {
     const state = this.rowState.get(chat.id);
-    if (!state || state.turnState !== 'done' || typeof state.turnEndedAt !== 'number') {
+    const endedAt = lastTurnEnd(state);
+    const working = state?.liveStatus ? state.liveStatus !== 'idle' : state?.turnState === 'working';
+    if (endedAt === undefined || working) {
       return;
     }
     const seenAt = this.seenAtOf(chat);
-    if (seenAt === undefined || state.turnEndedAt <= seenAt || this.seenTurn.get(chat.id) === state.turnEndedAt) {
+    if (seenAt === undefined || endedAt <= seenAt || this.seenTurn.get(chat.id) === endedAt) {
       return;
     }
-    const at = Math.max(now, state.turnEndedAt);
-    this.seenTurn.set(chat.id, state.turnEndedAt);
+    const at = Math.max(now, endedAt);
+    this.seenTurn.set(chat.id, endedAt);
     this.seenWritten.set(chat.id, at);
     Promise.resolve(this.storage.markChatSeen(chat.id, at)).catch((error) =>
       console.error('[Pitwall] Could not store a chat as seen:', error)

@@ -11,9 +11,27 @@ export const STATUS_WORDS: Readonly<Record<SessionStatus, string>> = {
   idle: 'idle',
 };
 
+type StatusState = Pick<HarnessLiveState, 'turnState' | 'turnEndedAt' | 'liveStatus' | 'waitingFor' | 'statusUpdatedAt'>;
+
+/**
+ * When the session's last turn ended, if it has: the transcript's turn end,
+ * or, when the live status says idle but the transcript tail looks mid-turn
+ * (a denied prompt leaves an unanswered tool call, O1), the time the status
+ * last changed.
+ */
+export function lastTurnEnd(live: StatusState | undefined): number | undefined {
+  if (!live) {
+    return undefined;
+  }
+  if (live.turnState === 'done') {
+    return typeof live.turnEndedAt === 'number' ? live.turnEndedAt : undefined;
+  }
+  return live.liveStatus === 'idle' ? live.statusUpdatedAt : undefined;
+}
+
 export interface SessionStatusInput {
   /** The latest known live or turn state; undefined when nothing is known. */
-  live?: Pick<HarnessLiveState, 'turnState' | 'turnEndedAt' | 'liveStatus' | 'waitingFor'>;
+  live?: StatusState;
   /** The chat is on the needs-you list (open chats, R36). */
   needsYou: boolean;
   /** The chat's "seen" baseline (P16); a turn that ended after it is finished. */
@@ -23,9 +41,14 @@ export interface SessionStatusInput {
 /**
  * One chat's status:
  * - needs: listed as needing you, or the harness says it is waiting;
- * - working: the process is busy, or the transcript is mid-turn;
- * - finished: the turn ended after the chat was last seen;
+ * - working: the process is busy, or, when no live status covers the
+ *   session, the transcript is mid-turn;
+ * - finished: the last turn ended after the chat was last seen;
  * - idle: anything else.
+ *
+ * A live status, when present, wins over the transcript for working or not
+ * (O1): a denied prompt leaves the transcript looking mid-turn while the
+ * process is idle.
  *
  * Without a baseline a turn is never finished: storage gives every chat one
  * (P16), so a missing one means "not listed yet", not "never seen".
@@ -34,15 +57,12 @@ export function sessionStatus({ live, needsYou, seenAt }: SessionStatusInput): S
   if (needsYou || live?.liveStatus === 'waiting' || live?.waitingFor) {
     return 'needs';
   }
-  if (live?.liveStatus === 'busy' || live?.turnState === 'working') {
+  const working = live?.liveStatus ? live.liveStatus === 'busy' : live?.turnState === 'working';
+  if (working) {
     return 'working';
   }
-  if (
-    live?.turnState === 'done' &&
-    typeof live.turnEndedAt === 'number' &&
-    seenAt !== undefined &&
-    live.turnEndedAt > seenAt
-  ) {
+  const endedAt = lastTurnEnd(live);
+  if (endedAt !== undefined && seenAt !== undefined && endedAt > seenAt) {
     return 'finished';
   }
   return 'idle';
