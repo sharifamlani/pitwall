@@ -67,7 +67,7 @@ export interface HarnessLiveState {
  * `new` is the mark plus a hollow ring for a chat the harness has not linked
  * yet.
  */
-export type HarnessIconState = 'working' | 'needs' | 'done' | 'closed' | 'new';
+export type HarnessIconState = 'working' | 'needs' | 'finished' | 'idle' | 'new';
 
 /** Extension-relative SVG paths for each theme and tree state. */
 export interface HarnessTreeIcons {

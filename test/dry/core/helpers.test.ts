@@ -29,16 +29,16 @@ test('fork names number siblings and nest forks of forks', () => {
 test('row icon: no live surface is closed or new; a live one shows working or done', () => {
   const linked = { harnessSessionId: 'abc' };
   const cases: [Partial<Parameters<typeof chatRecord>[0]>, boolean, 'working' | 'done' | undefined, string, boolean?][] = [
-    [linked, false, undefined, 'closed'],
-    [{ ...linked, status: 'active' }, false, undefined, 'closed'], // stale status after a restart
-    [linked, false, 'working', 'closed'], // a closed terminal outranks a working turn
+    [linked, false, undefined, 'idle'],
+    [{ ...linked, status: 'active' }, false, undefined, 'idle'], // stale status after a restart
+    [linked, false, 'working', 'idle'], // a closed terminal outranks a working turn
     [{}, false, undefined, 'new'],
-    [{}, true, undefined, 'done'], // no turn state yet keeps the dot (no flash)
+    [{}, true, undefined, 'finished'], // no turn state yet keeps the dot (no flash)
     [{}, true, 'working', 'working'],
-    [{ status: 'closed' }, true, 'done', 'done'],
+    [{ status: 'closed' }, true, 'done', 'finished'],
     [linked, true, 'working', 'needs', true], // waiting on the user outranks the turn
     [linked, true, undefined, 'needs', true],
-    [linked, false, 'working', 'closed', true], // a closed terminal outranks a wait
+    [linked, false, 'working', 'idle', true], // a closed terminal outranks a wait
   ];
   for (const [chat, open, turn, expected, needsYou] of cases) {
     assert.equal(

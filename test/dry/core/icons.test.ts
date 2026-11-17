@@ -22,22 +22,65 @@ test('every harness ships generated marks for every theme and state', () => {
   }
 });
 
-test('state marks: working animates (honoring reduced motion), done is a green dot, closed is grey, new is a ring', () => {
+const D17 = {
+  dark: { working: '#4c9aff', needs: '#f0883e', finished: '#3fb950', idle: '#6b6f76' },
+  light: { working: '#2f7cf6', needs: '#e0701c', finished: '#2da44e', idle: '#818b98' },
+} as const;
+
+test('every harness icon state has a dark and light SVG with the D17 fill', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    for (const state of ['working', 'needs', 'finished', 'idle'] as const) {
+      const svg = read(`resources/icons/harness/claude-${theme}-${state}.svg`);
+      const colours = [...svg.matchAll(/(?:fill|stroke)="(#[0-9a-fA-F]{6})"/g)].map((m) => m[1].toLowerCase());
+      assert.ok(colours.length > 0, `claude ${theme} ${state} has a colour`);
+      for (const colour of colours) {
+        assert.equal(colour, D17[theme][state], `claude ${theme} ${state}`);
+      }
+    }
+  }
+  for (const id of HARNESS_IDS) {
+    for (const theme of ['light', 'dark'] as const) {
+      assert.deepEqual(
+        Object.keys(harnessTreeIcons(id)[theme]).sort(),
+        ['finished', 'idle', 'needs', 'new', 'working']
+      );
+    }
+  }
+});
+
+test('glow ring on working and needs at 22% opacity; finished is solid; idle is a hollow ring', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    for (const state of ['working', 'needs'] as const) {
+      assert.match(read(`resources/icons/harness/claude-${theme}-${state}.svg`), /opacity="\.22"/, `${state} glow`);
+    }
+    assert.doesNotMatch(read(`resources/icons/harness/claude-${theme}-finished.svg`), /opacity=|fill="none"/);
+    const idle = read(`resources/icons/harness/claude-${theme}-idle.svg`);
+    assert.match(idle, /fill="none"/, 'idle is hollow');
+    assert.match(idle, /stroke-width="1\.5"/, 'idle ring is 1.5px');
+  }
+});
+
+test('working animates (honoring reduced motion); new keeps the mark plus a hollow ring; dormant harnesses keep their tint', () => {
   for (const id of HARNESS_IDS) {
     const icons = harnessTreeIcons(id).light;
     const working = read(icons.working);
     assert.match(working, /@keyframes/);
     assert.match(working, /prefers-reduced-motion/);
-    assert.doesNotMatch(working, /cx="18\.2"/, `${id} working mark carries no badge`);
-
-    const done = read(icons.done);
-    assert.match(done, /fill="#2f9e44"/);
-    assert.doesNotMatch(done, /@keyframes/, `${id} done mark is static`);
-
-    const closed = read(icons.closed);
-    assert.match(closed, /fill="#8a8a8a"/);
-    assert.doesNotMatch(closed, /cx="18\.2"/, `${id} closed mark has no badge`);
-
     assert.match(read(icons.new), /stroke="#8a8a8a"/, `${id} new mark is a hollow ring`);
+    assert.doesNotMatch(read(icons.finished), /@keyframes/, `${id} finished is static`);
   }
+  assert.match(read('resources/icons/harness/codex-light-idle.svg'), /fill="#8a8a8a"|fill="none"/);
+});
+
+test('the activity-bar icon is four dots in one colour with the second dot largest', () => {
+  const svg = read('resources/icons/pitwall-activitybar.svg');
+  const circles = [...svg.matchAll(/<circle\b[^>]*>/g)].map((m) => m[0]);
+  assert.equal(circles.length, 4);
+  const radius = circles.map((c) => Number(/\br="([\d.]+)"/.exec(c)![1]));
+  const [, second] = radius;
+  assert.ok(radius.filter((_, i) => i !== 1).every((r) => r < second), 'the second dot is the largest');
+  const xs = circles.map((c) => Number(/\bcx="([\d.]+)"/.exec(c)![1]));
+  assert.deepEqual([...xs].sort((a, b) => a - b), xs, 'dots run left to right');
+  const colours = new Set([...svg.matchAll(/(?:fill|stroke)="(#[0-9a-fA-F]{6}|currentColor)"/g)].map((m) => m[1]));
+  assert.equal(colours.size, 1, 'one colour');
 });
