@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.22 · 2026-11-17
+> v0.23 · 2026-11-17
 
 ---
 
@@ -178,7 +178,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 3.0 | Every `globalState` record survives Cursor's stale storage echo (finding F3, Task 6 build): first reproduce it live on a non-PID key (chats, stars, repos, dismissals, searches), then generalize the R33a in-memory overlay across `StorageService` keys, with two-window tests | ⏸ | ⏸ | — | Phase 2 Task 6 report, ruling R34 |
 | 3.1 | Repos found from `~/.claude` (sessions in the last 14 days), added by folder icon, dismissed by right-click; no repo needs to be open | ⏸ | ⏸ | — | D13, D28, D36 |
 | 3.2 | Sessions from the last 14 days (incl. the Cursor panel's); branch on every row; ⧉ on worktree chats | ⏸ | ⏸ | — | D14, D18, D35 |
-| 3.3 | Status dots from `~/.claude/sessions` (busy / waiting / idle) + finished → seen when opened | ⏸ | ⏸ | — | D4, D18, T1 |
+| 3.3 | Status dots from `~/.claude/sessions` (busy / waiting / idle) + finished → seen when opened. Note: the needs-you (waiting) mark, orange #f0883e, landed early in Phase 2 (row 2.14, ruling R38); 3.3 adds the rest | ⏸ | ⏸ | — | D4, D18, T1 |
 | 3.4 | Inbox order: repos Needs you → Finished → Working → Idle; in-repo order; rows move only on status change | ⏸ | ⏸ | — | D18, D21 |
 | 3.5 | Repo row: "+" new chat, 🕘 session history (older + worktree chats; resume) | ⏸ | ⏸ | — | D28, D34 |
 | 3.6 | Hide Changes, worktree create/delete, PR badges; keep FILES, Find Session, Fork | ⏸ | ⏸ | — | D19 |
@@ -312,3 +312,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.20 · 2026-11-17.** Finding F3 (Task 6 build) is placed as Phase 3 row 3.0 (ruling R34): Cursor can echo a stale copy of `globalState` over a newer write, which can revert any Pitwall record. Phase 2 fixes it only for terminal PID records (R33a). R34 also accepts that Claude's chat panel can't be re-shown without focus after a background retitle (Phase 4 revisit).
 - **v0.21 · 2026-11-17.** Task 6 merged → `1914f21`, closing rows 2.6, 2.11 and 2.13. Revived tabs resume after a quit on Windows PowerShell 5.1 (Smoke 7 15/15, incl. 5 under CPU load). Rulings R29–R34. The Windows dry suite is fully green (234 tests, 0 fail, 9 reasoned skips).
 - **v0.22 · 2026-11-17.** Task 11 Steps 1–3 merged → `f8ea023`, closing row 2.3: CI windows runs all 234 dry tests (0 fail, 9 reasoned skips) and builds and checks the .vsix. R35: `vsce package` fails on Windows without `--allow-unused-files-pattern`, so `npm run package` carries it. The archive check fails closed on STRAY and MISSING entries. All 29 triage rows record their resolution. Row 2.14 reopened: the testing agent saw needs-you never appear live.
+- **v0.23 · 2026-11-17.** Ruling R38: the needs-you row mark (orange, D17) is pulled forward from row 3.3 into Phase 2 row 2.14. Without it, needs-you is invisible except as a toast. The waiting-only rule is in plan wireframe F.

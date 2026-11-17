@@ -205,7 +205,7 @@ pitwall/
 
 ## 3. UI wireframes
 
-Phase 2 adds no screens, buttons, settings or new copy. Five existing surfaces behave differently on Windows because the bugs are fixed. Each is shown on Windows; Linux is unchanged in every case.
+Phase 2 adds no screens, buttons, settings or new copy, with one exception by lead ruling R38: the needs-you row mark (wireframe F), pulled forward from ROADMAP 3.3. Five existing surfaces behave differently on Windows because the bugs are fixed. Each is shown on Windows; Linux is unchanged in every case.
 
 **A. Worktree row in the Pitwall list (window opened on `uj-lab-a`)**
 ```
@@ -268,6 +268,20 @@ AFTER (Windows, default shell cmd.exe)
 AFTER (Git Bash / Linux / macOS): unchanged  cd '<path>' && claude --resume <id>
 ```
 
+**F. Needs-you row mark (row 2.14, lead ruling R38: pulled forward from ROADMAP 3.3, D17 colour)**
+```
+BEFORE (all platforms; upstream had no needs-you row state)    AFTER (all platforms)
+Claude asks permission in "Lab ready"; you look elsewhere     same moment
++------------------------------------+                        +------------------------------------+
+| ▾ uj-lab-a                         |                        | ▾ uj-lab-a                         |
+|   ⎇ main                    ●      |                        |   ⎇ main                    ●      |
+|     ◐ Lab ready now                |  ← still "working"     |     ◉ Lab ready now                |  ← orange (#f0883e) needs mark
++------------------------------------+                        +------------------------------------+
+ Ctrl+Alt+N → "No session is waiting for you."                  Ctrl+Alt+N → opens "Lab ready"
+ no toast                                                       one toast, only if the wait began unseen
+```
+Only WAITING chats get the orange mark. A chat that finished while unseen keeps the existing "done" mark (D17 keeps finished and needs-you as separate statuses). The mark goes back to working or done when the wait ends.
+
 | UI piece | BEFORE (Windows) | AFTER (Windows) |
 |---|---|---|
 | Active-worktree `●` + "Active workspace" tooltip | missing | shown on the window's own worktree |
@@ -278,6 +292,8 @@ AFTER (Git Bash / Linux / macOS): unchanged  cd '<path>' && claude --resume <id>
 | Row click after restore | duplicate tab | focuses the revived tab |
 | Remove from Pitwall, unresumable restored tab | tab stays | tab closes |
 | Copied resume command (toast + clipboard) | POSIX `&&` line | line for the default shell |
+| Chat row while Claude waits for you | working mark | orange needs mark (R38) |
+| "Go to Next Session That Needs You" with a waiting chat | "No session is waiting for you." | opens it |
 | Toast / dialog wording | — | unchanged |
 
 ## 4. Derisking (run in order; don't start N+1 until N passes)
