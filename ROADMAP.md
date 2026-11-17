@@ -4,14 +4,14 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.38 · 2026-11-17
+> v0.39 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 3 — Sidebar v1 (planning). Development resumed by Sharif on 2026-11-17.
-- **Current step:** Phase 3 Wave A merged (3.0, 3.6, 3.3 source, 3.10 icons); Wave B in flight: T3 repo discovery (3.1), T5 rows + status + inbox order (3.2/3.3/3.4). Fix PR #30 (Files actions on Windows) in review.
+- **Current step:** Phase 3 Wave A merged (3.0, 3.6, 3.3 source, 3.10 icons); Wave B in flight: T3 repo discovery (3.1), T5 rows + status + inbox order (3.2/3.3/3.4). Fix PR #30 (Files actions on Windows) merged `7f4a18a`.
 - **Last update:** 2026-11-17
 - **Next action:** QA + merge T3 before T5; then Wave C (T7 repo row, T8 keys).
 
@@ -181,7 +181,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 3.3 | Status dots from `~/.claude/sessions` (busy / waiting / idle) + finished → seen when opened. Note: the needs-you (waiting) mark, orange #f0883e, landed early in Phase 2 (row 2.14, ruling R38); 3.3 adds the rest | ~ (source ✅ Task 2; dots for every row in Task 5) | ✅ | 2026-11-17 · PR #29 `0d36976` → merge `03e4313` (QA APPROVE; main CI green; ADR 0018; real data 10/10 agree with `claude agents`) | D4, D18, T1 |
 | 3.4 | Inbox order: repos Needs you → Finished → Working → Idle; in-repo order; rows move only on status change | ⏸ | ⏸ | — | D18, D21 |
 | 3.5 | Repo row: "+" new chat, 🕘 session history (older + worktree chats; resume) | ⏸ | ⏸ | — | D28, D34 |
-| 3.6 | Hide Changes, worktree create/delete, PR badges; keep FILES, Find Session, Fork | ✅ | ✅ | 2026-11-17 · PR #26 `f0e1bce` → merge `16a2d12` (QA APPROVE; main CI green; 8+3 tests parked in `test/dry/core/dormant/`) | D19 |
+| 3.6 | Hide Changes, worktree create/delete, PR badges; keep FILES, Find Session, Fork | ✅ | ✅ | 2026-11-17 · PR #26 `f0e1bce` → merge `16a2d12` (QA APPROVE; main CI green; 8+3 tests parked in `test/dry/core/dormant/`) · fix PR #30 `976aed8` → merge `7f4a18a`: Files actions refused on Windows (drive-letter case), found by the testing walk | D19 |
 | 3.7 | Hotkeys Ctrl+Alt+1–9 / 0 / R / F / O / Shift+1–9, latent (hover); confirm Ctrl+Alt+F beats Cursor's `list.find` | ⏸ | ⏸ | — | D12, D15, T13 |
 | 3.8 | List keyboard: ↓/↑ highlight, Ctrl+↓/↑ open, Enter | ⏸ | ⏸ | — | D37 |
 | 3.9 | Search box (Ctrl+Alt+R): repos, chats, Find Session | ⏸ | ⏸ | — | D24 |
@@ -329,3 +329,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.36 · 2026-11-17.** Row 3.10 icons merged (PR #27 → `c0814b0`): D17 status dots (circles only), "new" is a dashed grey ring (P24, brand book), four-dot activity icon. PR #28 (T1) reworked to write stamps (P25) after QA caught a lost-write race.
 - **v0.37 · 2026-11-17.** Row 3.3 source merged (PR #29 → `03e4313`): live status read from `~/.claude/sessions/*.json` (2–3 ms vs ~0.7 s for the CLI), `claude agents` kept as fallback (ADR 0018). Wave B (T3 discovery, T5 rows) waits on T1 (PR #28).
 - **v0.38 · 2026-11-17.** Row 3.0 ✅ (PR #28 → `d12c906`): every storage collection protected by write stamps; newest change wins, outdated copies can't revert it (3 QA rounds). Wave B started (T3, T5). Testing found an inherited Windows bug (Files actions refused, drive-letter case) → fix PR #30.
+- **v0.39 · 2026-11-17.** Fix PR #30 → `7f4a18a` (rides on row 3.6, FILES kept): on Windows every Files action on a selected row was refused because the "inside this repo" check compared drive letters case-sensitively (inherited since v0.3.0); New File on a file row now creates next to it.
