@@ -3,7 +3,7 @@ import {
   toHarnessSession,
 } from './ClaudeSessionService';
 import { ClaudeAgentsService } from './ClaudeAgentsService';
-import { ClaudeSessionsFile, ClaudeSessionsSnapshot } from './ClaudeSessionsFile';
+import { ClaudeSessionFileState, ClaudeSessionsFile, ClaudeSessionsSnapshot } from './ClaudeSessionsFile';
 import { ClaudeTurnReading } from './ClaudeTurnState';
 import { ClaudeUi } from './claudeUi';
 import { ClaudeSearchRunner, ClaudeSessionSearch } from './claudeSearch';
@@ -23,6 +23,9 @@ import {
 } from '../../core/harness/types';
 import { commandExists, getHarnessCommand, quoteShellArgument } from '../../core/harness/cli';
 import { harnessTreeIcons } from '../../core/harness/treeIcons';
+
+/** How long a `liveSessionIds` read stands in for the same tick's `getLiveStates` reads. */
+const SHARED_READ_MS = 1_000;
 
 export interface ClaudeHarnessOptions {
   sessionService?: ClaudeSessionService;
@@ -53,6 +56,14 @@ export class ClaudeHarness implements HarnessAdapter {
   private readonly sessionService: ClaudeSessionService;
   private readonly agentsService: ClaudeAgentsService;
   private readonly sessionsFile: ClaudeSessionsFile;
+  /** The folder read of the latest `liveSessionIds`, reused by that tick's `getLiveStates`. */
+  private sharedRead: { at: number; snapshot: Promise<ClaudeSessionsSnapshot> } | undefined;
+  /** Sessions the last complete `liveSessionIds` read listed. */
+  private lastLiveIds = new Set<string>();
+  /** The last waiting state the folder showed per session (R45 residual). */
+  private readonly lastFileWaits = new Map<string, ClaudeSessionFileState>();
+  /** Sessions whose wait the previous tick carried over a torn read. */
+  private readonly carriedWaits = new Set<string>();
 
   constructor(options: ClaudeHarnessOptions = {}) {
     this.sessionService =
@@ -142,6 +153,67 @@ export class ClaudeHarness implements HarnessAdapter {
     };
   }
 
+  /**
+   * The sessions the folder lists as running, for the attention tick's poll
+   * set (row status for closed chats). The read is shared with the
+   * `getLiveStates` calls of the same tick. A torn read keeps the previous
+   * tick's sessions for one tick, so a half-written file never drops a row's
+   * status.
+   */
+  async liveSessionIds(): Promise<Set<string>> {
+    const snapshot = this.sessionsFile.snapshot();
+    this.sharedRead = { at: Date.now(), snapshot };
+    const file = await snapshot;
+    const ids = new Set([...file.states.keys(), ...file.unknownStatus]);
+    const result = file.partial ? new Set([...ids, ...this.lastLiveIds]) : ids;
+    this.lastLiveIds = file.partial ? new Set() : ids;
+    return result;
+  }
+
+  /** The folder read a `liveSessionIds` call just made, or a fresh one. */
+  private readSessionsFile(): Promise<ClaudeSessionsSnapshot> {
+    const shared = this.sharedRead;
+    if (shared && Date.now() - shared.at < SHARED_READ_MS) {
+      return shared.snapshot;
+    }
+    return this.sessionsFile.snapshot();
+  }
+
+  /**
+   * R45 residual: a torn read (a file caught mid-write) can hide a session
+   * that was waiting on the previous tick. Its previous file state stands in
+   * for one tick, so the wait neither ends nor restarts (which could toast a
+   * wait that was already there). A second torn read in a row falls back as
+   * before.
+   */
+  private withCarriedWaits(file: ClaudeSessionsSnapshot, sessionIds: string[]): ClaudeSessionsSnapshot {
+    let states = file.states;
+    for (const sessionId of sessionIds) {
+      const current = file.states.get(sessionId);
+      if (current) {
+        this.carriedWaits.delete(sessionId);
+        if (current.status === 'waiting') {
+          this.lastFileWaits.set(sessionId, current);
+        } else {
+          this.lastFileWaits.delete(sessionId);
+        }
+        continue;
+      }
+      const previous = this.lastFileWaits.get(sessionId);
+      if (file.partial && previous && !this.carriedWaits.has(sessionId)) {
+        if (states === file.states) {
+          states = new Map(file.states);
+        }
+        states.set(sessionId, previous);
+        this.carriedWaits.add(sessionId);
+        continue;
+      }
+      this.carriedWaits.delete(sessionId);
+      this.lastFileWaits.delete(sessionId);
+    }
+    return states === file.states ? file : { ...file, states, available: true };
+  }
+
   async getLiveStates(
     sessionIds: string[]
   ): Promise<Map<string, HarnessLiveState>> {
@@ -155,7 +227,7 @@ export class ClaudeHarness implements HarnessAdapter {
     // count (missing, or an older CLI), for one whose file has a status
     // Pitwall does not know, and for one a torn file may be hiding. A session
     // absent from a complete, available folder is simply not running.
-    const filePromise = this.sessionsFile.snapshot();
+    const filePromise = this.readSessionsFile().then((file) => this.withCarriedWaits(file, sessionIds));
     const needsFallback = (file: ClaudeSessionsSnapshot, sessionId: string) =>
       !file.available ||
       file.unknownStatus.has(sessionId) ||
