@@ -1203,3 +1203,140 @@ test('guard: a title write that throws during a background retitle never leaves 
   assert.equal(markedWhileShown, true, 'the chat counted as shown by Pitwall during the sequence');
   assert.equal(f.manager.isPitwallActivation('c43c4300-throw'), false, 'and the mark cleared when the sequence threw');
 });
+
+// ---------------------------------------------------------------------------
+// R44: every background show puts the user's front tab back, however the show
+// sequence ends, unless the user moved on meanwhile; and the front tab is the
+// tab in front of the editor group, not whatever the extension host last
+// reported as the active terminal.
+// ---------------------------------------------------------------------------
+
+/** Every terminal's tab in one editor group, with `front`'s tab in front. */
+function terminalTabsWithFront(front: FakeTerminal) {
+  const tabs = stub.window.terminals.map((terminal) => ({
+    get label() {
+      return terminal.name;
+    },
+    input: new vscode.TabInputTerminal(),
+    isPreview: false,
+    isActive: terminal === front,
+  }));
+  stub.window.tabGroups.all = [{ isActive: true, viewColumn: 1, tabs, activeTab: tabs.find((tab) => tab.isActive) }];
+}
+
+/** The workbench puts a shown editor terminal's tab in front of its group. */
+function tabsFollowActiveTerminal(t: { after(fn: () => void): void }) {
+  const following = vscode.window.onDidChangeActiveTerminal((terminal) => {
+    if (terminal) terminalTabsWithFront(terminal as never);
+  });
+  t.after(() => following.dispose());
+}
+
+const frontTabLabel = () => (vscode.window.tabGroups.activeTabGroup?.activeTab as { label?: string } | undefined)?.label;
+
+test('a background retitle whose title write throws still puts the user’s tab back in front (R44)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: 'e44e4400-throw', name: 'Throws', harnessSessionId: 'throw-1' }] });
+  const { tab } = await slowChat(f, 'e44e4400-throw');
+  tab.name = 'Windows PowerShell';
+  const other = f.restoredTab('the user’s shell', 9441);
+  tabsFollowActiveTerminal(t);
+  stub.window.__setActiveTerminal(other);
+  // The title write itself throws while the chat's tab is shown.
+  const getChat = f.storage.getChat.bind(f.storage);
+  let threw = false;
+  f.storage.getChat = (id: string) => {
+    if (stub.window.activeTerminal === tab) {
+      threw = true;
+      throw new Error('storage unavailable');
+    }
+    return getChat(id);
+  };
+  const shows = recordShows(tab);
+
+  stub.window.__integrateShell(tab);
+  await waitFor(() => shows.length > 0 && threw, 'the background show and the failing write');
+  for (let i = 0; i < 5; i++) await flush();
+  assert.equal(stub.window.activeTerminal, other, 'the user’s shell is in front again');
+  assert.equal(frontTabLabel(), 'the user’s shell');
+});
+
+test('guard: the user activating another tab during a background retitle keeps it in front; the old front is not put back (R44)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: 'e44e4400-moved', name: 'Moved', harnessSessionId: 'moved-1' }] });
+  const { tab, title } = await slowChat(f, 'e44e4400-moved');
+  tab.name = 'Windows PowerShell';
+  const other = f.restoredTab('the user’s shell', 9442);
+  const chosen = f.restoredTab('the user’s next shell', 9443);
+  tabsFollowActiveTerminal(t);
+  stub.window.__setActiveTerminal(other);
+  // While Pitwall's rename runs, the user clicks into another terminal.
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    const target = stub.window.activeTerminal;
+    if (target) target.name = arg.name;
+    if (target === tab) stub.window.__focusTerminal(chosen);
+  });
+  const otherShows = recordShows(other);
+
+  stub.window.__integrateShell(tab);
+  await waitFor(() => tab.name === title, 'the late title');
+  for (let i = 0; i < 5; i++) await flush();
+  assert.equal(stub.window.activeTerminal, chosen, 'the user’s choice stays in front');
+  assert.deepEqual(otherShows, [], 'the tab in front before the retitle is not shown again');
+});
+
+/** Three revived tabs behind the user's own terminal tab, after a quit. */
+async function revivedBehindUserTab(f: ReturnType<typeof setup>) {
+  for (const [id, pid] of [['aa44aa00-one', 7441], ['bb44bb00-two', 7442], ['cc44cc00-three', 7443]] as const) {
+    await f.storage.rememberTerminalPid(id, pid);
+  }
+  const user = f.restoredTab('the user’s shell', 9444);
+  const one = f.restoredTab('Pitwall: One [aa44aa]', 8441);
+  const two = f.restoredTab('Pitwall: Two [bb44bb]', 8442);
+  const three = f.restoredTab('Pitwall: Three [cc44cc]', 8443);
+  return { user, one, two, three };
+}
+
+const threeRevivedChats = [
+  { id: 'aa44aa00-one', name: 'One', harnessSessionId: 'one', status: 'closed' as const },
+  { id: 'bb44bb00-two', name: 'Two', harnessSessionId: 'two', status: 'closed' as const },
+  { id: 'cc44cc00-three', name: 'Three', harnessSessionId: 'three', status: 'closed' as const },
+];
+
+test('after a quit, the revived-tab pass puts the user’s tab back even when a revived tab closes mid-pass (R44)', async (t) => {
+  const f = setup(t, { chats: threeRevivedChats });
+  const { user, one, three } = await revivedBehindUserTab(f);
+  tabsFollowActiveTerminal(t);
+  stub.window.__setActiveTerminal(user);
+  // The last revived tab closes while the first one is being renamed.
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    const target = stub.window.activeTerminal;
+    if (target) target.name = arg.name;
+    if (target === one && !three.disposed) f.close(three);
+  });
+
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  await waitFor(() => three.disposed && one.name === 'Pitwall: One [aa44aa]', 'the first rename and the close');
+  await waitFor(() => stub.window.activeTerminal === user, 'the user’s tab in front again');
+  assert.equal(frontTabLabel(), 'the user’s shell');
+});
+
+test('guard: after a quit, the user activating a tab during the revived-tab pass keeps it in front (R44)', async (t) => {
+  const f = setup(t, { chats: threeRevivedChats });
+  const { user, one, two } = await revivedBehindUserTab(f);
+  tabsFollowActiveTerminal(t);
+  stub.window.__setActiveTerminal(user);
+  // The user clicks the second revived tab while the first one is renamed.
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    const target = stub.window.activeTerminal;
+    if (target) target.name = arg.name;
+    if (target === one) stub.window.__focusTerminal(two);
+  });
+  const userShows = recordShows(user);
+
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  await waitFor(() => one.name === 'Pitwall: One [aa44aa]', 'the first rename');
+  for (let i = 0; i < 10; i++) await flush();
+  assert.equal(stub.window.activeTerminal, two, 'the user’s choice stays in front');
+  assert.deepEqual(userShows, [], 'the tab in front before the pass is not shown again');
+});

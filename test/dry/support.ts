@@ -100,6 +100,7 @@ interface StubControls {
     __focusTextEditor(editor: { document: { uri: unknown }; viewColumn?: number }): void;
     __integrateShell(terminal: unknown): void;
     __fireWindowState(focused: boolean): void;
+    __fireTabsChanged(): void;
   };
 }
 
@@ -108,6 +109,14 @@ export interface FakeTreeView {
   id: string;
   visible: boolean;
   reveals: { item: unknown; options: unknown }[];
+  /** Lines the extension host would log for a row it no longer knows (L1). */
+  treeErrors: string[];
+  /** Reveals the workbench has finished (or given up on). */
+  revealsDone: number;
+  /** How long the workbench takes to expand a reveal's parent rows. */
+  __revealRoundTripMs: number;
+  /** How long a refresh takes to reach the workbench, which then re-renders the rows. */
+  __renderDelayMs: number;
   __setVisible(visible: boolean): void;
 }
 

@@ -311,6 +311,38 @@ function readLog(file, from) {
   return { entries, next: lines.length };
 }
 
+/**
+ * R44 (L1): every "No tree item with id" line in the extension host logs
+ * under the profile. The extension host logs it when the workbench asks for
+ * the children of a row the tree no longer knows: a reveal (or a render) that
+ * raced a refresh of the Workspaces view.
+ */
+function treeItemErrors(userDataDir) {
+  const found = [];
+  const logsDir = path.join(userDataDir, 'logs');
+  if (!fs.existsSync(logsDir)) {
+    return found;
+  }
+  for (const session of fs.readdirSync(logsDir)) {
+    const sessionDir = path.join(logsDir, session);
+    if (!fs.statSync(sessionDir).isDirectory()) {
+      continue;
+    }
+    for (const windowDir of fs.readdirSync(sessionDir)) {
+      const file = path.join(sessionDir, windowDir, 'exthost', 'exthost.log');
+      if (!fs.existsSync(file)) {
+        continue;
+      }
+      for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+        if (line.includes('No tree item with id')) {
+          found.push(`${session}: ${line.trim()}`);
+        }
+      }
+    }
+  }
+  return found;
+}
+
 function report(entries) {
   let failed = 0;
   for (const entry of entries) {
@@ -447,6 +479,7 @@ async function main() {
     ];
 
     let logIndex = 0;
+    let treeErrorCount = 0;
     for (let stage = 0; stage < 3; stage++) {
       console.log(`\n== launch ${stage + 1} of 3: stage ${stage} ==`);
       const result = await launch(exe, args, env);
@@ -455,6 +488,16 @@ async function main() {
       const log = readLog(logPath, logIndex);
       logIndex = log.next;
       failures += report(log.entries);
+
+      const treeErrors = treeItemErrors(userDataDir);
+      const newTreeErrors = treeErrors.slice(treeErrorCount);
+      treeErrorCount = treeErrors.length;
+      if (newTreeErrors.length === 0) {
+        console.log(`PASS  launch ${stage + 1}: no "No tree item" line in the extension host log (R44)`);
+      } else {
+        failures++;
+        console.error(`FAIL  launch ${stage + 1}: "No tree item" in the extension host log (R44): ${newTreeErrors.join(' | ')}`);
+      }
 
       const state = readJson(statePath);
       if (!state || state.stage !== stage + 1) {
