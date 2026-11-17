@@ -268,6 +268,23 @@ test('opening a chat from before chosen IDs gives it one; opening an open chat o
   assert.deepEqual([stub.window.terminals.length, f.lastTerminal().shown, f.registrations.length], [1, 2, registered]);
 });
 
+test('the row bell opens its chat, like a click', async (t) => {
+  const f = setup(t);
+  const chat = f.chat('claude', 'Needs you', 'claude-1');
+  await runCommand('pitwall.openNeedsYouChat', f.row(chat));
+  assert.equal(f.lastTerminal().sent[0], 'claude --resume claude-1');
+});
+
+test('Reveal in File Explorer shows the repo folder in the system file manager', async (t) => {
+  const f = setup(t);
+  const revealed: string[] = [];
+  vscode.commands.registerCommand('revealFileInOS', (uri: vscode.Uri) => {
+    revealed.push(uri.fsPath.replace(/\\/g, '/'));
+  });
+  await runCommand('pitwall.revealRepository', new WorkspaceTreeItem('demo', 1, 'repository', f.storage.getRepositories()[0], 'repository'));
+  assert.deepEqual(revealed.map((path) => path.replace(/^[A-Za-z]:/, '')), ['/work/demo']);
+});
+
 test('Open in UI stops a running terminal only after confirmation, then hands over the session', async (t) => {
   const f = setup(t);
   const chat = f.chat('claude', 'Running', 'claude-1');

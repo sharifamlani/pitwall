@@ -1077,11 +1077,6 @@
         },
         {
           "command": "pitwall.openClaudeUi",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(Needs)?ClaudeUi$/ && pitwall.claudeUiInstalled",
-          "group": "inline@3"
-        },
-        {
-          "command": "pitwall.openClaudeUi",
           "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(Needs)?ClaudeUi$/ && !listMultiSelection",
           "group": "1_open@3"
         }

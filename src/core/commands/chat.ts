@@ -608,6 +608,12 @@ export function registerChatCommands(
     }
   });
 
+  // The bell on a needs-you row: the same as clicking the row. Its own
+  // command only because a command has one icon.
+  register('pitwall.openNeedsYouChat', (item?: WorkspaceTreeItem) =>
+    vscode.commands.executeCommand('pitwall.openChat', item)
+  );
+
   // Explicitly open a session in its terminal. If it is open in its agent's
   // UI, close that tab first so two agent processes cannot run.
   register('pitwall.openChatInTerminal', async (item?: WorkspaceTreeItem) => {

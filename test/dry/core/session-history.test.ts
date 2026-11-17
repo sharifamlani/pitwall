@@ -78,10 +78,12 @@ function setup(t: { after(fn: () => void): void }) {
 
 test('history lists sidebar chats then older chats, newest first, with the canvas labels', async (t) => {
   const f = setup(t);
-  // In the sidebar: one chat from 2m ago, one from 3h ago.
+  // In the sidebar: chats from 2m, 3h and 40 days ago; age never moves a sidebar chat to OLDER.
   f.storage.createChat(f.main.id, 'claude', 'Older sidebar chat', { harnessSessionId: 's-sidebar-old' });
   f.storage.createChat(f.main.id, 'claude', 'One-off apply', { harnessSessionId: 's-sidebar' });
   f.session('s-sidebar-old', 'Older sidebar chat', 3 * 60 * MINUTE);
+  f.storage.createChat(f.main.id, 'claude', 'Ancient sidebar chat', { harnessSessionId: 's-sidebar-ancient' });
+  f.session('s-sidebar-ancient', 'Ancient sidebar chat', 40 * DAY);
   f.session('s-sidebar', 'One-off apply', 2 * MINUTE);
   // Not in the sidebar: two native sessions, oldest first on purpose.
   f.session('s-old-b', 'Parser spike (earlier)', 30 * DAY, 'feat/early');
@@ -96,6 +98,7 @@ test('history lists sidebar chats then older chats, newest first, with the canva
       '--IN THE SIDEBAR (LAST 14 DAYS)',
       'One-off apply | ⎇ main · 2m',
       'Older sidebar chat | ⎇ main · 3h',
+      'Ancient sidebar chat | ⎇ main · 40d',
       '--OLDER · not in the sidebar; pick one to bring it back',
       'Resume parser spike | ⎇ feat/parse · 23d',
       'Parser spike (earlier) | ⎇ feat/early · 30d',

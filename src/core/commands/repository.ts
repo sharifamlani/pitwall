@@ -139,37 +139,28 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
         return { chat, at: session?.lastUpdated?.getTime() ?? chat.lastAccessedAt, worktree };
       })
       .sort((a, b) => b.at - a.at);
-    const recentSince = Date.now() - HISTORY_SIDEBAR_DAYS * 24 * 60 * 60 * 1000;
-    const recent = inSidebar.filter((entry) => entry.at >= recentSince);
-    const stale = inSidebar.filter((entry) => entry.at < recentSince);
     const chatRow = ({ chat, at, worktree }: (typeof inSidebar)[number]) => ({
       label: chat.name,
       description: `${branchPart(worktree.branch ?? worktree.name)}${formatRelativeTime(at, { short: true })}`,
       chat,
     });
-    // Chats that fell out of the 14 days sit here too: picking one just opens it.
-    const older = [
-      ...native
-        .filter((entry) => !imported.has(harnessSessionKey(entry.harness, entry.session.sessionId)))
-        .map(({ harness, session }) => ({
-          at: session.lastUpdated?.getTime() ?? 0,
-          row: {
-            label: sessionDisplayName(session),
-            description: `${branchPart(session.gitBranch)}${session.lastUpdated ? formatRelativeTime(session.lastUpdated, { short: true }) : ''}`,
-            harness,
-            session,
-          },
-        })),
-      ...stale.map((entry) => ({ at: entry.at, row: chatRow(entry) })),
-    ]
-      .sort((a, b) => b.at - a.at)
-      .map((entry) => entry.row);
+    // Every chat in the sidebar is in the first group, whatever its age; this
+    // group holds only sessions that are not in it, so its header stays true.
+    const older = native
+      .filter((entry) => !imported.has(harnessSessionKey(entry.harness, entry.session.sessionId)))
+      .sort((a, b) => (b.session.lastUpdated?.getTime() ?? 0) - (a.session.lastUpdated?.getTime() ?? 0))
+      .map(({ harness, session }) => ({
+        label: sessionDisplayName(session),
+        description: `${branchPart(session.gitBranch)}${session.lastUpdated ? formatRelativeTime(session.lastUpdated, { short: true }) : ''}`,
+        harness,
+        session,
+      }));
 
     const separator = (label: string) => ({ label, kind: vscode.QuickPickItemKind.Separator });
     const picked = (await vscode.window.showQuickPick(
       [
         separator(`IN THE SIDEBAR (LAST ${HISTORY_SIDEBAR_DAYS} DAYS)`),
-        ...(recent.length > 0 ? recent.map(chatRow) : [{ label: 'None.' }]),
+        ...(inSidebar.length > 0 ? inSidebar.map(chatRow) : [{ label: 'None.' }]),
         separator('OLDER · not in the sidebar; pick one to bring it back'),
         ...(older.length > 0 ? older : [{ label: 'No older chats.' }]),
       ],

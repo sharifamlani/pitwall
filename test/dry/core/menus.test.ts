@@ -37,31 +37,33 @@ const orderOf = (entry: MenuEntry) => {
 
 test('session rows show bell (needs you only), terminal and fork inline; star, rename and close are in the right-click menu only', () => {
   const inline = rowMenu.filter(isInline);
-  const sessionInline = inline.filter((entry) => ['chat', 'chatNeeds', 'runningChat'].some((value) => shownOn(entry, value)));
-  const on = (command: string, contextValue: string) =>
-    inline.some((entry) => entry.command === command && shownOn(entry, contextValue));
-  for (const value of ['chatNeeds', 'starredChatNeeds', 'runningChatNeeds', 'chatNeedsClaudeUi']) {
-    assert.ok(on('pitwall.openNeedsYouChat', value), `the bell shows on ${value}`);
+  // The values real Claude rows carry: the ClaudeUi suffix is always present (claudeUi.ts).
+  const slots = (contextValue: string) =>
+    inline
+      .filter((entry) => shownOn(entry, contextValue))
+      .sort((a, b) => orderOf(a).localeCompare(orderOf(b)))
+      .map((entry) => `${id(entry)}@${entry.group}`);
+  const BELL = 'pitwall.openNeedsYouChat@inline@0';
+  const TERMINAL = 'pitwall.openChatInTerminal@inline@2';
+  const FORK = 'pitwall.forkChat@inline@3';
+  for (const value of ['chatNeedsClaudeUi', 'starredChatNeedsClaudeUi']) {
+    assert.deepEqual(slots(value), [BELL, TERMINAL, FORK], `${value}: bell, terminal and fork, each in its own slot`);
   }
-  for (const value of ['chat', 'starredChat', 'runningChat', 'chatClaudeUi']) {
-    assert.ok(!on('pitwall.openNeedsYouChat', value), `no bell on ${value}`);
+  for (const value of ['chatClaudeUi', 'starredChatClaudeUi']) {
+    assert.deepEqual(slots(value), [TERMINAL, FORK], `${value}: terminal and fork, no bell`);
   }
-  assert.ok(on('pitwall.openChatInTerminal', 'chat') && on('pitwall.openChatInTerminal', 'chatNeeds'), 'terminal on closed rows, needs-you or not');
-  assert.ok(!on('pitwall.openChatInTerminal', 'runningChat'), 'a running row already has its terminal');
-  assert.ok(on('pitwall.forkChat', 'chat') && on('pitwall.forkChat', 'runningChatNeeds'), 'fork on every session row');
-  const sessionCommands = new Set(sessionInline.map(id));
+  // A running row already has its terminal, so it shows the bell (when it needs you) and fork.
+  assert.deepEqual(slots('runningChatNeedsClaudeUi'), [BELL, FORK]);
+  assert.deepEqual(slots('runningChatClaudeUi'), [FORK]);
+  const sessionCommands = new Set(inline.filter((entry) => shownOn(entry, 'chatNeedsClaudeUi')).map(id));
   for (const command of ['pitwall.starChat', 'pitwall.unstarChat', 'pitwall.renameChat', 'pitwall.closeChat']) {
-    assert.ok(!sessionCommands.has(command), `${command} is not a hover action`);
+    assert.ok(!inline.some((entry) => entry.command === command), `${command} is not a hover action`);
     assert.ok(
       rowMenu.some((entry) => entry.command === command && !isInline(entry)),
       `${command} stays in the right-click menu`
     );
   }
-  assert.deepEqual(
-    [...sessionCommands].sort(),
-    ['pitwall.forkChat', 'pitwall.openChatInTerminal', 'pitwall.openNeedsYouChat'],
-    'exactly the bell, terminal and fork'
-  );
+  assert.ok(sessionCommands.has('pitwall.openNeedsYouChat'));
   const bell = commands.find((entry) => entry.command === 'pitwall.openNeedsYouChat') as { icon?: string } | undefined;
   assert.equal(bell?.icon, '$(bell)');
   assert.ok(
@@ -199,7 +201,7 @@ test('global shortcuts use Ctrl+Alt (Ctrl+Cmd on macOS); plain keys work only in
   );
 });
 
-test('Open in UI stays in the context menu without its extension and is a hover action only with it', () => {
+test('Open in UI is a context-menu item only, never a hover action', () => {
   // One Open in UI command per enabled harness that has a VS Code UI.
   const openUi = [...new Set(rowMenu.map(id))].flatMap((command) => {
     const name = /^pitwall\.open(\w+)Ui$/.exec(command)?.[1];
@@ -212,7 +214,7 @@ test('Open in UI stays in the context menu without its extension and is a hover 
     const inline = entries.filter(isInline);
     assert.equal(context.length, 1, command);
     assert.ok(!context[0].when?.includes(`${ui}UiInstalled`), `${command} explains a missing extension`);
-    assert.ok(inline.length > 0 && inline.every((entry) => entry.when?.includes(`pitwall.${ui}UiInstalled`)), command);
+    assert.equal(inline.length, 0, `${command} is not a hover action: the canvas shows only bell, terminal and fork`);
   }
   const inTerminal = rowMenu.filter((entry) => entry.command === 'pitwall.openChatInTerminal');
   assert.ok(inTerminal.some((entry) => isInline(entry) && entry.when?.includes('chat|starredChat')), 'inline for closed rows');
