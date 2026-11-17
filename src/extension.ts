@@ -279,6 +279,8 @@ export async function activate(context: vscode.ExtensionContext) {
   // Repos found from the agents' sessions (ADR 0019), after the list first
   // renders; activation never waits for a pass.
   const repoDiscovery = new RepoDiscoveryService(storageService, gitService, () => harnessRegistry.all(), {
+    // Until the first pass ends, the empty list says it is scanning, not "No repositories yet".
+    onFirstPassDone: () => setContext('pitwall.scanned', true),
     onAdded: () => {
       worktreeCatalog.invalidate();
       refreshTree();
