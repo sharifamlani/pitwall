@@ -19,9 +19,12 @@ const os = require('os');
 const path = require('path');
 const { runTests } = require('@vscode/test-electron');
 const { resolveVSCodeExecutable } = require('../vscodeExecutable');
+const { scrubElectronEnv } = require('../electronEnv');
 const enabledHarnesses = require('../../src/harnesses/enabled.json');
 
 async function main() {
+  // An inherited ELECTRON_RUN_AS_NODE makes the editor start as plain Node.
+  scrubElectronEnv(process.env);
   const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pitwall-vscode-test-'));
   const userDataDir = path.join(profileRoot, 'user-data');
   const extensionsDir = path.join(profileRoot, 'extensions');

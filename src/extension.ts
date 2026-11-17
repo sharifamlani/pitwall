@@ -224,9 +224,12 @@ export async function activate(context: vscode.ExtensionContext) {
       showWorktree(worktree);
     }
     if (options.revealIfHidden || workspacesTreeView.visible) {
-      void workspacesTreeView
-        .reveal(workspacesProvider.getChatTreeItem(chat), { select: true, focus: false, expand: true })
-        .then(undefined, () => undefined);
+      const reveal = () =>
+        workspacesTreeView
+          .reveal(workspacesProvider.getChatTreeItem(chat), { select: true, focus: false, expand: true })
+          .then(undefined, () => undefined);
+      // A hidden view renders only once revealed, so waiting would never end.
+      void (workspacesTreeView.visible ? workspacesProvider.whenSettled().then(reveal) : reveal());
     }
   };
 
@@ -435,9 +438,11 @@ export async function activate(context: vscode.ExtensionContext) {
     showWorktree(startWorktree);
     const reveal = () =>
       setTimeout(() => {
-        void workspacesTreeView
-          .reveal(workspacesProvider.getTreeItemForWorktree(startWorktree), { select: true, focus: false, expand: true })
-          .then(undefined, () => undefined);
+        void workspacesProvider.whenSettled().then(() =>
+          workspacesTreeView
+            .reveal(workspacesProvider.getTreeItemForWorktree(startWorktree), { select: true, focus: false, expand: true })
+            .then(undefined, () => undefined)
+        );
       }, 100);
     if (workspacesTreeView.visible) {
       reveal();

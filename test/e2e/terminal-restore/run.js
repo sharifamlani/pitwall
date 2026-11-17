@@ -23,6 +23,7 @@
  *   PITWALL_TEST_KEEP=1     keep the temp profile and logs
  */
 const { execFileSync, spawn } = require('child_process');
+const { scrubElectronEnv } = require('../../electronEnv');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -416,7 +417,7 @@ async function main() {
     fs.writeFileSync(statePath, JSON.stringify({ stage: 0 }));
 
     const env = {
-      ...process.env,
+      ...scrubElectronEnv({ ...process.env }),
       PITWALL_E2E_OUT: logPath,
       PITWALL_E2E_STATE: statePath,
       PITWALL_E2E_CHATS: JSON.stringify(chats),
