@@ -132,6 +132,15 @@ export class TerminalManager {
   private backgroundActivation?: vscode.Terminal;
 
   /**
+   * Terminals in front only because Pitwall showed them to rename them, with
+   * one count per show sequence still running (R43). The needs-you pipeline
+   * must not take such a show for the user looking at the chat. A sequence's
+   * count is released when it ends, however it ends; the user activating the
+   * terminal themselves clears it at once.
+   */
+  private readonly pitwallShows = new Map<vscode.Terminal, number>();
+
+  /**
    * Restored terminals whose PID has not arrived yet, so their adoption is
    * still open, and the PID records the restore pass started from.
    */
@@ -189,6 +198,8 @@ export class TerminalManager {
           this.backgroundActivation = undefined;
         }
         this.userActivations += 1;
+        // The user brought it to the front: from now on it is their look.
+        this.pitwallShows.delete(terminal);
         void this.applyTitle(terminal);
         this.retryPendingTitles(terminal);
       }),
@@ -562,11 +573,16 @@ export class TerminalManager {
         return;
       }
       const front = this.captureFront();
-      await this.showForRetitle(terminal);
-      await this.writeTitle(terminal);
-      // Put back what the user had in front, unless they moved on meanwhile.
-      if (vscode.window.activeTerminal === terminal) {
-        await this.restoreFront(front, terminal);
+      const release = this.beginPitwallShow(terminal);
+      try {
+        await this.showForRetitle(terminal);
+        await this.writeTitle(terminal);
+        // Put back what the user had in front, unless they moved on meanwhile.
+        if (vscode.window.activeTerminal === terminal) {
+          await this.restoreFront(front, terminal);
+        }
+      } finally {
+        release();
       }
     });
   }
@@ -791,8 +807,31 @@ export class TerminalManager {
    * focus is handled normally. The tree uses this to ignore selection changes
    * caused by the background retitle pass.
    */
-  isPitwallActivation(_chatId: string): boolean {
-    throw new Error('not implemented');
+  /**
+   * Whether the chat's tab is in front only because Pitwall showed it to
+   * rename it, so being in front is not the user looking at it (R43).
+   */
+  isPitwallActivation(chatId: string): boolean {
+    const terminal = this.terminals.get(chatId);
+    return terminal !== undefined && this.pitwallShows.has(terminal);
+  }
+
+  /** Count one show sequence for `terminal`; the returned release is idempotent. */
+  private beginPitwallShow(terminal: vscode.Terminal): () => void {
+    this.pitwallShows.set(terminal, (this.pitwallShows.get(terminal) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      const left = (this.pitwallShows.get(terminal) ?? 1) - 1;
+      if (left > 0) {
+        this.pitwallShows.set(terminal, left);
+      } else {
+        this.pitwallShows.delete(terminal);
+      }
+    };
   }
 
   consumeBackgroundActivation(terminal: vscode.Terminal): boolean {
@@ -1353,6 +1392,10 @@ export class TerminalManager {
     // Late-start watches not handed to `retitleOnLateStart` are cancelled
     // when the pass ends, however it ends.
     const unhanded = new Set(revived);
+    // Each tab this pass shows stays in front until the next one, so the
+    // shows are released only once the front is restored or the pass ends.
+    const releases: Array<() => void> = [];
+    const releaseShows = () => releases.forEach((release) => release());
     void (async () => {
       for (const item of revived) {
         const { terminal, integrated, started } = item;
@@ -1397,6 +1440,7 @@ export class TerminalManager {
             outcome = 'deferred';
             return;
           }
+          releases.push(this.beginPitwallShow(terminal));
           await this.showForRetitle(terminal);
           await this.writeTitle(terminal);
           outcome = 'shown';
@@ -1406,13 +1450,18 @@ export class TerminalManager {
         }
       }
       await this.queueTitleWork(async () => {
-        if (!this.isDisposed) {
-          await this.restoreFront(front);
+        try {
+          if (!this.isDisposed) {
+            await this.restoreFront(front);
+          }
+        } finally {
+          releaseShows();
         }
       });
     })()
       .catch(() => undefined)
       .finally(() => {
+        releaseShows();
         for (const { lateStart } of unhanded) {
           void lateStart?.then((watch) => {
             if (watch) {

@@ -72,6 +72,7 @@ export async function activate(context: vscode.ExtensionContext) {
     getChats: () => storageService.getChats(),
     adapters: () => harnessRegistry.all(),
     chatIdForTerminalName: (name) => terminalManager.getChatIdForTerminalName(name),
+    isPitwallActivation: (chatId) => terminalManager.isPitwallActivation(chatId),
   };
   /** The chat whose native-UI tab is the active editor tab, if any. */
   const activeNativeUiChatId = (): string | undefined => chatVisibility.activeNativeUiChatId(visibilitySources);

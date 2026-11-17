@@ -1172,3 +1172,34 @@ test('guard: the user activating a waiting chat during the wait still holds its 
   assert.deepEqual(needsYouToasts(), [], 'the user saw the prompt: no toast');
   assert.deepEqual(a.service.sessionsNeedingYou(), ['c43c4300-seen'], 'still listed for Go to Next');
 });
+
+test('guard: a title write that throws during a background retitle never leaves the chat marked as shown by Pitwall (R43)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: 'c43c4300-throw', name: 'Throws', harnessSessionId: 'throw-1' }] });
+  const { tab } = await slowChat(f, 'c43c4300-throw');
+  tab.name = 'Windows PowerShell';
+  const other = f.restoredTab('the user’s shell', 9433);
+  stub.window.__setActiveTerminal(other);
+  // The rename command fails (Pitwall ignores that), and the title write
+  // itself throws while the chat's tab is shown, so the show sequence ends
+  // with an error.
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', () => {
+    throw new Error('rename failed');
+  });
+  const getChat = f.storage.getChat.bind(f.storage);
+  let markedWhileShown: boolean | undefined;
+  f.storage.getChat = (id: string) => {
+    if (stub.window.activeTerminal === tab) {
+      markedWhileShown = f.manager.isPitwallActivation('c43c4300-throw');
+      throw new Error('storage unavailable');
+    }
+    return getChat(id);
+  };
+  const shows = recordShows(tab);
+
+  stub.window.__integrateShell(tab);
+  await waitFor(() => shows.length > 0 && markedWhileShown !== undefined, 'the background show and the failing write');
+  for (let i = 0; i < 5; i++) await flush();
+  assert.equal(markedWhileShown, true, 'the chat counted as shown by Pitwall during the sequence');
+  assert.equal(f.manager.isPitwallActivation('c43c4300-throw'), false, 'and the mark cleared when the sequence threw');
+});
