@@ -25,6 +25,7 @@ to learn how a subsystem works today, and the ADR to learn why it is shaped that
 | [0015](0015-pi-sessions-from-transcript.md) | Observe Pi sessions through their documented transcript, not RPC | Accepted |
 | [0016](0016-find-session-sources-across-harnesses.md) | Find Session searches every harness, and runs only where a read-only mode exists | Proposed |
 | [0017](0017-opencode-find-session-source-only.md) | opencode stays a Find Session source, not a runner | Proposed |
+| [0018](0018-live-status-from-sessions-file.md) | Live status comes from `~/.claude/sessions`, with `claude agents` as the fallback | Proposed |
 
 ## Writing one
 
