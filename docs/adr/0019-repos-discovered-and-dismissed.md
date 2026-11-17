@@ -42,7 +42,9 @@ written in 14 days (529 counting subagent transcripts), across 30 project direct
   only when a session **starts** in it after `dismissedAt`, judged by the newest transcript's
   first entry, or when the user adds it with the folder icon, which clears the dismissal. A
   session that started earlier and is still running does not bring it back. **Remove from
-  Pitwall…** stays in the Command Palette.
+  Pitwall…** stays in the Command Palette. It also records a dismissal, so discovery does not
+  add a removed repo straight back; it returns on the same terms. Unlike a dismissal, it
+  asks first and closes the repo's terminals, as before.
 - **Never in the way.** Passes run after the list first renders, every 60 s and on window
   focus, and are never awaited by activation. A failure is logged, never thrown. Concurrent
   calls share one pass. Transcript heads are cached by path, mtime and size; a folder's root
@@ -67,8 +69,8 @@ written in 14 days (529 counting subagent transcripts), across 30 project direct
 
 - A user with many repos gets all of them on first run and dismisses some by hand.
 - A dismissed repo is hidden from every window: the record is in global state.
-- Remove from Pitwall, now palette-only, records no dismissal, so discovery adds a removed
-  repo back on its next pass if it has a session in the window.
+- Remove from Pitwall, now palette-only, records a dismissal too: without one, discovery would
+  add a removed repo back within a minute whenever it had a session in the window.
 - Discovery adds at most one `git` spawn per new folder per 10 minutes (three on git before
   2.31), off the extension host's thread.
 - Privacy: [privacy.md](../privacy.md) lists `~/.claude/projects` as read for discovery.

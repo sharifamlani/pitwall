@@ -108,6 +108,9 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     if (confirm !== 'Remove') {
       return;
     }
+    // Discovery would otherwise add it straight back; like a dismissal, it
+    // returns with a new session or when added by hand (ADR 0019).
+    await storageService.setDismissed(repo.rootPath, Date.now());
     // Its chats would otherwise linger unseen and keep their sessions from
     // being imported when the folder is added again.
     deps.forgetWorktrees(gitService.listRepositoryWorktrees(repo.rootPath, repo.id).worktrees);
