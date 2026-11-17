@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.8.2 · 2026-11-16
+> v0.8.3 · 2026-11-16
 
 ---
 
@@ -72,6 +72,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D34 | Each repo row gets a session-history button (clock) next to "+": lists every past Claude Code chat in that repo, beyond the 14-day list, and resumes the one you pick in Claude's panel | Sharif 2026-11-16 |
 | D35 | **One window per folder (v1)** — the "one-repo-per-window rule". Claude's panel only resumes chats from its window's folder, and a git worktree counts as its own folder (tests T5, T17). Every window runs the same Pitwall sidebar; clicking a chat from another repo or worktree brings that folder's window forward (opening it if needed) with the chat open. A window's tabs only ever hold its own folder's chats. Supersedes the cross-repo parts of D15, D25, D26 (chat tabs), D31 | Sharif 2026-11-16 · [tests](docs/research/2026-11-16-assumption-tests.md) |
 | D36 | **No repo needs to be open.** You open one Cursor window; Pitwall reads Claude Code's own files (`~/.claude/sessions`, `~/.claude/projects`) to show every repo, chat, status, history and pop-up. Windows for other folders are opened by Pitwall on demand (D35), never by hand. Option "everything in one window via terminal mode" rejected (that is what a switchboard does) | Sharif 2026-11-16 |
+| D37 | Keyboard in the Pitwall list (only while the list has focus): ↓/↑ move the highlight without opening; Ctrl+↓/Ctrl+↑ move and open (chat → added tab; repo → all its chats); Enter opens the highlighted row. Side by side stays Cursor's own split (split button, Split Right, drag a tab) | Sharif 2026-11-16 |
 ---
 
 ## §3 The Checklist — every Phase from start to v1.0.0
@@ -220,3 +221,4 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 - **v0.8 · 2026-11-16.** D36: no repo needs to be open; Pitwall opens folder windows on demand (option A; terminal-mode single window rejected). Prototype rebuilt for one window per folder (canvas v36): window title + taskbar strip, worktree chats in their own windows, session-history button, bottom-bar jump list, no mixed tabs.
 - **v0.8.1 · 2026-11-16.** D11 clarified by Sharif: a repo click opens all its chats as tabs; session clicks add tabs. Prototype demo data moved to main (matches Sharif's real usage); one worktree example kept.
 - **v0.8.2 · 2026-11-16.** D26 restored (Sharif keeps "repo · ⎇ branch" under every tab; Claude tabs need test 2.5, fallback window title + bottom bar). New test row 2.7 (T18).
+- **v0.8.3 · 2026-11-16.** D37: list keyboard (↓/↑ highlight, Ctrl+↓/↑ open, Enter). Prototype: split button and Split Right inside the window; outer toggle removed; bigger tab close button.
