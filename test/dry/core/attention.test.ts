@@ -335,7 +335,7 @@ test('a chat whose surface is its Claude panel tab is visible only when that tab
   const panelTab = { label: 'Fixture chat', input: new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel') };
   showTabs(panelTab);
   const surfaces = claudeUiSurfaces({
-    getTabGroups: () => stub.window.tabGroups.all,
+    getTabGroups: () => stub.window.tabGroups.all as unknown as readonly vscode.TabGroup[],
     onDidChangeTabs: () => ({ dispose: () => undefined }),
     onDidChangeTabGroups: () => ({ dispose: () => undefined }),
     sessionIdForTab: (tab) => (tab.label === panelTab.label ? 'session-1' : undefined),

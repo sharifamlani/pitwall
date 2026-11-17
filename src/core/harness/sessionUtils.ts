@@ -137,17 +137,23 @@ export function findClaimableSession(
  * whatever `status` says: status is only updated when a terminal close event is
  * observed, so sessions left behind by a window restart stay `idle`/`active`.
  *
- * An open terminal shows the animated mark while the harness reports a turn in
- * flight, and the green dot otherwise. Unknown turn state keeps the dot so a
- * freshly opened terminal does not flash the animation before the first poll.
+ * An open chat that is waiting on the user shows the needs-you dot, whatever
+ * its turn state. Otherwise it shows the animated mark while the harness
+ * reports a turn in flight, and the green dot otherwise. Unknown turn state
+ * keeps the dot so a freshly opened terminal does not flash the animation
+ * before the first poll.
  */
 export function selectHarnessIconState(
   chat: ChatSession,
   isActive: boolean,
-  turnState?: TurnState
+  turnState?: TurnState,
+  needsYou = false
 ): HarnessIconState {
   if (!isActive) {
     return chat.harnessSessionId ? 'closed' : 'new';
+  }
+  if (needsYou) {
+    return 'needs';
   }
   return turnState === 'working' ? 'working' : 'done';
 }

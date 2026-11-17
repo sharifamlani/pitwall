@@ -71,7 +71,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const visibilitySources: chatVisibility.ChatVisibilitySources = {
     getChats: () => storageService.getChats(),
     adapters: () => harnessRegistry.all(),
-    getTerminal: (chatId) => terminalManager.getTerminal(chatId),
+    chatIdForTerminalName: (name) => terminalManager.getChatIdForTerminalName(name),
   };
   /** The chat whose native-UI tab is the active editor tab, if any. */
   const activeNativeUiChatId = (): string | undefined => chatVisibility.activeNativeUiChatId(visibilitySources);
@@ -260,7 +260,7 @@ export async function activate(context: vscode.ExtensionContext) {
     harnessRegistry,
     notificationService,
     (worktreeId) => workspacesProvider.getWorktreeById(worktreeId),
-    // Turn changes swap the row mark between the beating mark and green dot.
+    // Turn and needs-you changes swap the row mark (beating mark, orange or green dot).
     () => workspacesProvider.softRefresh(),
     isChatOpen,
     isChatVisible
@@ -268,6 +268,7 @@ export async function activate(context: vscode.ExtensionContext) {
   markChatSeen = (chatId) => attentionService.markSeen(chatId);
   attentionService.start();
   workspacesProvider.setTurnStateProvider((chatId) => attentionService.getTurnState(chatId));
+  workspacesProvider.setNeedsYouProvider((chatId) => attentionService.needsYou(chatId));
 
   // Commands
   registerRepositoryCommands(context, { storageService, gitService, forgetWorktrees, refreshTree });

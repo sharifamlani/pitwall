@@ -8,7 +8,8 @@ export interface ChatVisibilitySources {
   getChats(): ChatSession[];
   /** Adapters whose native-UI tabs may hold the active tab. */
   adapters(): readonly HarnessAdapter[];
-  getTerminal(chatId: string): vscode.Terminal | undefined;
+  /** The chat an editor terminal tab belongs to, by the tab's title. */
+  chatIdForTerminalName(name: string): string | undefined;
 }
 
 /** The chat whose native-UI tab is the active editor tab, if any. */
@@ -28,8 +29,32 @@ export function activeNativeUiChatId(sources: ChatVisibilitySources): string | u
   })?.id;
 }
 
-/** Whether the chat's terminal or native-UI tab is the one in front of the user. */
+/**
+ * The chat in front of the user: the window has focus and the chat's tab is
+ * the active tab of the active editor group, either its editor terminal tab
+ * or its native-UI tab.
+ *
+ * `window.activeTerminal` is not used: it names the terminal that has or
+ * most recently had focus, so it stays set after the user moves to another
+ * tab. A terminal in the bottom panel therefore never counts as in front
+ * (VS Code has no stable API for whether the panel is on screen); listing a
+ * chat the user is looking at beats missing one they are not.
+ */
+export function chatIdInFront(sources: ChatVisibilitySources): string | undefined {
+  if (!vscode.window.state.focused) {
+    return undefined;
+  }
+  const activeTab = vscode.window.tabGroups.activeTabGroup?.activeTab;
+  if (!activeTab) {
+    return undefined;
+  }
+  if (activeTab.input instanceof vscode.TabInputTerminal) {
+    return sources.chatIdForTerminalName(activeTab.label);
+  }
+  return activeNativeUiChatId(sources);
+}
+
+/** Whether this chat is the one in front of the user right now. */
 export function isChatVisible(sources: ChatVisibilitySources, chatId: string): boolean {
-  const terminal = sources.getTerminal(chatId);
-  return (terminal !== undefined && terminal === vscode.window.activeTerminal) || activeNativeUiChatId(sources) === chatId;
+  return chatIdInFront(sources) === chatId;
 }
