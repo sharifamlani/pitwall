@@ -276,7 +276,8 @@ function watchTiming(t0) {
     ),
     vscode.window.onDidStartTerminalShellExecution(({ terminal, execution }) => {
       const line = execution.commandLine && execution.commandLine.value;
-      events.push(`${terminal.name}: command start at ${since()} ms (${String(line).slice(-30)})`);
+      // The whole line, so a resume line the starting shell only half read shows up.
+      events.push(`${terminal.name}: command start at ${since()} ms (${JSON.stringify(String(line))})`);
     }),
   ];
   return {
