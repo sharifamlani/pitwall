@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.12 · 2026-11-17
+> v0.13 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 2 — Windows parity
-- **Current step:** Phase 2 wave A: Tasks 1, 2, 7 merged (rows 2.1, 2.8 ✅); Task 8 (PR #7) in QA.
+- **Current step:** Phase 2: Tasks 1, 2, 3, 7 merged (rows 2.1, 2.8 ✅; 2.2 partial). In QA: #7 (Task 8, fix round), #12 (Task 10), #13 (Task 9). Building: Task 6.
 - **Last update:** 2026-11-17
-- **Next action:** merge QA-approved #9/#10/Task 8 → wave B (Tasks 3, 6, 9, 10).
+- **Next action:** merge QA-approved #7/#12/#13 and Task 6 → Task 4 (Windows fake CLIs) → Task 5 (de-flake) → Task 11 (close, v0.3.0).
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -152,7 +152,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
 | 2.1 | Fix every "real bug" in the triage, each with a failing test first | ✅ (triage rows 2, 9–12; reopens if Task 4 surfaces a Claude-path bug) | ✅ | 2026-11-17 · PR #8 `daa68fa` → merge `704948f` (rows 9–12) · PR #10 `cece25c` → merge `8a1085f` (row 2) | Phase 1 triage |
-| 2.2 | Make POSIX-assumption tests portable; mark env-limit tests (e.g. symlink EPERM) as skips with a reason | ⏸ | ⏸ | — | Phase 1 triage |
+| 2.2 | Make POSIX-assumption tests portable; mark env-limit tests (e.g. symlink EPERM) as skips with a reason | ~ rows 1, 3–7 ✅ (Task 3); rows 13–25, 27–29 open (Task 4) | ✅ | 2026-11-17 · PR #11 `0a67e7f` → merge `23623d2` | Phase 1 triage |
 | 2.3 | Windows CI job runs `npm test` | ⏸ | ⏸ | — | D8 |
 | 2.4 | Script launches of Cursor clear `ELECTRON_RUN_AS_NODE` (inherited from the extension host) | ⏸ | ⏸ | — | tests doc side notes |
 | 2.5 | (Reviewer: looks already handled; add a regression test and close) Find Session with an off-enum stored setting (e.g. `pitwall.sessionSearch.harness: "codex"`) falls back to the first enabled harness instead of throwing (QA PR #5 note) | ⏸ | ⏸ | — | D9 |
@@ -300,3 +300,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.10 · 2026-11-16 · Phase 1 closed, tag `v0.2.0`.** Agntree imported with history (credit kept), renamed to Pitwall 0.2.0, reorganized into `src/core/` + `src/harnesses/<id>/`, Claude-only via `enabled.json` + generated manifest, CI on Linux + Windows, privacy-hardened packaging, honest public README. 6 PRs, each QA-approved (≤1 fix round each); independent evaluator E1–E11 PASS on a fresh clone; testing agent 6 live walks, last 14/14; final review 0 Critical / 4 Important (1 fixed, 3 → Phase 2) / 9 Minor. Found along the way: a likely Windows worktree-path bug, two restore bugs, three flaky timing tests (all Phase 2). Posts: kickoff, Phase 1, repo link (LinkedIn + X). Phase 2 unblocked.
 - **v0.11 · 2026-11-17.** Phase 2 plan approved by QA after two pre-flight rounds (fixes `c0dd3a5`, N1 `73ea80a`/`298f44d`). Wave A: Task 1 (Windows worktree paths, triage rows 9–12) merged, PR #8 → `704948f`; row 2.1 partial until Task 2 (PR #10) merges. Ruling R25: row 2 root cause was TTL expiry re-creating the window as "restored", not an in-flight check.
 - **v0.12 · 2026-11-17.** Task 2 (triage row 2, ruling R25) merged → `8a1085f`, closing row 2.1. Task 7 (manifest refuses duplicates; I2 + M4) merged → `1830558`, closing row 2.8. QA found a fourth flaky test ("stopping a search ends the agent and everything it started, and keeps nothing", a JSON file read mid-write); added to row 2.7 and plan Task 5.
+- **v0.13 · 2026-11-17.** Task 3 (POSIX-assumption tests portable; triage rows 1, 3–7) merged → `23623d2`; row 2.2 partial until Task 4. Windows failures on main: 1 (row 8, Task 6). UJ run 7: W1 + 4 worktree negatives PASS on Windows.
