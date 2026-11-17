@@ -1,15 +1,15 @@
 import { HarnessModule } from '../core/harness/module';
 import { claudeModule } from './claude';
-import { codexModule } from './codex';
 import { opencodeModule } from './opencode';
+import { codexModule } from './codex';
 import { piModule } from './pi';
 import enabled from './enabled.json';
 
 /** Every harness that exists in this repo, enabled or not. Adding one is a folder plus one line here. */
 export const ALL_HARNESSES: Record<string, HarnessModule> = {
   claude: claudeModule,
-  codex: codexModule,
   opencode: opencodeModule,
+  codex: codexModule,
   pi: piModule,
 };
 
