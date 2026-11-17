@@ -94,6 +94,14 @@ export class GitService {
     return this.output(['rev-parse', '--show-toplevel'], dirPath);
   }
 
+  /**
+   * The main repository root for a folder inside any of its worktrees, from
+   * the git common dir; null when the folder is not in a git repository.
+   */
+  async getMainRepoRoot(_cwd: string): Promise<string | null> {
+    throw new Error('not implemented');
+  }
+
   listWorktrees(repoPath: string, repoId: string): Worktree[] {
     return this.parseWorktrees(repoPath, repoId) ?? [];
   }

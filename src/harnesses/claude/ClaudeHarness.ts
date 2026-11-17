@@ -9,6 +9,8 @@ import { ClaudeUi } from './claudeUi';
 import { ClaudeSearchRunner, ClaudeSessionSearch } from './claudeSearch';
 import { generateId } from '../../core/types';
 import {
+  DiscoveredFolder,
+  DiscoveryCounts,
   ForkResult,
   HarnessAdapter,
   HarnessCapabilities,
@@ -115,6 +117,10 @@ export class ClaudeHarness implements HarnessAdapter {
       )}`;
     }
     return command;
+  }
+
+  async discoverRecentFolders(_sinceMs: number, _counts?: DiscoveryCounts): Promise<DiscoveredFolder[]> {
+    throw new Error('not implemented');
   }
 
   async isSessionResumable(sessionId: string): Promise<boolean> {

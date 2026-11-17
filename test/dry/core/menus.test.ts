@@ -29,7 +29,7 @@ test('the hover row keeps frequent actions and nothing destructive or occasional
   const inline = new Set(rowMenu.filter(isInline).map(id));
   for (const command of [
     'pitwall.deleteChat',
-    'pitwall.removeRepository',
+    'pitwall.dismissRepository',
     'pitwall.clearWorktreeSessions',
   ]) {
     assert.ok(!inline.has(command), `${command} is not a hover action`);
@@ -50,7 +50,7 @@ test('the hover row keeps frequent actions and nothing destructive or occasional
 
 test('a plain folder row offers shared actions but no git-only ones', () => {
   const folderActions = new Set(rowMenu.filter((entry) => entry.when?.includes('folderRepository')).map(id));
-  for (const shared of ['pitwall.newSession', 'pitwall.openTerminalAtWorktree', 'pitwall.removeRepository']) {
+  for (const shared of ['pitwall.newSession', 'pitwall.openTerminalAtWorktree', 'pitwall.dismissRepository']) {
     assert.ok(folderActions.has(shared), shared);
   }
 });

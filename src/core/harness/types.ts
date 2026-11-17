@@ -7,6 +7,25 @@ export interface PreviewMessage {
   timestamp: number | null;
 }
 
+/**
+ * A folder a harness saw sessions in, for finding repos automatically
+ * (ADR 0019). One entry per `cwd` spelling the harness recorded.
+ */
+export interface DiscoveredFolder {
+  /** The sessions' working directory, as the harness recorded it. */
+  cwd: string;
+  /** When the newest session in this folder started: its transcript's first entry (P2). */
+  firstEntryAt: number;
+  /** The newest transcript write in this folder, from the file's mtime. */
+  lastActivity: number;
+}
+
+/** Tallies a discovery pass adds to. */
+export interface DiscoveryCounts {
+  /** Session files skipped because they name no folder, or cannot be read. */
+  skipped: number;
+}
+
 /** A session as discovered from a harness, normalized for Pitwall. */
 export interface HarnessSession {
   harness: HarnessId;
@@ -395,6 +414,13 @@ export interface HarnessAdapter {
     sourceWorktreePath: string,
     destinationWorktreePath: string
   ): Promise<ForkResult>;
+
+  /**
+   * Folders with a session file written at or after `sinceMs`, so Pitwall can
+   * list their repos without being told (ADR 0019). Files that name no folder
+   * or cannot be read are left out and counted in `counts.skipped`.
+   */
+  discoverRecentFolders?(sinceMs: number, counts?: DiscoveryCounts): Promise<DiscoveredFolder[]>;
 
   /** Release long-lived resources such as child processes or caches. */
   dispose?(): void;
