@@ -273,21 +273,40 @@ test('a returned repo gets its chats back', async (t) => {
   // Nothing is discovered before the list first renders.
   await flush();
   assert.deepEqual(stored().getRepositories(), []);
-  stub.__treeViews.find((view) => view.id === 'pitwall.workspacesView')!.__setVisible(true);
+  const view = stub.__treeViews.find((candidate) => candidate.id === 'pitwall.workspacesView')!;
+  view.__setVisible(true);
   await waitFor(() => sessionIds() === 's1', 'the discovered repo with its session', 10_000);
   const [lab] = stored().getRepositories();
   assert.equal(lab.origin, 'discovered');
+
+  // The list shows it as a repo row whose children are its sessions (repo → session).
+  type Row = { itemType: string; label?: unknown; data?: { harnessSessionId?: string } };
+  const provider = (view as unknown as { options: { treeDataProvider: { getChildren(row?: Row): Promise<Row[]> } } }).options
+    .treeDataProvider;
+  const label = (row: Row) => String(typeof row.label === 'object' ? (row.label as { label: string }).label : row.label);
+  /** Repo rows by name, each with the session ids of its child rows. */
+  const listed = async () => {
+    const rows: Record<string, string[]> = {};
+    for (const row of await provider.getChildren()) {
+      const children = await provider.getChildren(row);
+      rows[label(row)] = children.filter((child) => child.itemType === 'chat').map((child) => child.data?.harnessSessionId ?? '').sort();
+    }
+    return rows;
+  };
+  await waitFor(async () => JSON.stringify(await listed()) === JSON.stringify({ lab: ['s1'] }), 'the lab row with its session');
 
   await runCommand('pitwall.dismissRepository', { itemType: 'repository', data: lab });
   assert.deepEqual(stored().getRepositories(), []);
   assert.deepEqual(stored().getChats(), []);
   assert.deepEqual([...stored().getRemovedSessionKeys()], [], 'no tombstone keeps the sessions out');
   assert.equal(shownMessages().at(-1), dismissedMessage('lab'));
+  assert.deepEqual(await listed(), {}, 'the dismissed repo has no row');
 
   // A new session starts there; the window gains focus.
   profile.write('s2', repo, [entry.user('second task', iso(Date.now() + 1_000)), entry.assistant('done')]);
   stub.window.__fireWindowState(true);
   await waitFor(() => sessionIds() === 's1,s2', 'the repo back with both chats', 10_000);
+  await waitFor(async () => JSON.stringify(await listed()) === JSON.stringify({ lab: ['s1', 's2'] }), 'the lab row back with both sessions');
 });
 
 test('discovery never runs before the first render and its failure is logged, not thrown', async (t) => {
