@@ -129,3 +129,26 @@ test('CLAUDE_CONFIG_DIR replaces the default root; CLAUDE_CODE_PROJECT_DIR_NAME 
   writeSession(profile, 'override-session', worktree, 3, { projectDir: path.join(customProjects, 'custom-project') });
   assert.deepEqual(await find(), ['custom-config-session', 'override-session']);
 });
+
+/** Run `fn` with `process.platform` reported as `platform`, then put it back. */
+function withPlatform<T>(platform: NodeJS.Platform, fn: () => T): T {
+  const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { ...original, value: platform });
+  try {
+    return fn();
+  } finally {
+    Object.defineProperty(process, 'platform', original);
+  }
+}
+
+// Not skipped on any host: it stubs the platform, so both CI jobs pin both rules.
+test('project folder names match case-insensitively on win32 and case-sensitively on linux', () => {
+  withPlatform('win32', () => {
+    assert.ok(claudeProjectDirMatches('C--Users-x', 'c--Users-x'), 'a lowercase drive matches');
+    assert.ok(claudeProjectDirMatches('C--Users-x', 'c--users-x-sub'), 'and so does a subfolder');
+  });
+  withPlatform('linux', () => {
+    assert.ok(!claudeProjectDirMatches('C--Users-x', 'c--Users-x'), 'POSIX names differ by case');
+    assert.ok(claudeProjectDirMatches('C--Users-x', 'C--Users-x'), 'the same case still matches');
+  });
+});
