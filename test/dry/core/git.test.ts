@@ -16,6 +16,7 @@ function makeRepo(t: { after(fn: () => void): void }): { scratch: string; root: 
   const root = path.join(scratch, 'repo');
   fs.mkdirSync(root);
   git(root, 'init', '-q');
+  git(root, 'config', 'core.autocrlf', 'false');
   git(root, 'config', 'user.email', 'test@example.com');
   git(root, 'config', 'user.name', 'Pitwall Test');
   fs.writeFileSync(path.join(root, 'tracked.txt'), 'original\n');
@@ -131,10 +132,12 @@ test('the discard summary counts tracked changes and lists exactly what git clea
   git(root, 'mv', 'tracked.txt', 'moved.txt');
   fs.mkdirSync(path.join(root, 'build output'));
   fs.writeFileSync(path.join(root, 'build output', 'a.o'), '');
-  fs.writeFileSync(path.join(root, 'notes "draft".txt'), '');
+  // NTFS forbids `"` in file names.
+  const quotedName = process.platform === 'win32' ? [] : ['notes "draft".txt'];
+  for (const name of quotedName) fs.writeFileSync(path.join(root, name), '');
   assert.deepEqual(service.getDiscardSummary(root), {
     tracked: 1,
-    untracked: ['build output/', 'notes "draft".txt'],
+    untracked: ['build output/', ...quotedName],
   });
 });
 

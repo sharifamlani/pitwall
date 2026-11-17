@@ -9,6 +9,7 @@ import * as path from 'path';
 import { PiHarness } from '../../../../src/harnesses/pi/PiHarness';
 import { PiSessionService } from '../../../../src/harnesses/pi/PiSessionService';
 import { piEntry, piProfile } from './piFixture';
+import { quoteShellArgument } from '../../../../src/core/harness/cli';
 import { setEnv, stub } from '../../support';
 
 beforeEach(() => stub.__reset());
@@ -171,12 +172,12 @@ test('launch commands choose the new ID, resume by record path, and fork under a
   );
   assert.equal(
     harness.buildLaunchCommand({ worktreePath: worktree, sessionId: 'source' }),
-    `pi --session ${source}`,
+    `pi --session ${quoteShellArgument(source)}`,
     'a resume opens the record, which carries the cwd it was started in'
   );
   assert.equal(
     harness.buildLaunchCommand({ worktreePath: worktree, sessionId: 'sub-source' }),
-    `pi --session ${subSource}`,
+    `pi --session ${quoteShellArgument(subSource)}`,
     'a subdirectory session resumes instead of prompting to fork'
   );
   assert.equal(
