@@ -11,6 +11,7 @@ import { SessionImportService } from './core/services/SessionImportService';
 import { NotificationService } from './core/services/NotificationService';
 import { SessionAttentionService } from './core/services/SessionAttentionService';
 import { SessionSearchService } from './core/services/SessionSearchService';
+import * as chatVisibility from './core/services/chatVisibility';
 import { disposeOperationLog } from './core/services/OperationLog';
 import { HarnessRegistry } from './core/harness/HarnessRegistry';
 import { enabledHarnesses } from './harnesses';
@@ -67,22 +68,13 @@ export async function activate(context: vscode.ExtensionContext) {
    */
   const isChatOpen = (chat: ChatSession): boolean => terminalManager.isActive(chat.id) || hasOpenNativeUi(chat);
 
-  /** The chat whose native-UI tab is the active editor tab, if any. */
-  const activeNativeUiChatId = (): string | undefined => {
-    const activeSessions = new Map(
-      harnessRegistry.all().flatMap((adapter) => {
-        const sessionId = adapter.nativeUi?.surfaces?.activeSessionId();
-        return sessionId ? [[adapter.id, sessionId] as const] : [];
-      })
-    );
-    if (activeSessions.size === 0) {
-      return undefined;
-    }
-    return storageService.getChats().find((chat) => {
-      const sessionId = activeSessions.get(chat.harness);
-      return sessionId !== undefined && chatNativeSessionIds(chat).includes(sessionId);
-    })?.id;
+  const visibilitySources: chatVisibility.ChatVisibilitySources = {
+    getChats: () => storageService.getChats(),
+    adapters: () => harnessRegistry.all(),
+    getTerminal: (chatId) => terminalManager.getTerminal(chatId),
   };
+  /** The chat whose native-UI tab is the active editor tab, if any. */
+  const activeNativeUiChatId = (): string | undefined => chatVisibility.activeNativeUiChatId(visibilitySources);
 
   harnessWatcherRegistry.startAll();
 
@@ -252,10 +244,7 @@ export async function activate(context: vscode.ExtensionContext) {
   sessionImporter.start();
 
   /** Whether the chat's terminal or native-UI tab is the one in front of the user. */
-  const isChatVisible = (chatId: string): boolean => {
-    const terminal = terminalManager.getTerminal(chatId);
-    return (terminal !== undefined && terminal === vscode.window.activeTerminal) || activeNativeUiChatId() === chatId;
-  };
+  const isChatVisible = (chatId: string): boolean => chatVisibility.isChatVisible(visibilitySources, chatId);
   const notificationService = new NotificationService(
     (chatId) => {
       const chat = storageService.getChat(chatId);
