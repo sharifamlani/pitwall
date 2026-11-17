@@ -452,22 +452,32 @@ test('the overlay lets go of a write once the store shows it, so another windowâ
   const written = overlay.merge(copy({ theirs: { name: 'Theirs', at: 2 } }));
   assert.deepEqual(written.records, { theirs: { name: 'Renamed', at: 2 }, mine: { name: 'Mine' } });
 
-  // The copy this window just wrote shows every write, but a stale echo of an
-  // earlier write can still land on top of it.
-  overlay.settle(written, false);
+  // A copy showing every write with this window's own stamps releases
+  // nothing: an echo of an earlier copy carries the same stamps, and an older
+  // echo can still land after it.
+  overlay.settle(written);
   assert.equal(overlay.size, 3);
+  overlay.settle(copy({ mine: { name: 'Mine' }, theirs: { name: 'Theirs', at: 2 }, gone: { name: 'Gone' } }, { mine: written.stamps.mine }));
+  assert.equal(overlay.size, 3, 'an equal stamp is never a release');
 
-  // An echo that shows only the creation lets that go; the rest are kept.
-  const echo = copy({ mine: { name: 'Mine' }, theirs: { name: 'Theirs', at: 2 }, gone: { name: 'Gone' } }, { mine: written.stamps.mine });
-  overlay.settle(echo, true);
-  assert.equal(overlay.size, 2, 'the confirmed creation is let go');
+  // A newer write of the created record supersedes it; the rest are kept.
+  const createdStamp = (written.stamps.mine as Record<string, number>)['#'];
+  const newer = (stamp: number) => stamp + 1000;
+  overlay.settle(
+    copy({ mine: { name: 'Rewritten' }, theirs: { name: 'Theirs', at: 2 } }, { mine: { name: newer(createdStamp), '#': newer(createdStamp) } })
+  );
+  assert.equal(overlay.size, 2, 'the superseded creation is let go');
 
   // Another window's later rename wins at once, even while this window holds its own.
   const renameStamp = (written.stamps.theirs as Record<string, number>).name;
-  const later = copy({ theirs: { name: 'Later', at: 3 } }, { theirs: { name: renameStamp + 1000, at: renameStamp + 1000 } }, { gone: written.removed.gone });
+  const later = copy(
+    { theirs: { name: 'Later', at: 3 } },
+    { theirs: { name: newer(renameStamp), at: newer(renameStamp) } },
+    { gone: newer(written.removed.gone) }
+  );
   assert.deepEqual(overlay.merge(later).records, { theirs: { name: 'Later', at: 3 } });
-  overlay.settle(later, true);
-  assert.equal(overlay.size, 0, 'a superseded write and a confirmed removal are let go');
+  overlay.settle(later);
+  assert.equal(overlay.size, 0, 'a superseded write and a superseded removal are let go');
   assert.deepEqual(overlay.merge(later).records, { theirs: { name: 'Later', at: 3 } });
 });
 

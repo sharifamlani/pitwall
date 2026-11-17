@@ -19,11 +19,13 @@ import { randomInt } from 'crypto';
  * judges by the same times. Records written before stamps count as stamp 0.
  *
  * A `RecordOverlay` holds, in memory and for this window only, the writes and
- * removals this window made, with their stamps, until the store shows a stamp
- * at least as new: a newer one (superseded), or the same one in a copy this
- * window did not write itself (an echo or another window carried it back).
- * The same stamp in the copy this window just wrote proves nothing, because a
- * stale echo of an earlier write can still land on top of it.
+ * removals this window made, with their stamps, until the store shows a
+ * strictly newer stamp for them (another write superseded them). The same
+ * stamp proves nothing: an echo of this window's own earlier copy carries it,
+ * and an older echo can still land after that. Holding is safe because the
+ * merge re-applies a held write only where the store's stamp is older, and a
+ * write that changes no stamp writes nothing extra. Memory is bounded by the
+ * records and fields this window wrote.
  */
 
 /** A write time: epoch ms × 1000 + the writing window's tag (0–999). */
@@ -268,12 +270,12 @@ export class RecordOverlay<T> {
   }
 
   /**
-   * Let go of writes the store shows at least as new: a newer stamp, or the
-   * same stamp when `foreign` (the copy was not the one this window last
-   * wrote).
+   * Let go of writes the store has superseded with a strictly newer stamp.
+   * An equal stamp never releases: an echo of this window's own earlier copy
+   * carries it, and an older echo can still land after that one.
    */
-  settle(stored: Stamped<T>, foreign: boolean): void {
-    const shown = (own: number, store: number) => store > own || (foreign && store === own);
+  settle(stored: Stamped<T>): void {
+    const shown = (own: number, store: number) => store > own;
     for (const [id, entry] of this.entries) {
       const has = hasOwn(stored.records, id);
       const tombstone = stored.removed[id];

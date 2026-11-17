@@ -77,8 +77,6 @@ export function discoveredRepositoryId(rootPath: string): string {
  * not in them, so stored shapes stay readable by older builds.
  */
 interface StampSection {
-  /** Which write saved this copy; tells this window's own copy from an echo. */
-  v?: string;
   /** Record id → its stamp(s). */
   s?: Record<string, RecordStamp>;
   /** Tombstones: record id → the removal's stamp. */
@@ -129,8 +127,6 @@ export class StorageService {
    */
   private readonly pidOverlay: RecordOverlay<number>;
   private readonly guarded: GuardedCollection[];
-  /** The `v` of the last stamp section this window wrote, by collection key. */
-  private readonly writeTokens = new Map<string, string>();
 
   /**
    * @param isKnownHarness Whether a stored harness id is enabled in this
@@ -243,15 +239,14 @@ export class StorageService {
 
   /**
    * `records` (one collection, as stored) with its stored stamps and this
-   * window's writes applied. Held writes the store now shows at least as new
-   * are let go first; the same stamp counts only in a copy this window did
-   * not write itself.
+   * window's writes applied. Held writes the store has superseded with a
+   * newer stamp are let go first.
    */
   private stamped<T>(key: string, overlay: RecordOverlay<T>, records: Record<string, T>): Stamped<T> {
     const section = this.storedSections()[key] ?? {};
     const stored = resolveStored<T>({ records, stamps: section.s ?? {}, removed: section.d ?? {} });
     if (overlay.size > 0) {
-      overlay.settle(stored, section.v !== this.writeTokens.get(key));
+      overlay.settle(stored);
     }
     return overlay.merge(stored);
   }
@@ -315,9 +310,7 @@ export class StorageService {
     const sections = { ...this.storedSections() };
     let sectionsChanged = false;
     const stampWith = (collectionKey: string, section: StampSection) => {
-      const token = generateId();
-      sections[collectionKey] = { v: token, ...section };
-      this.writeTokens.set(collectionKey, token);
+      sections[collectionKey] = section;
       sectionsChanged = true;
     };
     const restamps = (collectionKey: string, section: StampSection) => {
