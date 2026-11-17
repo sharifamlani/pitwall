@@ -174,6 +174,7 @@ export class ClaudeHarness implements HarnessAdapter {
         }
         const [sessionId, filePath, reading] = entry;
         let waitingFor = agents.get(sessionId)?.waitingFor;
+        let writtenAt: number | undefined;
         // A "waiting" row may come from a cached call up to ~10 s old. Drop it
         // when the transcript was written after that call started. This
         // relies on Claude not writing the main transcript while a prompt is
@@ -187,13 +188,17 @@ export class ClaudeHarness implements HarnessAdapter {
         // next call, whose start is later than the write. Subagent (sidechain) records go to their own
         // files under <session>/subagents/, so they do not touch this mtime.
         // One stat per waiting session per tick, never per agent row.
+        // The same stat also tells the attention service when the wait most
+        // likely began (the tool-call write).
         if (waitingFor) {
-          const writtenAt = await this.sessionService.transcriptWrittenAt(filePath);
-          if (writtenAt !== null && writtenAt > observedAt) {
+          const mtime = await this.sessionService.transcriptWrittenAt(filePath);
+          if (mtime !== null && mtime > observedAt) {
             waitingFor = undefined;
+          } else if (mtime !== null) {
+            writtenAt = mtime;
           }
         }
-        states.set(sessionId, { ...reading, waitingFor, observedAt });
+        states.set(sessionId, { ...reading, waitingFor, observedAt, ...(writtenAt !== undefined ? { writtenAt } : {}) });
       })
     );
 

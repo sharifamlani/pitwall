@@ -122,13 +122,14 @@ test('live states come from the transcript tail plus the waiting reason from cla
 
   const before = Date.now();
   const live = await harness.getLiveStates([SESSION_ID, 'missing-id']);
-  const { observedAt, ...state } = live.get(SESSION_ID)!;
+  const { observedAt, writtenAt, ...state } = live.get(SESSION_ID)!;
   assert.deepEqual(state, {
     turnState: 'done',
     turnEndedAt: Date.parse('2026-01-01T00:00:03.000Z'),
     waitingFor: 'permission prompt',
   }, 'a transcript written before the agents call keeps its waiting reason');
   assert.ok(observedAt! >= before && observedAt! <= Date.now(), 'stamped with the agents call start');
+  assert.ok(writtenAt! > 0 && writtenAt! <= observedAt!, 'the transcript time comes with the waiting reason');
   assert.ok(!live.has('missing-id'), 'a missing transcript is omitted');
 
   assert.equal((await harness.getLiveStates([])).size, 0);

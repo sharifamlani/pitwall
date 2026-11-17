@@ -50,6 +50,12 @@ export interface HarnessLiveState {
    * produced it, which may be cached. Undefined means "now".
    */
   observedAt?: number;
+  /**
+   * When the session's transcript was last written, read alongside a
+   * waiting reason. Claude writes the tool call just before a prompt shows,
+   * so at a wait's first sighting this is the closest known time it began.
+   */
+  writtenAt?: number;
 }
 
 /**

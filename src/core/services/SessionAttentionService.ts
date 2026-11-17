@@ -70,6 +70,11 @@ export class SessionAttentionService {
    * between this time and its sighting.
    */
   private readonly lastClearAt = new Map<string, number>();
+  /**
+   * Per chat, the earliest time the current wait may have begun, fixed at
+   * its first sighting; see beganUnseen.
+   */
+  private readonly waitStartAt = new Map<string, number>();
   /** Per chat, the last time it was seen in front of the user. */
   private readonly lastFrontAt = new Map<string, number>();
   /** Chats in front at the last look, so leaving is stamped when it is noticed. */
@@ -176,23 +181,30 @@ export class SessionAttentionService {
 
   /**
    * Whether the chat's current wait began unseen: the chat was not in front
-   * at any time between the last sample without a wait and now, the whole
-   * window in which the wait could have started. Judging at the sighting
-   * alone is wrong, because a sighting can lag the wait by a cache cycle,
-   * a tick and a call (about 14 s).
+   * at any time between the wait's start and now. In words, the toast is
+   * held back only if the user had the chat in front after the prompt
+   * appeared. Judging at the sighting alone is wrong, because a sighting can
+   * lag the wait by a cache cycle, a tick and a call (about 14 s).
    *
-   * Known side effect: the window opens at the last no-wait call, up to
-   * about 14 s before the wait began, so a user who glanced at the chat just
-   * before the prompt appeared gets no toast. The mark and the list still
-   * show it.
+   * The start is max(transcript mtime at the first sighting, start of the
+   * last call that found no wait). Claude writes the tool call just before a
+   * prompt shows, so the mtime is the closest known time the prompt
+   * appeared; the max means it can only narrow the window, never widen it.
+   * Without a transcript time the window opens at the last no-wait call.
+   *
+   * Known drift, both small: a look within the transcript-write jitter
+   * (between the tool-call write and the prompt) holds the toast back, and a
+   * metadata write after the tool call makes the start later than the true
+   * one, so at worst a toast still fires for a look in those few hundred ms.
+   * The mark and the list are unaffected either way.
    */
   private beganUnseen(chatId: string): boolean {
     const front = this.lastFrontAt.get(chatId);
     if (front === undefined) {
       return true;
     }
-    const clear = this.lastClearAt.get(chatId);
-    return clear !== undefined && front < clear;
+    const start = this.waitStartAt.get(chatId);
+    return start !== undefined && front < start;
   }
 
   private flagNeedsYou(chatId: string): void {
@@ -243,6 +255,7 @@ export class SessionAttentionService {
         this.waitingSince.delete(chatId);
         this.toastableWaits.delete(chatId);
         this.lastClearAt.delete(chatId);
+        this.waitStartAt.delete(chatId);
         this.needsYouSince.delete(chatId);
         if (this.turnStates.delete(chatId)) {
           turnStatesChanged = true;
@@ -276,14 +289,14 @@ export class SessionAttentionService {
           continue;
         }
 
-        const { turnState, turnEndedAt, waitingFor, observedAt } = live;
+        const { turnState, turnEndedAt, waitingFor, observedAt, writtenAt } = live;
 
         if (this.turnStates.get(chat.id) !== turnState) {
           this.turnStates.set(chat.id, turnState);
           turnStatesChanged = true;
         }
 
-        this.updateNeedsInput(chat, waitingFor, prime, observedAt);
+        this.updateNeedsInput(chat, waitingFor, prime, observedAt, writtenAt);
 
         const done = turnState === 'done';
         const endedAt = done ? turnEndedAt ?? -1 : null;
@@ -372,11 +385,13 @@ export class SessionAttentionService {
     chat: ChatSession,
     waitingFor: string | undefined,
     prime: boolean,
-    observedAt: number | undefined
+    observedAt: number | undefined,
+    writtenAt: number | undefined
   ): void {
     if (!waitingFor) {
       // The wait ended: it leaves the list, and the next wait is new.
       this.lastClearAt.set(chat.id, observedAt ?? Date.now());
+      this.waitStartAt.delete(chat.id);
       this.lastWaitingFor.delete(chat.id);
       this.toastableWaits.delete(chat.id);
       if (this.waitingSince.delete(chat.id)) {
@@ -406,6 +421,13 @@ export class SessionAttentionService {
     // have started), and never once it has toasted or been seen.
     if (waitingFor !== previous && !prime) {
       this.toastableWaits.add(chat.id);
+      const clear = this.lastClearAt.get(chat.id);
+      const start = Math.max(clear ?? -Infinity, writtenAt ?? -Infinity);
+      if (start === -Infinity) {
+        this.waitStartAt.delete(chat.id);
+      } else {
+        this.waitStartAt.set(chat.id, start);
+      }
     }
     if (prime || visible || !this.beganUnseen(chat.id)) {
       this.toastableWaits.delete(chat.id);
