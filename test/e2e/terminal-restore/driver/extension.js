@@ -267,6 +267,7 @@ function checkNoRestore(stageIndex, terminals) {
 function watchTiming(t0) {
   const since = () => Date.now() - t0;
   const events = [];
+  const lines = [];
   for (const terminal of vscode.window.terminals) {
     if (terminal.shellIntegration) events.push(`${terminal.name}: integration present when the driver ran`);
   }
@@ -276,6 +277,7 @@ function watchTiming(t0) {
     ),
     vscode.window.onDidStartTerminalShellExecution(({ terminal, execution }) => {
       const line = execution.commandLine && execution.commandLine.value;
+      lines.push(String(line));
       // The whole line, so a resume line the starting shell only half read shows up.
       events.push(`${terminal.name}: command start at ${since()} ms (${JSON.stringify(String(line))})`);
     }),
@@ -289,7 +291,30 @@ function watchTiming(t0) {
         observe('timing: harness ran', `${run.at - t0} ms (${runText(run).slice(-30)})`);
       }
     },
+    /**
+     * R42: each chat's resume line reached the shell with its change of
+     * directory whole. A shell that drops the line's first keystroke ran
+     * "et-Location ..." in Smoke 7; with the leading space it drops the space.
+     */
+    checkLines(stageIndex) {
+      for (const chat of CHATS) {
+        const resumeLines = lines.filter((line) => line.includes(chat.pendingHarnessSessionId));
+        const whole = (line) =>
+          isPowerShell()
+            ? line.includes(`Set-Location -LiteralPath '${chat.worktreePath.replace(/'/g, "''")}'`)
+            : /(^|\s)cd\s/.test(line) && line.includes(chat.worktreePath);
+        check(
+          `stage ${stageIndex}: ${chat.name}'s resume line reached the shell whole`,
+          resumeLines.length > 0 && resumeLines.every(whole),
+          JSON.stringify(resumeLines)
+        );
+      }
+    },
   };
+}
+
+function isPowerShell() {
+  return /(^|[\\/])(powershell|pwsh)(\.exe)?$/i.test(vscode.env.shell || '');
 }
 
 /**
@@ -469,6 +494,7 @@ exports.activate = async function activate() {
         );
         checkRestored(stage, terminals, state);
         timing.report(await pitwallActive);
+        timing.checkLines(stage);
       } else {
         // A resume that should not happen has no event to poll; give it time
         // to appear before asserting its absence.
