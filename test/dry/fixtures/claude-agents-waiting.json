@@ -1,0 +1,5 @@
+[
+  {"pid":41001,"cwd":"/work/demo","kind":"interactive","startedAt":1790000000000,"sessionId":"aaaaaaaa-1111-4111-8111-000000000001","name":"Fixture idle chat","status":"idle"},
+  {"pid":41002,"cwd":"/work/other","kind":"interactive","startedAt":1790000100000,"sessionId":"aaaaaaaa-1111-4111-8111-000000000002","name":"Fixture busy chat","status":"busy"},
+  {"pid":41003,"cwd":"/work/demo","kind":"interactive","startedAt":1790000200000,"sessionId":"aaaaaaaa-1111-4111-8111-000000000003","name":"Fixture waiting chat","status":"waiting","waitingFor":"permission prompt"}
+]

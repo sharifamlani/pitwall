@@ -647,6 +647,7 @@ module.exports = {
     nextTerminalPid = 4100;
     module.exports.workspace.workspaceFolders = [];
     module.exports.window.tabGroups.all = [];
+    module.exports.window.state = { focused: false };
     module.exports.env.shell = '/bin/bash';
   },
   __deleted: deletedUris,
