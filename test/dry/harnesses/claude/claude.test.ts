@@ -104,10 +104,32 @@ test('forks choose a fresh ID, and a worktree fork validates its source first', 
   );
 });
 
-test('live states come from the transcript tail plus the waiting reason from claude agents', async (t) => {
+test('a transcript written within the same millisecond as the agents call keeps its waiting reason', async (t) => {
   const profile = claudeProfile(t);
   const repo = profile.dir('repo');
   profile.write(SESSION_ID, repo, [entry.user('Go'), entry.assistant('Done', 'end_turn', '2026-01-01T00:00:03.000Z')]);
+  const callStart = 1_800_000_000_000;
+  t.mock.method(Date, 'now', () => callStart);
+  const sessionService = new ClaudeSessionService();
+  // mtimeMs has sub-millisecond precision: the write lands fractionally after the call's integer start.
+  sessionService.transcriptWrittenAt = async () => callStart + 0.5;
+  const harness = new ClaudeHarness({
+    sessionService,
+    agentsService: new ClaudeAgentsService({
+      command: () => 'fake-claude',
+      enabled: () => true,
+      exec: async () => JSON.stringify([{ sessionId: SESSION_ID, status: 'waiting', waitingFor: 'permission prompt' }]),
+    }),
+  });
+  const live = await harness.getLiveStates([SESSION_ID]);
+  assert.equal(live.get(SESSION_ID)?.waitingFor, 'permission prompt');
+  assert.equal(live.get(SESSION_ID)?.writtenAt, callStart);
+});
+
+test('live states come from the transcript tail plus the waiting reason from claude agents', async (t) => {
+  const profile = claudeProfile(t);
+  const repo = profile.dir('repo');
+  const transcript = profile.write(SESSION_ID, repo, [entry.user('Go'), entry.assistant('Done', 'end_turn', '2026-01-01T00:00:03.000Z')]);
   let agentCalls = 0;
   const harness = new ClaudeHarness({
     agentsService: new ClaudeAgentsService({
@@ -120,6 +142,9 @@ test('live states come from the transcript tail plus the waiting reason from cla
     }),
   });
 
+  // Pin the transcript time in the past so the test never races the clock.
+  const past = new Date(Date.now() - 5000);
+  fs.utimesSync(transcript, past, past);
   const before = Date.now();
   const live = await harness.getLiveStates([SESSION_ID, 'missing-id']);
   const { observedAt, writtenAt, ...state } = live.get(SESSION_ID)!;
