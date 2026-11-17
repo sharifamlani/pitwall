@@ -224,6 +224,59 @@ export function waitForShellIntegration(terminal: vscode.Terminal, timeoutMs: nu
   );
 }
 
+/** How a wait for a shell to be ready to read a typed line ended. */
+export type ShellReadiness = 'ready' | 'off' | 'cap' | 'closed';
+
+/**
+ * Wait until a terminal's shell can read a typed line: its shell integration
+ * has activated. A line typed into a shell that is still starting can be lost
+ * (a revived Windows PowerShell 5.1 can take many seconds to start).
+ * - `ready`: integration is active, now or later.
+ * - `off`: at once, because the setting turns integration off, so there is
+ *   nothing to wait for.
+ * - `cap`: integration never arrived within `capMs` (a broken shell, or a
+ *   policy that blocks the integration script).
+ * - `closed`: the tab closed or the watch was cancelled.
+ */
+export function watchShellReady(
+  terminal: vscode.Terminal,
+  capMs: number
+): { ready: Promise<ShellReadiness>; cancel(): void } {
+  if (!shellIntegrationEnabled()) {
+    return { ready: Promise.resolve('off'), cancel: () => undefined };
+  }
+  if (terminal.shellIntegration) {
+    return { ready: Promise.resolve('ready'), cancel: () => undefined };
+  }
+  const subscriptions: vscode.Disposable[] = [];
+  let finish: (value: ShellReadiness) => void = () => undefined;
+  const ready = new Promise<ShellReadiness>((resolve) => {
+    let settled = false;
+    finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      subscriptions.forEach((subscription) => subscription.dispose());
+      subscriptions.length = 0;
+      resolve(value);
+    };
+  });
+  const timer = setTimeout(() => finish('cap'), capMs);
+  subscriptions.push(
+    vscode.window.onDidChangeTerminalShellIntegration((event) => {
+      if (event.terminal === terminal) {
+        finish('ready');
+      }
+    }),
+    vscode.window.onDidCloseTerminal((closed) => {
+      if (closed === terminal) {
+        finish('closed');
+      }
+    })
+  );
+  return { ready, cancel: () => finish('closed') };
+}
+
 /**
  * Wait for a terminal that was just shown to become active. The rename command
  * targets the active tab, and `show()` crosses process boundaries

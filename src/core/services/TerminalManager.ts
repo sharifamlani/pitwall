@@ -19,6 +19,7 @@ import {
   waitForProcessId,
   waitForShellIntegration,
   watchCommandStart,
+  watchShellReady,
 } from './terminalEvents';
 
 /** How long to wait for the launch command to start before applying the title. */
@@ -31,7 +32,16 @@ const COMMAND_START_TIMEOUT_MS = 2000;
  */
 const RESTORED_SHELL_TIMEOUT_MS = 10000;
 
-/** Red-commit stub: replaced by the readiness wait in the green commit. */
+/**
+ * Longest a revived tab waits for its shell to report ready before its resume
+ * line is sent anyway (today's behaviour), with one log line. Nothing the user
+ * sees waits on it: the wait runs after activation, and the tab is already the
+ * chat's, so a click focuses it. The cap only stops a shell whose integration
+ * never arrives (a broken profile, a policy that blocks the integration
+ * script) from holding a listener forever. Revived Windows PowerShell 5.1
+ * shells here took 10-17 s to start under load and once 28 s; 60 s is about
+ * twice the slowest seen, so a slow shell is not typed into early.
+ */
 export const REVIVED_SHELL_READY_CAP_MS = 60_000;
 
 /** A launched tab and the waits its command start is observed through. */
@@ -89,7 +99,10 @@ export class TerminalManager {
    */
   private readonly restoringChats = new Map<string, vscode.Terminal>();
 
-  /** Background waits for a slow shell's first command, cancelled on dispose. */
+  /**
+   * Background waits for a slow shell to be ready or to start its first
+   * command, cancelled on dispose.
+   */
   private readonly lateStarts = new Set<() => void>();
 
   /**
@@ -245,13 +258,63 @@ export class TerminalManager {
     this.terminals.set(chat.id, terminal);
     this.terminalToChatId.set(terminal, chat.id);
     terminal.sendText(command);
+    this.markOpened(chat);
+
+    return { terminal, integrated, started };
+  }
+
+  private markOpened(chat: ChatSession): void {
     this.storageService.updateChat(chat.id, {
       status: 'active',
       lastAccessedAt: Date.now(),
     });
     this.stateEmitter.fire({ chatId: chat.id, state: 'opened' });
+  }
 
-    return { terminal, integrated, started };
+  /**
+   * Map a revived tab to its chat now, and type its resume line once the
+   * shell reports ready. A revived shell can still be starting, and a line
+   * typed into it then can be lost. The tab is the chat's meanwhile, so a
+   * click focuses it. Nothing awaits the readiness wait.
+   */
+  private startRevivedTerminal(
+    chat: ChatSession,
+    terminal: vscode.Terminal,
+    command: string
+  ): StartedTerminal {
+    const watch = watchShellReady(terminal, REVIVED_SHELL_READY_CAP_MS);
+    this.lateStarts.add(watch.cancel);
+    this.terminals.set(chat.id, terminal);
+    this.terminalToChatId.set(terminal, chat.id);
+    this.markOpened(chat);
+
+    const sent = watch.ready.then((readiness) => {
+      this.lateStarts.delete(watch.cancel);
+      if (
+        readiness === 'closed' ||
+        this.isDisposed ||
+        this.terminals.get(chat.id) !== terminal ||
+        !isLiveTerminal(terminal)
+      ) {
+        return { readiness, started: Promise.resolve(false) };
+      }
+      if (readiness === 'cap') {
+        console.warn(
+          `Pitwall: the revived terminal for chat ${chat.id.substring(0, 6)} did not report its shell ready within ${REVIVED_SHELL_READY_CAP_MS / 1000} s; sending its resume line anyway`
+        );
+      }
+      // Watched from before the send, which can start the command at once.
+      const started = waitForCommandStart(terminal, RESTORED_SHELL_TIMEOUT_MS);
+      terminal.sendText(command);
+      return { readiness, started };
+    });
+
+    return {
+      terminal,
+      // Only an integrated shell re-tags the title, so only it needs a retitle.
+      integrated: sent.then(({ readiness }) => readiness === 'ready'),
+      started: sent.then(({ started }) => started),
+    };
   }
 
   /**
@@ -1011,12 +1074,7 @@ export class TerminalManager {
         launch.command
       );
       this.restoringChats.delete(chat.id);
-      const started = this.startTerminal(
-        chat,
-        terminal,
-        command,
-        RESTORED_SHELL_TIMEOUT_MS
-      );
+      const started = this.startRevivedTerminal(chat, terminal, command);
       await this.recordTerminalPid(chat.id, terminal, pids.get(terminal));
       revived.push(started);
     }
