@@ -1,3 +1,4 @@
+// Parked by ROADMAP row 3.6 / ruling P9: not constructed or registered; restoring it is a manifest + wiring change.
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { PRInfo } from '../types';

@@ -10,7 +10,6 @@ import { fakeAdapter, fakeNativeUi, makeStorage, flush, stub, tempDir, waitFor, 
 beforeEach(() => stub.__reset());
 
 const MINUTE = 60_000;
-const noPRs = { getCachedPRInfo: () => null, fetchPRInfo: async () => null, clearCache: () => undefined };
 const terminals = { onTerminalStateChange: () => ({ dispose: () => undefined }), isActive: () => false };
 
 function provider(
@@ -28,7 +27,6 @@ function provider(
     } as never,
     terminals as never,
     new HarnessRegistry(adapters),
-    noPRs as never,
     vscode.Uri.file('/extension')
   );
   t.after(() => tree.dispose());

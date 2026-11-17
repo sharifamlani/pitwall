@@ -1,3 +1,4 @@
+// Parked by ROADMAP row 3.6 / ruling P9: not constructed or registered; restoring it is a manifest + wiring change.
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { GitOutcome, GitService } from '../services/GitService';

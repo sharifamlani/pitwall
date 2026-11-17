@@ -23,14 +23,10 @@
         "visibility": "collapsed"
       },
       {
-        "id": "pitwall.changesView",
-        "name": "Changes",
-        "size": 2
-      },
-      {
         "id": "pitwall.filesView",
-        "name": "All Files",
-        "size": 3
+        "name": "Files",
+        "size": 3,
+        "visibility": "collapsed"
       }
     ]
   },
@@ -38,10 +34,6 @@
     {
       "view": "pitwall.workspacesView",
       "contents": "Every Claude Code session across your repos, in one sidebar.\n\n[Add Local Folder or Repository](command:pitwall.addRepository)\n[Clone from GitHub](command:pitwall.cloneRepository)\n\nAdd any local folder, or clone a repository from GitHub to get started."
-    },
-    {
-      "view": "pitwall.changesView",
-      "contents": "Select a worktree, folder, or session to view uncommitted changes.\n\nClick the diff icon on any file to view side-by-side comparison."
     },
     {
       "view": "pitwall.filesView",
@@ -159,24 +151,6 @@
       "icon": "$(arrow-down)"
     },
     {
-      "command": "pitwall.addWorktree",
-      "title": "Create Worktree…",
-      "category": "Pitwall",
-      "icon": "$(add)"
-    },
-    {
-      "command": "pitwall.deleteWorktree",
-      "title": "Delete Worktree…",
-      "category": "Pitwall",
-      "icon": "$(trash)"
-    },
-    {
-      "command": "pitwall.mergeWorktree",
-      "title": "Merge Branch into This Worktree…",
-      "category": "Pitwall",
-      "icon": "$(git-merge)"
-    },
-    {
       "command": "pitwall.newDefaultSession",
       "title": "New Session",
       "category": "Pitwall",
@@ -219,28 +193,10 @@
       "icon": "$(repo-forked)"
     },
     {
-      "command": "pitwall.forkChatWithChanges",
-      "title": "Fork Session to New Worktree…",
-      "category": "Pitwall",
-      "icon": "$(repo-forked)"
-    },
-    {
       "command": "pitwall.refreshWorkspaces",
       "title": "Refresh",
       "category": "Pitwall",
       "icon": "$(refresh)"
-    },
-    {
-      "command": "pitwall.refreshChanges",
-      "title": "Refresh",
-      "category": "Pitwall",
-      "icon": "$(refresh)"
-    },
-    {
-      "command": "pitwall.openDiff",
-      "title": "Open Diff",
-      "category": "Pitwall",
-      "icon": "$(diff)"
     },
     {
       "command": "pitwall.openInNewWindow",
@@ -297,66 +253,6 @@
       "icon": "$(eye-closed)"
     },
     {
-      "command": "pitwall.stageFile",
-      "title": "Stage File",
-      "category": "Pitwall",
-      "icon": "$(add)"
-    },
-    {
-      "command": "pitwall.unstageFile",
-      "title": "Unstage File",
-      "category": "Pitwall",
-      "icon": "$(remove)"
-    },
-    {
-      "command": "pitwall.discardFile",
-      "title": "Discard Changes",
-      "category": "Pitwall",
-      "icon": "$(discard)"
-    },
-    {
-      "command": "pitwall.stageAll",
-      "title": "Stage All Changes",
-      "category": "Pitwall",
-      "icon": "$(add)"
-    },
-    {
-      "command": "pitwall.unstageAll",
-      "title": "Unstage All Changes",
-      "category": "Pitwall",
-      "icon": "$(remove)"
-    },
-    {
-      "command": "pitwall.discardAll",
-      "title": "Discard All Changes",
-      "category": "Pitwall",
-      "icon": "$(discard)"
-    },
-    {
-      "command": "pitwall.rebaseWorktree",
-      "title": "Rebase onto Upstream…",
-      "category": "Pitwall",
-      "icon": "$(repo-sync)"
-    },
-    {
-      "command": "pitwall.rebaseContinue",
-      "title": "Continue Rebase",
-      "category": "Pitwall",
-      "icon": "$(check)"
-    },
-    {
-      "command": "pitwall.rebaseAbort",
-      "title": "Abort Rebase",
-      "category": "Pitwall",
-      "icon": "$(close)"
-    },
-    {
-      "command": "pitwall.rebaseSkip",
-      "title": "Skip Commit",
-      "category": "Pitwall",
-      "icon": "$(debug-step-over)"
-    },
-    {
       "command": "pitwall.clearWorktreeSessions",
       "title": "Remove All Sessions from List…",
       "category": "Pitwall",
@@ -373,18 +269,6 @@
       "title": "Open Terminal Here",
       "category": "Pitwall",
       "icon": "$(terminal)"
-    },
-    {
-      "command": "pitwall.openPRInBrowser",
-      "title": "Open Pull Request in Browser",
-      "category": "Pitwall",
-      "icon": "$(link-external)"
-    },
-    {
-      "command": "pitwall.checkoutPR",
-      "title": "Check Out Pull Request…",
-      "category": "Pitwall",
-      "icon": "$(git-pull-request)"
     },
     {
       "command": "pitwall.findSession",
@@ -800,11 +684,6 @@
         "group": "3_refresh@1"
       },
       {
-        "command": "pitwall.refreshChanges",
-        "when": "view == pitwall.changesView",
-        "group": "navigation"
-      },
-      {
         "command": "pitwall.files.search",
         "when": "view == pitwall.filesView",
         "group": "navigation@0"
@@ -850,32 +729,12 @@
         "group": "1_actions@1"
       },
       {
-        "command": "pitwall.checkoutPR",
-        "when": "view == pitwall.workspacesView",
-        "group": "0_add@2"
-      },
-      {
         "command": "pitwall.openNextSessionNeedingYou",
         "when": "view == pitwall.workspacesView",
         "group": "1_sessions@1"
       }
     ],
     "view/item/context": [
-      {
-        "command": "pitwall.addWorktree",
-        "when": "view == pitwall.workspacesView && viewItem == repository",
-        "group": "inline@1"
-      },
-      {
-        "command": "pitwall.addWorktree",
-        "when": "view == pitwall.workspacesView && viewItem == repository",
-        "group": "1_create@1"
-      },
-      {
-        "command": "pitwall.checkoutPR",
-        "when": "view == pitwall.workspacesView && viewItem == repository",
-        "group": "1_create@2"
-      },
       {
         "command": "pitwall.moveRepositoryUp",
         "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
@@ -932,34 +791,14 @@
         "group": "2_open@3"
       },
       {
-        "command": "pitwall.openPRInBrowser",
-        "when": "view == pitwall.workspacesView && viewItem == worktree",
-        "group": "2_open@4"
-      },
-      {
         "command": "pitwall.copyWorktreePath",
         "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
         "group": "2_open@5"
       },
       {
-        "command": "pitwall.mergeWorktree",
-        "when": "view == pitwall.workspacesView && viewItem == worktree",
-        "group": "3_git@1"
-      },
-      {
-        "command": "pitwall.rebaseWorktree",
-        "when": "view == pitwall.workspacesView && viewItem == worktree",
-        "group": "3_git@2"
-      },
-      {
         "command": "pitwall.clearWorktreeSessions",
         "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
         "group": "9_destructive@1"
-      },
-      {
-        "command": "pitwall.deleteWorktree",
-        "when": "view == pitwall.workspacesView && viewItem == worktree",
-        "group": "9_destructive@2"
       },
       {
         "command": "pitwall.starChat",
@@ -1017,11 +856,6 @@
         "group": "3_fork@1"
       },
       {
-        "command": "pitwall.forkChatWithChanges",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
-        "group": "3_fork@2"
-      },
-      {
         "command": "pitwall.copyResumeCommand",
         "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
         "group": "4_copy@1"
@@ -1040,71 +874,6 @@
         "command": "pitwall.deleteChat",
         "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/",
         "group": "9_destructive@2"
-      },
-      {
-        "command": "pitwall.openDiff",
-        "when": "view == pitwall.workspacesView && viewItem == changedFile",
-        "group": "navigation"
-      },
-      {
-        "command": "pitwall.rebaseContinue",
-        "when": "view == pitwall.changesView && viewItem == rebaseSection",
-        "group": "inline@1"
-      },
-      {
-        "command": "pitwall.rebaseSkip",
-        "when": "view == pitwall.changesView && viewItem == rebaseSection",
-        "group": "inline@2"
-      },
-      {
-        "command": "pitwall.rebaseAbort",
-        "when": "view == pitwall.changesView && viewItem == rebaseSection",
-        "group": "inline@3"
-      },
-      {
-        "command": "pitwall.discardAll",
-        "when": "view == pitwall.changesView && viewItem == unstagedSection",
-        "group": "inline"
-      },
-      {
-        "command": "pitwall.stageAll",
-        "when": "view == pitwall.changesView && viewItem == unstagedSection",
-        "group": "inline"
-      },
-      {
-        "command": "pitwall.unstageAll",
-        "when": "view == pitwall.changesView && viewItem == stagedSection",
-        "group": "inline"
-      },
-      {
-        "command": "pitwall.stageFile",
-        "when": "view == pitwall.changesView && viewItem == unstagedFile",
-        "group": "inline@1"
-      },
-      {
-        "command": "pitwall.discardFile",
-        "when": "view == pitwall.changesView && viewItem == unstagedFile",
-        "group": "inline@2"
-      },
-      {
-        "command": "pitwall.unstageFile",
-        "when": "view == pitwall.changesView && viewItem == stagedFile",
-        "group": "inline"
-      },
-      {
-        "command": "pitwall.stageFile",
-        "when": "view == pitwall.changesView && viewItem == unstagedFile",
-        "group": "navigation"
-      },
-      {
-        "command": "pitwall.discardFile",
-        "when": "view == pitwall.changesView && viewItem == unstagedFile",
-        "group": "destructive"
-      },
-      {
-        "command": "pitwall.unstageFile",
-        "when": "view == pitwall.changesView && viewItem == stagedFile",
-        "group": "navigation"
       },
       {
         "command": "pitwall.files.openToSide",
@@ -1278,22 +1047,6 @@
         "when": "false"
       },
       {
-        "command": "pitwall.deleteWorktree",
-        "when": "false"
-      },
-      {
-        "command": "pitwall.mergeWorktree",
-        "when": "false"
-      },
-      {
-        "command": "pitwall.rebaseWorktree",
-        "when": "false"
-      },
-      {
-        "command": "pitwall.openPRInBrowser",
-        "when": "false"
-      },
-      {
         "command": "pitwall.openInNewWindow",
         "when": "false"
       },
@@ -1334,31 +1087,11 @@
         "when": "false"
       },
       {
-        "command": "pitwall.forkChatWithChanges",
-        "when": "false"
-      },
-      {
         "command": "pitwall.starChat",
         "when": "false"
       },
       {
         "command": "pitwall.unstarChat",
-        "when": "false"
-      },
-      {
-        "command": "pitwall.stageFile",
-        "when": "false"
-      },
-      {
-        "command": "pitwall.unstageFile",
-        "when": "false"
-      },
-      {
-        "command": "pitwall.discardFile",
-        "when": "false"
-      },
-      {
-        "command": "pitwall.openDiff",
         "when": "false"
       },
       {

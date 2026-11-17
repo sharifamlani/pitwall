@@ -7,10 +7,10 @@ import {
   ChangeSectionItem,
   ChangesTreeProvider,
   ChangeTreeItem,
-} from '../../../src/core/providers/ChangesTreeProvider';
-import { registerChangesCommands } from '../../../src/core/commands/changes';
-import { FileChange } from '../../../src/core/types';
-import { runCommand, shown, stub, tempDir, worktreeRecord } from '../support';
+} from '../../../../src/core/providers/ChangesTreeProvider';
+import { registerChangesCommands } from '../../../../src/core/commands/changes';
+import { FileChange } from '../../../../src/core/types';
+import { runCommand, shown, stub, tempDir, worktreeRecord } from '../../support';
 
 beforeEach(() => stub.__reset());
 

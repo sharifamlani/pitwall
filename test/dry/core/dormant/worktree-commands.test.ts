@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { GitService } from '../../../src/core/services/GitService';
-import { GitHubService } from '../../../src/core/services/GitHubService';
-import { registerWorktreeCommands } from '../../../src/core/commands/worktree';
-import { Worktree } from '../../../src/core/types';
-import { makeStorage, runCommand, shown, stub, tempDir } from '../support';
+import { GitService } from '../../../../src/core/services/GitService';
+import { GitHubService } from '../../../../src/core/services/GitHubService';
+import { registerWorktreeCommands } from '../../../../src/core/commands/worktree';
+import { Worktree } from '../../../../src/core/types';
+import { makeStorage, runCommand, shown, stub, tempDir } from '../../support';
 
 beforeEach(() => stub.__reset());
 
@@ -34,11 +34,10 @@ function setup(t: { after(fn: () => void): void }) {
     workspacesProvider: {
       getWorktreeForItem: (item) => item?.data as Worktree | undefined,
       isGitRepo: () => true,
-      getPRUrl: () => undefined,
     },
+    getPRUrl: () => undefined,
     forgetWorktrees: (worktrees) =>
       forgotten.push(...worktrees.map((w) => ({ path: w.path, existed: fs.existsSync(w.path) }))),
-    switchWorkspaceFolder: () => undefined,
     refreshTree: () => undefined,
   });
   const worktreeAt = (worktreePath: string) =>

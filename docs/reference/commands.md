@@ -8,15 +8,13 @@ Pitwall's commands are in three places: the Command Palette, the hover icons and
 
 Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pitwall**. The palette lists only the commands that work without a row under the cursor.
 
-### Folders, repositories, and worktrees
+### Folders and repositories
 
 | Command | What it does |
 | --- | --- |
 | **Pitwall: Add Local Folder or Repository…** | Add a folder or a git repository to the sidebar |
 | **Pitwall: Clone from GitHub…** | Clone a repository and add it |
 | **Pitwall: Remove from Pitwall…** | Remove a folder or repository from the sidebar. Files and conversations are kept |
-| **Pitwall: Create Worktree…** | Create a git worktree from an existing or a new branch |
-| **Pitwall: Check Out Pull Request…** | Check out a GitHub pull request into a new worktree |
 
 ### Sessions
 
@@ -47,21 +45,15 @@ Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pit
 | **Pitwall: Find Session Settings…** | Choose the agent, model, and effort for Find Session |
 | **Pitwall: Clear Searches…** | Remove past searches from the Find Session view |
 
-### Changes and files
+### Files
 
 | Command | What it does |
 | --- | --- |
-| **Pitwall: Stage All Changes** | Stage every change in the current worktree |
-| **Pitwall: Unstage All Changes** | Unstage every staged change |
-| **Pitwall: Discard All Changes** | Discard every unstaged change, after a confirmation |
-| **Pitwall: Continue Rebase** | Continue a rebase that stopped on a conflict |
-| **Pitwall: Skip Commit** | Skip the current commit of a rebase |
-| **Pitwall: Abort Rebase** | Abort the rebase in progress |
 | **Pitwall: Search in Files** | Search inside the current worktree |
 | **Pitwall: New File...** | Create a file in the current worktree |
 | **Pitwall: New Folder...** | Create a folder in the current worktree |
 | **Pitwall: Paste** | Paste the copied or cut file |
-| **Pitwall: Refresh** | Refresh the Workspaces, Changes, or All Files view |
+| **Pitwall: Refresh** | Refresh the Workspaces or Files view |
 
 ### Settings
 
@@ -85,8 +77,6 @@ The view's title bar has **Add Local Folder or Repository…**. Its `…` menu h
 
 | Action | Where | Notes |
 | --- | --- | --- |
-| **Create Worktree…** | Hover icon, right-click | Git repositories |
-| **Check Out Pull Request…** | Right-click | Git repositories; needs the `gh` CLI |
 | **Move Up**, **Move Down** | Right-click | Reorder the list |
 | **Remove from Pitwall…** | Right-click | Removes the row only |
 
@@ -101,12 +91,8 @@ A plain folder row also has every action of a worktree row except the git ones, 
 | **Open in This Window** | Right-click | Shown when Auto-Switch Workspace Folder is off |
 | **Open in New Window** | Right-click | |
 | **Open Terminal Here** | Hover icon, right-click | A plain terminal |
-| **Open Pull Request in Browser** | Right-click | When the branch has a pull request |
 | **Copy Path** | Right-click | |
-| **Merge Branch into This Worktree…** | Right-click | |
-| **Rebase onto Upstream…** | Right-click | |
 | **Remove All Sessions from List…** | Right-click | Conversations are kept |
-| **Delete Worktree…** | Right-click | Not available on the main worktree |
 
 ## Session rows
 
@@ -118,7 +104,6 @@ A plain folder row also has every action of a worktree row except the git ones, 
 | **Rename Session…** | Hover icon, right-click, `F2` | |
 | **Star Session**, **Unstar Session** | Hover icon, right-click | Works on several selected rows |
 | **Fork Session Here** | Right-click | |
-| **Fork Session to New Worktree…** | Right-click | |
 | **Copy Resume Command** | Right-click, `Ctrl+C` / `Cmd+C` | |
 | **Copy Session ID** | Right-click | |
 | **Close Session** | Hover icon, right-click | Open sessions; works on several selected rows |
@@ -138,19 +123,7 @@ Select several sessions with `Shift` or `Ctrl`/`Cmd` click.
 | **Resume**, **Show in Workspaces** | Hover icon or right-click on a found session |
 | **Copy Resume Command** | Right-click on a found session |
 
-## Changes panel
-
-| Action | Where |
-| --- | --- |
-| **Open Diff** | Click a file |
-| **Stage File**, **Discard Changes** | Hover icon or right-click on a file under Changes |
-| **Unstage File** | Hover icon or right-click on a file under Staged Changes |
-| **Stage All Changes**, **Discard All Changes** | Hover icon on the Changes section |
-| **Unstage All Changes** | Hover icon on the Staged Changes section |
-| **Continue Rebase**, **Skip Commit**, **Abort Rebase** | Hover icon on the rebase row |
-| **Refresh** | View title bar |
-
-## All Files panel
+## Files panel
 
 | Action | Where |
 | --- | --- |
