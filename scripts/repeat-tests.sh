@@ -4,7 +4,7 @@
 #   bash scripts/repeat-tests.sh <file-filter> <runs> [--parallel P] [--name <pattern>]
 #
 # P workers (default 1), each with its own build dir test/dry/.build-<worker>, share <runs> runs.
-# Prints "RUNS n PASS p FAIL f" (or "RUNS n SKIPPED" when every run only skipped) and the log of each failed run.
+# Prints "RUNS n PASS p FAIL f" (or "RUNS n SKIPPED" when every run only skipped, or "RUNS n NOMATCH" and exit 2 when a run executed no test) and the log of each failed run.
 # Exit 1 when any run failed.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -36,18 +36,30 @@ for ((w = 1; w <= PAR; w++)); do
 done
 wait
 
-pass=0; fail=0; skipped=0
+pass=0; fail=0; skipped=0; nomatch=0
+# Test-level lines only: node also prints a file-level line (`✔ <file>.test.cjs (12ms)`) that is not a test.
+FILE_LINE='\.cjs \([0-9.]+ms\)'
 for rc in "$LOGS"/*.rc; do
   log="${rc%.rc}.log"
   if [ "$(cat "$rc")" = 0 ]; then
     pass=$((pass + 1))
-    # every run reported only skips: no passing test
-    if ! grep -qE "^ *✔ " "$log"; then skipped=$((skipped + 1)); fi
+    if grep -E "^ *✔ " "$log" | grep -qvE "$FILE_LINE"; then
+      :
+    elif grep -E "^ *﹣ " "$log" | grep -qvE "$FILE_LINE"; then
+      skipped=$((skipped + 1))
+    else
+      nomatch=$((nomatch + 1))
+    fi
   else
     fail=$((fail + 1)); echo "FAILED RUN LOG: $log"; grep -E "^ *✖ |Error|^ *at " "$log" | head -8
   fi
 done
 total=$((pass + fail))
+if [ "$nomatch" -gt 0 ]; then
+  echo "RUNS $total NOMATCH (pattern matched no test)"
+  rm -f "$LOGS"/*.rc
+  exit 2
+fi
 if [ "$fail" = 0 ] && [ "$skipped" = "$total" ]; then
   echo "RUNS $total SKIPPED"
 else
