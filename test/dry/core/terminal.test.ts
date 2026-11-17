@@ -1068,7 +1068,7 @@ test('R39 addendum: a command start in the active terminal while the user reads 
  * listener reads it.
  */
 function attentionOverTerminals(t: { after(fn: () => void): void }, f: ReturnType<typeof setup>, chatId: string) {
-  stub.window.__setWindowState({ focused: true });
+  stub.window.__fireWindowState(true);
   const realNow = Date.now;
   let offset = 0;
   Date.now = () => realNow() + offset;
@@ -1084,7 +1084,7 @@ function attentionOverTerminals(t: { after(fn: () => void): void }, f: ReturnTyp
   });
   const putInFront = (front: vscode.Terminal | undefined) => {
     if (!front) return;
-    const tabs = stub.window.terminals.map((terminal) => tabFor(terminal as never, terminal === front));
+    const tabs = stub.window.terminals.map((terminal) => tabFor(terminal as never, (terminal as unknown) === front));
     stub.window.tabGroups.all = [{ isActive: true, viewColumn: 1, tabs, activeTab: tabs.find((tab) => tab.isActive) }] as never;
   };
   const tabs = vscode.window.onDidChangeActiveTerminal(putInFront);
@@ -1138,7 +1138,7 @@ test('a background retitle of a waiting chat is not the user looking at it: its 
   const other = f.restoredTab('the user’s shell', 9431);
   const a = attentionOverTerminals(t, f, 'c43c4300-wait');
   stub.window.__setActiveTerminal(other);
-  assert.equal(stub.window.tabGroups.activeTabGroup?.activeTab?.label, 'the user’s shell', 'another terminal is in front');
+  assert.equal(vscode.window.tabGroups.activeTabGroup?.activeTab?.label, 'the user’s shell', 'another terminal is in front');
   await a.service.poll(true);
 
   a.wait(); // the prompt appears while the user looks at their own shell
