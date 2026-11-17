@@ -90,7 +90,7 @@
     "viewsWelcome": [
       {
         "view": "pitwall.workspacesView",
-        "contents": "Start managing your Claude Code, opencode, Codex, and Pi sessions across folders, repositories, and worktrees.\n\n[Add Local Folder or Repository](command:pitwall.addRepository)\n[Clone from GitHub](command:pitwall.cloneRepository)\n\nAdd any local folder, or clone a repository from GitHub to get started."
+        "contents": "Every Claude Code session across your repos, in one sidebar.\n\n[Add Local Folder or Repository](command:pitwall.addRepository)\n[Clone from GitHub](command:pitwall.cloneRepository)\n\nAdd any local folder, or clone a repository from GitHub to get started."
       },
       {
         "view": "pitwall.changesView",
@@ -242,54 +242,6 @@
         "icon": "$(settings-gear)"
       },
       {
-        "command": "pitwall.newClaudeChat",
-        "title": "New Claude Code Session",
-        "category": "Pitwall",
-        "icon": "$(sparkle)"
-      },
-      {
-        "command": "pitwall.newClaudeChatInTerminal",
-        "title": "New Claude Code Session in Terminal",
-        "category": "Pitwall",
-        "icon": "$(terminal)"
-      },
-      {
-        "command": "pitwall.newClaudeChatInUi",
-        "title": "New Claude Code Session in Claude Code UI",
-        "category": "Pitwall",
-        "icon": "$(comment-discussion)"
-      },
-      {
-        "command": "pitwall.newOpencodeChat",
-        "title": "New opencode Session",
-        "category": "Pitwall",
-        "icon": "$(code)"
-      },
-      {
-        "command": "pitwall.newCodexChat",
-        "title": "New Codex Session",
-        "category": "Pitwall",
-        "icon": "$(terminal)"
-      },
-      {
-        "command": "pitwall.newCodexChatInTerminal",
-        "title": "New Codex Session in Terminal",
-        "category": "Pitwall",
-        "icon": "$(terminal)"
-      },
-      {
-        "command": "pitwall.newCodexChatInUi",
-        "title": "New Codex Session in Codex UI",
-        "category": "Pitwall",
-        "icon": "$(comment-discussion)"
-      },
-      {
-        "command": "pitwall.newPiChat",
-        "title": "New Pi Session",
-        "category": "Pitwall",
-        "icon": "$(terminal)"
-      },
-      {
         "command": "pitwall.openChat",
         "title": "Open Session",
         "category": "Pitwall",
@@ -300,18 +252,6 @@
         "title": "Open Session in Terminal",
         "category": "Pitwall",
         "icon": "$(terminal)"
-      },
-      {
-        "command": "pitwall.openClaudeUi",
-        "title": "Open in Claude Code UI",
-        "category": "Pitwall",
-        "icon": "$(comment-discussion)"
-      },
-      {
-        "command": "pitwall.openCodexUi",
-        "title": "Open in Codex UI",
-        "category": "Pitwall",
-        "icon": "$(comment-discussion)"
       },
       {
         "command": "pitwall.renameChat",
@@ -594,6 +534,30 @@
         "title": "Go to Next Session That Needs You",
         "icon": "$(bell-dot)",
         "category": "Pitwall"
+      },
+      {
+        "command": "pitwall.newClaudeChat",
+        "title": "New Claude Code Session",
+        "category": "Pitwall",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "pitwall.newClaudeChatInTerminal",
+        "title": "New Claude Code Session in Terminal",
+        "category": "Pitwall",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "pitwall.newClaudeChatInUi",
+        "title": "New Claude Code Session in Claude Code UI",
+        "category": "Pitwall",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "pitwall.openClaudeUi",
+        "title": "Open in Claude Code UI",
+        "category": "Pitwall",
+        "icon": "$(comment-discussion)"
       }
     ],
     "submenus": [
@@ -691,24 +655,15 @@
             "type": "string",
             "enum": [
               "",
-              "claude",
-              "opencode",
-              "codex",
-              "pi"
+              "claude"
             ],
             "enumItemLabels": [
               "Ask every time",
-              "Claude Code",
-              "opencode",
-              "Codex",
-              "Pi"
+              "Claude Code"
             ],
             "enumDescriptions": [
               "The New Session button opens a menu of every installed agent.",
-              "The New Session button starts a Claude Code session.",
-              "The New Session button starts an opencode session.",
-              "The New Session button starts a Codex session.",
-              "The New Session button starts a Pi session."
+              "The New Session button starts a Claude Code session."
             ],
             "default": "",
             "markdownDescription": "The agent the **New Session** button (`+`) on a worktree or folder starts with one click. Every agent stays in the row's right-click **New Session** menu, and New Session asks which agent to use when the default one is not installed. Where the session opens is set by `#pitwall.defaultSessionSurface#`.",
@@ -722,7 +677,7 @@
             ],
             "enumDescriptions": [
               "Sessions open in a terminal running the agent CLI.",
-              "Sessions open in the agent's own VS Code extension panel (Claude Code and Codex). Agents without one, and sessions the panel cannot open, use the terminal."
+              "Sessions open in the agent's own VS Code extension panel, when it has one. Agents without one, and sessions the panel cannot open, use the terminal."
             ],
             "default": "terminal",
             "enumItemLabels": [
@@ -786,22 +741,16 @@
           "pitwall.sessionSearch.harness": {
             "type": "string",
             "enum": [
-              "claude",
-              "codex",
-              "pi"
+              "claude"
             ],
             "enumDescriptions": [
-              "Claude Code runs the search with read-only file tools.",
-              "Codex runs the search in its read-only sandbox.",
-              "Pi runs the search with its read-only read, grep, find, and ls tools."
+              "Claude Code runs the search with read-only file tools."
             ],
             "default": "claude",
             "enumItemLabels": [
-              "Claude Code",
-              "Codex",
-              "Pi"
+              "Claude Code"
             ],
-            "markdownDescription": "The agent that runs **Find Session…**. It must be installed. Sessions from every installed agent are searched whichever one runs the search; opencode's sessions are searched too, but opencode cannot run it. Changing this clears `#pitwall.sessionSearch.model#` and `#pitwall.sessionSearch.effort#`.",
+            "markdownDescription": "The agent that runs **Find Session…**. It must be installed. Sessions from every installed agent are searched whichever one runs the search. Changing this clears `#pitwall.sessionSearch.model#` and `#pitwall.sessionSearch.effort#`.",
             "order": 1
           },
           "pitwall.sessionSearch.model": {
@@ -832,12 +781,12 @@
             ],
             "enumDescriptions": [
               "Use the reasoning effort the agent is already configured with.",
-              "Pi only.",
+              "Only some agents support this level.",
               "Fastest and cheapest search.",
               "",
               "Slower, more thorough search.",
               "",
-              "Claude Code and Pi only."
+              "Only some agents support this level."
             ],
             "default": "",
             "markdownDescription": "How hard the agent thinks during **Find Session…**. Higher is slower and costs more. A level the chosen agent does not support is ignored.",
@@ -880,24 +829,6 @@
             "default": "claude",
             "markdownDescription": "The command that starts Claude Code. Change it when `claude` is not on your PATH (use the full path) or you launch it through a wrapper. Reload the window after changing it.",
             "order": 1
-          },
-          "pitwall.harnessCommands.opencode": {
-            "type": "string",
-            "default": "opencode",
-            "markdownDescription": "The command that starts opencode. Change it when `opencode` is not on your PATH (use the full path) or you launch it through a wrapper. Reload the window after changing it.",
-            "order": 2
-          },
-          "pitwall.harnessCommands.codex": {
-            "type": "string",
-            "default": "codex",
-            "markdownDescription": "The command that starts Codex. Change it when `codex` is not on your PATH (use the full path) or you launch it through a wrapper. Reload the window after changing it.",
-            "order": 3
-          },
-          "pitwall.harnessCommands.pi": {
-            "type": "string",
-            "default": "pi",
-            "markdownDescription": "The command that starts Pi. Change it when `pi` is not on your PATH (use the full path) or you launch it through a wrapper. Reload the window after changing it.",
-            "order": 4
           }
         }
       }
@@ -1123,102 +1054,82 @@
         },
         {
           "command": "pitwall.starChat",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|runningChat)(ClaudeUi|CodexUi)?$/",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|runningChat)(\\w+Ui)?$/",
           "group": "inline@0"
         },
         {
           "command": "pitwall.unstarChat",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(starredChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(starredChat|runningStarredChat)(\\w+Ui)?$/",
           "group": "inline@0"
         },
         {
           "command": "pitwall.renameChat",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/",
           "group": "inline@1"
         },
         {
           "command": "pitwall.openChatInTerminal",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat)(ClaudeUi|CodexUi)?$/",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat)(\\w+Ui)?$/",
           "group": "inline@2"
         },
         {
-          "command": "pitwall.openClaudeUi",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)ClaudeUi$/ && pitwall.claudeUiInstalled",
-          "group": "inline@3"
-        },
-        {
-          "command": "pitwall.openCodexUi",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)CodexUi$/ && pitwall.codexUiInstalled",
-          "group": "inline@3"
-        },
-        {
           "command": "pitwall.closeChat",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(runningChat|runningStarredChat)(\\w+Ui)?$/",
           "group": "inline@4"
         },
         {
           "command": "pitwall.openChat",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
           "group": "1_open@1"
         },
         {
           "command": "pitwall.openChatInTerminal",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
           "group": "1_open@2"
         },
         {
-          "command": "pitwall.openClaudeUi",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)ClaudeUi$/ && !listMultiSelection",
-          "group": "1_open@3"
-        },
-        {
-          "command": "pitwall.openCodexUi",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)CodexUi$/ && !listMultiSelection",
-          "group": "1_open@3"
-        },
-        {
           "command": "pitwall.renameChat",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
           "group": "2_edit@1"
         },
         {
           "command": "pitwall.starChat",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|runningChat)(ClaudeUi|CodexUi)?$/",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|runningChat)(\\w+Ui)?$/",
           "group": "2_edit@2"
         },
         {
           "command": "pitwall.unstarChat",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(starredChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(starredChat|runningStarredChat)(\\w+Ui)?$/",
           "group": "2_edit@2"
         },
         {
           "command": "pitwall.forkChat",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
           "group": "3_fork@1"
         },
         {
           "command": "pitwall.forkChatWithChanges",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
           "group": "3_fork@2"
         },
         {
           "command": "pitwall.copyResumeCommand",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
           "group": "4_copy@1"
         },
         {
           "command": "pitwall.copySessionId",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/ && !listMultiSelection",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
           "group": "4_copy@2"
         },
         {
           "command": "pitwall.closeChat",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(runningChat|runningStarredChat)(\\w+Ui)?$/",
           "group": "9_destructive@1"
         },
         {
           "command": "pitwall.deleteChat",
-          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(ClaudeUi|CodexUi)?$/",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/",
           "group": "9_destructive@2"
         },
         {
@@ -1390,10 +1301,24 @@
           "command": "pitwall.copySearchMatchCommand",
           "when": "view == pitwall.sessionSearchView && viewItem == sessionSearchMatch",
           "group": "navigation@3"
+        },
+        {
+          "command": "pitwall.openClaudeUi",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)ClaudeUi$/ && pitwall.claudeUiInstalled",
+          "group": "inline@3"
+        },
+        {
+          "command": "pitwall.openClaudeUi",
+          "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)ClaudeUi$/ && !listMultiSelection",
+          "group": "1_open@3"
         }
       ],
       "pitwall.newSession": [
         {
+          "command": "pitwall.setDefaultHarness",
+          "group": "9_default"
+        },
+        {
           "command": "pitwall.newClaudeChat",
           "when": "(config.pitwall.defaultSessionSurface == 'ui' && pitwall.claudeUiInstalled) || (config.pitwall.defaultSessionSurface != 'ui' && pitwall.claudeInstalled)",
           "group": "1_harness@1"
@@ -1407,39 +1332,14 @@
           "command": "pitwall.newClaudeChatInUi",
           "when": "config.pitwall.defaultSessionSurface != 'ui'",
           "group": "1_harness@3"
-        },
-        {
-          "command": "pitwall.newOpencodeChat",
-          "when": "pitwall.opencodeInstalled",
-          "group": "1_harness@4"
-        },
-        {
-          "command": "pitwall.newCodexChat",
-          "when": "(config.pitwall.defaultSessionSurface == 'ui' && pitwall.codexUiInstalled) || (config.pitwall.defaultSessionSurface != 'ui' && pitwall.codexInstalled)",
-          "group": "1_harness@5"
-        },
-        {
-          "command": "pitwall.newCodexChatInTerminal",
-          "when": "config.pitwall.defaultSessionSurface == 'ui' && pitwall.codexInstalled",
-          "group": "1_harness@6"
-        },
-        {
-          "command": "pitwall.newCodexChatInUi",
-          "when": "config.pitwall.defaultSessionSurface != 'ui'",
-          "group": "1_harness@7"
-        },
-        {
-          "command": "pitwall.newPiChat",
-          "when": "pitwall.piInstalled",
-          "group": "1_harness@8"
-        },
-        {
-          "command": "pitwall.setDefaultHarness",
-          "group": "9_default"
         }
       ],
       "pitwall.newSessionContext": [
         {
+          "command": "pitwall.setDefaultHarness",
+          "group": "9_default"
+        },
+        {
           "command": "pitwall.newClaudeChat",
           "when": "(config.pitwall.defaultSessionSurface == 'ui' && pitwall.claudeUiInstalled) || (config.pitwall.defaultSessionSurface != 'ui' && pitwall.claudeInstalled)",
           "group": "1_harness@1"
@@ -1453,35 +1353,6 @@
           "command": "pitwall.newClaudeChatInUi",
           "when": "config.pitwall.defaultSessionSurface != 'ui'",
           "group": "1_harness@3"
-        },
-        {
-          "command": "pitwall.newOpencodeChat",
-          "when": "pitwall.opencodeInstalled",
-          "group": "1_harness@4"
-        },
-        {
-          "command": "pitwall.newCodexChat",
-          "when": "(config.pitwall.defaultSessionSurface == 'ui' && pitwall.codexUiInstalled) || (config.pitwall.defaultSessionSurface != 'ui' && pitwall.codexInstalled)",
-          "group": "1_harness@5"
-        },
-        {
-          "command": "pitwall.newCodexChatInTerminal",
-          "when": "config.pitwall.defaultSessionSurface == 'ui' && pitwall.codexInstalled",
-          "group": "1_harness@6"
-        },
-        {
-          "command": "pitwall.newCodexChatInUi",
-          "when": "config.pitwall.defaultSessionSurface != 'ui'",
-          "group": "1_harness@7"
-        },
-        {
-          "command": "pitwall.newPiChat",
-          "when": "pitwall.piInstalled",
-          "group": "1_harness@8"
-        },
-        {
-          "command": "pitwall.setDefaultHarness",
-          "group": "9_default"
         }
       ],
       "commandPalette": [

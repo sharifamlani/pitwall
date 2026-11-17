@@ -1,0 +1,49 @@
+{
+  "commands": [
+    {
+      "command": "pitwall.newPiChat",
+      "title": "New Pi Session",
+      "category": "Pitwall",
+      "icon": "$(terminal)"
+    }
+  ],
+  "configuration": [
+    {
+      "title": "Agent Commands",
+      "properties": {
+        "pitwall.harnessCommands.pi": {
+          "type": "string",
+          "default": "pi",
+          "markdownDescription": "The command that starts Pi. Change it when `pi` is not on your PATH (use the full path) or you launch it through a wrapper. Reload the window after changing it.",
+          "order": 4
+        }
+      }
+    }
+  ],
+  "menus": {
+    "pitwall.newSession": [
+      {
+        "command": "pitwall.newPiChat",
+        "when": "pitwall.piInstalled",
+        "group": "1_harness@8"
+      }
+    ],
+    "pitwall.newSessionContext": [
+      {
+        "command": "pitwall.newPiChat",
+        "when": "pitwall.piInstalled",
+        "group": "1_harness@8"
+      }
+    ]
+  },
+  "x-harness-enum": {
+    "pitwall.defaultHarness": {
+      "label": "Pi",
+      "description": "The New Session button starts a Pi session."
+    },
+    "pitwall.sessionSearch.harness": {
+      "label": "Pi",
+      "description": "Pi runs the search with its read-only read, grep, find, and ls tools."
+    }
+  }
+}
