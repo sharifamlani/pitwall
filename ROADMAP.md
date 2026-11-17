@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.10 · 2026-11-16
+> v0.11 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 2 — Windows parity
-- **Current step:** write the Phase 2 plan (rows 2.1–2.12) — autonomous build continuing
-- **Last update:** 2026-11-16
-- **Next action:** Phase 2 plan from the triage doc + final-review findings → QA → build → testing → post.
+- **Current step:** Phase 2 wave A (Tasks 1, 2, 7, 8). Task 1 merged (row 2.1 partial); PRs #9 (Task 7) and #10 (Task 2) in QA; Task 8 building.
+- **Last update:** 2026-11-17
+- **Next action:** merge QA-approved #9/#10/Task 8 → wave B (Tasks 3, 6, 9, 10).
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -151,7 +151,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
-| 2.1 | Fix every "real bug" in the triage, each with a failing test first | ⏸ | ⏸ | — | Phase 1 triage |
+| 2.1 | Fix every "real bug" in the triage, each with a failing test first | ~ rows 9–12 ✅ (Task 1); row 2 in PR #10 | ✅ | 2026-11-17 · PR #8 `daa68fa` → merge `704948f` | Phase 1 triage |
 | 2.2 | Make POSIX-assumption tests portable; mark env-limit tests (e.g. symlink EPERM) as skips with a reason | ⏸ | ⏸ | — | Phase 1 triage |
 | 2.3 | Windows CI job runs `npm test` | ⏸ | ⏸ | — | D8 |
 | 2.4 | Script launches of Cursor clear `ELECTRON_RUN_AS_NODE` (inherited from the extension host) | ⏸ | ⏸ | — | tests doc side notes |
@@ -298,3 +298,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **2026-11-16 · Phase 1 post live** (Sharif approved): [LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7528304693920538624/) · [X reply 1](https://x.com/SharifAmlani/status/2122539952831607019). The repo-link posts wait for the Task 6 README refresh.
 - **2026-11-16 · Repo-link posts live:** [LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7528309644751077376/) · [X reply 2](https://x.com/SharifAmlani/status/2122544270699888801).
 - **v0.10 · 2026-11-16 · Phase 1 closed, tag `v0.2.0`.** Agntree imported with history (credit kept), renamed to Pitwall 0.2.0, reorganized into `src/core/` + `src/harnesses/<id>/`, Claude-only via `enabled.json` + generated manifest, CI on Linux + Windows, privacy-hardened packaging, honest public README. 6 PRs, each QA-approved (≤1 fix round each); independent evaluator E1–E11 PASS on a fresh clone; testing agent 6 live walks, last 14/14; final review 0 Critical / 4 Important (1 fixed, 3 → Phase 2) / 9 Minor. Found along the way: a likely Windows worktree-path bug, two restore bugs, three flaky timing tests (all Phase 2). Posts: kickoff, Phase 1, repo link (LinkedIn + X). Phase 2 unblocked.
+- **v0.11 · 2026-11-17.** Phase 2 plan approved by QA after two pre-flight rounds (fixes `c0dd3a5`, N1 `73ea80a`/`298f44d`). Wave A: Task 1 (Windows worktree paths, triage rows 9–12) merged, PR #8 → `704948f`; row 2.1 partial until Task 2 (PR #10) merges. Ruling R25: row 2 root cause was TTL expiry re-creating the window as "restored", not an in-flight check.
