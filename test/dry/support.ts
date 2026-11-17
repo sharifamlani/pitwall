@@ -8,16 +8,16 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { StorageService } from '../../src/services/StorageService';
-import { harnessTreeIcons } from '../../src/harnesses/treeIcons';
+import { StorageService } from '../../src/core/services/StorageService';
+import { harnessTreeIcons } from '../../src/core/harness/treeIcons';
 import {
   HarnessAdapter,
   HarnessSession,
   NativeUiCapability,
   NativeUiSurfaceTracker,
   SessionSearchRunner,
-} from '../../src/harnesses/types';
-import { ChatSession, HarnessId, Worktree } from '../../src/types';
+} from '../../src/core/harness/types';
+import { ChatSession, HarnessId, Worktree } from '../../src/core/types';
 
 /** A terminal created by the stub. */
 export interface FakeTerminal {

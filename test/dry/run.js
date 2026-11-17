@@ -2,7 +2,7 @@
 /**
  * Dry-test runner.
  *
- * Bundles every `*.test.ts` under test/dry with esbuild, aliases the `vscode`
+ * Bundles every `*.test.ts` under test/dry (recursively) with esbuild, aliases the `vscode`
  * module to a stub, and runs the bundles with Node's built-in test runner. Each
  * file runs in its own process; tests within a file run in order. No extension
  * install and no extension host required.
@@ -22,9 +22,18 @@ const STUB = path.join(TEST_DIR, 'vscode-stub.js');
 const TIMEOUT_MS = Number(process.env.PITWALL_TEST_TIMEOUT_MS || 60_000);
 
 const filter = process.argv[2];
-const testFiles = fs
-  .readdirSync(TEST_DIR)
-  .filter((file) => file.endsWith('.test.ts'))
+/** Every `*.test.ts` under TEST_DIR, recursively, as paths relative to it (forward slashes). */
+function collectTests(dir, prefix = '') {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      return entry.name === '.build' || entry.name === 'fixtures' ? [] : collectTests(path.join(dir, entry.name), rel);
+    }
+    return entry.name.endsWith('.test.ts') ? [rel] : [];
+  });
+}
+
+const testFiles = collectTests(TEST_DIR)
   .filter((file) => !filter || file.includes(filter))
   .sort();
 
@@ -39,7 +48,8 @@ fs.mkdirSync(BUILD_DIR, { recursive: true });
 let status = 0;
 try {
   const bundles = testFiles.map((file) => {
-    const outfile = path.join(BUILD_DIR, file.replace(/\.ts$/, '.cjs'));
+    // Flat output: tests locate fixtures and the repo root relative to test/dry/.build.
+    const outfile = path.join(BUILD_DIR, path.basename(file).replace(/\.ts$/, '.cjs'));
     esbuild.buildSync({
       entryPoints: [path.join(TEST_DIR, file)],
       bundle: true,
