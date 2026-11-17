@@ -6,12 +6,19 @@
  *   node scripts/build-manifest.mjs                       # rewrite package.json
  *   node scripts/build-manifest.mjs --check               # exit 1 with a diff if out of date
  *   node scripts/build-manifest.mjs --enabled claude,codex --out /tmp/package.json
+ *   node scripts/build-manifest.mjs --root <dir>          # read <dir>/manifest and <dir>/src/harnesses (tests)
  *
  * Merge: manifest/core.contributes.json, then src/harnesses/<id>/contributes.json
  * for each enabled id, in order. Object keys merge, arrays concatenate (so
  * `menus.<id>` arrays concatenate). `configuration` sections with the same
- * `title` merge their `properties`. A scalar defined twice with different
- * values is an error.
+ * `title` merge their `properties`; sections without a title never merge. A
+ * scalar defined twice with different values is an error.
+ *
+ * Uniqueness: a command, submenu, view, viewsContainer, setting or keybinding
+ * (key, mac, when) declared by two fragments, or twice in one, is an error that
+ * names the fragment adding the second one. After the harness enums are filled,
+ * a filled enum must contain its default, and enum, enumItemLabels and
+ * enumDescriptions must have the same length.
  *
  * Harness enums: a core setting marked `"x-harness-enum": true` gets one enum
  * value per enabled harness that declares it under its fragment's
@@ -26,26 +33,26 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const CORE_FRAGMENT = path.join(ROOT, 'manifest', 'core.contributes.json');
-const HARNESSES_DIR = path.join(ROOT, 'src', 'harnesses');
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ENUM_MARKER = 'x-harness-enum';
 
 class InputError extends Error {}
 
 function parseArgs(argv) {
-  const options = { check: false, enabled: undefined, out: path.join(ROOT, 'package.json') };
+  const options = { check: false, enabled: undefined, root: REPO_ROOT, out: undefined };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--check') {
       options.check = true;
-    } else if (arg === '--enabled' || arg === '--out') {
+    } else if (arg === '--enabled' || arg === '--out' || arg === '--root') {
       const value = argv[++i];
       if (value === undefined) {
         throw new InputError(`${arg} needs a value`);
       }
       if (arg === '--enabled') {
         options.enabled = value.split(',').map((id) => id.trim()).filter(Boolean);
+      } else if (arg === '--root') {
+        options.root = path.resolve(value);
       } else {
         options.out = path.resolve(value);
       }
@@ -53,14 +60,15 @@ function parseArgs(argv) {
       throw new InputError(`unknown argument: ${arg}`);
     }
   }
+  options.out ??= path.join(options.root, 'package.json');
   return options;
 }
 
-function readJson(file) {
+function readJson(file, root = REPO_ROOT) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (error) {
-    throw new InputError(`cannot read ${path.relative(ROOT, file)}: ${error.message}`);
+    throw new InputError(`cannot read ${path.relative(root, file)}: ${error.message}`);
   }
 }
 
@@ -88,7 +96,8 @@ function merge(target, source, at, origin) {
 /** Settings sections are keyed by title: a fragment adds properties to the section it names. */
 function mergeSections(sections, additions, at, origin) {
   for (const section of additions) {
-    const existing = sections.find((candidate) => candidate.title === section.title);
+    // An untitled section has no identity to merge on, so it always stays its own section.
+    const existing = section.title === undefined ? undefined : sections.find((candidate) => candidate.title === section.title);
     if (existing) {
       merge(existing, section, `${at}[${JSON.stringify(section.title)}]`, origin);
     } else {
@@ -98,8 +107,8 @@ function mergeSections(sections, additions, at, origin) {
 }
 
 /** The ids to build: `--enabled`, or src/harnesses/enabled.json. */
-function enabledIds(requested) {
-  const ids = requested ?? readJson(path.join(HARNESSES_DIR, 'enabled.json'));
+function enabledIds(requested, root) {
+  const ids = requested ?? readJson(path.join(root, 'src', 'harnesses', 'enabled.json'), root);
   if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string' || !id)) {
     throw new InputError('enabled harnesses must be a list of ids');
   }
@@ -113,17 +122,74 @@ function enabledIds(requested) {
   return ids;
 }
 
+/** Every uniqueness key a fragment declares, as [kind, key] pairs. */
+function declaredKeys(fragment) {
+  const keys = [];
+  for (const entry of fragment.commands ?? []) keys.push(['command', entry.command]);
+  for (const entry of fragment.submenus ?? []) keys.push(['submenu', entry.id]);
+  for (const list of Object.values(fragment.views ?? {})) {
+    for (const entry of list) keys.push(['view', entry.id]);
+  }
+  for (const list of Object.values(fragment.viewsContainers ?? {})) {
+    for (const entry of list) keys.push(['viewsContainer', entry.id]);
+  }
+  for (const section of fragment.configuration ?? []) {
+    for (const key of Object.keys(section.properties ?? {})) keys.push(['setting', key]);
+  }
+  for (const entry of fragment.keybindings ?? []) {
+    keys.push(['keybinding', `${entry.key}|${entry.mac ?? ''}|${entry.when ?? ''}`]);
+  }
+  return keys;
+}
+
+/** Record a fragment's keys in `seen`, refusing any already declared (by it or an earlier fragment). */
+function claimKeys(seen, fragment, origin) {
+  for (const [kind, key] of declaredKeys(fragment)) {
+    const id = `${kind}|${key}`;
+    if (seen.has(id)) {
+      throw new InputError(`duplicate ${kind} "${key}" in ${origin} (already declared by ${seen.get(id)})`);
+    }
+    seen.set(id, origin);
+  }
+}
+
+/** Each filled enum must hold its default, and its labels and descriptions must line up with its values. */
+function checkEnums(properties) {
+  for (const [key, setting] of Object.entries(properties)) {
+    if (!Array.isArray(setting.enum)) {
+      continue;
+    }
+    for (const field of ['enumItemLabels', 'enumDescriptions']) {
+      if (setting[field] !== undefined && setting[field].length !== setting.enum.length) {
+        throw new InputError(
+          `setting "${key}" has ${setting.enum.length} enum values but ${setting[field].length} ${field}: they must be the same length`
+        );
+      }
+    }
+    if (setting.enum.length > 0 && 'default' in setting && !setting.enum.includes(setting.default)) {
+      throw new InputError(
+        `setting "${key}": default ${JSON.stringify(setting.default)} is not in the enum [${setting.enum.map((v) => JSON.stringify(v)).join(', ')}]`
+      );
+    }
+  }
+}
+
 /** The merged `contributes` for the given harness ids, in their order. */
-export function buildContributes(ids) {
-  const contributes = clone(readJson(CORE_FRAGMENT));
+export function buildContributes(ids, root = REPO_ROOT) {
+  const coreFragment = readJson(path.join(root, 'manifest', 'core.contributes.json'), root);
+  const seen = new Map();
+  claimKeys(seen, coreFragment, 'manifest/core.contributes.json');
+  const contributes = clone(coreFragment);
   const enumEntries = new Map();
   for (const id of ids) {
-    const file = path.join(HARNESSES_DIR, id, 'contributes.json');
+    const file = path.join(root, 'src', 'harnesses', id, 'contributes.json');
+    const origin = `src/harnesses/${id}/contributes.json`;
     if (!fs.existsSync(file)) {
-      throw new InputError(`harness "${id}" has no ${path.relative(ROOT, file).replace(/\\/g, '/')}`);
+      throw new InputError(`harness "${id}" has no ${origin}`);
     }
-    const { [ENUM_MARKER]: enums = {}, ...fragment } = readJson(file);
-    merge(contributes, fragment, 'contributes', `src/harnesses/${id}/contributes.json`);
+    const { [ENUM_MARKER]: enums = {}, ...fragment } = readJson(file, root);
+    claimKeys(seen, fragment, origin);
+    merge(contributes, fragment, 'contributes', origin);
     enumEntries.set(id, enums);
   }
 
@@ -152,13 +218,14 @@ export function buildContributes(ids) {
       }
     }
   }
+  checkEnums(properties);
   return contributes;
 }
 
 /** The text `target` should hold: its own fields (or package.json's) with generated contributes. */
-export function buildManifestText(ids, target) {
-  const base = readJson(fs.existsSync(target) ? target : path.join(ROOT, 'package.json'));
-  base.contributes = buildContributes(ids);
+export function buildManifestText(ids, target, root = REPO_ROOT) {
+  const base = readJson(fs.existsSync(target) ? target : path.join(root, 'package.json'), root);
+  base.contributes = buildContributes(ids, root);
   return `${JSON.stringify(base, null, 2)}\n`;
 }
 
@@ -234,9 +301,9 @@ export function unifiedDiff(before, after, fromName, toName) {
 
 function main(argv) {
   const options = parseArgs(argv);
-  const ids = enabledIds(options.enabled);
-  const expected = buildManifestText(ids, options.out);
-  const shownPath = path.relative(ROOT, options.out).replace(/\\/g, '/') || options.out;
+  const ids = enabledIds(options.enabled, options.root);
+  const expected = buildManifestText(ids, options.out, options.root);
+  const shownPath = path.relative(options.root, options.out).replace(/\\/g, '/') || options.out;
 
   if (options.check) {
     const current = fs.existsSync(options.out) ? fs.readFileSync(options.out, 'utf8').replace(/\r\n/g, '\n') : '';
