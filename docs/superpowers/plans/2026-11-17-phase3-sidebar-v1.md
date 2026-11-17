@@ -62,6 +62,8 @@ Phase 7 : After v1
 | P18 | Inbox order replaces the stored repo order: `moveRepositoryUp/Down` commands and menu entries are removed (code parked dormant), done in Task 5 (QA S9) | D21: position = urgency; manual order would fight it | none |
 | P19 | The header keeps a search icon next to the folder icon: the canvas Navigation board's header shows search (tooltip `Search repos and chats (Ctrl+Alt+R)`), bell and folder; D28 dropped only the header "+" (QA D-a) | The canvas is the spec for header icons | none |
 | P20 | Ctrl+↓/↑ or Enter on a **repo** row expands and selects it (P11); "all its chats" is Phase 4 row 4.3 (QA D-c) | Phase 4 owns tabs | none |
+| P21 | Header naming: Cursor shows the container title `PITWALL` on top and, because FILES sits below, gives the list its own header. The list's header reads `REPOS` with the description `sorted by who needs you` and the search + folder icons, the closest native form of the canvas header `PITWALL  sorted by who needs you [search][bell][folder]` | A container with two sections always shows per-section headers; naming the list `Pitwall` would print `PITWALL` twice | One word differs from the canvas |
+| P22 | Native limits of the standard list (canvas decision 1, D10, D29), accepted for v1 and listed in §3i: the status word uses Cursor's muted description colour (the dot carries the colour, the word the meaning, so the brand's "never colour alone" holds); the selected row uses Cursor's selection, not the orange edge; high-contrast themes get the dark/light SVGs | TreeItem descriptions and selection can't be styled per row; the custom card panel that can is v2 (7.2) | none for v1 |
 | P15 | The live walk on Sharif's real `~/.claude` is **read-only**: list, order, status, search and history only. Open / new-chat / dismiss flows run on the testing agent's lab repos | Resuming a real session appends to its transcript; the testing agent must not touch Sharif's work | none |
 
 ## Global Constraints
@@ -207,21 +209,23 @@ AFTER (v0.4.0):
 | REPOS  sorted by who needs you   [🔍][📁+][...]  |  <- view desc; search + add repo; rest in overflow
 +--------------------------------------------------+
 | v job-market      1 need you · 2 open   [🕘][+]  |  <- 🕘 + "+" inline on hover (D28, D34)
-|    ● One-off apply           ⎇ main  needs you · 2m        <- orange #f0883e, glow
-|    ● Job market networking…  ⎇ main  working · now · open  <- blue #4c9aff, glow
+|    ● One-off apply           ⎇ main  needs you · 2m   [🔔]  <- orange #f0883e, glow; bell action only when it needs you
+|    ● Job market networking…  ⎇ main  working · now · open  [>_][⑂]  <- blue #4c9aff; hover: open in terminal, fork
 |    ● LinkedIn job scroller   ⎇ feat/fiu-apply ⧉  finished · 14m   <- green; ⧉ = worktree
 | v wynwood         2 sessions            [🕘][+]  |
 |    ● Event landing page      ⎇ feat/rsvp-sticky ⧉  finished · 6m
 |    ○ Ticket checkout bug     ⎇ main  idle · 1h              <- hollow gray ring
-| > gatherly        1 need you                     |  <- collapsed: summary stays visible
+| > gatherly        1 needs you                    |  <- collapsed: summary stays visible (canvas: "1 needs you")
 | > apparae         2 sessions                     |
 +--------------------------------------------------+
 | > FIND SESSION    (only when searches exist)     |
-| > FILES · job-market  ⎇ main   (collapsed)       |  <- renamed from "All Files"; Ctrl+Alt+F
+| > FILES  job-market ⎇ main  C:\code\job-market  |  <- renamed from "All Files"; collapsed; Ctrl+Alt+F; follows the clicked repo or the opened chat's worktree
 +--------------------------------------------------+
   (CHANGES view gone; no worktree rows; no PR badges)
 ```
-Repo description rule: `{k} need you` and `{n} open` joined by ` · `, each left out when 0; both 0 → `{m} sessions` (`1 session` when m = 1).
+Repo description rule: `{k} needs you` (k = 1) / `{k} need you` (k > 1) and `{n} open` joined by ` · `, each left out when 0; both 0 → `{m} sessions` (`1 session` when m = 1). `open` = open as a tab in this window (other windows' tabs are Phase 4).
+Activity-bar badge: the number of sessions that need you (canvas StatusRules "YOU GET": "+1 on the sidebar badge"), hidden at 0.
+Session hover actions (canvas StatusRules item 5): bell (needs-you rows only; opens the chat), open in terminal, fork. Star, rename and close move to the right-click menu.
 Session description: `⎇ {branch}[ ⧉]  {status} · {ago}[ · open]`. A plain-folder repo leaves out `⎇ {branch}`.
 
 ### 3b. Hover tooltips (verbatim)
@@ -254,7 +258,7 @@ AFTER, repo row:
 | Dismiss from Pitwall                           |
 +------------------------------------------------+
 ```
-Session row (Agntree's set, kept): Open · Open in terminal · Rename… · Star · Fork (copy the conversation) · Copy resume command · Copy session ID · Close · Delete…  ("Fork with changes" is removed: it creates a worktree, D19.)
+Session row (Agntree's set, kept, canvas Menus board): Open · Open in terminal · Rename… · Star · Fork (copy the conversation) · Copy resume command · Copy session ID · Close · Delete…  ("Fork with changes" is removed: it creates a worktree, D19.)
 
 ### 3d. Dismiss confirmation (info message, no modal)
 
@@ -325,7 +329,52 @@ BEFORE: chevron + pill mark (`#c5c5c5`).  AFTER: four dots in a row, one colour,
 | FILES | "All Files", expanded | "Files", collapsed, Ctrl+Alt+F |
 | Search | Find Session only (Ctrl+Alt+F) | Ctrl+Alt+R quick pick + Find Session footer |
 | Hotkeys | Ctrl+Alt+N/S/A/Enter/F | + Ctrl+Alt+1–9, 0, R, O, Shift+1–9; F → FILES |
-| Activity icon | chevron mark | status row |
+| Activity icon | chevron mark | status row, badge = needs-you count |
+| Session hover icons | star, rename, terminal, close | bell (needs you), terminal, fork |
+| FILES follows | worktree row selection | repo row click or opened chat's worktree; header shows repo, branch, path |
+
+### 3i. Canvas coverage check (every sidebar element on the canvas → where it lands)
+
+Checked 2026-11-17 against the canvas boards Navigation, SidebarOptions, StatusRules, Menus, Hotkeys, Decisions, Feasibility and Brand.
+
+| Canvas element | Phase 3 | Where |
+|---|---|---|
+| Header `PITWALL` + `sorted by who needs you` | ✅ (one word native, P21) | T5 |
+| Header search icon, `Search repos and chats (Ctrl+Alt+R)` | ✅ | T9 |
+| Header folder icon, `Add a repository` | ✅ (exists) | T4 keeps it at navigation@1 |
+| Header bell, `Sound alerts`, sound popover | → Phase 5 (5.3) | P14 |
+| Repo row: chevron, name, `{n} open`, hover 🕘 and `+` | ✅ | T5, T7 |
+| Repo row ` · {k} windows` suffix | → Phase 4 (needs the window registry) | 4.2 |
+| Collapsed repo summary (`2 sessions`, `1 needs you`) | ✅ | T5 |
+| Repo tooltip with Ctrl+Alt+N / Ctrl+Alt+Shift+N | ✅ | T5, T8 |
+| Session row: dot, title, `⎇ branch`, `⧉`, `status · ago`, ` · open` | ✅ | T5 |
+| Session tooltip: worktree folder (main too), ⧉ line | ✅ | T5 |
+| Needs-you bell on the row | ✅ | T7 |
+| Hover icons: open in terminal, fork | ✅ | T7 |
+| 📡 Remote Control mark and menu item | → Phase 7 (7.3) | D38 |
+| Status dots: 4 states, D17 hexes, glow / solid / ring shapes | ✅ | T6 |
+| Status word in status colour; orange selected-row edge | ✗ native limit | P22 (v2 card panel, 7.2) |
+| Finished → idle when the chat is opened | ✅ | T5 (P16) |
+| Session order and repo inbox order; moves only on status change | ✅ | T5 (P6) |
+| Activity-bar badge (+1 per needs-you session) | ✅ | T5 |
+| Repos found automatically (14 days, panel + terminal sessions) | ✅ | T3 |
+| First-run "Pitwall found 6 repos… [Show them all] [Choose repos…]" | ✗ dropped | P13 (log locks auto-add) |
+| `No repositories yet.` + `[Add repository]` | ✅ (today's welcome text differs; replaced) | T5 |
+| Dismiss from Pitwall + the dismissed message | ✅ | T3, T7 |
+| Repo menu: New session, Session history…, Open its window, Copy Path, Reveal, Dismiss | ✅ | T7 |
+| Repo menu: Show its open chats side by side; window label flip | → Phase 4 (4.3, 4.2) | |
+| Session menu (Agntree set + Copy resume command) | ✅ (exists) | T4 removes Fork with changes |
+| Session history quick pick (placeholder, 2 groups, notes, empties) | ✅ | T7 |
+| Search quick pick (placeholder, REPOS / CHATS / INSIDE CHATS, metas, empties, ✨ footer) | ✅ (INSIDE CHATS = header + note only; 7.1) | T9 |
+| Hotkeys Ctrl+Alt+1–9, again = next chat, 0, R, O, F, Shift+1–9 | ✅ | T8 |
+| List keys ↓/↑, Ctrl+↓/↑, Enter | ✅ | T8 |
+| FILES: collapsed, Ctrl+Alt+F, follows the clicked repo / opened chat, header with repo ⎇ branch + path | ✅ | T4 (collapsed), T5 (follow + header) |
+| FILES clipboard line, Copy to another repo, drag onto a repo row | → Phase 4 (4.7) | |
+| Hide Changes, worktree create/delete, PR badges; keep Find Session, Fork | ✅ | T4 |
+| No sideways scroll, resizable edge, resizable line above FILES | ✅ (native) | E17 |
+| Activity icon: status row, one colour, needs-you dot enlarged | ✅ | T6 |
+| Bottom bar counts and the corner branch | → Phase 5 (5.4) / Phase 4 (4.5) | |
+| Clicking a chat opens Claude's panel in its folder's window | → Phase 4 (4.1, 4.2) | Opener unchanged here |
 
 ## 4. Derisking (run in order; don't start N+1 until N passes)
 
@@ -361,6 +410,7 @@ BEFORE: chevron + pill mark (`#c5c5c5`).  AFTER: four dots in a row, one colour,
 | E15 | End to end: the canvas sidebar flows work in real Cursor | Walk W1–W10 all PASS on the release sha, real `~/.claude` read-only (P15) + lab repos | testing agent walk | `captures/phase3-walk-evidence/` |
 | E16 | Startup stays fast with real data | `[Pitwall] activate` → `[Pitwall] first render` ≤ 1 s, 5/5 starts, real `~/.claude` (Task 5 adds both log lines, QA C2) | exthost log (walk W1) | log excerpt |
 | E17 | The sidebar never scrolls sideways and resizes like any panel (D33) | Yes/no: at 220 px no horizontal scrollbar and rows end in "…"; dragging the edge resizes (QA C3) | walk W10 | 2 screenshots |
+| E19 | The sidebar matches the canvas wireframe | Every ✅ row of §3i present: yes on each, checked by the evaluator from a screenshot of the lab sidebar + `package.json`; strings compared byte-for-byte with §3 | evaluator, walk W2/W3 screenshots | §3i table with a PASS column |
 | E18 | The status tick stays cheap with many chats | Suite (deterministic): at 500 chats a tick stats only open chats and live sessions-file sessions, 0 others. Bench (outside the default suite): tick p95 ≤ 50 ms over 100 ticks (QA S5, R2) | `npm test -- attention` + `node --test test/bench/attention-bench.js` | test name + bench output |
 
 ## 6. Implementation tasks
@@ -541,6 +591,9 @@ Rebase order where files overlap: T2 before T3 (`ClaudeHarness.ts`, `harness/typ
   - Repo children are sessions from all of the repo's worktrees.
   - Descriptions as in §3a, tooltips as in §3b (every session tooltip has its folder line, D14).
   - `moveRepositoryUp/Down` commands, menu entries and tests removed or parked dormant (P18).
+  - `TreeView.badge` = number of needs-you sessions, `undefined` at 0.
+  - `viewsWelcome` for the list becomes exactly `No repositories yet.` + `[Add repository](command:pitwall.addRepository)` (canvas §1f; Clone stays in the overflow menu); the FILES welcome becomes `Select a repo or session to browse its files.` (the worktree level is gone).
+  - FILES follows a repo row click (its main worktree) and the opened chat's worktree; the worktree-row trigger in `extension.ts` (~L435-441, `getWorktreeForItem`) becomes repo/session rows. The FILES view description shows `{repo} ⎇ {branch}` and its tooltip the folder path.
   - The order is re-sorted only on `onDidChangeStatus` or row add/remove (P6); time labels refresh without re-sorting.
   - `TreeView.description = 'sorted by who needs you'`.
 
@@ -558,6 +611,9 @@ Rebase order where files overlap: T2 before T3 (`ClaudeHarness.ts`, `harness/typ
   - `a chat kept in front writes seenAt at most once per finished turn` (QA S4).
   - `closing a chat keeps its row status, and reopening it doesn't toast a pre-existing wait` (QA S6, R45).
   - `every session tooltip shows its folder`.
+  - `repo summary says "1 needs you" and "2 need you"`.
+  - `the activity badge counts needs-you sessions and hides at 0`.
+  - `clicking a repo row points FILES at its main worktree; opening a chat points it at the chat's worktree`.
   - `at 500 chats a tick stats only open and live sessions-file chats` (count assert, in the suite); the p95 timing lives in `test/bench/attention-bench.js`, outside the default run (E18).
   - `R36–R45 toasts still fire only for open chats`.
 - [ ] **Step 2:** Run them. Expected: FAIL.
@@ -574,6 +630,7 @@ Rebase order where files overlap: T2 before T3 (`ClaudeHarness.ts`, `harness/typ
 - Produces:
   - Repo row inline "+" (`newSessionInRepository`: new Claude chat in the main worktree) and inline 🕘, both shown on hover.
   - The menu exactly as in §3c.
+  - Session-row inline actions (canvas StatusRules item 5): `$(bell)` on needs-you rows (contextValue gains a `Needs` marker; runs `pitwall.openChat`), `openChatInTerminal`, `forkChat`. Star, rename and close leave the inline group (they stay in the right-click menu).
   - The history quick pick as in §3f, newest first. Picking an OLDER chat imports it (existing `importSessions` path), then opens it.
 
 - [ ] **Step 1:** Write failing tests:
@@ -581,6 +638,7 @@ Rebase order where files overlap: T2 before T3 (`ClaudeHarness.ts`, `harness/typ
   - `picking an older chat imports it and it shows as idle`.
   - `the repo menu has exactly the §3c items in order`.
   - `"+" starts a Claude chat in the repo's main worktree`.
+  - `session rows show bell (needs you only), terminal and fork inline; star, rename and close are in the right-click menu only`.
 - [ ] **Step 2:** Run them (FAIL), implement, then run `npm test`.
 - [ ] **Step 3:** Commit, push, PR, QA.
 
@@ -642,7 +700,7 @@ Rebase order where files overlap: T2 before T3 (`ClaudeHarness.ts`, `harness/typ
   - **W8:** ↓/Ctrl+↓/Enter (E11).
   - **W9:** search: 5 sampled names plus the footer (E12).
   - **W10:** FILES toggle plus the hotkeys sample (E10), and no sideways scroll at a 220 px sidebar plus an edge resize (E17, 2 screenshots).
-- [ ] **Step 2:** Dispatch the independent evaluator on a fresh clone for E1–E18. The loop runs until every criterion passes (3 stalled rounds → Sharif). The scorecard goes to `docs/progress_reports/phase3-scorecard.md`.
+- [ ] **Step 2:** Dispatch the independent evaluator on a fresh clone for E1–E19. The loop runs until every criterion passes (3 stalled rounds → Sharif). The scorecard goes to `docs/progress_reports/phase3-scorecard.md`.
 - [ ] **Step 3:** Release:
   - README status and known issues; CHANGELOG `[0.4.0]`.
   - `npm version 0.4.0 --no-git-tag-version`; `build-manifest --check`.
