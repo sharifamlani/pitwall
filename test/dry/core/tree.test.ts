@@ -5,7 +5,7 @@ import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/pro
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { HarnessAdapter, SessionMetadata } from '../../../src/core/harness/types';
 import { ChatSession, Repository, RepositoryWorktrees, Worktree } from '../../../src/core/types';
-import { fakeAdapter, fakeNativeUi, makeStorage, stub, tempDir, waitFor, worktreeRecord } from '../support';
+import { fakeAdapter, fakeNativeUi, makeStorage, flush, stub, tempDir, waitFor, worktreeRecord } from '../support';
 
 beforeEach(() => stub.__reset());
 
@@ -198,4 +198,22 @@ test("the window's own worktree is marked active whatever case the editor gives 
   const [main] = await tree.getChildren(repoRow);
   assert.match(String(main.description), /●/);
   assert.match(String((main.tooltip as vscode.MarkdownString | string | undefined) ?? ''), /Active workspace/);
+});
+
+test('whenSettled waits for the render that follows a refresh', async (t) => {
+  const storage = makeStorage();
+  const repo = storage.addRepository('demo', '/work/demo');
+  const tree = provider(t, storage, () => ({ isGit: false, worktrees: [worktreeRecord({ repoId: repo.id, path: '/work/demo' })] }), []);
+  await tree.getChildren();
+  await tree.whenSettled();
+  tree.refresh();
+  let settled = false;
+  const waiting = tree.whenSettled().then(() => {
+    settled = true;
+  });
+  await flush();
+  assert.equal(settled, false, 'still pending until the tree renders');
+  await tree.getChildren();
+  await waiting;
+  assert.equal(settled, true);
 });

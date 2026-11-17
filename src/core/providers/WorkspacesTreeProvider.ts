@@ -111,6 +111,11 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     this.chatOpenProvider = provider;
   }
 
+  /** Stub: the real implementation arrives in the green commit. */
+  whenSettled(): Promise<void> {
+    return Promise.resolve();
+  }
+
   /** Re-render and re-list worktrees and PRs (debounced). */
   refresh(): void {
     this.pendingCacheClear = true;
