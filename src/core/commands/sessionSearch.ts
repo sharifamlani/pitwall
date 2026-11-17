@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { HarnessRegistry } from '../harness/HarnessRegistry';
-import { commandInDirectory } from '../services/terminalEvents';
+import { commandInDirectory, launchLine } from '../services/terminalEvents';
 import { chatNativeSessionIds } from '../harness/sessionUtils';
 import { SessionSearchNode, displayPath } from '../providers/SessionSearchTreeProvider';
 import { WorkspacesTreeProvider } from '../providers/WorkspacesTreeProvider';
@@ -292,7 +292,7 @@ export function registerSessionSearchCommands(context: vscode.ExtensionContext, 
       cwd: match.cwd,
       iconPath: new vscode.ThemeIcon(adapter.icon),
     });
-    terminal.sendText(resumeCommand(match));
+    terminal.sendText(launchLine(resumeCommand(match)));
     terminal.show();
   });
 

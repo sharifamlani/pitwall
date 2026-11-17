@@ -10,6 +10,7 @@ import {
   isLiveTerminal,
   launchLine,
   readProcessId,
+  shellIntegrationEnabled,
   terminalTitle,
   titleShortId,
   waitForActive,
@@ -17,6 +18,7 @@ import {
   waitForEvent,
   waitForProcessId,
   waitForShellIntegration,
+  watchCommandStart,
 } from './terminalEvents';
 
 /** How long to wait for the launch command to start before applying the title. */
@@ -83,6 +85,9 @@ export class TerminalManager {
    * even though it is not in the map yet.
    */
   private readonly restoringChats = new Map<string, vscode.Terminal>();
+
+  /** Background waits for a slow shell's first command, cancelled on dispose. */
+  private readonly lateStarts = new Set<() => void>();
 
   /**
    * A terminal TerminalManager activated to re-apply a title. Background
@@ -179,6 +184,8 @@ export class TerminalManager {
       location: vscode.TerminalLocation.Editor,
     });
 
+    // Watched from before the send, which can start the command at once.
+    const lateStart = watchCommandStart(terminal);
     const { integrated, started } = this.startTerminal(
       chat,
       terminal,
@@ -193,9 +200,20 @@ export class TerminalManager {
     // setting check makes that case return immediately.
     await this.recordTerminalPid(chat.id, terminal);
     if (await integrated) {
-      await started;
+      const commandStarted = await started;
       await waitForActive(terminal);
       await this.applyTitle(terminal);
+      if (commandStarted) {
+        lateStart.cancel();
+      } else {
+        this.retitleOnLateStart(terminal, lateStart);
+      }
+    } else if (shellIntegrationEnabled()) {
+      // The shell has not integrated yet (Windows PowerShell 5.1 starts
+      // slowly); the title still needs applying once its command starts.
+      this.retitleOnLateStart(terminal, lateStart);
+    } else {
+      lateStart.cancel();
     }
 
     return terminal;
@@ -332,19 +350,72 @@ export class TerminalManager {
   /**
    * Record the pty behind a mapped terminal so a reload can find it again.
    * Callers that already read the PID pass it in to avoid a second bounded
-   * read during activation.
+   * read during activation. A PID that arrives after the bounded wait
+   * (Windows can report a new pty's PID late) is recorded whenever it comes,
+   * from the same read, without anyone waiting for it.
    */
   private async recordTerminalPid(
     chatId: string,
     terminal: vscode.Terminal,
     knownPid?: number
   ): Promise<void> {
-    const pid = knownPid ?? (await readProcessId(terminal));
-    // The tab may have closed while the PID was pending.
-    if (pid === undefined || this.terminals.get(chatId) !== terminal) {
+    if (knownPid !== undefined) {
+      await this.rememberPid(chatId, terminal, knownPid);
+      return;
+    }
+    const read = terminal.processId;
+    const pid = await waitForProcessId(read);
+    if (pid !== undefined) {
+      await this.rememberPid(chatId, terminal, pid);
+      return;
+    }
+    void Promise.resolve(read)
+      .then((late) => (late === undefined ? undefined : this.rememberPid(chatId, terminal, late)))
+      .catch((error) => console.error('Pitwall: could not record a late terminal PID', error));
+  }
+
+  /**
+   * Store a terminal's PID for its chat, unless the tab closed, the chat was
+   * removed, or Pitwall shut down while the PID was pending.
+   */
+  private async rememberPid(chatId: string, terminal: vscode.Terminal, pid: number): Promise<void> {
+    if (
+      this.isDisposed ||
+      this.terminals.get(chatId) !== terminal ||
+      !this.storageService.getChat(chatId)
+    ) {
       return;
     }
     await this.storageService.rememberTerminalPid(chatId, pid);
+  }
+
+  /**
+   * Apply a launched tab's title once its command starts, however late. A
+   * shell that integrates after the launch wait re-tags the title when its
+   * command starts, so only a rename after that survives a quit. A tab that
+   * is not active is renamed the way revived tabs are: shown without taking
+   * focus, then the previously active tab is shown again.
+   */
+  private retitleOnLateStart(
+    terminal: vscode.Terminal,
+    watch: { started: Promise<boolean>; cancel(): void }
+  ): void {
+    this.lateStarts.add(watch.cancel);
+    void watch.started
+      .then(async (started) => {
+        this.lateStarts.delete(watch.cancel);
+        if (!started || this.isDisposed || !this.terminalToChatId.has(terminal)) {
+          return;
+        }
+        if (vscode.window.activeTerminal === terminal) {
+          await this.applyTitle(terminal);
+          return;
+        }
+        this.retitleRevivedTerminals([
+          { terminal, integrated: Promise.resolve(true), started: Promise.resolve(true) },
+        ]);
+      })
+      .catch(() => undefined);
   }
 
   /**
@@ -597,6 +668,10 @@ export class TerminalManager {
     this.terminals.clear();
     this.terminalToChatId.clear();
     this.restoringChats.clear();
+    for (const cancel of [...this.lateStarts]) {
+      cancel();
+    }
+    this.lateStarts.clear();
     this.stateEmitter.dispose();
   }
 

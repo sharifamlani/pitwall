@@ -167,14 +167,49 @@ export function waitForCommandStart(terminal: vscode.Terminal, timeoutMs: number
 }
 
 /**
+ * Wait, with no time limit, for the first command to start in a terminal:
+ * true when one starts, false once the terminal closes or the watch is
+ * cancelled. For background work that must happen however late a slow shell
+ * starts. Create it before sending the command, which can start at once.
+ */
+export function watchCommandStart(terminal: vscode.Terminal): { started: Promise<boolean>; cancel(): void } {
+  const subscriptions: vscode.Disposable[] = [];
+  let finish: (value: boolean) => void = () => undefined;
+  const started = new Promise<boolean>((resolve) => {
+    finish = (value) => {
+      subscriptions.forEach((subscription) => subscription.dispose());
+      subscriptions.length = 0;
+      resolve(value);
+    };
+  });
+  subscriptions.push(
+    vscode.window.onDidStartTerminalShellExecution((event) => {
+      if (event.terminal === terminal) {
+        finish(true);
+      }
+    }),
+    vscode.window.onDidCloseTerminal((closed) => {
+      if (closed === terminal) {
+        finish(false);
+      }
+    })
+  );
+  return { started, cancel: () => finish(false) };
+}
+
+/** Whether VS Code's shell integration setting is on. */
+export function shellIntegrationEnabled(): boolean {
+  return vscode.workspace
+    .getConfiguration('terminal.integrated')
+    .get<boolean>('shellIntegration.enabled', true);
+}
+
+/**
  * Wait until a terminal's shell reports integration, or give up. Only an
  * integrated shell makes VS Code re-tag the title from a cwd report.
  */
 export function waitForShellIntegration(terminal: vscode.Terminal, timeoutMs: number): Promise<boolean> {
-  const enabled = vscode.workspace
-    .getConfiguration('terminal.integrated')
-    .get<boolean>('shellIntegration.enabled', true);
-  if (!enabled) {
+  if (!shellIntegrationEnabled()) {
     return Promise.resolve(false);
   }
   if (terminal.shellIntegration) {
