@@ -341,6 +341,8 @@ const configuration = {
 let clipboardText = '';
 
 const commandHandlers = new Map();
+/** Context keys the extension set with `setContext`, by key. */
+const contextKeys = new Map();
 const outputChannels = [];
 const messages = [];
 const openTerminals = [];
@@ -828,8 +830,9 @@ module.exports = {
     },
     getCommands: async () => Array.from(commandHandlers.keys()),
     executeCommand: async (id, ...args) => {
-      // Context keys are bookkeeping for menus; nothing to execute in tests.
+      // Context keys gate menus and welcome views; tests read them back.
       if (id === 'setContext') {
+        contextKeys.set(args[0], args[1]);
         return undefined;
       }
       const handler = commandHandlers.get(id);
@@ -878,6 +881,7 @@ module.exports = {
       set.clear();
     }
     commandHandlers.clear();
+    contextKeys.clear();
     configurationValues.clear();
     quickPickHandler = null;
     clipboardText = '';
@@ -903,6 +907,7 @@ module.exports = {
   },
   __shownDocuments: shownDocuments,
   __commandHandlers: commandHandlers,
+  __contextKeys: contextKeys,
   __outputChannels: outputChannels,
   __fileWatchers: fileWatchers,
   __messages: messages,

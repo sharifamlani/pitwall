@@ -97,6 +97,8 @@ interface StubControls {
   __shownDocuments: { target: unknown; options: Record<string, unknown> }[];
   __treeViews: FakeTreeView[];
   __outputChannels: Array<{ name: string; lines: string[] }>;
+  /** Context keys the extension set with `setContext`, by key. */
+  __contextKeys: Map<string, unknown>;
   __setTreeViewsVisible(visible: boolean): void;
   workspace: { workspaceFolders: { uri: { fsPath: string } }[] };
   window: {

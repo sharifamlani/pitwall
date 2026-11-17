@@ -12,6 +12,7 @@ import pkg from '../../../package.json';
 import { activate } from '../../../src/extension';
 import { ChatSession, Repository, STORAGE_KEYS } from '../../../src/core/types';
 import { worktreeId } from '../../../src/core/services/GitService';
+import { encodeClaudeProjectPath } from '../../../src/harnesses/claude/paths';
 import { disposeOperationLog } from '../../../src/core/services/OperationLog';
 import { PROCESS_ID_TIMEOUT_MS } from '../../../src/core/services/terminalEvents';
 import { chatRecord, flush, makeStorage, memento, setEnv, stub, tempDir, waitFor } from '../support';
@@ -25,7 +26,8 @@ async function seededActivation(
   pids: Record<string, number>,
   repositories: Repository[] = []
 ) {
-  setEnv(t, { CLAUDE_CONFIG_DIR: tempDir(t, 'pitwall-claude-') });
+  const claudeDir = tempDir(t, 'pitwall-claude-');
+  setEnv(t, { CLAUDE_CONFIG_DIR: claudeDir });
   const globalState = memento();
   const workspaceState = memento();
   await globalState.update(STORAGE_KEYS.CHATS, chats.map((chat) => chatRecord(chat)));
@@ -46,7 +48,11 @@ async function seededActivation(
   });
   return {
     context,
+    /** The Claude profile the extension reads (CLAUDE_CONFIG_DIR). */
+    claudeDir,
     start: () => (activation = activate(context as never)),
+    /** The chats storage holds now. */
+    storedChats: () => globalState.get<ChatSession[]>(STORAGE_KEYS.CHATS, []),
     /** The chat whose row the extension selected last. */
     activeChatId: () => globalState.get<string | undefined>(STORAGE_KEYS.ACTIVE_CHAT, undefined),
   };
@@ -213,13 +219,11 @@ test("clicking a repo row points FILES at its main worktree; opening a chat poin
     [repository]
   );
   await f.start();
-  assert.equal(logged.filter((line) => line === '[Pitwall] activate').length, 1, 'activation is logged once');
   const list = stub.__treeViews.find((candidate) => candidate.id === 'pitwall.workspacesView')!;
   const files = stub.__treeViews.find((candidate) => candidate.id === 'pitwall.filesView')!;
   assert.equal(list.description, 'sorted by who needs you');
   const rows = list.options.treeDataProvider!;
   const [repoRow] = (await rows.getChildren()) as WorkspaceRow[];
-  await waitFor(() => logged.includes('[Pitwall] first render'), 'the first render log');
   const operations = stub.__outputChannels.find((channel: { name: string }) => channel.name === 'Pitwall Operations');
   assert.ok(
     operations?.lines.some((line: string) => line.includes('[Pitwall] order repo-app')),
@@ -244,4 +248,210 @@ test('every command the manifest contributes is registered after activation', as
   const registered = new Set(await vscode.commands.getCommands());
   const contributed = (pkg.contributes.commands as { command: string }[]).map((entry) => entry.command);
   assert.deepEqual(contributed.filter((command) => !registered.has(command)), [], 'a contributed command with no handler is a dead button');
+});
+
+// Startup (E16): activation and the list's first render never wait on a scan.
+
+/** The module objects themselves, so a test can watch calls made through them. */
+const nodeFs = require('fs') as typeof fs;
+const childProcess = require('child_process') as typeof import('child_process');
+
+/**
+ * Watches the startup path's I/O for one test: transcript reads and git
+ * calls that block the extension host, and transcript or projects-folder
+ * reads that wait for `release()`, so a test can look while a scan is held
+ * mid-way. Everything is restored when the test ends.
+ */
+function watchStartupIo(t: { after(fn: () => unknown): void }, hold: { transcripts?: boolean; projectsDir?: string } = {}) {
+  const syncTranscriptReads: string[] = [];
+  const syncGit: string[][] = [];
+  const held: Array<() => void> = [];
+  let released = false;
+  const wait = () => (released ? Promise.resolve() : new Promise<void>((resolve) => held.push(resolve)));
+  const { readFileSync } = nodeFs;
+  const { readFile, readdir } = nodeFs.promises;
+  const { execFileSync: blockingRun } = childProcess;
+  const mutableFs = nodeFs as unknown as Record<string, unknown>;
+  const mutablePromises = nodeFs.promises as unknown as Record<string, unknown>;
+  const mutableChild = childProcess as unknown as Record<string, unknown>;
+  mutableFs.readFileSync = (file: unknown, ...rest: unknown[]) => {
+    if (String(file).endsWith('.jsonl')) syncTranscriptReads.push(String(file));
+    return (readFileSync as (...args: unknown[]) => unknown)(file, ...rest);
+  };
+  mutablePromises.readFile = async (file: unknown, ...rest: unknown[]) => {
+    if (hold.transcripts && String(file).endsWith('.jsonl')) await wait();
+    return (readFile as (...args: unknown[]) => unknown)(file, ...rest);
+  };
+  mutablePromises.readdir = async (dir: unknown, ...rest: unknown[]) => {
+    if (hold.projectsDir && path.resolve(String(dir)) === hold.projectsDir) await wait();
+    return (readdir as (...args: unknown[]) => unknown)(dir, ...rest);
+  };
+  mutableChild.execFileSync = (command: unknown, args: unknown, ...rest: unknown[]) => {
+    if (command === 'git') syncGit.push(args as string[]);
+    return (blockingRun as (...a: unknown[]) => unknown)(command, args, ...rest);
+  };
+  const release = () => {
+    released = true;
+    held.splice(0).forEach((resolve) => resolve());
+  };
+  t.after(() => {
+    mutableFs.readFileSync = readFileSync;
+    Object.assign(mutablePromises, { readFile, readdir });
+    mutableChild.execFileSync = blockingRun;
+    release();
+  });
+  return {
+    syncTranscriptReads,
+    syncGit,
+    /** Reads waiting for `release()`. */
+    heldCount: () => held.length,
+    release,
+  };
+}
+
+/** A Claude transcript from a recent session started in `cwd`. */
+function writeTranscript(claudeDir: string, cwd: string, sessionId: string): void {
+  const dir = path.join(claudeDir, 'projects', encodeClaudeProjectPath(cwd));
+  fs.mkdirSync(dir, { recursive: true });
+  const at = new Date().toISOString();
+  const entries = [
+    { type: 'user', timestamp: at, cwd, sessionId, message: { role: 'user', content: [{ type: 'text', text: 'Fix the startup' }] } },
+    { type: 'assistant', timestamp: at, cwd, sessionId, message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: 'Done' }] } },
+  ];
+  fs.writeFileSync(path.join(dir, `${sessionId}.jsonl`), entries.map((entry) => `${JSON.stringify(entry)}\n`).join(''));
+}
+
+type ListRow = WorkspaceRow & { label?: string };
+
+/** The workbench's request for the list's rows, which reaches the extension host as a message of its own. */
+function requestRows(): Promise<ListRow[]> {
+  const list = stub.__treeViews.find((candidate) => candidate.id === 'pitwall.workspacesView')!;
+  return new Promise((resolve, reject) =>
+    setImmediate(() => list.options.treeDataProvider!.getChildren().then((rows) => resolve(rows as ListRow[]), reject))
+  );
+}
+
+test('activate does not wait for the session scan', async (t) => {
+  stub.__setTreeViewsVisible(true);
+  const lab = labFolder(t);
+  const f = await seededActivation(t, [], {}, [lab.repository]);
+  writeTranscript(f.claudeDir, lab.repository.rootPath, 'scan-me');
+  const io = watchStartupIo(t, { transcripts: true });
+
+  await f.start();
+  const rows = await requestRows();
+  assert.deepEqual(rows.map((row) => row.label), ['lab'], 'the stored repo renders');
+  assert.ok(
+    !f.storedChats().some((chat) => chat.harnessSessionId === 'scan-me'),
+    'activation and the first render are done before the scan is'
+  );
+  await waitFor(() => io.heldCount() > 0, 'the scan to reach the transcript');
+  assert.deepEqual(io.syncTranscriptReads, [], 'no transcript is read synchronously, which would block the extension host');
+
+  io.release();
+  await waitFor(() => f.storedChats().some((chat) => chat.harnessSessionId === 'scan-me'), 'the scan to import the session afterwards');
+});
+
+test('stored repos render before discovery finishes', async (t) => {
+  stub.__setTreeViewsVisible(true);
+  const scratch = tempDir(t);
+  const appPath = path.join(scratch, 'app');
+  const linkedPath = path.join(scratch, 'app-fiu');
+  const notesPath = path.join(scratch, 'notes');
+  fs.mkdirSync(appPath);
+  fs.mkdirSync(notesPath);
+  execFileSync('git', ['init', '-q', '-b', 'main', appPath]);
+  execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd: appPath });
+  execFileSync('git', ['worktree', 'add', '-q', '-b', 'feat/fiu', linkedPath], { cwd: appPath });
+  const app = { id: 'repo-app', name: 'app', rootPath: appPath } as Repository;
+  const notes = { id: 'repo-notes', name: 'notes', rootPath: notesPath } as Repository;
+  const f = await seededActivation(
+    t,
+    [
+      {
+        id: 'f1u00000-chat',
+        name: 'Worktree chat',
+        harnessSessionId: 'fiu',
+        worktreeId: worktreeId(app.id, linkedPath),
+        // Recent, so retention keeps it.
+        createdAt: Date.now(),
+        lastAccessedAt: Date.now(),
+      },
+    ],
+    {},
+    [app, notes]
+  );
+  fs.mkdirSync(path.join(f.claudeDir, 'projects'), { recursive: true });
+  const io = watchStartupIo(t, { projectsDir: path.resolve(f.claudeDir, 'projects') });
+
+  await f.start();
+  const rows = await requestRows();
+  assert.deepEqual(
+    rows.map((row) => [row.label, row.description]).sort(),
+    [
+      ['app', '1 session'],
+      ['notes', '0 sessions'],
+    ],
+    'every stored repo, with its stored sessions from every worktree'
+  );
+  assert.notEqual(stub.__contextKeys.get('pitwall.scanned'), true, 'discovery has not finished');
+  assert.deepEqual(io.syncGit, [], 'no git call blocked activation or the render');
+});
+
+/** The welcome text the list shows when it has no rows, given the context keys set so far. */
+function shownWelcome(): string[] {
+  const holds = (when: string | undefined) =>
+    !when ||
+    when.split('&&').every((term) => {
+      const key = term.trim();
+      return key.startsWith('!') ? stub.__contextKeys.get(key.slice(1)) !== true : stub.__contextKeys.get(key) === true;
+    });
+  return (pkg.contributes.viewsWelcome as { view: string; contents: string; when?: string }[])
+    .filter((entry) => entry.view === 'pitwall.workspacesView' && holds(entry.when))
+    .map((entry) => entry.contents);
+}
+
+test('the empty-state welcome is hidden while the first scan runs', async (t) => {
+  stub.__setTreeViewsVisible(true);
+  // Before activation no context key is set: the list must not claim it is empty.
+  assert.ok(!shownWelcome().some((text) => text.startsWith('No repositories yet')), 'not before activation');
+  assert.ok(shownWelcome().some((text) => text.startsWith('Scanning for repositories')), 'a loading line instead');
+
+  const f = await seededActivation(t, [], {});
+  fs.mkdirSync(path.join(f.claudeDir, 'projects'), { recursive: true });
+  const io = watchStartupIo(t, { projectsDir: path.resolve(f.claudeDir, 'projects') });
+  await f.start();
+  assert.deepEqual(await requestRows(), [], 'nothing stored yet');
+  await waitFor(() => io.heldCount() > 0, 'the first discovery pass to start');
+  assert.ok(!shownWelcome().some((text) => text.startsWith('No repositories yet')), 'not while the first scan runs');
+  assert.ok(shownWelcome().some((text) => text.startsWith('Scanning for repositories')));
+
+  io.release();
+  await waitFor(() => stub.__contextKeys.get('pitwall.scanned') === true, 'the first scan to finish');
+  assert.deepEqual(shownWelcome(), ['No repositories yet.\n[Add repository](command:pitwall.addRepository)'], 'only once it found nothing');
+});
+
+test('activate and first-render diagnostics go to the Pitwall Operations channel', async (t) => {
+  stub.__setTreeViewsVisible(true);
+  disposeOperationLog();
+  t.after(disposeOperationLog);
+  const logged: string[] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => logged.push(args.map(String).join(' '));
+  t.after(() => {
+    console.log = original;
+  });
+  const lab = labFolder(t);
+  const f = await seededActivation(t, [], {}, [lab.repository]);
+  await f.start();
+  await requestRows();
+  const operations = () =>
+    (stub.__outputChannels.find((channel) => channel.name === 'Pitwall Operations')?.lines ?? []).map((line) =>
+      line.slice(line.indexOf('] ') + 2)
+    );
+  await waitFor(() => operations().includes('[Pitwall] first render'), 'the first render line');
+  assert.equal(operations().filter((line) => line === '[Pitwall] activate').length, 1, 'activation is logged once');
+  assert.equal(operations().filter((line) => line === '[Pitwall] first render').length, 1, 'the first render is logged once');
+  assert.ok(operations().indexOf('[Pitwall] activate') < operations().indexOf('[Pitwall] first render'), 'in order');
+  assert.ok(!logged.some((line) => line === '[Pitwall] activate' || line === '[Pitwall] first render'), 'and not to console.log');
 });
