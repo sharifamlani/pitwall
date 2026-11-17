@@ -1,2 +1,4 @@
 # upstream Agntree site/pages.mjs (deleted in Task 1): IndexNow verification key, public by design (published at the site root per the IndexNow protocol); history only
 69b7265368c19035194966d3efd08d832fff0b5f:site/pages.mjs:generic-api-key:34
+# docs/progress_reports/phase1-scorecard.md quotes the same public IndexNow key (see above); history only
+54e4b4a95944ef93d5b34452697bc1b779b3904a:docs/progress_reports/phase1-scorecard.md:generic-api-key:15

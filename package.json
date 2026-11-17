@@ -50,6 +50,16 @@
   "activationEvents": [
     "onStartupFinished"
   ],
+  "files": [
+    "out/extension.js",
+    "resources/icons/*.png",
+    "resources/icons/*.svg",
+    "resources/icons/harness/*.svg",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {
