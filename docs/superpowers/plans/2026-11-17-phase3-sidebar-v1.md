@@ -346,7 +346,7 @@ Checked 2026-11-17 against the canvas boards Navigation, SidebarOptions, StatusR
 | Repo row: chevron, name, `{n} open`, hover 🕘 and `+` | ✅ | T5, T7 |
 | Repo row ` · {k} windows` suffix | → Phase 4 (needs the window registry) | 4.2 |
 | Collapsed repo summary (`2 sessions`, `1 needs you`) | ✅ | T5 |
-| Repo tooltip with Ctrl+Alt+N / Ctrl+Alt+Shift+N | ✅ | T5, T8 |
+| Repo tooltip with Ctrl+Alt+{n} / Ctrl+Alt+Shift+{n} | ✅ | T5, T8 |
 | Session row: dot, title, `⎇ branch`, `⧉`, `status · ago`, ` · open` | ✅ | T5 |
 | Session tooltip: worktree folder (main too), ⧉ line | ✅ | T5 |
 | Needs-you bell on the row | ✅ | T7 |
@@ -410,7 +410,7 @@ Checked 2026-11-17 against the canvas boards Navigation, SidebarOptions, StatusR
 | E15 | End to end: the canvas sidebar flows work in real Cursor | Walk W1–W10 all PASS on the release sha, real `~/.claude` read-only (P15) + lab repos | testing agent walk | `captures/phase3-walk-evidence/` |
 | E16 | Startup stays fast with real data | `[Pitwall] activate` → `[Pitwall] first render` ≤ 1 s, 5/5 starts, real `~/.claude` (Task 5 adds both log lines, QA C2) | exthost log (walk W1) | log excerpt |
 | E17 | The sidebar never scrolls sideways and resizes like any panel (D33) | Yes/no: at 220 px no horizontal scrollbar and rows end in "…"; dragging the edge resizes (QA C3) | walk W10 | 2 screenshots |
-| E19 | The sidebar matches the canvas wireframe | Every ✅ row of §3i present: yes on each, checked by the evaluator from a screenshot of the lab sidebar + `package.json`; strings compared byte-for-byte with §3 | evaluator, walk W2/W3 screenshots | §3i table with a PASS column |
+| E19 | The sidebar matches the canvas wireframe | Every ✅ row of §3i present: yes on each, the screenshot marks each ✅ row present or absent; strings are compared byte-for-byte from `package.json` and the copy the dry tests assert, not from pixels (QA N2) | evaluator, walk W2/W3 screenshots | §3i table with a PASS column |
 | E18 | The status tick stays cheap with many chats | Suite (deterministic): at 500 chats a tick stats only open chats and live sessions-file sessions, 0 others. Bench (outside the default suite): tick p95 ≤ 50 ms over 100 ticks (QA S5, R2) | `npm test -- attention` + `node --test test/bench/attention-bench.js` | test name + bench output |
 
 ## 6. Implementation tasks
@@ -630,7 +630,7 @@ Rebase order where files overlap: T2 before T3 (`ClaudeHarness.ts`, `harness/typ
 - Produces:
   - Repo row inline "+" (`newSessionInRepository`: new Claude chat in the main worktree) and inline 🕘, both shown on hover.
   - The menu exactly as in §3c.
-  - Session-row inline actions (canvas StatusRules item 5): `$(bell)` on needs-you rows (contextValue gains a `Needs` marker; runs `pitwall.openChat`), `openChatInTerminal`, `forkChat`. Star, rename and close leave the inline group (they stay in the right-click menu).
+  - Session-row inline actions (canvas StatusRules item 5): `$(bell)` on needs-you rows (contextValue gains a `Needs` marker; runs `pitwall.openChat`), `openChatInTerminal`, `forkChat`. Star, rename and close leave the inline group (they stay in the right-click menu). `menus.test.ts:40` is rewritten to assert this set, not kept as is (QA N1).
   - The history quick pick as in §3f, newest first. Picking an OLDER chat imports it (existing `importSessions` path), then opens it.
 
 - [ ] **Step 1:** Write failing tests:
@@ -673,6 +673,7 @@ Rebase order where files overlap: T2 before T3 (`ClaudeHarness.ts`, `harness/typ
 
 **Interfaces:**
 - Consumes the T5 order and statuses, T8's `goToRepo`, and `pitwall.findSession`. It takes no query today (`sessionSearch.ts:246`); register it to pass an optional query to the existing `find(query)`, as `askSessionSearchAgain` does at L247.
+- `menus.test.ts:52` (only navigation title action is `addRepository`) is updated to `[search, addRepository]` in canvas order (QA N1).
 - Produces `pitwall.search`. The quick pick uses `matchOnDescription`, groups as `QuickPickItemKind.Separator` items, and copy exactly as in §3e.
   - Repo pick → `goToRepo` behaviour.
   - Chat pick → `pitwall.openChat`.
