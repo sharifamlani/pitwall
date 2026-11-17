@@ -115,11 +115,11 @@ test('the agents poll runs a real claude CLI on this platform, by full path', as
 
 test('the agents poll runs a real claude CLI on this platform, by bare name on PATH', async (t) => {
   const { dir } = fakeClaude(t);
-  const service = new ClaudeAgentsService({
-    command: () => 'claude',
-    enabled: () => true,
-    env: { ...process.env, PATH: `${dir}${path.delimiter}${process.env.PATH ?? ''}` },
-  });
+  // Windows spells the key `Path` or `PATH` by launcher; reuse whichever exists.
+  const env = { ...process.env };
+  const key = Object.keys(env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
+  env[key] = dir + path.delimiter + (env[key] ?? '');
+  const service = new ClaudeAgentsService({ command: () => 'claude', enabled: () => true, env });
   const states = await service.getStates();
   assert.deepEqual(
     [...states].map(([id, state]) => [id.slice(0, 2), state.waitingFor]),
