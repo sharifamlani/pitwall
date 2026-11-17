@@ -29,3 +29,8 @@ export function enabledHarnesses(): HarnessModule[] {
     return harnessModule;
   });
 }
+
+/** Check the ids in `enabled.json` against the harnesses that exist; returns them unchanged. */
+export function validateEnabled(_ids: unknown[], _all: Record<string, unknown>): string[] {
+  throw new Error('not implemented');
+}
