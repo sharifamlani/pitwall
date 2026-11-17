@@ -50,6 +50,11 @@ export abstract class ExactIdSessionWatcher implements HarnessSessionWatcher {
 
   private readonly rootWatchers = new Map<string, fs.FSWatcher>();
   private readonly dirWatchers = new Map<string, fs.FSWatcher>();
+  /**
+   * Chats whose pending window ran out this session. They are not treated as
+   * restored again (and given a fresh window) until a launch re-registers them.
+   */
+  private readonly expired = new Set<string>();
   /** Pending IDs already linked elsewhere; retrying cannot help. */
   private readonly ignoredPendingIds = new Set<string>();
   /**
@@ -97,6 +102,7 @@ export abstract class ExactIdSessionWatcher implements HarnessSessionWatcher {
    * directories, and runs a check immediately.
    */
   registerPendingChat(chatId: string, worktreePath: string): void {
+    this.expired.delete(chatId);
     this.pending.set(chatId, { since: Date.now(), worktreePath });
     this.refreshWatchersIfNeeded();
     void this.checkPending();
@@ -124,6 +130,13 @@ export abstract class ExactIdSessionWatcher implements HarnessSessionWatcher {
       }
 
       let window = this.pending.get(chat.id);
+      if (!window && this.expired.has(chat.id)) {
+        if (chat.status !== 'active') {
+          continue;
+        }
+        // An open terminal keeps waiting.
+        this.expired.delete(chat.id);
+      }
       if (!window) {
         // A chat restored from storage was not registered by a launch; the
         // catalog supplies its worktree so its lookup stays scoped to it.
@@ -133,6 +146,7 @@ export abstract class ExactIdSessionWatcher implements HarnessSessionWatcher {
       }
       if (chat.status !== 'active' && now - window.since >= PENDING_TTL_MS) {
         this.pending.delete(chat.id);
+        this.expired.add(chat.id);
         continue;
       }
       pending.push(chat);
@@ -152,6 +166,17 @@ export abstract class ExactIdSessionWatcher implements HarnessSessionWatcher {
     for (const chatId of this.pending.keys()) {
       if (!pendingChatIds.has(chatId)) {
         this.pending.delete(chatId);
+      }
+    }
+    // Drop tombstones for chats that no longer have a pending ID or are gone.
+    const stillPendingIds = new Set(
+      chats
+        .filter((chat) => chat.pendingHarnessSessionId && !chat.harnessSessionId)
+        .map((chat) => chat.id)
+    );
+    for (const chatId of this.expired) {
+      if (!stillPendingIds.has(chatId)) {
+        this.expired.delete(chatId);
       }
     }
 
@@ -207,6 +232,16 @@ export abstract class ExactIdSessionWatcher implements HarnessSessionWatcher {
             sessionId,
             this.pending.get(chat.id)?.worktreePath
           ))
+        ) {
+          continue;
+        }
+        // The check awaited; the chat may have expired meanwhile.
+        const window = this.pending.get(chat.id);
+        if (
+          this.expired.has(chat.id) ||
+          !window ||
+          (this.storageService.getChat(chat.id)?.status !== 'active' &&
+            Date.now() - window.since >= PENDING_TTL_MS)
         ) {
           continue;
         }

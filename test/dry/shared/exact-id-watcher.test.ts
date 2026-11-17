@@ -29,6 +29,8 @@ function setup(t: { after(fn: () => void): void }) {
     signalBlocked = resolve;
   });
 
+  /** Session IDs whose record does not exist yet. */
+  const notYet = new Set<string>();
   const source: ExactIdSessionSource = {
     watchRoots: () => [],
     watchDirs: () => [],
@@ -41,14 +43,14 @@ function setup(t: { after(fn: () => void): void }) {
         signalBlocked?.();
         await gate;
       }
-      return true;
+      return !notYet.has(sessionId);
     },
     getSummary: async () => null,
   };
 
   const watcher = new TestWatcher(storage, source);
   t.after(() => watcher.dispose());
-  return { storage, watcher, blocked, release: () => releaseGate?.() };
+  return { storage, watcher, blocked, notYet, release: () => releaseGate?.() };
 }
 
 test('a chat registered during an in-flight check is linked when the check ends', async (t) => {
@@ -90,4 +92,82 @@ test('a chat registered during an in-flight check is linked when the check ends'
     ),
     'second'
   );
+});
+
+/** Fake `Date.now`, restored when the test ends. */
+function fakeClock(t: { after(fn: () => void): void }) {
+  const realNow = Date.now;
+  let now = realNow();
+  Date.now = () => now;
+  t.after(() => {
+    Date.now = realNow;
+  });
+  return { advance: (ms: number) => (now += ms) };
+}
+
+const PENDING_TTL = 5 * 60_000;
+
+test('an abandoned chat whose TTL ends during a resumability check is not linked', async (t) => {
+  const { storage, watcher, blocked, release } = setup(t);
+  const clock = fakeClock(t);
+  const pendingChat = (pendingSessionId: string, status: 'idle' | 'active') => {
+    const chat = storage.createChat('wt-1', 'pi', 'New Session');
+    return storage.updateChat(chat.id, {
+      status,
+      pendingHarnessSessionId: pendingSessionId,
+    })!;
+  };
+
+  const abandoned = pendingChat('first', 'idle');
+  watcher.startWatching();
+  watcher.registerPendingChat(abandoned.id, '/wt');
+  await blocked;
+  clock.advance(PENDING_TTL + 1);
+  release();
+
+  const barrier = pendingChat('second', 'active');
+  watcher.registerPendingChat(barrier.id, '/wt');
+  await waitFor(
+    () => storage.getChat(barrier.id)?.harnessSessionId,
+    'the barrier chat to link',
+    5_000
+  );
+  assert.equal(storage.getChat(abandoned.id)!.harnessSessionId, null);
+});
+
+test('an expired pending chat is not given a fresh window on the next pass', async (t) => {
+  const { storage, watcher, notYet } = setup(t);
+  const clock = fakeClock(t);
+  const pendingChat = (pendingSessionId: string, status: 'idle' | 'active') => {
+    const chat = storage.createChat('wt-1', 'pi', 'New Session');
+    return storage.updateChat(chat.id, {
+      status,
+      pendingHarnessSessionId: pendingSessionId,
+    })!;
+  };
+
+  notYet.add('late');
+  const abandoned = pendingChat('late', 'idle');
+  watcher.startWatching();
+  watcher.registerPendingChat(abandoned.id, '/wt');
+  clock.advance(PENDING_TTL + 1);
+
+  // Pass one expires the chat; its record then appears; pass two must not
+  // treat it as a restored chat with a new window.
+  const barrier1 = pendingChat('b1', 'active');
+  watcher.registerPendingChat(barrier1.id, '/wt');
+  await waitFor(
+    () => storage.getChat(barrier1.id)?.harnessSessionId,
+    'the first barrier chat to link',
+    5_000
+  );
+  notYet.delete('late');
+  const barrier2 = pendingChat('b2', 'active');
+  watcher.registerPendingChat(barrier2.id, '/wt');
+  await waitFor(
+    () => storage.getChat(barrier2.id)?.harnessSessionId,
+    'the second barrier chat to link',
+    5_000
+  );
+  assert.equal(storage.getChat(abandoned.id)!.harnessSessionId, null);
 });
