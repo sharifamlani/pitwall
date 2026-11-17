@@ -610,3 +610,53 @@ test('a star in A and a rename in B on the same chat both survive', async () => 
   assert.equal(savedChat(globalState, 'c1').status, 'active');
   assert.deepEqual(savedAt(globalState, STORAGE_KEYS.STARRED_CHATS), ['c1']);
 });
+
+// PR #28 round 3: an echo of this window's own earlier copy shows its stamps,
+// and an older echo can still land after it, so only a newer stamp releases.
+
+test("an echo of this window's earlier copy followed by an older echo never loses a chat edit", async () => {
+  const globalState = echoingMemento();
+  await seedChats(globalState, 'c1', 'c2');
+  const s0 = globalState.snapshots.at(-1)!;
+  const clock = { now: 1_800_000_000_000 };
+  const storage = clockedWindow(globalState, clock, 1);
+
+  storage.updateChat('c1', { name: 'X' });
+  const s1 = globalState.snapshots.at(-1)!;
+  clock.now += 1_000;
+  storage.updateChat('c2', { name: 'Y' });
+
+  globalState.echo(s1);
+  storage.getChats();
+  globalState.echo(s0);
+  storage.getChats();
+  clock.now += 1_000;
+  storage.touchChat('c2');
+
+  assert.equal(storage.getChat('c1')!.name, 'X');
+  assert.equal(storage.getChat('c2')!.name, 'Y');
+  assert.equal(savedChat(globalState, 'c1').name, 'X');
+  assert.equal(savedChat(globalState, 'c2').name, 'Y');
+});
+
+test("an echo of this window's earlier copy followed by an older echo never loses a terminal PID", async () => {
+  stub.workspace.workspaceFolders = [{ uri: { fsPath: '/workspace/echo2' } }];
+  const globalState = echoingMemento();
+  await seedChats(globalState, 'c1', 'c2');
+  const s0 = globalState.snapshots.at(-1)!;
+  const clock = { now: 1_800_000_000_000 };
+  const storage = clockedWindow(globalState, clock, 1);
+
+  await storage.rememberTerminalPid('c1', 111);
+  const s1 = globalState.snapshots.at(-1)!;
+  clock.now += 1_000;
+  await storage.rememberTerminalPid('c2', 222);
+
+  globalState.echo(s1);
+  storage.getTerminalPids();
+  globalState.echo(s0);
+  assert.deepEqual(storage.getTerminalPids(), { c1: 111, c2: 222 });
+
+  storage.setActiveChatId('c1');
+  assert.deepEqual(pidRecords(globalState.saved())['/workspace/echo2'], { c1: 111, c2: 222 });
+});
