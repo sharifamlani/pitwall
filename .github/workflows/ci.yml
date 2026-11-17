@@ -42,6 +42,7 @@ jobs:
       - run: npm run compile
       - run: node scripts/build-manifest.mjs --check
       - run: npm test
+      - run: mkdir dist  # vsce does not create the output folder
       - run: npm run package -- -o dist/ci.vsix
       - run: python -m tools.check_vsix_archive dist/ci.vsix
 
