@@ -16,7 +16,7 @@
   "bugs": {
     "url": "https://github.com/sharifamlani/pitwall/issues"
   },
-  "homepage": "https://sharifamlani.github.io/pitwall",
+  "homepage": "https://github.com/sharifamlani/pitwall#readme",
   "qna": "marketplace",
   "engines": {
     "vscode": "^1.93.0"

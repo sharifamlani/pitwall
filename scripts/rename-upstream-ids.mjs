@@ -15,7 +15,7 @@ const TABLE = [
   ['An Agntree', 'A Pitwall'],
   ['an Agntree', 'a Pitwall'],
   ['github.com/subhashkhileri/agntree', 'github.com/sharifamlani/pitwall'],
-  ['subhashkhileri.github.io/agntree', 'sharifamlani.github.io/pitwall'],
+  ['subhashkhileri.github.io/agntree', 'github.com/sharifamlani/pitwall#readme'],
   ['subhashkhileri.agntree', 'sharifamlani.pitwall'],
   ['agntree.', 'pitwall.'],
   ['Agntree', 'Pitwall'],
