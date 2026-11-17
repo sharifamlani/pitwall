@@ -38,6 +38,27 @@ Setup:
 4. **Pop-ups need a first-run check (T2).** On this machine every Windows notification is off. Pitwall should detect `ToastEnabled=0`, Focus assist, and the app's own toggle, and offer `ms-settings:notifications`.
 5. **Tab matching needs care (T10).** Use title + recent-open expectations (Agntree's approach) and treat unmatched tabs as unknown. Never guess from a duplicate "Claude Code" label.
 
+## Why T5 fails: code recon (read-only, Claude Code extension 2.1.296)
+
+Read for interoperability only, in the installed `extension.js`. Nothing was copied into Pitwall. Findings in our own words:
+
+1. **Each window has one Claude folder.** The extension's session scope is the window's *first* workspace folder (the user's home folder if none is open). Every chat panel in that window uses that folder to list chats, look one up, and run Claude.
+2. **The link carries no folder.** `/open` reads only `session` and `prompt`, then opens a panel in the window's folder. There's no setting for the folder either (checked all 23 `claudeCode.*` settings).
+3. **The lookup could find any chat; the panel narrows it.** The "find transcript by ID" routine scans *every* project folder when given no folder. The panel always gives it the window's folder, so another repo's chat isn't found and the panel starts a new one.
+4. **Worktrees are included in the lookup.** Given a folder, the lookup also searches that repo's git worktrees, so a worktree chat should open in its main repo's window (T17, still to confirm live). Claude's own history list sets `includeWorktrees: false`, so worktree chats don't appear there. Pitwall's list would show them.
+5. **A process wrapper exists** (`claudeCode.claudeProcessWrapper`). It could start the Claude process in a different folder, but the panel's own history loading and file anchoring still use the window folder. Partial and fragile.
+
+Ways around it, assessed:
+
+| Idea | Verdict |
+|---|---|
+| Reorder workspace folders so the target repo is first before opening | ✗ Changing the first folder restarts every extension in the window and would stop running chats |
+| Process wrapper that switches folders on `--resume` | ✗ Fragile: history pane and diffs still anchored to the window folder; bends Claude Code's behaviour |
+| Window with no folder | ✗ Scope becomes the home folder, not "all repos" |
+| Claude Code in terminal mode (`claudeCode.useTerminal`) | ◐ Terminals can run any repo's chat in one window, but you lose the chat panel UI. Possible v2 option |
+| Feature request to Anthropic: per-session folder / multi-root support | ✓ The lookup already handles "any folder", so it's a small change on their side. File it with this evidence |
+| **One window per repo (chosen for v1)** | ✓ Works today; T6 shows the link focuses the window already holding a chat |
+
 ## Side notes
 
 - `entrypoint` in the sessions file said `claude-vscode` even for the terminal session, because it inherits the environment. Don't use it to tell panel from terminal.
