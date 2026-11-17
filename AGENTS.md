@@ -290,7 +290,7 @@ npm run test:dry                 # plain Node, stubbed vscode, no extension inst
 npm run test:dry -- codex        # only test files whose name contains "codex"
 npm run test:integration         # real VS Code host; commands, settings, menus, activation
 npm run test:e2e                 # optional; real VS Code terminal-restore check
-npx @vscode/vsce package         # package as .vsix
+npm run package                  # package as .vsix (pinned vsce; use this, not a bare vsce)
 code --install-extension *.vsix  # install the packaged extension
 ```
 
