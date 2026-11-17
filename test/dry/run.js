@@ -71,6 +71,9 @@ try {
       '--test',
       '--test-reporter=spec',
       `--test-timeout=${TIMEOUT_MS}`,
+      ...(process.env.PITWALL_TEST_NAME_PATTERN
+        ? [`--test-name-pattern=${process.env.PITWALL_TEST_NAME_PATTERN}`]
+        : []),
       ...bundles,
     ],
     { stdio: 'inherit', env: process.env }

@@ -565,7 +565,7 @@ export function recommendedRebaseTarget(remoteBranches: readonly string[]): stri
  * never change; the path is canonical so a folder keeps its id when `git init`
  * starts reporting its physical path.
  */
-function worktreeId(repoId: string, worktreePath: string): string {
+export function worktreeId(repoId: string, worktreePath: string): string {
   const key = `${repoId}:${canonicalPath(worktreePath)}`;
   let hash = 0;
   for (let i = 0; i < key.length; i++) {

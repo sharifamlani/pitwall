@@ -59,3 +59,13 @@ export function deepestContainingRoot<T extends { path: string }>(
   }
   return best;
 }
+
+/** Not implemented yet. */
+export function nativePath(_value: string): string {
+  throw new Error('not implemented');
+}
+
+/** Not implemented yet. */
+export function samePath(_a: string, _b: string): boolean {
+  throw new Error('not implemented');
+}
