@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.8.1 · 2026-11-16
+> v0.8.2 · 2026-11-16
 
 ---
 
@@ -61,7 +61,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D23 | Copy files between repos: copy/cut in one repo, switch, paste (Agntree's clipboard survives switching; paste lands in the shown repo/worktree; name clashes get " copy"). New: right-click "Copy to another repo" and drag a file onto a repo row. A copied `.env` that the target's `.gitignore` doesn't cover triggers an offer to add it | Sharif 2026-11-16, decision log 14 |
 | D24 | Search (Ctrl+Alt+R), one box: v1 = repos + chats by name/branch (instant) + Agntree's Find Session (agent reads transcripts). Instant text search inside chats → row 6.1 | Sharif 2026-11-16, decision log 15 |
 | D25 | Bottom-bar counts are buttons: click "N need you" (or working / finished) → a list of those sessions; Pitwall jumps you to each in turn (Next ▸). Side by side only within one folder (amended by D35) | Sharif 2026-11-16, decision log 16 |
-| D26 | Every tab shows its repo + branch underneath. File tabs: Cursor's tab-label setting. Claude's chat tabs can't be written on by another extension: until 2.5 finds a way, the repo shows in the tooltip, bottom bar and window title | Sharif 2026-11-16, decision log 17 |
+| D26 | Every tab shows its repo + branch underneath (Sharif: keep). File tabs: Cursor's tab-label setting. Claude's chat tabs belong to Claude Code: test 2.5 must find a way; fallback is the window title + bottom bar showing "repo · ⎇ branch" | Sharif 2026-11-16, decision log 17 |
 | D27 | Sound: off by default (refines D20). Two switches, "needs you" and "finished"; when on, the Windows pop-up plays the system sound. Bell in the sidebar header + Settings | Sharif 2026-11-16, decision log 18 |
 | D28 | Repo rows: no printed hotkeys; a "+" on each repo starts a new Claude Code chat there; the header keeps only the folder icon (add repo). Right-click → "Dismiss from Pitwall" hides the repo (nothing on disk changes); it returns when re-added or when a new session starts in it | Sharif 2026-11-16, decision log 19 |
 | D29 | Principle: inherit everything Cursor already does (tabs, editor, menus, quick-pick box, keybinding editor, themes); never rebuild it. Canvas board "What Pitwall gets from Cursor" | Sharif 2026-11-16, decision log 20 |
@@ -126,6 +126,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | 2.4 | Open two sessions from different repos side by side in one window (the "N need you" view) | ⏸ | ⏸ | — | D25 |
 | 2.5 | Can Claude Code chat tabs show their repo (description, tooltip, title)? Record what is possible | ⏸ | ⏸ | — | D26 |
 | 2.6 | Keep tabs from several repos open together, then show only one repo's tabs and switch back without closing any (repo filter over a shared tab set) | ⏸ | ⏸ | — | D31 |
+| 2.7 | T18: a chat started in the main folder that creates or enters a worktree mid-chat (Claude's own worktree feature) still opens in the main window | ⏸ | ⏸ | — | D35 |
 
 ### Phase 3 — Chat panel by default
 **Goal:** Clicking a session opens the Claude Code chat panel directly, with no terminal step.
@@ -218,3 +219,4 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 - **v0.7 · 2026-11-16.** Q1 resolved → D35: one window per folder, worktrees included (T17 also FAILED: a worktree chat won't open in the main repo window). D25 amended to a jump list; D31 superseded. Code recon recorded in the tests doc.
 - **v0.8 · 2026-11-16.** D36: no repo needs to be open; Pitwall opens folder windows on demand (option A; terminal-mode single window rejected). Prototype rebuilt for one window per folder (canvas v36): window title + taskbar strip, worktree chats in their own windows, session-history button, bottom-bar jump list, no mixed tabs.
 - **v0.8.1 · 2026-11-16.** D11 clarified by Sharif: a repo click opens all its chats as tabs; session clicks add tabs. Prototype demo data moved to main (matches Sharif's real usage); one worktree example kept.
+- **v0.8.2 · 2026-11-16.** D26 restored (Sharif keeps "repo · ⎇ branch" under every tab; Claude tabs need test 2.5, fallback window title + bottom bar). New test row 2.7 (T18).
