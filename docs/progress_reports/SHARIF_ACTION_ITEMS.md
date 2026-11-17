@@ -9,7 +9,7 @@ The live check S1-b used to switch away from the chat within 0.3 s of sending a 
 The check: after quitting and relaunching Cursor, a chat that was open comes back resumed within 15 s.
 - **(a) From relaunch (as written).** Cursor itself takes about 35 s before extensions start on this machine, so this would FAIL every time, on a delay Pitwall can't control.
 - **(b) From Pitwall's start (`onStartupFinished`).** This measures only what Pitwall controls. Measured on the testing walk: 14.3 s and 8.5 s, so PASS, but thin. Task 6b is measuring where the time goes.
-Lead and QA both lean towards (b). Reply "(a)" or "(b)", or give another bar. Until then, R1(b) is marked "pending Sharif" in the plan.
+~~Lead and QA both lean towards (b). Reply "(a)" or "(b)", or give another bar.~~ Resolved 2026-11-17: Sharif delegated the call to the lead → (b). The plan records it under R48.
 
 ## 2026-11-16 · Update Cursor before December 14, 2026 (not urgent)
 Cursor shows "This version of Cursor (3.14.27) stops working on December 14, 2026." That's your everyday Cursor. Update when convenient; the agents never press Update because the install is shared with your windows.
