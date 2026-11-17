@@ -37,3 +37,4 @@ poetry.toml
 .pytest_cache/**
 .superpowers/**
 dist/**
+.gitleaksignore
