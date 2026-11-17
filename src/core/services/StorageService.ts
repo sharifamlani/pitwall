@@ -347,9 +347,19 @@ export class StorageService {
     });
   }
 
+  /**
+   * Every well-formed stored search, including those of a harness this build
+   * has disabled. Writes start from this, so a build that cannot show a search
+   * never erases it.
+   */
+  private getStoredSessionSearches(): SessionSearchRecord[] {
+    const stored = this.get<unknown>(STORAGE_KEYS.SESSION_SEARCHES, []);
+    return Array.isArray(stored) ? stored.filter((value) => isSessionSearchRecord(value, (_id): _id is HarnessId => true)) : [];
+  }
+
   /** Keep a finished search ahead of the others, within the limit. */
   saveSessionSearch(search: SessionSearchRecord): Thenable<void> {
-    const others = this.getSessionSearches().filter((stored) => stored.id !== search.id);
+    const others = this.getStoredSessionSearches().filter((stored) => stored.id !== search.id);
     return this.set(STORAGE_KEYS.SESSION_SEARCHES, [search, ...others].slice(0, SESSION_SEARCH_LIMIT));
   }
 
@@ -357,7 +367,7 @@ export class StorageService {
     const removed = new Set(ids);
     return this.set(
       STORAGE_KEYS.SESSION_SEARCHES,
-      this.getSessionSearches().filter((search) => !removed.has(search.id))
+      this.getStoredSessionSearches().filter((search) => !removed.has(search.id))
     );
   }
 

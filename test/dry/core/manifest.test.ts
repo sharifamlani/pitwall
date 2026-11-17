@@ -17,6 +17,8 @@ const ROOT = path.resolve(__dirname, '..', '..', '..');
 const BUILDER = path.join(ROOT, 'scripts', 'build-manifest.mjs');
 import { ALL_HARNESSES, validateEnabled } from '../../../src/harnesses';
 
+/** The harnesses the shipped build enables. Change this with `src/harnesses/enabled.json`. */
+const SHIPPED_HARNESSES = ['claude'];
 const DORMANT = new Set(['codex', 'opencode', 'pi']);
 
 interface Setting {
@@ -113,13 +115,13 @@ test('enabling Codex is one switch: the claude,codex build has the Codex command
   );
 });
 
-test('the shipped package.json is the build of enabled.json, which is Claude only', () => {
+test('the shipped package.json is the build of enabled.json, which is SHIPPED_HARNESSES', () => {
   const enabled = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'harnesses', 'enabled.json'), 'utf8'));
-  assert.deepEqual(enabled, ['claude']);
-  const result = build(['--enabled', 'claude']);
+  assert.deepEqual(enabled, SHIPPED_HARNESSES);
+  const result = build(['--enabled', SHIPPED_HARNESSES.join(',')]);
   assert.equal(result.status, 0, result.output);
   const shipped = fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8').replace(/\r\n/g, '\n');
-  assert.equal(shipped, result.text, 'package.json equals the ["claude"] build');
+  assert.equal(shipped, result.text, 'package.json equals the SHIPPED_HARNESSES build');
 
   const check = spawnSync(process.execPath, [BUILDER, '--check'], { cwd: ROOT, encoding: 'utf8' });
   assert.equal(check.status, 0, `${check.stdout}${check.stderr}`);
