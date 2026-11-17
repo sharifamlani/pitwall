@@ -864,3 +864,31 @@ test('a click while a reload tab’s PID is still pending waits for its adoption
   assert.deepEqual([stub.window.terminals.length, lab.sent.length], [1, 0], 'no second tab, nothing typed');
   await restore.complete;
 });
+
+test('after a quit, a chat whose stored PID belongs to no live terminal is left idle, and a click opens exactly one tab (run 9 leftovers)', async (t) => {
+  const f = setup(t, {
+    chats: [
+      { id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab', status: 'active' },
+      { id: '0ad61000-new', name: 'New Session', harnessSessionId: 'new', status: 'active' },
+    ],
+  });
+  // Run 9's swap left Lab ready's record stale and two tabs carrying New Session's title.
+  await f.storage.rememberTerminalPid('40de4f00-lab', 86112);
+  await f.storage.rememberTerminalPid('0ad61000-new', 13740);
+  const first = f.restoredTab('Pitwall: New Session [0ad610]', 91001);
+  const second = f.restoredTab('Pitwall: New Session [0ad610]', 91002);
+  const warn = console.warn;
+  console.warn = () => undefined;
+  t.after(() => (console.warn = warn));
+
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  assert.deepEqual([first.sent, second.sent], [[], []], 'nothing is typed into either same-titled tab');
+  assert.deepEqual([f.manager.isActive('40de4f00-lab'), f.manager.isActive('0ad61000-new')], [false, false]);
+  assert.equal(f.chat('40de4f00-lab').status, 'idle');
+
+  const opened = (await f.open('40de4f00-lab'))!;
+  assert.equal(stub.window.terminals.length, 3, 'one new tab for Lab ready');
+  assert.equal(await f.open('40de4f00-lab'), opened, 'a second click focuses it');
+  assert.equal(stub.window.terminals.length, 3);
+  assert.deepEqual([first.disposed, second.disposed], [false, false]);
+});
