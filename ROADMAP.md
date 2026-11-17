@@ -4,14 +4,14 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.47 · 2026-11-17
+> v0.48 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 3 — Sidebar v1 (planning). Development resumed by Sharif on 2026-11-17.
-- **Current step:** Phase 3: rows 3.0–3.9 ✅; 3.10 partial (E16 startup fix PR #37 in a fix round; then polish PR; then T10 close). Open failure: E16 startup (welcome shown ~35 s before rows), fix PR in flight. Waves A and B merged. 3.5 ✅ (T7). In flight: PR #34 (T8 keys) rebasing + S5/S6 live check; PR #35 (lowercase-drive fix) merged `2be4ecb`, testing re-walk pending. Then Wave C (T7 repo row, T8 keys), Wave D (T9 search), close (T10).
+- **Current step:** Phase 3: rows 3.0–3.9 ✅; 3.10 partial. E16 startup fix merged (PR #37 → `1522010`, live 6/6 ≤ 1 s). Next: polish PR, then T10 close + marketing drafts (Sharif approves before posting). Open failure: E16 startup (welcome shown ~35 s before rows), fix PR in flight. Waves A and B merged. 3.5 ✅ (T7). In flight: PR #34 (T8 keys) rebasing + S5/S6 live check; PR #35 (lowercase-drive fix) merged `2be4ecb`, testing re-walk pending. Then Wave C (T7 repo row, T8 keys), Wave D (T9 search), close (T10).
 - **Last update:** 2026-11-17
 - **Next action:** testing walks `6698045` (discovery, Remove/Dismiss, O2 re-walk, P23); dispatch T7 + T8. State: `.superpowers/sdd/2026-11-17-phase3-sidebar-v1/progress.md` (latest STATE block).
 
@@ -338,3 +338,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.45 · 2026-11-17.** Row 3.1 ✅ after the testing re-walk of `2be4ecb` on real `~/.claude` (read-only): repo set equals `list-claude-repos --days 14`, 16/17 list chats, Dismiss/Remove stick and return as specified; T5 and T7 walks PASS. New FAIL E16: after reload the list shows "No repositories yet" ~35 s before rows (rows at ~50 s); fix PR in flight.
 - **v0.46 · 2026-11-17.** Row 3.8 ✅ and 3.7 ~ (PR #34 → `7e1cbab`): Ctrl+Alt+1–9 (again = next chat), 0, O, F, Shift+1–9; ↓/↑ highlight, Ctrl+↓/↑ open, Enter on a repo expands it. Live S5/S6 PASS. Ctrl+Alt+R lands with search (PR #36). E16 fix PR #37 in a fix round (linked-worktree chats unresolved before the first git listing).
 - **v0.47 · 2026-11-17.** Rows 3.9 and 3.7 ✅ (PR #36 → `8815d82`): Ctrl+Alt+R search box with REPOS / CHATS / INSIDE CHATS groups, Enter = first result, footer hands the typed text to Find Session; live check PASS. All Phase 3 feature rows merged; open: E16 startup fix (PR #37), polish PR, T10 close.
+- **v0.48 · 2026-11-17.** E16 fix PR #37 → `1522010`: first render no longer waits on git or the session scan; stored repos draw at once, "Scanning for repositories…" replaces the false "No repositories yet", linked-worktree chats resolve on first click and on restore. Live: first start 0.619 s, reloads 0.367–0.687 s (was 7.2 s / 1.04 s). Remaining: polish PR, T10 close.
