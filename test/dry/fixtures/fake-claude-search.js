@@ -59,7 +59,9 @@ lines.on('line', (line) => {
       stdio: ['ignore', 'inherit', 'inherit'],
     }).pid;
   }
-  fs.writeFileSync(`${scenarioFile}.call.json`, JSON.stringify({ args, prompts, cwd, pid: process.pid, grandchildPid, mcpConfig }));
+  // Atomic: the test polls for this file's existence, then parses it.
+  fs.writeFileSync(`${scenarioFile}.call.json.tmp`, JSON.stringify({ args, prompts, cwd, pid: process.pid, grandchildPid, mcpConfig }));
+  fs.renameSync(`${scenarioFile}.call.json.tmp`, `${scenarioFile}.call.json`);
 
   if (scenario.leftover && prompts.length === 1) {
     const projects = args[args.indexOf('--add-dir') + 1];

@@ -188,7 +188,7 @@ test('stopping an opencode snapshot ends the session listing and unblocks prepar
   );
   controller.abort();
   await assert.rejects(pending, { name: 'AbortError' });
-  await waitFor(() => opencode.read().terminated, 'the listing process to stop');
+  await waitFor(() => opencode.read().terminated, 'the listing process to stop', 15_000);
 });
 
 test('the opencode preparation budget covers the session listing', skipOnWindows('dormant opencode harness: OpencodeSessionService spawns the opencode .cmd without a shell, so Node 22 throws spawn EINVAL; revisit when opencode is enabled (D9)'), async (t) => {
@@ -240,7 +240,7 @@ test('the opencode snapshot stops at its byte budget and says so', skipOnWindows
     ),
   });
   stub.__setConfiguration('harnessCommands', { opencode: opencode.cli });
-  const source = new OpencodeSessionSearch(new OpencodeSessionService(), { maxBytes: 500 });
+  const source = new OpencodeSessionSearch(new OpencodeSessionService(), { maxBytes: 500, budgetMs: 60_000 });
   const cwd = tempDir(t, 'pitwall-opencode-bytes-');
 
   const preparation = await source.prepare({ cwd, signal: new AbortController().signal });
