@@ -431,6 +431,7 @@ async function main() {
       PITWALL_E2E_RUNS: runsPath,
       PITWALL_E2E_EXPECT_RESUMES: String(scenario.resumes),
       PITWALL_E2E_EXPECT_TITLES: scenario.titles ? '1' : '0',
+      PITWALL_E2E_EXTENSION_ID: EXTENSION_ID,
       CLAUDE_CONFIG_DIR: claudeProfile,
     };
     const args = [
