@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'crypto';
 import * as path from 'path';
+import * as vscode from 'vscode';
 import { makeStorage, memento, stub, tempDir } from '../support';
+import { StorageService } from '../../../src/core/services/StorageService';
 import { SessionSearchRecord, STORAGE_KEYS } from '../../../src/core/types';
 import { canonicalPath } from '../../../src/core/utils/paths';
 import { RecordOverlay } from '../../../src/core/services/storageOverlay';
@@ -483,4 +485,123 @@ test('a chat created or loaded without seenAt gets a baseline', async () => {
 
   await storage.markChatSeen('old', loaded.seenAt! + 1000);
   assert.equal(storage.getChat('old')!.seenAt, loaded.seenAt! + 1000);
+});
+
+// PR #28 fix round: write stamps instead of a hold (QA probe).
+
+/** A window over a shared store whose clock the test moves. */
+function clockedWindow(globalState: ReturnType<typeof echoingMemento>, clock: { now: number }, windowTag: number) {
+  return new StorageService(
+    { globalState, workspaceState: memento() } as unknown as vscode.ExtensionContext,
+    () => true,
+    { now: () => clock.now, windowTag }
+  );
+}
+
+async function seedChats(globalState: ReturnType<typeof echoingMemento>, ...ids: string[]) {
+  await globalState.update(
+    STORAGE_KEYS.CHATS,
+    ids.map((id) => ({ id, harness: 'claude', harnessSessionId: null, worktreeId: 'wt-1', name: id, createdAt: 1, lastAccessedAt: 1, seenAt: 1, status: 'idle' }))
+  );
+}
+
+/** Six rounds, 20 s apart, in which every window reads and writes something else. */
+function rounds(clock: { now: number }, ...windows: StorageService[]) {
+  for (let round = 0; round < 6; round++) {
+    clock.now += 20_000;
+    for (const window of windows) {
+      window.getChats();
+      window.touchChat('c2');
+    }
+  }
+}
+
+type SavedChat = { id: string; name: string; seenAt?: number; status: string };
+const savedChat = (g: ReturnType<typeof echoingMemento>, id: string) =>
+  savedAt<SavedChat[]>(g, STORAGE_KEYS.CHATS).find((chat) => chat.id === id)!;
+
+test('two windows writing the same field within seconds both converge on the later write', async () => {
+  const globalState = echoingMemento();
+  await seedChats(globalState, 'c1', 'c2');
+  const clock = { now: 1_800_000_000_000 };
+  const windowA = clockedWindow(globalState, clock, 1);
+  const windowB = clockedWindow(globalState, clock, 2);
+
+  windowA.updateChat('c1', { name: 'FromA' });
+  clock.now += 5_000;
+  windowB.updateChat('c1', { name: 'FromB' });
+  rounds(clock, windowA, windowB);
+
+  assert.equal(windowA.getChat('c1')!.name, 'FromB');
+  assert.equal(windowB.getChat('c1')!.name, 'FromB');
+  assert.equal(savedChat(globalState, 'c1').name, 'FromB');
+});
+
+test('a later seenAt from another window is never reverted by an earlier one', async () => {
+  const globalState = echoingMemento();
+  await seedChats(globalState, 'c1', 'c2');
+  const clock = { now: 1_800_000_000_000 };
+  const windowA = clockedWindow(globalState, clock, 1);
+  const windowB = clockedWindow(globalState, clock, 2);
+
+  await windowA.markChatSeen('c1', 100);
+  const stale = globalState.snapshots.at(-1)!; // A's earlier seenAt
+  clock.now += 1_000;
+  await windowB.markChatSeen('c1', 200);
+  globalState.echo(stale);
+  rounds(clock, windowA, windowB);
+
+  assert.equal(windowA.getChat('c1')!.seenAt, 200);
+  assert.equal(windowB.getChat('c1')!.seenAt, 200);
+  assert.equal(savedChat(globalState, 'c1').seenAt, 200);
+});
+
+test('a stale storage echo carrying older stamps never overwrites a newer write', async () => {
+  const globalState = echoingMemento();
+  await seedChats(globalState, 'c1', 'c2');
+  const clock = { now: 1_800_000_000_000 };
+  const windowA = clockedWindow(globalState, clock, 1);
+  const windowB = clockedWindow(globalState, clock, 2);
+
+  windowA.updateChat('c1', { name: 'FromA' });
+  const stale = globalState.snapshots.at(-1)!; // FromA, with A's older stamp
+  clock.now += 1_000;
+  windowB.updateChat('c1', { name: 'FromB' });
+
+  globalState.echo(stale);
+  assert.equal(windowB.getChat('c1')!.name, 'FromB', 'B never sees its newer write reverted');
+
+  // B's next write puts the newer stamp back; A follows it at once.
+  windowB.touchChat('c2');
+  assert.equal(windowA.getChat('c1')!.name, 'FromB');
+  windowA.touchChat('c2');
+  assert.equal(savedChat(globalState, 'c1').name, 'FromB');
+  rounds(clock, windowA, windowB);
+  assert.equal(savedChat(globalState, 'c1').name, 'FromB');
+  assert.equal(windowA.getChat('c1')!.name, 'FromB');
+});
+
+test('a star in A and a rename in B on the same chat both survive', async () => {
+  const globalState = echoingMemento();
+  await seedChats(globalState, 'c1', 'c2');
+  const clock = { now: 1_800_000_000_000 };
+  const windowA = clockedWindow(globalState, clock, 1);
+  const windowB = clockedWindow(globalState, clock, 2);
+  const stale = globalState.snapshots.at(-1)!; // neither edit
+
+  windowA.toggleStar('c1');
+  windowA.updateChat('c1', { status: 'active' }); // and a field of the record itself
+  clock.now += 1_000;
+  windowB.updateChat('c1', { name: 'Renamed', customName: true });
+  globalState.echo(stale);
+  rounds(clock, windowA, windowB);
+
+  for (const window of [windowA, windowB]) {
+    assert.ok(window.isStarred('c1'));
+    assert.equal(window.getChat('c1')!.name, 'Renamed');
+    assert.equal(window.getChat('c1')!.status, 'active');
+  }
+  assert.equal(savedChat(globalState, 'c1').name, 'Renamed');
+  assert.equal(savedChat(globalState, 'c1').status, 'active');
+  assert.deepEqual(savedAt(globalState, STORAGE_KEYS.STARRED_CHATS), ['c1']);
 });
