@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.24 · 2026-11-17
+> v0.25 · 2026-11-17
 
 ---
 
@@ -198,6 +198,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 |---|---|---|---|---|---|
 | 4.1 | Chats open in Claude's panel by default; link uses `vscode.env.uriScheme` (Agntree hardcodes `vscode://`) (was 3.1) | ⏸ | ⏸ | — | D3 |
 | 4.2 | Click a chat → Pitwall focuses (or opens) its folder's window, then opens the chat there (was 3.2) | ⏸ | ⏸ | — | D35, D36, T5, T6 |
+| 4.2b | Terminal ↔ chat identity without titles (finding F4, Phase 2 Task 6b): `renameWithArg` renames the terminal with keyboard focus, not the target, so title-based identity is fragile. Spike tagging Pitwall terminals (e.g. `creationOptions.env`) and whether revived terminals keep it on reload and quit, in Cursor and VS Code; if so, match on the tag and retire title matching (amends ADR 0009) | ⏸ | ⏸ | — | Task 6b report, ruling R39 |
 | 4.3 | Repo click opens all its chats as tabs; chat clicks add tabs; never duplicates | ⏸ | ⏸ | — | D11, T6 |
 | 4.4 | Match Claude tabs to chats reliably (titles are truncated, new chats all say "Claude Code") | ⏸ | ⏸ | — | T10 |
 | 4.5 | Repo + branch under tabs: file tabs via label setting; find a way for Claude tabs, else window title + bottom bar (was 2.5) | ⏸ | ⏸ | — | D26, T9 |
@@ -314,3 +315,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.22 · 2026-11-17.** Task 11 Steps 1–3 merged → `f8ea023`, closing row 2.3: CI windows runs all 234 dry tests (0 fail, 9 reasoned skips) and builds and checks the .vsix. R35: `vsce package` fails on Windows without `--allow-unused-files-pattern`, so `npm run package` carries it. The archive check fails closed on STRAY and MISSING entries. All 29 triage rows record their resolution. Row 2.14 reopened: the testing agent saw needs-you never appear live.
 - **v0.23 · 2026-11-17.** Ruling R38: the needs-you row mark (orange, D17) is pulled forward from row 3.3 into Phase 2 row 2.14. Without it, needs-you is invisible except as a toast. The waiting-only rule is in plan wireframe F.
 - **v0.24 · 2026-11-17.** Needs-you fix merged → `a82f0f5` (R36 + R38): a waiting chat is listed until answered or truly in front, including after a reload; one toast per wait; orange row mark. Row 2.14 closes after the testing agent re-walks S1 live.
+- **v0.25 · 2026-11-17.** Finding F4 is placed as Phase 4 row 4.2b: terminal identity rests on tab titles, and the editor renames the focused terminal rather than the target, so Phase 2 contains it with check-and-undo (R39) and Phase 4 spikes a title-free identity.
