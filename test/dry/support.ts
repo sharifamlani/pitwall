@@ -140,6 +140,11 @@ export function tempDir(t: { after(fn: () => void): void }, prefix = 'pitwall-')
   return dir;
 }
 
+/** Links a directory. Windows junctions need no Developer Mode, and `fs.realpathSync` resolves them. */
+export function dirLink(target: string, link: string): void {
+  fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+}
+
 /** Skips a test on Windows, where the fake CLIs' POSIX shell wrappers cannot run. */
 export const posixOnly = {
   skip: process.platform === 'win32' ? 'the fake CLIs are POSIX shell wrappers' : false,
