@@ -18,6 +18,9 @@
  *   VSCODE_EXECUTABLE       path to VS Code (same resolver as the integration suite)
  *   PITWALL_E2E_SCENARIO    default | no-shell-integration | custom-tab-title |
  *                           persistent-sessions-off | revive-never
+ *   PITWALL_E2E_FRONTS      comma list of what is in front at each quit:
+ *                           chat, file, terminal (default: all three, each on
+ *                           its own profile)
  *   PITWALL_E2E_ROOT        parent directory for the temp profile; use a path
  *                           without spaces on Windows
  *   PITWALL_TEST_KEEP=1     keep the temp profile and logs
@@ -37,6 +40,9 @@ const LAUNCH_TIMEOUT_MS = 180000;
 
 const manifest = require(path.join(REPO_ROOT, 'package.json'));
 const EXTENSION_ID = `${manifest.publisher}.${manifest.name}`;
+
+/** What is in front at each quit (R47); each runs on its own profile. */
+const FRONTS = ['chat', 'file', 'terminal'];
 
 const SCENARIOS = {
   default: { settings: {}, resumes: 3, titles: true },
@@ -396,6 +402,37 @@ async function main() {
   }
 
   const exe = resolveVSCodeExecutable();
+  const fronts = (process.env.PITWALL_E2E_FRONTS || FRONTS.join(','))
+    .split(',')
+    .map((front) => front.trim())
+    .filter(Boolean);
+  const unknown = fronts.filter((front) => !FRONTS.includes(front));
+  if (unknown.length > 0 || fronts.length === 0) {
+    throw new Error(`Unknown PITWALL_E2E_FRONTS "${unknown.join(',')}". Known: ${FRONTS.join(', ')}`);
+  }
+  // Claude Code's panel cannot be put in front: the throwaway profile has no
+  // Claude Code extension, and Pitwall never embeds it.
+  console.log('SKIP  front=claude-panel: the throwaway profile has no Claude Code extension');
+
+  let failed = 0;
+  for (const front of fronts) {
+    console.log(`\n######## front at quit: ${front} ########`);
+    failed += await runFront(exe, scenarioName, scenario, seeder, front);
+  }
+  if (failed === 0) {
+    console.log(`\nTERMINAL RESTORE E2E PASSED (fronts: ${fronts.join(', ')})`);
+  } else {
+    console.error(`\n${failed} FAILURE(S) (fronts: ${fronts.join(', ')})`);
+    process.exitCode = 1;
+  }
+}
+
+/**
+ * One full quit / restore / reload / quit / restore run on a fresh profile,
+ * with `front` in front of the window at each quit (R47). Returns the number
+ * of failures.
+ */
+async function runFront(exe, scenarioName, scenario, seeder, front) {
   // VS Code's IPC socket lives inside the user-data dir, and macOS limits a
   // unix socket path to 103 characters. os.tmpdir() is long on macOS, so use
   // /tmp there; the override must also stay short.
@@ -424,6 +461,7 @@ async function main() {
 
   console.log(`VS Code:   ${exe}`);
   console.log(`Scenario:  ${scenarioName}`);
+  console.log(`Front:     ${front}`);
   console.log(`Profile:   ${root}`);
 
   let failures = 0;
@@ -464,6 +502,7 @@ async function main() {
       PITWALL_E2E_EXPECT_RESUMES: String(scenario.resumes),
       PITWALL_E2E_EXPECT_TITLES: scenario.titles ? '1' : '0',
       PITWALL_E2E_EXTENSION_ID: EXTENSION_ID,
+      PITWALL_E2E_FRONT: front,
       CLAUDE_CONFIG_DIR: claudeProfile,
     };
     const args = [
@@ -534,10 +573,9 @@ async function main() {
     }
 
     if (failures === 0) {
-      console.log('\nTERMINAL RESTORE E2E PASSED');
+      console.log(`\nfront=${front}: PASSED`);
     } else {
-      console.error(`\n${failures} FAILURE(S)`);
-      process.exitCode = 1;
+      console.error(`\nfront=${front}: ${failures} FAILURE(S)`);
     }
   } finally {
     if (keep) {
@@ -551,6 +589,7 @@ async function main() {
       });
     }
   }
+  return failures;
 }
 
 main().catch((error) => {

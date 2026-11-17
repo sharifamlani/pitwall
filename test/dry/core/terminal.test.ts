@@ -1461,3 +1461,93 @@ test('a tab list that lags the active terminal for a moment is waited out, so th
   for (let i = 0; i < 5; i++) await flush();
   assert.equal(stub.window.activeTerminal, next);
 });
+
+// ---------------------------------------------------------------------------
+// R47: a file in front at quit (UJ run 12 R1(e)). Restore matches a revived
+// tab by the short ID in its title, read at activation, before any retitle.
+// The editor itself brings the chat tabs back without their titles when its
+// reattach to the revived pty fails, which it does with a non-terminal editor
+// in front at quit (Cursor and VS Code 1.128, with or without Pitwall).
+// ---------------------------------------------------------------------------
+
+/** The chat tabs, then the user's file in front of them, in one group. */
+function fileInFrontOfTabs(chatTabs: FakeTerminal[], uri: unknown) {
+  const terminalTabs = chatTabs.map((terminal) => ({
+    get label() {
+      return terminal.name;
+    },
+    input: new vscode.TabInputTerminal(),
+    isPreview: false,
+    isActive: false,
+  }));
+  const fileTab = { input: new vscode.TabInputText(uri as never), label: 'README.md', isPreview: false, isActive: true };
+  stub.window.tabGroups.all = [{ isActive: true, viewColumn: 1, tabs: [...terminalTabs, fileTab], activeTab: fileTab }];
+  const editor = { document: { uri }, viewColumn: 1 };
+  stub.window.__focusTextEditor(editor);
+  stub.window.__setActiveTerminal(undefined);
+  return editor;
+}
+
+const r47Chats = [
+  { id: '41dd8200-lab', name: 'Lab ready', harnessSessionId: 'lab-7f3d', status: 'closed' as const },
+  { id: '71bdb200-two', name: 'reply with: lab two ready', harnessSessionId: 'two-3828', status: 'closed' as const },
+];
+
+test('guard: after a quit with a file in front, two revived chat tabs that kept their titles are both resumed, and the file keeps the front and focus (R47)', async (t) => {
+  const f = setup(t, { chats: r47Chats });
+  await f.storage.rememberTerminalPid('41dd8200-lab', 40848);
+  await f.storage.rememberTerminalPid('71bdb200-two', 71436);
+  const lab = f.restoredTab('Pitwall: Lab ready [41dd82]', 81752);
+  const two = f.restoredTab('Pitwall: reply with: lab two ready [71bdb2]', 84708);
+  const readme = vscode.Uri.file('/work/README.md');
+  const editor = fileInFrontOfTabs([lab, two], readme);
+
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  for (let i = 0; i < 10; i++) await flush();
+  assert.match(String(lab.sent[0]), /claude --resume lab-7f3d/, 'Lab ready is resumed');
+  assert.match(String(two.sent[0]), /claude --resume two-3828/, 'and so is the second chat');
+  assert.equal(stub.window.activeTextEditor?.document.uri, editor.document.uri, 'the file is still the active editor');
+  assert.equal(frontTabLabel(), 'README.md', 'and the front tab');
+  assert.equal(stub.window.__focusedTerminal, undefined, 'keyboard focus never moved to a terminal');
+});
+
+test('after a quit with a file in front, two chat tabs the editor revived without their titles (its reattach failed) are each resumed into its own tab (R47)', async (t) => {
+  const f = setup(t, { chats: r47Chats });
+  await f.storage.rememberTerminalPid('41dd8200-lab', 40848);
+  await f.storage.rememberTerminalPid('71bdb200-two', 71436);
+  // The live relaunch: terminal.log "Attach to process failed" for both, and
+  // the editor started a fresh shell in each tab under the shell's own name.
+  const lab = f.restoredTab('powershell', 81752);
+  const two = f.restoredTab('powershell', 84708);
+  const readme = vscode.Uri.file('/work/README.md');
+  const editor = fileInFrontOfTabs([lab, two], readme);
+
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  for (let i = 0; i < 10; i++) await flush();
+  assert.match(String(lab.sent[0]), /claude --resume lab-7f3d/, 'Lab ready is resumed into its own tab');
+  assert.match(String(two.sent[0]), /claude --resume two-3828/, 'and the second chat into its own');
+  assert.equal(stub.window.activeTextEditor?.document.uri, editor.document.uri, 'the file is still the active editor');
+  assert.equal(stub.window.__focusedTerminal, undefined, 'keyboard focus never moved to a terminal');
+});
+
+test('a chat whose title write is deferred because a file is in front, and which is never activated, still carries its Pitwall title before the user could quit', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab' }] });
+  const renames = focusFirstRename();
+  const tab = (await f.open('40de4f00-lab'))!;
+  // The shell re-tags the tab with its own title until Pitwall renames it
+  // after the command starts (R29), the only rename a quit keeps.
+  tab.name = 'Windows PowerShell';
+  const other = f.restoredTab('the user’s shell', 9400);
+  stub.window.__focusTerminal(other);
+  fileInFrontOfChatTab(tab, vscode.Uri.file('/work/README.md'));
+  const before = renames.length;
+
+  stub.window.__integrateShell(tab);
+  for (let i = 0; i < 10; i++) await flush();
+  const title = terminalTitle(f.chat('40de4f00-lab'));
+  assert.ok(
+    renames.slice(before).some((r) => r.target === tab && r.name === title) && tab.name === title,
+    `the chat tab carries ${JSON.stringify(title)} without the user visiting it; it shows ${JSON.stringify(tab.name)}`
+  );
+});

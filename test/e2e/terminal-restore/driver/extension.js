@@ -9,6 +9,16 @@ const CHATS = JSON.parse(process.env.PITWALL_E2E_CHATS);
 const EXPECT_RESUMES = Number(process.env.PITWALL_E2E_EXPECT_RESUMES || 3);
 const EXPECT_TITLES = process.env.PITWALL_E2E_EXPECT_TITLES !== '0';
 const EXTENSION_ID = process.env.PITWALL_E2E_EXTENSION_ID;
+/**
+ * What is in front when the window quits (R47): `chat` (the first chat's
+ * tab), `file` (README.md in front of the chat tabs' group, focus in it) or
+ * `terminal` (a plain terminal in the panel, focus in it, the first chat's tab
+ * in front of its group).
+ */
+const FRONT = process.env.PITWALL_E2E_FRONT || 'chat';
+const USER_SHELL = 'e2e-user-shell';
+/** Terminals that are not chats: the user's plain shell in the `terminal` case. */
+const OTHER_TERMINALS = FRONT === 'terminal' ? 1 : 0;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -124,14 +134,20 @@ function waitForCommand(id) {
   );
 }
 
+/** The terminals that carry a chat's short ID. */
+function chatTabs(terminals) {
+  return terminals.filter((terminal) => parseShortId(terminal.name));
+}
+
 async function isRestored(terminals, expectedRuns, activeName) {
-  if (terminals.length !== 3) {
+  const chats = chatTabs(terminals);
+  if (chats.length !== 3 || terminals.length !== 3 + OTHER_TERMINALS) {
     return false;
   }
   const chatsByShortId = new Map(
     CHATS.map((chat) => [chat.id.substring(0, 6), chat])
   );
-  const everyTab = terminals.every((terminal) => {
+  const everyTab = chats.every((terminal) => {
     const shortId = parseShortId(terminal.name);
     const chat = shortId ? chatsByShortId.get(shortId) : undefined;
     return (
@@ -177,15 +193,27 @@ function watchFront(t0) {
     }),
   ];
   return {
-    check(stageIndex, activeName, moment = 'quit', after = 'the restore') {
+    /**
+     * `front` is what was in front: `tab`, the active group's front tab;
+     * `terminal`, the active terminal's name, or `other` for the user's plain
+     * shell (whose name the editor may not keep); `file`, the active text
+     * editor's path. A field left out is not asserted.
+     */
+    check(stageIndex, front, moment = 'quit', after = 'the restore') {
       subscriptions.forEach((subscription) => subscription.dispose());
       for (const event of events) observe('front', event);
       const tab = activeTabLabel();
-      const terminal = vscode.window.activeTerminal?.name;
+      const active = vscode.window.activeTerminal;
+      const terminal = active?.name;
+      const file = vscode.window.activeTextEditor?.document.uri.fsPath;
+      const terminalOk =
+        front.terminal === undefined ||
+        (front.terminal === 'other' ? Boolean(active) && !parseShortId(active.name) : terminal === front.terminal);
+      const fileOk = front.file === undefined || (file !== undefined && path.resolve(file) === path.resolve(front.file));
       check(
-        `stage ${stageIndex}: the tab in front at ${moment} is in front 3 s after ${after} (R44)`,
-        tab === activeName && terminal === activeName,
-        `tab ${JSON.stringify(tab)}, terminal ${JSON.stringify(terminal)}, expected ${JSON.stringify(activeName)}`
+        `stage ${stageIndex}: the tab in front at ${moment} is in front 3 s after ${after} (R44, R47 front=${FRONT})`,
+        tab === front.tab && terminalOk && fileOk,
+        `tab ${JSON.stringify(tab)}, terminal ${JSON.stringify(terminal)}, file ${JSON.stringify(file)}, expected ${JSON.stringify(front)}`
       );
     },
   };
@@ -215,12 +243,22 @@ function shortIdsIn(runs) {
 }
 
 function checkRestored(stageIndex, terminals, state) {
-  check(`stage ${stageIndex}: three tabs are open`, terminals.length === 3, String(terminals.length));
+  check(
+    `stage ${stageIndex}: three chat tabs are open` + (OTHER_TERMINALS ? `, plus ${OTHER_TERMINALS} other` : ''),
+    chatTabs(terminals).length === 3 && terminals.length === 3 + OTHER_TERMINALS,
+    JSON.stringify(terminals.map((terminal) => terminal.name))
+  );
 
   const chatsByShortId = new Map(
     CHATS.map((chat) => [chat.id.substring(0, 6), chat])
   );
-  for (const terminal of terminals) {
+  // The user's plain shell is the one terminal left out, when there is one
+  // and every chat tab kept its title.
+  const checked =
+    OTHER_TERMINALS && chatTabs(terminals).length === 3
+      ? chatTabs(terminals)
+      : terminals.filter((terminal) => terminal.name !== USER_SHELL);
+  for (const terminal of checked) {
     const shortId = parseShortId(terminal.name);
     const chat = shortId ? chatsByShortId.get(shortId) : undefined;
     check(
@@ -235,11 +273,13 @@ function checkRestored(stageIndex, terminals, state) {
     );
   }
 
-  check(
-    `stage ${stageIndex}: the expected tab is active`,
-    vscode.window.activeTerminal?.name === state.activeName,
-    vscode.window.activeTerminal?.name
-  );
+  if (state.activeName !== undefined) {
+    check(
+      `stage ${stageIndex}: the expected tab is active`,
+      vscode.window.activeTerminal?.name === state.activeName,
+      vscode.window.activeTerminal?.name
+    );
+  }
 
   const runs = readRuns();
   const expectedTotal = 3 + stageIndex * EXPECT_RESUMES;
@@ -442,6 +482,47 @@ async function renameProbe() {
   }
 }
 
+/**
+ * R47 invariant: the identity is on the tab at quit. Every chat's tab must be
+ * live and carry its `[shortId]` title right before the window quits or
+ * reloads: every restore depends on it, whatever is in front.
+ */
+function checkIdentityBefore(stageIndex, moment) {
+  const live = vscode.window.terminals.filter((terminal) => !terminal.exitStatus);
+  observe(`stage ${stageIndex}: live terminals before the ${moment}`, JSON.stringify(live.map((terminal) => terminal.name)));
+  const missing = CHATS.filter((chat) => live.filter((terminal) => terminal.name === expectedName(chat)).length !== 1);
+  check(
+    `stage ${stageIndex}: before the ${moment}, every live chat tab carries its [shortId] (R47)`,
+    missing.length === 0,
+    missing.map((chat) => chat.name).join(', ')
+  );
+}
+
+/**
+ * Put FRONT in front for the quit, starting from the first chat's tab in
+ * front, and return what the restore must put back.
+ */
+async function arrangeFront() {
+  if (FRONT === 'file') {
+    const readme = vscode.Uri.file(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, 'README.md'));
+    const group = vscode.window.tabGroups.all.find((candidate) =>
+      candidate.tabs.some((tab) => tab.input instanceof vscode.TabInputTerminal)
+    );
+    await vscode.window.showTextDocument(readme, { viewColumn: group ? group.viewColumn : undefined, preview: false });
+    await waitFor(() => activeTabLabel() === 'README.md', 'README.md in front of the chat tabs');
+    return { activeName: undefined, front: { tab: 'README.md', file: readme.fsPath } };
+  }
+  if (FRONT === 'terminal') {
+    const shell = vscode.window.createTerminal({ name: USER_SHELL, location: vscode.TerminalLocation.Panel });
+    shell.show(false);
+    await waitFor(() => vscode.window.activeTerminal === shell, 'the user shell to be active');
+    await pidOf(shell);
+    return { activeName: undefined, front: { tab: activeTabLabel(), terminal: 'other' } };
+  }
+  const name = vscode.window.activeTerminal?.name;
+  return { activeName: name, front: { tab: name, terminal: name } };
+}
+
 async function quit() {
   await sleep(500);
   try {
@@ -489,10 +570,9 @@ exports.activate = async function activate() {
         await waitFor(() => vscode.window.activeTerminal === firstTab, 'the first chat tab to be in front');
       }
 
-      writeState({
-        stage: 1,
-        activeName: vscode.window.activeTerminal?.name,
-      });
+      const { activeName, front } = await arrangeFront();
+      checkIdentityBefore(0, 'quit');
+      writeState({ stage: 1, activeName, front });
       await quit();
       return;
     }
@@ -508,7 +588,7 @@ exports.activate = async function activate() {
       // Adopted background tabs are renamed in the background; the tab in
       // front must be in front again once that is done (R44).
       await sleep(3000);
-      front.check('1r', state.activeName, 'the reload', 'the tabs settle');
+      front.check('1r', state.front, 'the reload', 'the tabs settle');
       const terminals = await snapshot();
       check('stage 1r: the tab count is unchanged after a reload', terminals.length === state.reload.names.length, String(terminals.length));
       check('stage 1r: every title is unchanged after a reload', settled, JSON.stringify(terminals.map((terminal) => terminal.name)));
@@ -523,7 +603,8 @@ exports.activate = async function activate() {
         new Set(terminals.map((terminal) => parseShortId(terminal.name))).size === terminals.length,
         JSON.stringify(terminals.map((terminal) => terminal.name))
       );
-      writeState({ stage: 2, activeName: state.activeName });
+      checkIdentityBefore('1r', 'quit');
+      writeState({ stage: 2, activeName: state.activeName, front: state.front });
       await quit();
       return;
     }
@@ -557,7 +638,7 @@ exports.activate = async function activate() {
           String(terminals.length)
         );
         checkRestored(stage, terminals, state);
-        front.check(stage, state.activeName);
+        front.check(stage, state.front);
         timing.report(await pitwallActive);
         timing.checkLines(stage);
       } else {
@@ -569,10 +650,12 @@ exports.activate = async function activate() {
       }
 
       if (stage === 1 && EXPECT_TITLES) {
+        checkIdentityBefore(1, 'reload');
         const terminals = await readTerminals();
         writeState({
           stage: 1,
           activeName: state.activeName,
+          front: state.front,
           reload: {
             names: terminals.map((terminal) => terminal.name).sort(),
             pids: terminals.map((terminal) => terminal.pid).sort(),
@@ -586,9 +669,13 @@ exports.activate = async function activate() {
         }
         return;
       }
+      if (EXPECT_TITLES) {
+        checkIdentityBefore(stage, 'quit');
+      }
       writeState({
         stage: stage + 1,
         activeName: state.activeName,
+        front: state.front,
       });
       await quit();
       return;
