@@ -3,6 +3,7 @@ import {
   toHarnessSession,
 } from './ClaudeSessionService';
 import { ClaudeAgentsService } from './ClaudeAgentsService';
+import { ClaudeSessionsFile } from './ClaudeSessionsFile';
 import { ClaudeTurnReading } from './ClaudeTurnState';
 import { ClaudeUi } from './claudeUi';
 import { ClaudeSearchRunner, ClaudeSessionSearch } from './claudeSearch';
@@ -26,6 +27,7 @@ import { harnessTreeIcons } from '../../core/harness/treeIcons';
 export interface ClaudeHarnessOptions {
   sessionService?: ClaudeSessionService;
   agentsService?: ClaudeAgentsService;
+  sessionsFile?: ClaudeSessionsFile;
   nativeUi?: NativeUiCapability;
 }
 
