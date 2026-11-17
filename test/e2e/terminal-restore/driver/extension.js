@@ -177,13 +177,13 @@ function watchFront(t0) {
     }),
   ];
   return {
-    check(stageIndex, activeName) {
+    check(stageIndex, activeName, moment = 'quit', after = 'the restore') {
       subscriptions.forEach((subscription) => subscription.dispose());
       for (const event of events) observe('front', event);
       const tab = activeTabLabel();
       const terminal = vscode.window.activeTerminal?.name;
       check(
-        `stage ${stageIndex}: the tab in front at quit is in front 3 s after the restore (R44)`,
+        `stage ${stageIndex}: the tab in front at ${moment} is in front 3 s after ${after} (R44)`,
         tab === activeName && terminal === activeName,
         `tab ${JSON.stringify(tab)}, terminal ${JSON.stringify(terminal)}, expected ${JSON.stringify(activeName)}`
       );
@@ -508,7 +508,7 @@ exports.activate = async function activate() {
       // Adopted background tabs are renamed in the background; the tab in
       // front must be in front again once that is done (R44).
       await sleep(3000);
-      front.check('1r', state.activeName);
+      front.check('1r', state.activeName, 'the reload', 'the tabs settle');
       const terminals = await snapshot();
       check('stage 1r: the tab count is unchanged after a reload', terminals.length === state.reload.names.length, String(terminals.length));
       check('stage 1r: every title is unchanged after a reload', settled, JSON.stringify(terminals.map((terminal) => terminal.name)));
