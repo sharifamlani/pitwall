@@ -2,17 +2,50 @@
 
 **Every Claude Code session across your repos, in one sidebar.**
 
-Pitwall is a Cursor / VS Code extension. A sidebar lists every repo and the Claude Code sessions in each one. Every session has a status dot: blue for working, orange for needs you, green for finished, gray for idle. Clicking a session opens it in the official Claude Code extension's chat panel, not a terminal. A Windows pop-up tells you when a session finishes or needs approval, so no session sits waiting while you're in another window.
+You run Claude Code in several repos at once. Sessions finish, or stop and wait for your approval, inside Cursor windows you are not looking at, and nothing tells you. Pitwall puts every repo and its Claude Code sessions in one place.
 
-On an F1 pit wall, the team watches every car at once and calls in whichever one needs attention. Pitwall does that for your agent sessions.
+On an F1 pit wall, the team watches every car at once and calls in whichever one needs attention. Pitwall is meant to do that for your agent sessions.
 
-> **Status:** Phase 1. The extension code is imported from Agntree and is being renamed and reorganised. See [ROADMAP.md](ROADMAP.md). <!-- credit-allow -->
+## Status
 
-Forked from [Agntree](https://github.com/subhashkhileri/agntree) by Subhash Khileri (MIT), at `47124cd`. <!-- credit-allow -->
+**v0.2.0 (Phase 1): Agntree forked, renamed and made Claude-only.** What works today:
 
-Pitwall is an independent project, not affiliated with or endorsed by Anthropic. It drives the official Claude Code extension through its public link handler (`vscode://anthropic.claude-code/open`) and never copies or modifies it.
+- A sidebar lists the repos you add and their Claude Code chats, imported automatically from your local Claude Code session files.
+- Clicking a chat reopens it in a terminal.
 
-## Setup
+**Planned, not built yet:** chats opening in Claude Code's own chat panel, live status dots (working, needs you, finished), Windows pop-ups when a session finishes or needs approval, and the redesigned sidebar. The plan and its order are in [ROADMAP.md](ROADMAP.md).
+
+## Requirements
+
+- Cursor or VS Code (1.93 or newer)
+- The Claude Code extension and the `claude` CLI, signed in
+
+## Install from source
+
+There is no published release yet.
+
+```bash
+git clone https://github.com/sharifamlani/pitwall
+cd pitwall
+npm ci
+npm run compile
+mkdir -p dist
+npx @vscode/vsce package --out dist/
+```
+
+Then in Cursor or VS Code: **Extensions: Install from VSIX...** and pick `dist/pitwall-0.2.0.vsix`.
+
+## Contributing
+
+Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first, and check [ROADMAP.md](ROADMAP.md) to see where a change fits.
+
+## Credit
+
+Forked from [Agntree](https://github.com/subhashkhileri/agntree) by Subhash Khileri (MIT), at 47124cd. <!-- credit-allow -->
+
+Pitwall is independent and not affiliated with or endorsed by Anthropic. It drives the official Claude Code extension only through its public link handler and commands, and never copies or modifies it.
+
+## Development
 
 **Host (Windows, Git Bash)** requires Python 3.13, Poetry 2.x, Docker Desktop, and Node 22.
 
@@ -31,7 +64,7 @@ On Dropbox, keep dependency folders from syncing: `powershell -ExecutionPolicy B
 
 The container is for building and testing. Pitwall itself runs in Cursor on Windows, because the Claude Code extension, its hooks, and Windows pop-ups all live on the host.
 
-## Layout
+### Layout
 
 | Path | What it is |
 |---|---|
