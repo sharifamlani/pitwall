@@ -65,6 +65,7 @@ Phase 7 : After v1
 | P21 | Header naming: Cursor shows the container title `PITWALL` on top and, because FILES sits below, gives the list its own header. The list's header reads `REPOS` with the description `sorted by who needs you` and the search + folder icons, the closest native form of the canvas header `PITWALL  sorted by who needs you [search][bell][folder]` | A container with two sections always shows per-section headers; naming the list `Pitwall` would print `PITWALL` twice | One word differs from the canvas |
 | P22 | Native limits of the standard list (canvas decision 1, D10, D29), accepted for v1 and listed in §3i: the status word uses Cursor's muted description colour (the dot carries the colour, the word the meaning, so the brand's "never colour alone" holds); the selected row uses Cursor's selection, not the orange edge; high-contrast themes get the dark/light SVGs | TreeItem descriptions and selection can't be styled per row; the custom card panel that can is v2 (7.2) | none for v1 |
 | P23 | A window's list redraws from storage when the window gains focus and on each 60 s scan, so stars, names and dismissals written by another window show up (testing S1 finding: window B kept stale stars and names until it wrote or reloaded; the stored data was current) | `globalState` has no cross-window change event; refreshing on focus covers the moment a user can act on a row | A window left unfocused shows other windows' edits up to 60 s late |
+| P24 | The claude status icons are circles only (no brand mark), and the `new` icon becomes a dashed hollow ring in the idle grey (canvas brand book Don'ts: no Claude mark, no Claude clay #D97757; row anatomy = 9 px status dot). Checks assert circles-only and no #D97757 (QA PR #27) | Today's `new` icon is the Claude mark in #D97757, which the brand book forbids | none |
 | P15 | The live walk on Sharif's real `~/.claude` is **read-only**: list, order, status, search and history only. Open / new-chat / dismiss flows run on the testing agent's lab repos | Resuming a real session appends to its transcript; the testing agent must not touch Sharif's work | none |
 
 ## Global Constraints
@@ -561,7 +562,7 @@ Rebase order where files overlap: T2 before T3 (`ClaudeHarness.ts`, `harness/typ
   - Working and needs you get a glow ring at 22 % opacity of their colour.
   - Finished is solid.
   - Idle is a 1.5 px ring with `fill="none"`.
-  - New keeps today's look.
+  - New: a dashed hollow ring in the idle grey (P24).
   - Draw the activity icon as 4 circles in a row in a single `currentColor`-style fill.
 - [ ] **Step 4:** Run `node scripts/check-icon-colours.mjs` (exit 0), `npm test` and `npm run package` (archive check, count updated).
 - [ ] **Step 5:** Commit, push, PR, QA.
