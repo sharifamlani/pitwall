@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ClaudeAgentsService, parseClaudeAgents } from '../../../../src/harnesses/claude/ClaudeAgentsService';
+import { fakeCli, tempDir } from '../../support';
 
 const fixture = () => fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'claude-agents.json'), 'utf8');
 const parse = (rows: object[]) => parseClaudeAgents(JSON.stringify(rows));
@@ -92,4 +93,36 @@ test('a disabled setting never spawns; a failure or malformed output stops furth
     assert.equal((await service.getStates()).size, 0, label);
     assert.equal(spawns, enabled ? 1 : 0, `${label}: not retried on every tick`);
   }
+});
+
+/** A CLI that prints the agents fixture, the way `claude agents --json` does. */
+function fakeClaude(t: Parameters<typeof tempDir>[0]): { dir: string; cli: string } {
+  const dir = tempDir(t);
+  const script = path.join(dir, 'agents.js');
+  fs.writeFileSync(script, `process.stdout.write(${JSON.stringify(fixture())});\n`);
+  return { dir, cli: fakeCli(dir, 'claude', script, {}) };
+}
+
+test('the agents poll runs a real claude CLI on this platform, by full path', async (t) => {
+  const { cli } = fakeClaude(t);
+  const service = new ClaudeAgentsService({ command: () => cli, enabled: () => true });
+  const states = await service.getStates();
+  assert.deepEqual(
+    [...states].map(([id, state]) => [id.slice(0, 2), state.waitingFor]),
+    [['11', undefined], ['22', 'permission prompt'], ['33', undefined]]
+  );
+});
+
+test('the agents poll runs a real claude CLI on this platform, by bare name on PATH', async (t) => {
+  const { dir } = fakeClaude(t);
+  const service = new ClaudeAgentsService({
+    command: () => 'claude',
+    enabled: () => true,
+    env: { ...process.env, PATH: `${dir}${path.delimiter}${process.env.PATH ?? ''}` },
+  });
+  const states = await service.getStates();
+  assert.deepEqual(
+    [...states].map(([id, state]) => [id.slice(0, 2), state.waitingFor]),
+    [['11', undefined], ['22', 'permission prompt'], ['33', undefined]]
+  );
 });
