@@ -20,7 +20,8 @@ export interface Repository {
   /**
    * When this window added the record. Two windows can add one root at once;
    * the merge keeps the oldest record (P17). Absent on older records, which
-   * count as oldest.
+   * count as oldest. So a manual root added in two windows inside the echo
+   * window drops the newer record (rare; discovered repos avoid it via P17).
    */
   addedAt?: number;
 }
@@ -148,6 +149,11 @@ export const STORAGE_KEYS = {
   SESSION_SEARCH_ENGINE_CHOICE: 'pitwall.sessionSearchEngineChoice',
   /** Repository roots the user dismissed, with when, by root path (P1). */
   DISMISSED_REPOS: 'pitwall.dismissedRepos',
+  /**
+   * Write stamps and removal tombstones for every guarded collection, by
+   * collection key (see src/core/services/storageOverlay.ts).
+   */
+  WRITE_STAMPS: 'pitwall.writeStamps',
 } as const;
 
 /** The harness, model, and effort that run a session search. */

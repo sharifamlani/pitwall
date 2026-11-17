@@ -4,7 +4,17 @@ import * as path from 'path';
 import { Repository, ChatSession, HarnessId, SessionSearchEngine, SessionSearchRecord, STORAGE_KEYS, generateId } from '../types';
 import { harnessSessionKey } from '../harness/sessionUtils';
 import { canonicalPath, samePath } from '../utils/paths';
-import { RecordOverlay, mergeList, sameValue } from './storageOverlay';
+import {
+  RecordOverlay,
+  RecordStamp,
+  Stamp,
+  StampClock,
+  Stamped,
+  TOMBSTONE_TTL_MS,
+  resolveStored,
+  sameValue,
+  stampTime,
+} from './storageOverlay';
 
 /** How long a user removal keeps a session out of auto-import. */
 const REMOVED_SESSION_TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -12,6 +22,8 @@ const REMOVED_SESSION_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const REMOVED_SESSION_LIMIT = 500;
 /** Finished session searches kept; the oldest are dropped first. */
 const SESSION_SEARCH_LIMIT = 10;
+/** Joins a workspace folder and a chat id into one PID record id. */
+const PID_ID_SEPARATOR = '\u0000';
 
 interface RemovedSessionRecord {
   key: string;
@@ -43,6 +55,12 @@ export interface AddRepositoryOptions {
   origin?: 'manual' | 'discovered';
 }
 
+/** For tests: the window's clock and its stamp tag (0–999). */
+export interface StorageServiceOptions {
+  now?: () => number;
+  windowTag?: number;
+}
+
 /**
  * The id of a discovered repository (P17): two windows discovering one root
  * derive the same id, so their records converge instead of splitting the
@@ -55,13 +73,31 @@ export function discoveredRepositoryId(rootPath: string): string {
 }
 
 /**
- * A collection whose records this window guards against a stale storage
- * echo: whether it holds any entries, and the stored value with them applied.
+ * One collection's stamps in `pitwall.writeStamps`. Kept beside the records,
+ * not in them, so stored shapes stay readable by older builds.
  */
+interface StampSection {
+  /** Which write saved this copy; tells this window's own copy from an echo. */
+  v?: string;
+  /** Record id → its stamp(s). */
+  s?: Record<string, RecordStamp>;
+  /** Tombstones: record id → the removal's stamp. */
+  d?: Record<string, Stamp>;
+}
+
+/** A collection's stored value with this window's writes applied, and its stamps. */
+interface Merged {
+  value: unknown;
+  stamped: Stamped<unknown>;
+}
+
+/** A guarded collection, for `set` to re-apply before any write. */
 interface GuardedCollection {
   key: string;
   held(): boolean;
-  merged(): unknown;
+  merged(): Merged;
+  /** The record ids in a stored value of this collection. */
+  ids(value: unknown): string[];
 }
 
 /**
@@ -69,11 +105,33 @@ interface GuardedCollection {
  * compatibility surface: old shapes are read, migrated, and written back here,
  * never in callers.
  *
- * Every collection is read and written through a `RecordOverlay` (R33a, F3):
- * a stale storage echo can neither drop a record this window wrote nor bring
- * back one it removed. Order within a list is not guarded.
+ * Every collection is read and written through a stamped `RecordOverlay`
+ * (R33a, F3): a stale storage echo can neither drop a record this window
+ * wrote nor bring back one it removed, and the newest write wins. Order
+ * within a list is not guarded.
  */
 export class StorageService {
+  private readonly now: () => number;
+  private readonly clock: StampClock;
+  private readonly repositoryOverlay: RecordOverlay<Repository>;
+  private readonly chatOverlay: RecordOverlay<LegacyChatSession>;
+  private readonly starOverlay: RecordOverlay<string>;
+  private readonly removedSessionOverlay: RecordOverlay<RemovedSessionRecord>;
+  private readonly sessionSearchOverlay: RecordOverlay<unknown>;
+  private readonly dismissedOverlay: RecordOverlay<number>;
+  private readonly prWorktreeOverlay: RecordOverlay<number>;
+  /**
+   * The terminal PID records this window wrote or removed (R33a), by
+   * `<workspace folder>\0<chat id>`. Merged into every read and write of the
+   * PID records, so a stale copy can neither drop a record this window wrote
+   * nor bring back one it removed; a lost record could launch a second agent
+   * after a reload. Other windows' records pass through as stored.
+   */
+  private readonly pidOverlay: RecordOverlay<number>;
+  private readonly guarded: GuardedCollection[];
+  /** The `v` of the last stamp section this window wrote, by collection key. */
+  private readonly writeTokens = new Map<string, string>();
+
   /**
    * @param isKnownHarness Whether a stored harness id is enabled in this
    *   build (registry membership). Records naming any other harness are
@@ -81,60 +139,76 @@ export class StorageService {
    */
   constructor(
     private context: vscode.ExtensionContext,
-    private readonly isKnownHarness: (id: string) => boolean
-  ) {}
+    private readonly isKnownHarness: (id: string) => boolean,
+    options: StorageServiceOptions = {}
+  ) {
+    this.now = options.now ?? Date.now;
+    this.clock = new StampClock(this.now, options.windowTag);
+    const clock = this.clock;
+    this.repositoryOverlay = new RecordOverlay({ fields: true, clock });
+    this.chatOverlay = new RecordOverlay({ fields: true, clock });
+    this.starOverlay = new RecordOverlay({ clock });
+    this.removedSessionOverlay = new RecordOverlay({ clock });
+    this.sessionSearchOverlay = new RecordOverlay({ clock });
+    this.dismissedOverlay = new RecordOverlay({ clock });
+    this.prWorktreeOverlay = new RecordOverlay({ clock });
+    this.pidOverlay = new RecordOverlay({ clock });
 
-  private readonly repositoryOverlay = new RecordOverlay<Repository>({ fields: true });
-  private readonly chatOverlay = new RecordOverlay<LegacyChatSession>({ fields: true });
-  private readonly starOverlay = new RecordOverlay<string>();
-  private readonly removedSessionOverlay = new RecordOverlay<RemovedSessionRecord>();
-  private readonly sessionSearchOverlay = new RecordOverlay<unknown>();
-  private readonly dismissedOverlay = new RecordOverlay<number>();
-  private readonly prWorktreeOverlay = new RecordOverlay<number>();
-
-  /** Every guarded collection, for `set` to re-apply before any write. */
-  private readonly guarded: GuardedCollection[] = [
-    {
-      key: STORAGE_KEYS.REPOSITORIES,
-      held: () => this.repositoryOverlay.size > 0,
-      merged: () => this.mergedRepositories(),
-    },
-    {
-      key: STORAGE_KEYS.CHATS,
-      held: () => this.chatOverlay.size > 0,
-      merged: () => this.mergedChats(),
-    },
-    {
-      key: STORAGE_KEYS.STARRED_CHATS,
-      held: () => this.starOverlay.size > 0,
-      merged: () => this.mergedStarredChatIds(),
-    },
-    {
-      key: STORAGE_KEYS.REMOVED_SESSIONS,
-      held: () => this.removedSessionOverlay.size > 0,
-      merged: () => this.mergedRemovedSessions(),
-    },
-    {
-      key: STORAGE_KEYS.SESSION_SEARCHES,
-      held: () => this.sessionSearchOverlay.size > 0,
-      merged: () => this.mergedSessionSearches(),
-    },
-    {
-      key: STORAGE_KEYS.DISMISSED_REPOS,
-      held: () => this.dismissedOverlay.size > 0,
-      merged: () => this.mergedRecord(STORAGE_KEYS.DISMISSED_REPOS, this.dismissedOverlay),
-    },
-    {
-      key: STORAGE_KEYS.PR_WORKTREES,
-      held: () => this.prWorktreeOverlay.size > 0,
-      merged: () => this.mergedRecord(STORAGE_KEYS.PR_WORKTREES, this.prWorktreeOverlay),
-    },
-    {
-      key: STORAGE_KEYS.TERMINAL_PIDS,
-      held: () => [...this.ownPids.values()].some((overlay) => overlay.size > 0),
-      merged: () => this.getTerminalPidRecords(),
-    },
-  ];
+    const listIds = (idOf: (record: unknown) => unknown) => (value: unknown) =>
+      (Array.isArray(value) ? value : []).map(idOf).filter((id): id is string => typeof id === 'string');
+    const recordIds = (value: unknown) => (value && typeof value === 'object' ? Object.keys(value) : []);
+    const byId = (record: unknown) => (record as { id?: unknown } | null)?.id;
+    this.guarded = [
+      {
+        key: STORAGE_KEYS.REPOSITORIES,
+        held: () => this.repositoryOverlay.size > 0,
+        merged: () => this.mergedRepositories(),
+        ids: listIds(byId),
+      },
+      {
+        key: STORAGE_KEYS.CHATS,
+        held: () => this.chatOverlay.size > 0,
+        merged: () => this.mergedChats(),
+        ids: listIds(byId),
+      },
+      {
+        key: STORAGE_KEYS.STARRED_CHATS,
+        held: () => this.starOverlay.size > 0,
+        merged: () => this.mergedStarredChatIds(),
+        ids: listIds((id) => id),
+      },
+      {
+        key: STORAGE_KEYS.REMOVED_SESSIONS,
+        held: () => this.removedSessionOverlay.size > 0,
+        merged: () => this.mergedRemovedSessions(),
+        ids: listIds((record) => (record as { key?: unknown } | null)?.key),
+      },
+      {
+        key: STORAGE_KEYS.SESSION_SEARCHES,
+        held: () => this.sessionSearchOverlay.size > 0,
+        merged: () => this.mergedSessionSearches(),
+        ids: listIds(byId),
+      },
+      {
+        key: STORAGE_KEYS.DISMISSED_REPOS,
+        held: () => this.dismissedOverlay.size > 0,
+        merged: () => this.mergedNumbers(STORAGE_KEYS.DISMISSED_REPOS, this.dismissedOverlay),
+        ids: recordIds,
+      },
+      {
+        key: STORAGE_KEYS.PR_WORKTREES,
+        held: () => this.prWorktreeOverlay.size > 0,
+        merged: () => this.mergedNumbers(STORAGE_KEYS.PR_WORKTREES, this.prWorktreeOverlay),
+        ids: recordIds,
+      },
+      {
+        key: STORAGE_KEYS.TERMINAL_PIDS,
+        held: () => this.pidOverlay.size > 0,
+        merged: () => this.mergedPidRecords(),
+        ids: (value) => Object.keys(flattenPids(value)),
+      },
+    ];
+  }
 
   private get<T>(key: string, fallback: T): T {
     return this.context.globalState.get<T>(key, fallback);
@@ -158,31 +232,125 @@ export class StorageService {
     );
   }
 
-  private mergedRecord(key: string, overlay: RecordOverlay<number>): Record<string, number> {
-    const stored = this.storedNumbers(key);
-    overlay.settle(stored);
-    return { ...overlay.merge(stored) };
+  // Write stamps (see storageOverlay.ts)
+
+  private storedSections(): Record<string, StampSection> {
+    const stored = this.get<unknown>(STORAGE_KEYS.WRITE_STAMPS, {});
+    return stored !== null && typeof stored === 'object' && !Array.isArray(stored)
+      ? (stored as Record<string, StampSection>)
+      : {};
+  }
+
+  /**
+   * `records` (one collection, as stored) with its stored stamps and this
+   * window's writes applied. Held writes the store now shows at least as new
+   * are let go first; the same stamp counts only in a copy this window did
+   * not write itself.
+   */
+  private stamped<T>(key: string, overlay: RecordOverlay<T>, records: Record<string, T>): Stamped<T> {
+    const section = this.storedSections()[key] ?? {};
+    const stored = resolveStored<T>({ records, stamps: section.s ?? {}, removed: section.d ?? {} });
+    if (overlay.size > 0) {
+      overlay.settle(stored, section.v !== this.writeTokens.get(key));
+    }
+    return overlay.merge(stored);
+  }
+
+  /** A stored list with stamps and this window's writes applied, stored order kept. */
+  private mergedList<T>(
+    key: string,
+    stored: readonly T[],
+    overlay: RecordOverlay<T>,
+    idOf: (record: T) => unknown,
+    newFirst = false
+  ): { value: T[]; stamped: Stamped<T> } {
+    const records: Record<string, T> = {};
+    for (const record of stored) {
+      const id = idOf(record);
+      if (typeof id === 'string' && !Object.prototype.hasOwnProperty.call(records, id)) {
+        records[id] = record;
+      }
+    }
+    const stamped = this.stamped(key, overlay, records);
+    if (stamped.records === records) {
+      return { value: [...stored], stamped };
+    }
+    return { value: orderedList(stored, stamped.records, idOf, newFirst), stamped };
+  }
+
+  private mergedNumbers(key: string, overlay: RecordOverlay<number>): { value: Record<string, number>; stamped: Stamped<number> } {
+    const stamped = this.stamped(key, overlay, this.storedNumbers(key));
+    return { value: { ...stamped.records }, stamped };
+  }
+
+  /**
+   * The stamp section to store with a collection value: stamps of the records
+   * it holds, and tombstones younger than `TOMBSTONE_TTL_MS` (older ones are
+   * pruned here, on write, so the map stays bounded).
+   */
+  private section(stamped: Stamped<unknown>, ids: string[]): StampSection {
+    const present = new Set(ids);
+    const s: Record<string, RecordStamp> = {};
+    for (const id of present) {
+      if (Object.prototype.hasOwnProperty.call(stamped.stamps, id)) {
+        s[id] = stamped.stamps[id];
+      }
+    }
+    const cutoff = this.now() - TOMBSTONE_TTL_MS;
+    const d = Object.fromEntries(
+      Object.entries(stamped.removed).filter(([id, removedAt]) => !present.has(id) && stampTime(removedAt) >= cutoff)
+    );
+    return { s, d };
   }
 
   /**
    * Every write saves the whole of Pitwall's global state, so a write of any
    * key also saves every other collection as last read. When a stale storage
    * echo has replaced them, put this window's own records back first (see
-   * `RecordOverlay`), so the write cannot persist the stale copy.
+   * `RecordOverlay`), so the write cannot persist the stale copy. Each
+   * collection written also saves its stamps.
    */
   private set(key: string, value: unknown): Thenable<void> {
     const writes: Thenable<void>[] = [];
+    const sections = { ...this.storedSections() };
+    let sectionsChanged = false;
+    const stampWith = (collectionKey: string, section: StampSection) => {
+      const token = generateId();
+      sections[collectionKey] = { v: token, ...section };
+      this.writeTokens.set(collectionKey, token);
+      sectionsChanged = true;
+    };
+    const restamps = (collectionKey: string, section: StampSection) => {
+      const old = sections[collectionKey] ?? {};
+      return !sameValue({ s: old.s ?? {}, d: old.d ?? {} }, section);
+    };
     for (const collection of this.guarded) {
-      if (collection.key === key || !collection.held()) {
+      if (collection.key === key) {
+        // A write that adds no stamp (a migration, a reorder, a prune) leaves
+        // the stamps as stored.
+        const section = this.section(collection.merged().stamped, collection.ids(value));
+        if (restamps(key, section)) {
+          stampWith(key, section);
+        }
         continue;
       }
-      const stored = this.context.globalState.get<unknown>(collection.key);
+      if (!collection.held()) {
+        continue;
+      }
+      // Only the stamps are compared: every write of this window's that wins
+      // over the stored copy carries a newer stamp, and a record the merge
+      // drops or hides loses its stamp, so equal stamps mean equal records.
       const merged = collection.merged();
-      if (!sameValue(merged, stored)) {
-        writes.push(this.context.globalState.update(collection.key, merged));
+      const section = this.section(merged.stamped, collection.ids(merged.value));
+      if (restamps(collection.key, section)) {
+        writes.push(this.context.globalState.update(collection.key, merged.value));
+        stampWith(collection.key, section);
       }
     }
     writes.push(this.context.globalState.update(key, value));
+    if (sectionsChanged) {
+      writes.push(this.context.globalState.update(STORAGE_KEYS.WRITE_STAMPS, sections));
+    }
     return Promise.all(writes).then(() => undefined);
   }
 
@@ -192,9 +360,14 @@ export class StorageService {
    * Stored repositories with this window's writes applied, one per root: two
    * windows adding one root at once keep the oldest record (P17).
    */
-  private mergedRepositories(): Repository[] {
-    const merged = mergeList(this.storedList<Repository>(STORAGE_KEYS.REPOSITORIES), this.repositoryOverlay, (repo) => repo?.id);
-    return this.withoutDuplicateRoots(merged);
+  private mergedRepositories(): { value: Repository[]; stamped: Stamped<Repository> } {
+    const merged = this.mergedList(
+      STORAGE_KEYS.REPOSITORIES,
+      this.storedList<Repository>(STORAGE_KEYS.REPOSITORIES),
+      this.repositoryOverlay,
+      (repo) => repo?.id
+    );
+    return { value: this.withoutDuplicateRoots(merged.value), stamped: merged.stamped };
   }
 
   /**
@@ -241,7 +414,7 @@ export class StorageService {
   }
 
   getRepositories(includeHidden = false): Repository[] {
-    const all = this.mergedRepositories();
+    const all = this.mergedRepositories().value;
     return includeHidden ? all : all.filter((r) => !r.hidden);
   }
 
@@ -272,7 +445,7 @@ export class StorageService {
       return existing;
     }
 
-    const repo: Repository = { id, name, rootPath, origin, addedAt: Date.now() };
+    const repo: Repository = { id, name, rootPath, origin, addedAt: this.now() };
     this.repositoryOverlay.note(id, repo);
     void this.set(STORAGE_KEYS.REPOSITORIES, [...repositories, repo]);
     return repo;
@@ -315,7 +488,7 @@ export class StorageService {
   // Dismissed repositories (P1): root path → when it was dismissed.
 
   getDismissedRepos(): Record<string, number> {
-    return this.mergedRecord(STORAGE_KEYS.DISMISSED_REPOS, this.dismissedOverlay);
+    return this.mergedNumbers(STORAGE_KEYS.DISMISSED_REPOS, this.dismissedOverlay).value;
   }
 
   /**
@@ -336,9 +509,14 @@ export class StorageService {
 
   // Chats
 
-  /** Stored chats, as stored, with this window's writes applied. */
-  private mergedChats(): LegacyChatSession[] {
-    return mergeList(this.storedList<LegacyChatSession>(STORAGE_KEYS.CHATS), this.chatOverlay, (chat) => chat?.id);
+  /** Stored chats, as stored, with stamps and this window's writes applied. */
+  private mergedChats(): { value: LegacyChatSession[]; stamped: Stamped<LegacyChatSession> } {
+    return this.mergedList(
+      STORAGE_KEYS.CHATS,
+      this.storedList<LegacyChatSession>(STORAGE_KEYS.CHATS),
+      this.chatOverlay,
+      (chat) => chat?.id
+    );
   }
 
   /**
@@ -348,7 +526,7 @@ export class StorageService {
    * time it is first loaded (P16).
    */
   getChats(): ChatSession[] {
-    const stored = this.mergedChats();
+    const stored = this.mergedChats().value;
     const isMigrated = (chat: LegacyChatSession): chat is ChatSession =>
       chat.harness !== undefined && chat.harnessSessionId !== undefined;
 
@@ -356,7 +534,7 @@ export class StorageService {
       return stored as ChatSession[];
     }
 
-    const now = Date.now();
+    const now = this.now();
     const chats = stored.map((chat): ChatSession => {
       let migrated: ChatSession;
       if (isMigrated(chat)) {
@@ -390,7 +568,7 @@ export class StorageService {
     name: string,
     fields: NewChatFields = {}
   ): ChatSession {
-    const now = Date.now();
+    const now = this.now();
     const chat: ChatSession = {
       id: generateId(),
       worktreeId,
@@ -433,7 +611,7 @@ export class StorageService {
   }
 
   touchChat(id: string): void {
-    this.updateChat(id, { lastAccessedAt: Date.now() });
+    this.updateChat(id, { lastAccessedAt: this.now() });
   }
 
   deleteChat(id: string, options: { rememberSession?: boolean } = {}): void {
@@ -481,7 +659,7 @@ export class StorageService {
 
   rememberRemovedSession(harness: HarnessId, sessionId: string): void {
     const key = harnessSessionKey(harness, sessionId);
-    const record = { key, removedAt: Date.now() };
+    const record = { key, removedAt: this.now() };
     this.removedSessionOverlay.note(key, record);
     void this.set(
       STORAGE_KEYS.REMOVED_SESSIONS,
@@ -500,8 +678,9 @@ export class StorageService {
     return this.getRemovedSessionRecords().filter((record) => record.key !== key);
   }
 
-  private mergedRemovedSessions(): RemovedSessionRecord[] {
-    return mergeList(
+  private mergedRemovedSessions(): { value: RemovedSessionRecord[]; stamped: Stamped<RemovedSessionRecord> } {
+    return this.mergedList(
+      STORAGE_KEYS.REMOVED_SESSIONS,
       this.storedList<RemovedSessionRecord>(STORAGE_KEYS.REMOVED_SESSIONS),
       this.removedSessionOverlay,
       (record) => record?.key
@@ -510,8 +689,8 @@ export class StorageService {
 
   /** Valid, unexpired tombstones, oldest first; expired or malformed ones are pruned. */
   private getRemovedSessionRecords(): RemovedSessionRecord[] {
-    const stored = this.mergedRemovedSessions();
-    const cutoff = Date.now() - REMOVED_SESSION_TTL_MS;
+    const stored = this.mergedRemovedSessions().value;
+    const cutoff = this.now() - REMOVED_SESSION_TTL_MS;
     const records = stored
       .filter(
         (record) =>
@@ -539,7 +718,7 @@ export class StorageService {
 
   /** The PR a worktree was checked out from, by worktree id. */
   getPRWorktree(worktreeId: string): number | undefined {
-    return this.mergedRecord(STORAGE_KEYS.PR_WORKTREES, this.prWorktreeOverlay)[worktreeId];
+    return this.mergedNumbers(STORAGE_KEYS.PR_WORKTREES, this.prWorktreeOverlay).value[worktreeId];
   }
 
   setPRWorktree(worktreeId: string, prNumber: number): void {
@@ -553,18 +732,18 @@ export class StorageService {
   }
 
   private writePRWorktrees(): void {
-    void this.set(STORAGE_KEYS.PR_WORKTREES, this.mergedRecord(STORAGE_KEYS.PR_WORKTREES, this.prWorktreeOverlay));
+    void this.set(STORAGE_KEYS.PR_WORKTREES, this.mergedNumbers(STORAGE_KEYS.PR_WORKTREES, this.prWorktreeOverlay).value);
   }
 
-  private mergedStarredChatIds(): string[] {
+  private mergedStarredChatIds(): { value: string[]; stamped: Stamped<string> } {
     const stored = this.storedList<unknown>(STORAGE_KEYS.STARRED_CHATS).filter(
       (id): id is string => typeof id === 'string'
     );
-    return mergeList(stored, this.starOverlay, (id) => id);
+    return this.mergedList(STORAGE_KEYS.STARRED_CHATS, stored, this.starOverlay, (id) => id);
   }
 
   getStarredChatIds(): Set<string> {
-    return new Set(this.mergedStarredChatIds());
+    return new Set(this.mergedStarredChatIds().value);
   }
 
   isStarred(chatId: string): boolean {
@@ -591,8 +770,9 @@ export class StorageService {
   // Session searches
 
   /** Stored searches, as stored, with this window's saves first. */
-  private mergedSessionSearches(): unknown[] {
-    return mergeList(
+  private mergedSessionSearches(): { value: unknown[]; stamped: Stamped<unknown> } {
+    return this.mergedList(
+      STORAGE_KEYS.SESSION_SEARCHES,
       this.storedList<unknown>(STORAGE_KEYS.SESSION_SEARCHES),
       this.sessionSearchOverlay,
       (search) => (search as { id?: unknown } | null)?.id,
@@ -605,7 +785,7 @@ export class StorageService {
     // A newer build may have stored a harness this one does not know; its
     // sessions cannot be shown or resumed here, so they are left out.
     return this.mergedSessionSearches()
-      .filter((value) => isSessionSearchRecord(value, this.isHarnessId))
+      .value.filter((value) => isSessionSearchRecord(value, this.isHarnessId))
       .map((search) => {
         const matches = search.matches.filter((match) => this.isHarnessId(match.harness));
         return matches.length === search.matches.length ? search : { ...search, matches };
@@ -618,7 +798,9 @@ export class StorageService {
    * never erases it.
    */
   private getStoredSessionSearches(): SessionSearchRecord[] {
-    return this.mergedSessionSearches().filter((value) => isSessionSearchRecord(value, (_id): _id is HarnessId => true));
+    return this.mergedSessionSearches().value.filter((value) =>
+      isSessionSearchRecord(value, (_id): _id is HarnessId => true)
+    );
   }
 
   /** Keep a finished search ahead of the others, within the limit. */
@@ -671,41 +853,33 @@ export class StorageService {
    * left running.
    */
   private getTerminalPidRecords(): Record<string, Record<string, number>> {
-    return this.withOwnPids(this.storedPidRecords());
+    return this.mergedPidRecords().value;
   }
-
-  /**
-   * The PID records this window itself wrote (a PID) or removed (`null`), by
-   * workspace folder, then chat ID (R33a). Merged into every read of the PID
-   * records and every write, so a stale storage echo can neither drop a
-   * record this window wrote nor bring back one it removed. Other windows'
-   * records pass through as stored. Held for the window's lifetime: a lost
-   * PID record could launch a second agent after a reload.
-   */
-  private readonly ownPids = new Map<string, RecordOverlay<number>>();
 
   private storedPidRecords(): Record<string, Record<string, number>> {
     return this.get<Record<string, Record<string, number>>>(STORAGE_KEYS.TERMINAL_PIDS, {});
   }
 
-  private ownPidsIn(workspace: string): RecordOverlay<number> {
-    let own = this.ownPids.get(workspace);
-    if (!own) {
-      own = new RecordOverlay<number>({ holdMs: Infinity });
-      this.ownPids.set(workspace, own);
+  /**
+   * Stored PID records with this window's own writes and removals applied.
+   * Every stored workspace folder, and every folder this window holds a
+   * record for, keeps its map, even when empty.
+   */
+  private mergedPidRecords(): { value: Record<string, Record<string, number>>; stamped: Stamped<number> } {
+    const stored = this.storedPidRecords();
+    const stamped = this.stamped(STORAGE_KEYS.TERMINAL_PIDS, this.pidOverlay, flattenPids(stored));
+    const records: Record<string, Record<string, number>> = {};
+    for (const workspace of Object.keys(stored)) {
+      records[workspace] = {};
     }
-    return own;
-  }
-
-  /** Stored PID records with this window's own writes and removals applied. */
-  private withOwnPids(
-    stored: Record<string, Record<string, number>>
-  ): Record<string, Record<string, number>> {
-    const records = { ...stored };
-    for (const [workspace, own] of this.ownPids) {
-      records[workspace] = { ...own.merge(records[workspace] ?? {}) };
+    for (const id of this.pidOverlay.ids()) {
+      records[splitPidId(id)[0]] ??= {};
     }
-    return records;
+    for (const [id, pid] of Object.entries(stamped.records)) {
+      const [workspace, chatId] = splitPidId(id);
+      (records[workspace] ??= {})[chatId] = pid;
+    }
+    return { value: records, stamped };
   }
 
   /**
@@ -741,7 +915,7 @@ export class StorageService {
     // Read first: this also moves a legacy workspace-scoped record over.
     const pids = this.getTerminalPids();
     const workspace = this.workspaceKey();
-    this.ownPidsIn(workspace).note(chatId, pid);
+    this.pidOverlay.note(pidId(workspace, chatId), pid);
     if (pids[chatId] === pid && this.storedPidRecords()[workspace]?.[chatId] === pid) {
       return;
     }
@@ -756,7 +930,7 @@ export class StorageService {
       for (const chatId of Object.keys(pids)) {
         if (chatIds.has(chatId)) {
           // Kept as a removal, so a stale copy cannot bring the record back.
-          this.ownPidsIn(workspace).note(chatId, null);
+          this.pidOverlay.note(pidId(workspace, chatId), null);
           changed = true;
         }
       }
@@ -769,6 +943,63 @@ export class StorageService {
   /** A stored harness id this build has enabled; see the constructor. */
   private readonly isHarnessId = (value: unknown): value is HarnessId =>
     typeof value === 'string' && this.isKnownHarness(value);
+}
+
+/**
+ * `stored` re-listed from merged `records`: stored order kept, records the
+ * store lacks after the stored ones, or before them (newest first) with
+ * `newFirst`. A record without an id passes through.
+ */
+function orderedList<T>(
+  stored: readonly T[],
+  records: Record<string, T>,
+  idOf: (record: T) => unknown,
+  newFirst: boolean
+): T[] {
+  const result: T[] = [];
+  const placed = new Set<string>();
+  for (const record of stored) {
+    const id = idOf(record);
+    if (typeof id !== 'string') {
+      result.push(record);
+    } else if (!placed.has(id)) {
+      placed.add(id);
+      if (Object.prototype.hasOwnProperty.call(records, id)) {
+        result.push(records[id]);
+      }
+    }
+  }
+  const added = Object.keys(records)
+    .filter((id) => !placed.has(id))
+    .map((id) => records[id]);
+  return newFirst ? [...added.reverse(), ...result] : [...result, ...added];
+}
+
+function pidId(workspace: string, chatId: string): string {
+  return `${workspace}${PID_ID_SEPARATOR}${chatId}`;
+}
+
+function splitPidId(id: string): [string, string] {
+  const index = id.indexOf(PID_ID_SEPARATOR);
+  return [id.slice(0, index), id.slice(index + 1)];
+}
+
+function flattenPids(value: unknown): Record<string, number> {
+  const records: Record<string, number> = {};
+  if (value === null || typeof value !== 'object') {
+    return records;
+  }
+  for (const [workspace, pids] of Object.entries(value as Record<string, unknown>)) {
+    if (pids === null || typeof pids !== 'object') {
+      continue;
+    }
+    for (const [chatId, pid] of Object.entries(pids as Record<string, unknown>)) {
+      if (typeof pid === 'number') {
+        records[pidId(workspace, chatId)] = pid;
+      }
+    }
+  }
+  return records;
 }
 
 function withoutUndefined<T extends object>(fields: T): Partial<T> {

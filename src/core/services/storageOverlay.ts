@@ -1,65 +1,157 @@
+import { randomInt } from 'crypto';
+
 /**
- * Record-level guard against Cursor's stale storage echo (R33a, F3).
+ * Record-level guard against Cursor's stale storage echo (R33a, F3), by write
+ * stamps.
  *
  * Under load the editor can replace Pitwall's whole stored state with an older
  * copy: it echoes each storage change back to the extension host, and a stale
  * echo can land after a newer write. Every write saves the whole state, so the
  * next write of any key would persist the stale copy.
  *
- * A `RecordOverlay` remembers, in memory and for this window only, the records
- * this window wrote (`note(id, value)`) or removed (`note(id, null)`). Merged
- * into every read and every write of its collection, it keeps a stale copy from
- * dropping a record this window wrote or bringing back one it removed. Other
- * windows' records pass through as stored.
+ * Every guarded write carries a stamp: when it was written, plus the writing
+ * window's tag (see `StampClock`). Object records (repositories, chats) carry
+ * one stamp per field, so two windows editing different fields of one record
+ * both keep their edit; other records carry one stamp each. A removal is a
+ * tombstone with its stamp. The newest stamp wins, field by field: a stale
+ * echo carries older stamps and loses, and another window's newer write wins
+ * at once. Stamps live in the store, beside the records, so every window
+ * judges by the same times. Records written before stamps count as stamp 0.
  *
- * `settle` lets go of entries the store has echoed back unchanged, so other
- * windows' later writes win. An entry is held for at least `holdMs` first: right
- * after a write the store shows it only because the write was local, and a
- * stale echo can still be on its way. Entries the store does not show are kept
- * and keep being merged in, so a write is never dropped unconfirmed.
+ * A `RecordOverlay` holds, in memory and for this window only, the writes and
+ * removals this window made, with their stamps, until the store shows a stamp
+ * at least as new: a newer one (superseded), or the same one in a copy this
+ * window did not write itself (an echo or another window carried it back).
+ * The same stamp in the copy this window just wrote proves nothing, because a
+ * stale echo of an earlier write can still land on top of it.
  */
+
+/** A write time: epoch ms × 1000 + the writing window's tag (0–999). */
+export type Stamp = number;
+
+/** A record's stamp: one stamp, or one per field (field records). */
+export type RecordStamp = number | Record<string, number>;
+
+/** In a field record's stamps, when the record itself was created. */
+export const CREATED_FIELD = '#';
+
+/**
+ * How long a tombstone is kept. It only has to outlive any stale copy that
+ * could still carry the removed record; stale echoes arrive within seconds,
+ * so 14 days is far past that while keeping the stamp map bounded.
+ */
+export const TOMBSTONE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
+/** Records with their stamps and tombstones, as one collection stores them. */
+export interface Stamped<T> {
+  records: Record<string, T>;
+  stamps: Record<string, RecordStamp>;
+  /** Tombstones: id → the removal's stamp. */
+  removed: Record<string, Stamp>;
+}
+
+/**
+ * Issues this window's stamps. Every window of one editor runs on one machine,
+ * so they share one clock and stamps compare without skew. Two windows writing
+ * in the same millisecond are ordered by their tags, the same way everywhere.
+ * A stamp is always newer than this window's last one and than the stamp it
+ * replaces, so a write made after seeing another window's write wins over it.
+ */
+export class StampClock {
+  readonly tag: number;
+  private last = 0;
+
+  constructor(
+    private readonly now: () => number = Date.now,
+    tag?: number
+  ) {
+    this.tag = tag ?? randomInt(1000);
+  }
+
+  next(after = 0): Stamp {
+    const floor = Math.max(this.last, after);
+    let stamp = this.now() * 1000 + this.tag;
+    if (stamp <= floor) {
+      stamp = (Math.floor(floor / 1000) + 1) * 1000 + this.tag;
+    }
+    this.last = stamp;
+    return stamp;
+  }
+}
+
+/** The epoch ms a stamp was written at. */
+export function stampTime(stamp: Stamp): number {
+  return Math.floor(stamp / 1000);
+}
+
+/** When a record was created (field records) or last written (others); 0 if unstamped. */
+export function createdStamp(stamp: RecordStamp | undefined): number {
+  if (typeof stamp === 'number') {
+    return stamp;
+  }
+  return stamp?.[CREATED_FIELD] ?? 0;
+}
+
+function latestStamp(stamp: RecordStamp | undefined): number {
+  if (typeof stamp === 'number') {
+    return stamp;
+  }
+  return stamp ? Math.max(0, ...Object.values(stamp)) : 0;
+}
+
+function fieldStamps(stamp: RecordStamp | undefined): Record<string, number> {
+  return stamp !== undefined && typeof stamp === 'object' ? stamp : {};
+}
+
+const hasOwn = (record: object, id: string) => Object.prototype.hasOwnProperty.call(record, id);
+
+/** Stored records with stored tombstones applied: a tombstone newer than a record's creation hides it. */
+export function resolveStored<T>(stored: Stamped<T>): Stamped<T> {
+  let records = stored.records;
+  for (const [id, removedAt] of Object.entries(stored.removed)) {
+    if (hasOwn(records, id) && createdStamp(stored.stamps[id]) < removedAt) {
+      if (records === stored.records) {
+        records = { ...records };
+      }
+      delete records[id];
+    }
+  }
+  return records === stored.records ? stored : { ...stored, records };
+}
 
 export interface RecordOverlayOptions {
   /**
-   * How long an entry is kept before the store may confirm it. `Infinity`
-   * keeps every entry for the window's lifetime (the terminal PID records).
-   */
-  holdMs?: number;
-  /**
-   * Merge object records field by field: an update guards only the fields it
-   * changed, so two windows editing different fields of one record both keep
-   * their edit. A record this window created is also brought back if a stale
-   * copy dropped it; one it only edited is not, because another window may
-   * have removed it.
+   * Stamp object records field by field: an update stamps only the fields it
+   * changed. A record this window created comes back if a stale copy dropped
+   * it; one it only edited does not, and an edit never outlives a newer
+   * removal.
    */
   fields?: boolean;
-  /** Clock, for tests. */
-  now?: () => number;
+  /** The window's clock; one per window, shared by its collections. */
+  clock?: StampClock;
 }
-
-/** How long a write is held before the store may confirm it, by default. */
-export const STALE_ECHO_HOLD_MS = 30_000;
 
 interface Entry<T> {
   /** `null` = removed by this window. */
   value: T | null;
-  at: number;
-  /** Field mode: this window created the record. */
-  created: boolean;
-  /** Field mode: the fields this window changed. Unused for whole records. */
-  changed: Set<string>;
+  /** The removal's stamp, when `value` is null. */
+  removedAt: Stamp;
+  /** Creation (field records) or write (others) stamp, until the store shows it. */
+  created?: Stamp;
+  /** Field records: each field this window wrote → its stamp, until the store shows it. */
+  fields: Map<string, Stamp>;
 }
 
 export class RecordOverlay<T> {
   private readonly entries = new Map<string, Entry<T>>();
-  private readonly holdMs: number;
   private readonly fields: boolean;
-  private readonly now: () => number;
+  private readonly clock: StampClock;
+  /** The last stored copy merged, for the stamps a new write must beat. */
+  private lastStored: Stamped<T> | undefined;
 
   constructor(options: RecordOverlayOptions = {}) {
-    this.holdMs = options.holdMs ?? STALE_ECHO_HOLD_MS;
     this.fields = options.fields ?? false;
-    this.now = options.now ?? Date.now;
+    this.clock = options.clock ?? new StampClock();
   }
 
   /** Entries still held. */
@@ -67,178 +159,182 @@ export class RecordOverlay<T> {
     return this.entries.size;
   }
 
-  /** Whether this window created or wrote `id` and still guards it. */
+  /** Ids with a held entry. */
+  ids(): string[] {
+    return [...this.entries.keys()];
+  }
+
+  /** Whether this window wrote `id` (created it, for field records) and still holds the write. */
   wrote(id: string): boolean {
     const entry = this.entries.get(id);
-    return entry !== undefined && entry.value !== null && entry.created;
+    return entry !== undefined && entry.value !== null && entry.created !== undefined;
   }
 
   /**
-   * Record this window's write of `id`, or its removal (`null`). In field mode
-   * pass the record as it was before an update as `previous`; without it the
-   * write is a creation and guards the whole record.
+   * Record this window's write of `id`, or its removal (`null`), stamped now.
+   * For field records pass the record as it was before an update as
+   * `previous`; without it the write is a creation.
    */
   note(id: string, noted: T | null, previous?: T): void {
-    const at = this.now();
-    const existing = this.entries.get(id);
+    const stamp = this.clock.next(this.storedStamp(id));
     // A copy: callers may go on mutating the object they wrote.
     const value = clone(noted);
     if (value === null) {
-      this.entries.set(id, { value: null, at, created: false, changed: new Set() });
+      this.entries.set(id, { value: null, removedAt: stamp, fields: new Map() });
       return;
     }
     if (!this.fields) {
-      this.entries.set(id, { value, at, created: true, changed: new Set() });
+      this.entries.set(id, { value, removedAt: 0, created: stamp, fields: new Map() });
       return;
     }
     if (previous === undefined) {
-      const keep = existing && existing.value !== null && existing.created;
-      this.entries.set(id, { value, at, created: true, changed: keep ? existing.changed : new Set() });
+      const fields = new Map(Object.keys(value as object).map((field) => [field, stamp] as const));
+      this.entries.set(id, { value, removedAt: 0, created: stamp, fields });
       return;
     }
     const changed = changedFields(previous, value);
-    if (existing && existing.value !== null) {
-      for (const field of changed) {
-        existing.changed.add(field);
-      }
-      existing.value = value;
-      existing.at = at;
+    if (changed.length === 0) {
       return;
     }
-    if (changed.size > 0) {
-      this.entries.set(id, { value, at, created: false, changed });
+    const existing = this.entries.get(id);
+    const entry = existing && existing.value !== null ? existing : { value, removedAt: 0, fields: new Map<string, Stamp>() };
+    entry.value = value;
+    for (const field of changed) {
+      entry.fields.set(field, stamp);
     }
+    this.entries.set(id, entry);
   }
 
-  /** `stored` with this window's writes and removals applied. */
-  merge(stored: Record<string, T>): Record<string, T> {
+  /** `stored` (resolved) with this window's writes applied wherever their stamp is newer. */
+  merge(stored: Stamped<T>): Stamped<T> {
+    this.lastStored = stored;
     if (this.entries.size === 0) {
       return stored;
     }
-    const merged: Record<string, T> = { ...stored };
+    const records: Record<string, T> = { ...stored.records };
+    const stamps: Record<string, RecordStamp> = { ...stored.stamps };
+    const removed: Record<string, Stamp> = { ...stored.removed };
     for (const [id, entry] of this.entries) {
-      const has = Object.prototype.hasOwnProperty.call(stored, id);
-      // Copies, so a caller mutating a read cannot change what is held.
+      const has = hasOwn(records, id);
       if (entry.value === null) {
-        delete merged[id];
+        if (!has || createdStamp(stamps[id]) < entry.removedAt) {
+          delete records[id];
+          delete stamps[id];
+          removed[id] = Math.max(removed[id] ?? 0, entry.removedAt);
+        }
       } else if (!this.fields) {
-        merged[id] = clone(entry.value);
-      } else if (has) {
-        merged[id] = withFields(stored[id], clone(entry.value), entry.changed);
-      } else if (entry.created) {
-        merged[id] = clone(entry.value);
+        const latest = Math.max(has ? createdStamp(stamps[id]) : 0, removed[id] ?? 0);
+        if (entry.created !== undefined && entry.created > latest) {
+          records[id] = clone(entry.value);
+          stamps[id] = entry.created;
+          delete removed[id];
+        }
+      } else if (!has) {
+        if (entry.created !== undefined && entry.created > (removed[id] ?? 0)) {
+          records[id] = clone(entry.value);
+          stamps[id] = { ...Object.fromEntries(entry.fields), [CREATED_FIELD]: entry.created };
+          delete removed[id];
+        }
+      } else {
+        const storedStamps = fieldStamps(stamps[id]);
+        const own = entry.value as Record<string, unknown>;
+        let record: Record<string, unknown> | undefined;
+        let nextStamps: Record<string, number> | undefined;
+        for (const [field, stamp] of entry.fields) {
+          if (stamp > (storedStamps[field] ?? 0)) {
+            record ??= { ...(records[id] as Record<string, unknown>) };
+            nextStamps ??= { ...storedStamps };
+            if (own[field] === undefined) {
+              delete record[field];
+            } else {
+              record[field] = clone(own[field]);
+            }
+            nextStamps[field] = stamp;
+          }
+        }
+        if (entry.created !== undefined && entry.created > (storedStamps[CREATED_FIELD] ?? 0)) {
+          nextStamps ??= { ...storedStamps };
+          nextStamps[CREATED_FIELD] = entry.created;
+        }
+        if (record) {
+          records[id] = record as T;
+        }
+        if (nextStamps) {
+          stamps[id] = nextStamps;
+        }
       }
     }
-    return merged;
+    return { records, stamps, removed };
   }
 
-  /** Let go of held entries that `stored` already shows unchanged. */
-  settle(stored: Record<string, T>): void {
-    if (this.entries.size === 0 || !Number.isFinite(this.holdMs)) {
-      return;
-    }
-    const cutoff = this.now() - this.holdMs;
+  /**
+   * Let go of writes the store shows at least as new: a newer stamp, or the
+   * same stamp when `foreign` (the copy was not the one this window last
+   * wrote).
+   */
+  settle(stored: Stamped<T>, foreign: boolean): void {
+    const shown = (own: number, store: number) => store > own || (foreign && store === own);
     for (const [id, entry] of this.entries) {
-      if (entry.at > cutoff) {
+      const has = hasOwn(stored.records, id);
+      const tombstone = stored.removed[id];
+      if (entry.value === null) {
+        if ((tombstone !== undefined && shown(entry.removedAt, tombstone)) || (has && createdStamp(stored.stamps[id]) > entry.removedAt)) {
+          this.entries.delete(id);
+        }
         continue;
       }
-      const has = Object.prototype.hasOwnProperty.call(stored, id);
-      let shown: boolean;
-      if (entry.value === null) {
-        shown = !has;
-      } else if (!this.fields) {
-        shown = has && sameValue(stored[id], entry.value);
-      } else if (!has) {
-        // An edit of a record that is gone: another window removed it.
-        shown = !entry.created;
-      } else {
-        shown = [...entry.changed].every((field) => sameValue(fieldOf(stored[id], field), fieldOf(entry.value, field)));
+      if (!this.fields) {
+        if (has || tombstone !== undefined) {
+          const latest = Math.max(has ? createdStamp(stored.stamps[id]) : 0, tombstone ?? 0);
+          if (shown(entry.created ?? 0, latest)) {
+            this.entries.delete(id);
+          }
+        }
+        continue;
       }
-      if (shown) {
+      if (!has) {
+        // A newer removal wins over everything this window wrote to it.
+        const newest = Math.max(entry.created ?? 0, ...entry.fields.values());
+        if (tombstone !== undefined && shown(newest, tombstone)) {
+          this.entries.delete(id);
+        }
+        continue;
+      }
+      const storedStamps = fieldStamps(stored.stamps[id]);
+      for (const [field, stamp] of entry.fields) {
+        if (shown(stamp, storedStamps[field] ?? 0)) {
+          entry.fields.delete(field);
+        }
+      }
+      if (entry.created !== undefined && shown(entry.created, storedStamps[CREATED_FIELD] ?? 0)) {
+        entry.created = undefined;
+      }
+      if (entry.fields.size === 0 && entry.created === undefined) {
         this.entries.delete(id);
       }
     }
   }
-}
 
-/**
- * A stored list with `overlay` applied, records keyed by `idOf`. Stored order
- * is kept; records this window added and the store lacks go after the stored
- * ones, or before them (newest first) with `newFirst`. A record without an id
- * passes through unguarded.
- */
-export function mergeList<T>(
-  stored: readonly T[],
-  overlay: RecordOverlay<T>,
-  idOf: (record: T) => unknown,
-  newFirst = false
-): T[] {
-  if (overlay.size === 0) {
-    return [...stored];
-  }
-  const byId: Record<string, T> = {};
-  for (const record of stored) {
-    const id = idOf(record);
-    if (typeof id === 'string' && !Object.prototype.hasOwnProperty.call(byId, id)) {
-      byId[id] = record;
+  /** The newest stamp the last stored copy has for `id`. */
+  private storedStamp(id: string): number {
+    const stored = this.lastStored;
+    if (!stored) {
+      return 0;
     }
+    return Math.max(latestStamp(stored.stamps[id]), stored.removed[id] ?? 0);
   }
-  overlay.settle(byId);
-  const merged = overlay.merge(byId);
-  const result: T[] = [];
-  const placed = new Set<string>();
-  for (const record of stored) {
-    const id = idOf(record);
-    if (typeof id !== 'string') {
-      result.push(record);
-    } else if (!placed.has(id)) {
-      placed.add(id);
-      if (Object.prototype.hasOwnProperty.call(merged, id)) {
-        result.push(merged[id]);
-      }
-    }
-  }
-  const added = Object.keys(merged)
-    .filter((id) => !placed.has(id))
-    .map((id) => merged[id]);
-  return newFirst ? [...added.reverse(), ...result] : [...result, ...added];
 }
 
 function clone<V>(value: V): V {
   return value === null || typeof value !== 'object' ? value : (JSON.parse(JSON.stringify(value)) as V);
 }
 
-function fieldOf(record: unknown, field: string): unknown {
-  return record !== null && typeof record === 'object' ? (record as Record<string, unknown>)[field] : undefined;
-}
-
-function changedFields(previous: unknown, next: unknown): Set<string> {
+function changedFields(previous: unknown, next: unknown): string[] {
   const before = (previous ?? {}) as Record<string, unknown>;
   const after = (next ?? {}) as Record<string, unknown>;
-  const changed = new Set<string>();
-  for (const field of new Set([...Object.keys(before), ...Object.keys(after)])) {
-    if (!sameValue(before[field], after[field])) {
-      changed.add(field);
-    }
-  }
-  return changed;
-}
-
-/** `stored` with `fields` taken from `own`; a field `own` lacks is deleted. */
-function withFields<T>(stored: T, own: T, fields: Set<string>): T {
-  if (fields.size === 0) {
-    return stored;
-  }
-  const result = { ...(stored as Record<string, unknown>) };
-  const source = own as Record<string, unknown>;
-  for (const field of fields) {
-    if (source[field] === undefined) {
-      delete result[field];
-    } else {
-      result[field] = source[field];
-    }
-  }
-  return result as T;
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(
+    (field) => !sameValue(before[field], after[field])
+  );
 }
 
 /** Equal as stored: JSON-equal, ignoring key order and `undefined` fields. */
@@ -247,11 +343,13 @@ export function sameValue(a: unknown, b: unknown): boolean {
 }
 
 function stableJson(value: unknown): string {
-  return JSON.stringify(value, (_key, item: unknown) => {
-    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
-      return item;
-    }
-    const record = item as Record<string, unknown>;
-    return Object.fromEntries(Object.keys(record).sort().map((key) => [key, record[key]]));
-  }) ?? 'undefined';
+  return (
+    JSON.stringify(value, (_key, item: unknown) => {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+        return item;
+      }
+      const record = item as Record<string, unknown>;
+      return Object.fromEntries(Object.keys(record).sort().map((key) => [key, record[key]]));
+    }) ?? 'undefined'
+  );
 }
