@@ -4,14 +4,14 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.45 · 2026-11-17
+> v0.46 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 3 — Sidebar v1 (planning). Development resumed by Sharif on 2026-11-17.
-- **Current step:** Phase 3: rows 3.0–3.6 ✅; 3.10 partial. Open failure: E16 startup (welcome shown ~35 s before rows), fix PR in flight. Waves A and B merged. 3.5 ✅ (T7). In flight: PR #34 (T8 keys) rebasing + S5/S6 live check; PR #35 (lowercase-drive fix) merged `2be4ecb`, testing re-walk pending. Then Wave C (T7 repo row, T8 keys), Wave D (T9 search), close (T10).
+- **Current step:** Phase 3: rows 3.0–3.6 and 3.8 ✅; 3.7 (Ctrl+Alt+R with T9) and 3.10 partial. Open failure: E16 startup (welcome shown ~35 s before rows), fix PR in flight. Waves A and B merged. 3.5 ✅ (T7). In flight: PR #34 (T8 keys) rebasing + S5/S6 live check; PR #35 (lowercase-drive fix) merged `2be4ecb`, testing re-walk pending. Then Wave C (T7 repo row, T8 keys), Wave D (T9 search), close (T10).
 - **Last update:** 2026-11-17
 - **Next action:** testing walks `6698045` (discovery, Remove/Dismiss, O2 re-walk, P23); dispatch T7 + T8. State: `.superpowers/sdd/2026-11-17-phase3-sidebar-v1/progress.md` (latest STATE block).
 
@@ -182,8 +182,8 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 3.4 | Inbox order: repos Needs you → Finished → Working → Idle; in-repo order; rows move only on status change | ✅ | ✅ | 2026-11-17 · PR #32 `a0b26a9` → merge `af1bd26` (QA APPROVE; main CI green) | D18, D21 |
 | 3.5 | Repo row: "+" new chat, 🕘 session history (older + worktree chats; resume) | ✅ | ✅ | 2026-11-17 · PR #33 `e34b952` → merge `6e71472` (QA APPROVE; main CI green) | D28, D34 |
 | 3.6 | Hide Changes, worktree create/delete, PR badges; keep FILES, Find Session, Fork | ✅ | ✅ | 2026-11-17 · PR #26 `f0e1bce` → merge `16a2d12` (QA APPROVE; main CI green; 8+3 tests parked in `test/dry/core/dormant/`) · fix PR #30 `976aed8` → merge `7f4a18a`: Files actions refused on Windows (drive-letter case), found by the testing walk | D19 |
-| 3.7 | Hotkeys Ctrl+Alt+1–9 / 0 / R / F / O / Shift+1–9, latent (hover); confirm Ctrl+Alt+F beats Cursor's `list.find` | ⏸ | ⏸ | — | D12, D15, T13 |
-| 3.8 | List keyboard: ↓/↑ highlight, Ctrl+↓/↑ open, Enter | ⏸ | ⏸ | — | D37 |
+| 3.7 | Hotkeys Ctrl+Alt+1–9 / 0 / R / F / O / Shift+1–9, latent (hover); confirm Ctrl+Alt+F beats Cursor's `list.find` | ~ (all keys ✅ except Ctrl+Alt+R, which lands with 3.9 / PR #36) | ✅ | 2026-11-17 · PR #34 `e21fda7` → merge `7e1cbab` (QA APPROVE; S5 PASS; main CI green) | D12, D15, T13 |
+| 3.8 | List keyboard: ↓/↑ highlight, Ctrl+↓/↑ open, Enter | ✅ | ✅ | 2026-11-17 · PR #34 `e21fda7` → merge `7e1cbab` (QA APPROVE; S6 PASS; main CI green) | D37 |
 | 3.9 | Search box (Ctrl+Alt+R): repos, chats, Find Session | ⏸ | ⏸ | — | D24 |
 | 3.10 | Brand: status-row activity icon, D17 colors; no sideways scroll, resizable | ~ (icons ✅; scroll/resize checked by E17 at close) | ✅ | 2026-11-17 · PR #27 `3ded3ef` → merge `c0814b0` (QA APPROVE; main CI green; circles only, no Claude mark, P24) | D17, D33 |
 
@@ -336,3 +336,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.43 · 2026-11-17.** Row 3.5 ✅ (PR #33 → `6e71472`): repo row "+" and session history, the canvas repo menu (New session, Session history, Open its window, Copy Path, Reveal, Dismiss), and session-row hover icons bell (needs you) / terminal / fork. A new test checks every contributed command is registered. Lowercase-drive fix is PR #35.
 - **v0.44 · 2026-11-17.** Fix PR #35 → `2be4ecb` (rides row 3.1): Claude project folders named with a lowercase drive (`c--…`, from the Cursor panel) now match their repo on Windows; ordering diagnostics go to the "Pitwall Operations" output channel. Row 3.1 flips ✅ after the testing re-walk on real `~/.claude`.
 - **v0.45 · 2026-11-17.** Row 3.1 ✅ after the testing re-walk of `2be4ecb` on real `~/.claude` (read-only): repo set equals `list-claude-repos --days 14`, 16/17 list chats, Dismiss/Remove stick and return as specified; T5 and T7 walks PASS. New FAIL E16: after reload the list shows "No repositories yet" ~35 s before rows (rows at ~50 s); fix PR in flight.
+- **v0.46 · 2026-11-17.** Row 3.8 ✅ and 3.7 ~ (PR #34 → `7e1cbab`): Ctrl+Alt+1–9 (again = next chat), 0, O, F, Shift+1–9; ↓/↑ highlight, Ctrl+↓/↑ open, Enter on a repo expands it. Live S5/S6 PASS. Ctrl+Alt+R lands with search (PR #36). E16 fix PR #37 in a fix round (linked-worktree chats unresolved before the first git listing).
