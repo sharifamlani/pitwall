@@ -241,8 +241,15 @@ test('after a quit, each revived tab resumes its own chat in its worktree, quiet
   assert.equal(stub.__messages.length, 0, 'a missing session is skipped without a warning');
   assert.deepEqual([f.chat('99aabb00-stale').status, f.chat('77889900-foreign').status], ['idle', 'active']);
 
-  await waitFor(() => background >= 3, 'two retitles and the return to the previous tab');
-  assert.equal(stub.window.activeTerminal, previous);
+  // The adopted same-pty tab and the two resumed tabs are retitled in the
+  // background, each time followed by a return to the previous tab.
+  await waitFor(
+    () =>
+      background >= 5 &&
+      [revived, unlinked, samePty].every((tab) => tab.name === terminalTitle(f.chat(String(f.manager.getChatIdForTerminal(tab as never))))),
+    'three retitles and the returns to the previous tab'
+  );
+  await waitFor(() => stub.window.activeTerminal === previous, 'the previous tab in front again');
   assert.deepEqual(selections, [], 'retitling is not a user focus change');
   stub.window.__setActiveTerminal(revived);
   assert.deepEqual(selections, [revived], 'a real focus change still is');

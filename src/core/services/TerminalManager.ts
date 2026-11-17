@@ -147,6 +147,8 @@ export class TerminalManager {
    */
   private readonly pendingTitles = new Set<vscode.Terminal>();
   private readonly queuedTitleRetries = new Set<vscode.Terminal>();
+  /** Terminal activations that were not Pitwall's own background shows. */
+  private userActivations = 0;
 
   private readonly stateEmitter = new vscode.EventEmitter<{ chatId: string; state: 'opened' | 'closed' }>();
   readonly onTerminalStateChange = this.stateEmitter.event;
@@ -186,6 +188,7 @@ export class TerminalManager {
           // tab is the user's and must not be swallowed by the marker.
           this.backgroundActivation = undefined;
         }
+        this.userActivations += 1;
         void this.applyTitle(terminal);
         this.retryPendingTitles(terminal);
       }),
@@ -547,6 +550,12 @@ export class TerminalManager {
         await this.writeTitle(terminal);
         return;
       }
+      if (!this.canShowInBackground(terminal)) {
+        // Showing it would replace what the user is looking at, and can take
+        // keyboard focus with it. Wait for a later trigger instead.
+        this.pendingTitles.add(terminal);
+        return;
+      }
       const front = this.captureFront();
       await this.showForRetitle(terminal);
       await this.writeTitle(terminal);
@@ -555,6 +564,24 @@ export class TerminalManager {
         await this.restoreFront(front, terminal);
       }
     });
+  }
+
+  /**
+   * Whether a tab can be shown, to rename it, without replacing what the user
+   * is looking at. Showing an editor terminal in the active editor group
+   * replaces that group's front tab: when the front tab is the user's (a
+   * file, a diff, a webview such as a chat panel), keyboard focus can go with
+   * it, and the editor moves it to the terminal. So a tab in that group is
+   * shown only while a terminal tab is in front there; a tab in another group
+   * (or a panel terminal) does not touch the front tab.
+   */
+  private canShowInBackground(terminal: vscode.Terminal): boolean {
+    const group = vscode.window.tabGroups.activeTabGroup;
+    const front = group?.activeTab;
+    if (!group || !front || front.input instanceof vscode.TabInputTerminal) {
+      return true;
+    }
+    return !group.tabs.some((tab) => tab.input instanceof vscode.TabInputTerminal && tab.label === terminal.name);
   }
 
   /**
@@ -1099,7 +1126,9 @@ export class TerminalManager {
       }
     }
     await this.storageService.rememberTerminalPid(chatId, pid);
-    await this.applyTitle(terminal);
+    // A reload can leave a background tab's title re-tagged as the shell's,
+    // which the next quit would then revive it as; rename it in the background.
+    await (vscode.window.activeTerminal === terminal ? this.applyTitle(terminal) : this.retitleInBackground(terminal));
     this.stateEmitter.fire({ chatId, state: 'opened' });
   }
 
@@ -1308,15 +1337,17 @@ export class TerminalManager {
       return;
     }
     const front = this.captureFront();
-    const previous = front.terminal;
+    // The pass stops once the user activates a terminal; Pitwall's own
+    // background shows (this pass, a late retitle, an adoption) do not count.
+    const userActivations = this.userActivations;
+    const userTookOver = () => this.userActivations !== userActivations;
     // Late-start watches not handed to `retitleOnLateStart` are cancelled
     // when the pass ends, however it ends.
     const unhanded = new Set(revived);
     void (async () => {
-      let expected = previous;
       for (const item of revived) {
         const { terminal, integrated, started } = item;
-        if (this.isDisposed || vscode.window.activeTerminal !== expected) {
+        if (this.isDisposed || userTookOver()) {
           return;
         }
         // A shell without integration never re-tags the title, so its stored
@@ -1337,28 +1368,33 @@ export class TerminalManager {
         }
         if (
           this.isDisposed ||
-          vscode.window.activeTerminal !== expected ||
+          userTookOver() ||
           !vscode.window.terminals.includes(terminal)
         ) {
           return;
         }
-        let shown = false;
+        let outcome: 'shown' | 'deferred' | 'stopped' = 'stopped';
         await this.queueTitleWork(async () => {
           if (
             this.isDisposed ||
-            vscode.window.activeTerminal !== expected ||
+            userTookOver() ||
             !vscode.window.terminals.includes(terminal)
           ) {
             return;
           }
+          if (!this.canShowInBackground(terminal)) {
+            // The user's file or panel is in front of this tab's group.
+            this.pendingTitles.add(terminal);
+            outcome = 'deferred';
+            return;
+          }
           await this.showForRetitle(terminal);
           await this.writeTitle(terminal);
-          shown = true;
+          outcome = 'shown';
         });
-        if (!shown) {
+        if (outcome === 'stopped') {
           return;
         }
-        expected = terminal;
       }
       await this.queueTitleWork(async () => {
         if (!this.isDisposed) {
