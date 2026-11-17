@@ -8,12 +8,14 @@ import { errorMessage } from '../utils/text';
 import {
   commandInDirectory,
   isLiveTerminal,
+  launchLine,
   readProcessId,
   terminalTitle,
   titleShortId,
   waitForActive,
   waitForCommandStart,
   waitForEvent,
+  waitForProcessId,
   waitForShellIntegration,
 } from './terminalEvents';
 
@@ -180,7 +182,7 @@ export class TerminalManager {
     const { integrated, started } = this.startTerminal(
       chat,
       terminal,
-      launch.command,
+      launchLine(launch.command),
       COMMAND_START_TIMEOUT_MS
     );
     terminal.show();
@@ -425,9 +427,34 @@ export class TerminalManager {
       });
   }
 
-  /** Close a chat's terminal; the close event does the bookkeeping. */
+  /**
+   * Close a chat's terminal; the close event does the bookkeeping. A restored
+   * tab Pitwall never resumed (an unlinked fork, a session that was gone) is
+   * not mapped, so it is found by the short ID in its title, and only when no
+   * other stored chat shares that short ID.
+   */
   closeChat(chatId: string): void {
-    this.terminals.get(chatId)?.dispose();
+    const terminal = this.terminals.get(chatId);
+    if (terminal) {
+      terminal.dispose();
+      return;
+    }
+    const shortId = chatId.substring(0, 6);
+    const shared = this.storageService
+      .getChats()
+      .some((chat) => chat.id !== chatId && chat.id.substring(0, 6) === shortId);
+    if (shared) {
+      return;
+    }
+    for (const orphan of [...vscode.window.terminals]) {
+      if (
+        isLiveTerminal(orphan) &&
+        !this.terminalToChatId.has(orphan) &&
+        titleShortId(orphan.name) === shortId
+      ) {
+        orphan.dispose();
+      }
+    }
   }
 
   /**
@@ -593,6 +620,9 @@ export class TerminalManager {
     const recordedPids = this.storageService.getTerminalPids();
     const terminals = vscode.window.terminals;
     const pids = new Map<vscode.Terminal, number | undefined>();
+    // Each terminal's PID read, kept so a late PID is waited for on the same
+    // read rather than a second one.
+    const pidReads = new Map<vscode.Terminal, Thenable<number | undefined>>();
 
     const adopted = (async () => {
       // Only terminals that can be adopted or resumed need their PID.
@@ -609,7 +639,9 @@ export class TerminalManager {
           ) {
             return;
           }
-          pids.set(terminal, await readProcessId(terminal));
+          const read = terminal.processId;
+          pidReads.set(terminal, read);
+          pids.set(terminal, await waitForProcessId(read));
         })
       );
 
@@ -627,12 +659,12 @@ export class TerminalManager {
 
       if (canAdopt) {
         for (const terminal of terminals) {
-          await this.adoptRestoredTerminal(
-            terminal,
-            recordedPids,
-            pids.get(terminal),
-            resolveWorktree
-          );
+          // The parallel read above already waited for this PID. Reading again
+          // would hold activation for another timeout per silent tab.
+          const pid = pids.get(terminal);
+          if (pid !== undefined) {
+            await this.adoptRestoredTerminal(terminal, recordedPids, pid, resolveWorktree);
+          }
         }
       }
       return resolveWorktree;
@@ -644,6 +676,7 @@ export class TerminalManager {
           chats,
           recordedPids,
           pids,
+          pidReads,
           resolveWorktree
         );
 
@@ -669,7 +702,8 @@ export class TerminalManager {
 
   /**
    * Adopt a restored terminal whose pty is the one recorded for a chat. Never
-   * type into an adopted terminal: the pty is the running agent.
+   * type into an adopted terminal: the pty is the running agent. Without a
+   * known PID (a terminal that opened after activation) the PID is read here.
    */
   private async adoptRestoredTerminal(
     terminal: vscode.Terminal,
@@ -724,6 +758,7 @@ export class TerminalManager {
     chats: ChatSession[],
     recordedPids: Record<string, number>,
     pids: Map<vscode.Terminal, number | undefined>,
+    pidReads: Map<vscode.Terminal, Thenable<number | undefined>>,
     getWorktree: (worktreeId: string) => Worktree | undefined
   ): Promise<void> {
     const chatsByShortId = new Map<string, ChatSession>();
@@ -737,9 +772,8 @@ export class TerminalManager {
       }
     }
 
-    const candidates: Array<{ chat: ChatSession; terminal: vscode.Terminal }> =
-      [];
-    const claimedChats = new Set<string>();
+    // Tabs titled for a chat that may be resumed into them.
+    const matched: Array<{ chat: ChatSession; terminal: vscode.Terminal }> = [];
     for (const terminal of vscode.window.terminals) {
       if (
         terminal.exitStatus !== undefined ||
@@ -753,7 +787,7 @@ export class TerminalManager {
         continue;
       }
       const chat = chatsByShortId.get(shortId);
-      if (!chat || this.terminals.has(chat.id) || claimedChats.has(chat.id)) {
+      if (!chat || this.terminals.has(chat.id)) {
         continue;
       }
       // Its harness is switched off in this build: leave the tab alone.
@@ -761,14 +795,8 @@ export class TerminalManager {
         continue;
       }
 
-      // Only a chat this workspace launched may be typed into, and only when
-      // the current pty is not the one it recorded.
-      const recordedPid = recordedPids[chat.id];
-      if (recordedPid === undefined) {
-        continue;
-      }
-      const pid = pids.get(terminal);
-      if (pid === undefined || pid === recordedPid) {
+      // Only a chat this workspace launched may be typed into.
+      if (recordedPids[chat.id] === undefined) {
         continue;
       }
 
@@ -778,6 +806,60 @@ export class TerminalManager {
         continue;
       }
 
+      matched.push({ chat, terminal });
+    }
+
+    // Windows can report a revived shell's PID after activation's read gave
+    // up. Keep waiting on that same read here, in the background, and hold the
+    // matched tabs meanwhile so a click focuses one instead of launching a
+    // second agent.
+    const late = matched.filter(({ terminal }) => pids.get(terminal) === undefined);
+    if (late.length > 0) {
+      for (const { chat, terminal } of matched) {
+        if (!this.restoringChats.has(chat.id)) {
+          this.restoringChats.set(chat.id, terminal);
+        }
+      }
+      await Promise.all(
+        late.map(async ({ terminal }) => {
+          const read = pidReads.get(terminal);
+          pids.set(
+            terminal,
+            await (read
+              ? waitForProcessId(read, RESTORED_SHELL_TIMEOUT_MS)
+              : readProcessId(terminal, RESTORED_SHELL_TIMEOUT_MS))
+          );
+        })
+      );
+      // Released here; the tabs that become candidates are held again below.
+      for (const { chat, terminal } of matched) {
+        if (this.restoringChats.get(chat.id) === terminal) {
+          this.restoringChats.delete(chat.id);
+        }
+      }
+      if (this.isDisposed) {
+        return;
+      }
+    }
+
+    const candidates: Array<{ chat: ChatSession; terminal: vscode.Terminal }> =
+      [];
+    const claimedChats = new Set<string>();
+    for (const { chat, terminal } of matched) {
+      // A click or a close can have claimed the chat while PIDs were read.
+      if (
+        !isLiveTerminal(terminal) ||
+        this.terminalToChatId.has(terminal) ||
+        this.terminals.has(chat.id) ||
+        claimedChats.has(chat.id)
+      ) {
+        continue;
+      }
+      // Type only when the current pty is not the one the chat recorded.
+      const pid = pids.get(terminal);
+      if (pid === undefined || pid === recordedPids[chat.id]) {
+        continue;
+      }
       claimedChats.add(chat.id);
       candidates.push({ chat, terminal });
     }

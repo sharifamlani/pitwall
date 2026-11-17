@@ -1,3 +1,4 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { ChatSession } from '../types';
 import { quoteShellArgument } from '../harness/cli';
@@ -34,17 +35,68 @@ export function isLiveTerminal(terminal: vscode.Terminal): boolean {
   return vscode.window.terminals.includes(terminal) && terminal.exitStatus === undefined;
 }
 
+/** The shell syntax a terminal line has to parse in. */
+export type ShellKind = 'posix' | 'powershell' | 'cmd';
+
+/**
+ * Which syntax a shell executable reads. No shell path means VS Code's own
+ * default: PowerShell on Windows, a POSIX shell elsewhere.
+ */
+export function shellKind(shellPath: string | undefined): ShellKind {
+  if (!shellPath) {
+    return process.platform === 'win32' ? 'powershell' : 'posix';
+  }
+  const name = path.win32.basename(shellPath).toLowerCase();
+  if (['powershell.exe', 'powershell', 'pwsh.exe', 'pwsh'].includes(name)) {
+    return 'powershell';
+  }
+  if (name === 'cmd.exe' || name === 'cmd') {
+    return 'cmd';
+  }
+  return 'posix';
+}
+
+/**
+ * PowerShell reads a line that starts with a quoted string (a quoted full
+ * path to the CLI) as a value, not a command; the call operator runs it.
+ */
+function withCallOperator(command: string): string {
+  return /^['"]/.test(command) ? `& ${command}` : command;
+}
+
+/**
+ * A launch command as a terminal line for the given shell. Only PowerShell
+ * needs a change; bash and cmd.exe run it as built.
+ */
+export function launchLine(
+  command: string,
+  // The default profile's shell, as for `commandInDirectory` below.
+  shellPath: string | undefined = vscode.env.shell
+): string {
+  return shellKind(shellPath) === 'powershell' ? withCallOperator(command) : command;
+}
+
 /**
  * Change directory and launch as one shell line: a revived tab's shell starts
  * in the workspace root, the command-start event then covers the launch, and
- * a failed `cd` cannot start an agent in the wrong worktree.
+ * a failed `cd` cannot start an agent in the wrong worktree. The line is
+ * written for the shell it lands in: Windows PowerShell 5.1, the default
+ * terminal on Windows, cannot parse `&&`.
  */
 export function commandInDirectory(
   directory: string,
   command: string,
-  _shellPath: string | undefined = vscode.env.shell
+  // A revived tab keeps the shell it was created with; this uses the current default profile because Pitwall creates its tabs with it (a default changed between sessions is out of scope for v1).
+  shellPath: string | undefined = vscode.env.shell
 ): string {
-  return `cd ${quoteShellArgument(directory)} && ${command}`;
+  switch (shellKind(shellPath)) {
+    case 'powershell':
+      return `Set-Location -LiteralPath '${directory.replace(/'/g, "''")}'; if ($?) { ${withCallOperator(command)} }`;
+    case 'cmd':
+      return `cd /d "${directory}" && ${command}`;
+    default:
+      return `cd ${quoteShellArgument(directory)} && ${command}`;
+  }
 }
 
 /**
@@ -75,9 +127,23 @@ export function waitForEvent<T>(
 }
 
 /** A terminal's pty PID, bounded so activation cannot hang on one that never reports. */
-export function readProcessId(terminal: vscode.Terminal): Promise<number | undefined> {
-  return waitForEvent<number | undefined>(PROCESS_ID_TIMEOUT_MS, undefined, (done) => {
-    Promise.resolve(terminal.processId).then(done, () => done(undefined));
+export function readProcessId(
+  terminal: vscode.Terminal,
+  timeoutMs = PROCESS_ID_TIMEOUT_MS
+): Promise<number | undefined> {
+  return waitForProcessId(terminal.processId, timeoutMs);
+}
+
+/**
+ * Wait, bounded, on a PID read that is already under way. A caller that gave
+ * up on a read can keep waiting on the same one instead of reading again.
+ */
+export function waitForProcessId(
+  processId: Thenable<number | undefined>,
+  timeoutMs = PROCESS_ID_TIMEOUT_MS
+): Promise<number | undefined> {
+  return waitForEvent<number | undefined>(timeoutMs, undefined, (done) => {
+    Promise.resolve(processId).then(done, () => done(undefined));
     return { dispose: () => undefined };
   });
 }

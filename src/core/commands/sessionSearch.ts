@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { HarnessRegistry } from '../harness/HarnessRegistry';
-import { quoteShellArgument } from '../harness/cli';
+import { commandInDirectory } from '../services/terminalEvents';
 import { chatNativeSessionIds } from '../harness/sessionUtils';
 import { SessionSearchNode, displayPath } from '../providers/SessionSearchTreeProvider';
 import { WorkspacesTreeProvider } from '../providers/WorkspacesTreeProvider';
@@ -318,7 +318,7 @@ export function registerSessionSearchCommands(context: vscode.ExtensionContext, 
   register('pitwall.copySearchMatchCommand', async (node?: SessionSearchNode) => {
     const match = node?.kind === 'match' ? node.match : undefined;
     if (match) {
-      const command = `cd ${quoteShellArgument(match.cwd)} && ${resumeCommand(match)}`;
+      const command = commandInDirectory(match.cwd, resumeCommand(match));
       await vscode.env.clipboard.writeText(command);
       vscode.window.showInformationMessage(`Copied: ${command}`);
     }
