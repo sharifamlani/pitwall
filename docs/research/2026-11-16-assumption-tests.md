@@ -29,10 +29,11 @@ Setup:
 | T14 | Drag a file onto a repo row | Not tested | Needs Pitwall code (Phase 1) |
 | T15 | "+" starts a chat in another repo | Expected FAIL in a shared window | Same lookup as T5: a chat starts in the window's own folder |
 | T16 | Agntree's 12 Windows test failures are environment quirks | Not tested | Phase 1 Windows triage |
+| T17 | A chat started in a git worktree opens in its main repo's window | **FAIL** | A chat made in `pitwall-lab-a-wt` (branch `feat/wt-test`), opened by link in the lab-a window (fully loaded, link sent twice), came up as a new empty chat in lab-a (`18b0796c`), not the worktree chat (`7b5b505b`) |
 
 ## What it means for the design
 
-1. **The one-window hub doesn't work with Claude's panel (T5).** The chat panel only resumes chats that belong to the window's folder. So decisions D25 (cross-repo side by side), D31 (tabs from several repos in one window) and D15's hub assume something Cursor won't do. The canvas "Fallback" board becomes the main design: each repo keeps its own Cursor window, Pitwall's sidebar shows everything in every window, and clicking a chat from another repo brings that repo's window forward with the chat open. Needs Sharif's call.
+1. **The one-window hub doesn't work with Claude's panel (T5, T17). Decided 2026-11-16: one window per folder (worktrees included) for v1.** The chat panel only resumes chats that belong to the window's folder. So decisions D25 (cross-repo side by side), D31 (tabs from several repos in one window) and D15's hub assume something Cursor won't do. The canvas "Fallback" board becomes the main design: each repo keeps its own Cursor window, Pitwall's sidebar shows everything in every window, and clicking a chat from another repo brings that repo's window forward with the chat open. Needs Sharif's call.
 2. **The fallback has a working route.** A link goes to the focused window, or to the window already showing that chat (T6). Pitwall can focus the repo's window, then open the chat there.
 3. **Status detection is solid (T1 + T11).** The status files and hooks both report "needs you" from the panel, including question cards. Phase 4's hardest open question is answered.
 4. **Pop-ups need a first-run check (T2).** On this machine every Windows notification is off. Pitwall should detect `ToastEnabled=0`, Focus assist, and the app's own toggle, and offer `ms-settings:notifications`.
@@ -45,7 +46,7 @@ Read for interoperability only, in the installed `extension.js`. Nothing was cop
 1. **Each window has one Claude folder.** The extension's session scope is the window's *first* workspace folder (the user's home folder if none is open). Every chat panel in that window uses that folder to list chats, look one up, and run Claude.
 2. **The link carries no folder.** `/open` reads only `session` and `prompt`, then opens a panel in the window's folder. There's no setting for the folder either (checked all 23 `claudeCode.*` settings).
 3. **The lookup could find any chat; the panel narrows it.** The "find transcript by ID" routine scans *every* project folder when given no folder. The panel always gives it the window's folder, so another repo's chat isn't found and the panel starts a new one.
-4. **Worktrees are included in the lookup.** Given a folder, the lookup also searches that repo's git worktrees, so a worktree chat should open in its main repo's window (T17, still to confirm live). Claude's own history list sets `includeWorktrees: false`, so worktree chats don't appear there. Pitwall's list would show them.
+4. **Worktrees: the code misled, the live test decides.** The low-level lookup also searches a repo's git worktrees, which suggested a worktree chat would open in its main repo's window. The live test (T17) says it doesn't: the panel starts a new chat. Claude's own history list also sets `includeWorktrees: false`. Rule for Pitwall: **one window per folder; a worktree is its own folder.** A chat that *starts* in the main folder and moves into a worktree mid-session keeps the main folder's history and stays in the repo's window (untested).
 5. **A process wrapper exists** (`claudeCode.claudeProcessWrapper`). It could start the Claude process in a different folder, but the panel's own history loading and file anchoring still use the window folder. Partial and fragile.
 
 Ways around it, assessed:

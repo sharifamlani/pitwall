@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.6 · 2026-11-16
+> v0.7 · 2026-11-16
 
 ---
 
@@ -13,7 +13,7 @@
 - **Current phase:** Phase 1 — Import Agntree
 - **Current step:** 1.1 — write the Phase 1 plan (merge Agntree with history via an `upstream` remote)
 - **Last update:** 2026-11-16
-- **Next action:** Sharif decides Q1 (assumption tests say one window can't hold other repos' chats: switch to window-per-repo?). Then fold D9–D34 + test results into the Phase 1 plan.
+- **Next action:** Fold D9–D35 + the assumption-test results into the Phase 1 plan (Sharif reviews), then start the import.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -60,16 +60,17 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D22 | Clicking a file in FILES opens it as a normal Cursor editor tab in that repo's tab group, next to its chats (preview tabs and editing inherited) | Sharif 2026-11-16, decision log 13 |
 | D23 | Copy files between repos: copy/cut in one repo, switch, paste (Agntree's clipboard survives switching; paste lands in the shown repo/worktree; name clashes get " copy"). New: right-click "Copy to another repo" and drag a file onto a repo row. A copied `.env` that the target's `.gitignore` doesn't cover triggers an offer to add it | Sharif 2026-11-16, decision log 14 |
 | D24 | Search (Ctrl+Alt+R), one box: v1 = repos + chats by name/branch (instant) + Agntree's Find Session (agent reads transcripts). Instant text search inside chats → row 6.1 | Sharif 2026-11-16, decision log 15 |
-| D25 | Bottom-bar counts are buttons: click "N need you" (or working / finished) → those sessions open side by side across repos, each labelled with its repo; Back returns. Cross-repo depends on the one-window test (2.4) | Sharif 2026-11-16, decision log 16 |
+| D25 | Bottom-bar counts are buttons: click "N need you" (or working / finished) → a list of those sessions; Pitwall jumps you to each in turn (Next ▸). Side by side only within one folder (amended by D35) | Sharif 2026-11-16, decision log 16 |
 | D26 | Every tab shows its repo + branch underneath. File tabs: Cursor's tab-label setting. Claude's chat tabs can't be written on by another extension: until 2.5 finds a way, the repo shows in the tooltip, bottom bar and window title | Sharif 2026-11-16, decision log 17 |
 | D27 | Sound: off by default (refines D20). Two switches, "needs you" and "finished"; when on, the Windows pop-up plays the system sound. Bell in the sidebar header + Settings | Sharif 2026-11-16, decision log 18 |
 | D28 | Repo rows: no printed hotkeys; a "+" on each repo starts a new Claude Code chat there; the header keeps only the folder icon (add repo). Right-click → "Dismiss from Pitwall" hides the repo (nothing on disk changes); it returns when re-added or when a new session starts in it | Sharif 2026-11-16, decision log 19 |
 | D29 | Principle: inherit everything Cursor already does (tabs, editor, menus, quick-pick box, keybinding editor, themes); never rebuild it. Canvas board "What Pitwall gets from Cursor" | Sharif 2026-11-16, decision log 20 |
 | D30 | Until contributions open, `main` stays unprotected so Sharif and his Claude push directly. Before the contributor call goes out (5.6), `main` gets a GitHub ruleset: changes only through a pull request with 1 approving review and passing CI, no force-push or deletion; only the repo admin (Sharif, and his Claude using his login) may bypass | Sharif 2026-11-16 |
-| D31 | Tabs from several repos at once: session clicks keep adding tabs from any repo, all on screen and each labelled with its repo; clicking a repo name filters to that repo; an "All open tabs" row brings everything back; switching never closes tabs. Depends on the one-window test (2.6) | Sharif 2026-11-16, decision log 21 |
+| D31 | ~~Tabs from several repos at once~~ (superseded by D35): session clicks keep adding tabs from any repo, all on screen and each labelled with its repo; clicking a repo name filters to that repo; an "All open tabs" row brings everything back; switching never closes tabs. Depends on the one-window test (2.6) | Sharif 2026-11-16, decision log 21 |
 | D32 | Pin tabs with Cursor's own Pin Tab (right-click → Pin, Ctrl+K Shift+Enter): pinned tabs sit left and survive "Close Others" | Sharif 2026-11-16, decision log 22 |
 | D33 | Sidebar never scrolls sideways (rows truncate with "…"); its edge drags to resize or hide, and the line above FILES drags to resize it, like any Cursor panel | Sharif 2026-11-16, decision log 23 |
 | D34 | Each repo row gets a session-history button (clock) next to "+": lists every past Claude Code chat in that repo, beyond the 14-day list, and resumes the one you pick in Claude's panel | Sharif 2026-11-16 |
+| D35 | **One window per folder (v1)** — the "one-repo-per-window rule". Claude's panel only resumes chats from its window's folder, and a git worktree counts as its own folder (tests T5, T17). Every window runs the same Pitwall sidebar; clicking a chat from another repo or worktree brings that folder's window forward (opening it if needed) with the chat open. A window's tabs only ever hold its own folder's chats. Supersedes the cross-repo parts of D15, D25, D26 (chat tabs), D31 | Sharif 2026-11-16 · [tests](docs/research/2026-11-16-assumption-tests.md) |
 ---
 
 ## §3 The Checklist — every Phase from start to v1.0.0
@@ -186,7 +187,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 
 | # | Decision | Deadline / Trigger | Phase impact |
 |---|---|---|---|
-| Q1 | One-window vs jump-to-window. Spike 2026-11-16 says one window can't hold other repos' chats (T5) → recommend window-per-repo with "jump to the repo's window"; affects D15, D25, D31 | **Now (Sharif)** | Phase 2–3 design |
+| Q1 | ~~One-window vs jump-to-window~~ Resolved → D35 (one window per folder) | — | — |
 | Q2 | ~~Keep Agntree's other agents?~~ Resolved → D9 | — | — |
 | Q4 | ~~Spec canvas decisions 2–12~~ Resolved → D13–D21 (all locked 2026-11-16); 13–20 → D22–D29 | — | — |
 | Q3 | Publish to Open VSX / Marketplace, or `.vsix` only | Phase 5 | 5.4 |
@@ -213,3 +214,4 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 - **v0.4 · 2026-11-16.** D30: `main` stays open for Sharif and his Claude for now; row 5.5 protects it (PR + review + CI, admin-only bypass) before the contributor call, which moves to 5.6.
 - **v0.5 · 2026-11-16.** D31–D33: tabs from several repos stay on screen together (repo click filters, "All open tabs" restores; amends D11), Cursor's own tab pinning, resizable sidebar with no sideways scroll. New row 2.6 tests the repo filter over a shared tab set.
 - **v0.6 · 2026-11-16.** Assumption tests round 1. PASS: status files show "waiting" (T1), hooks fire in the panel (T11), maximize/restore editor groups in Cursor (T3), no duplicate tabs (T6), US keyboard (T4). FAIL: one window can't resume another repo's chat (T5) → Q1 reopened for Sharif. Blocked: pop-ups (Windows notifications off on this machine, T2/T12). Risk confirmed: tab-to-chat matching by title (T10). D34: session-history button per repo.
+- **v0.7 · 2026-11-16.** Q1 resolved → D35: one window per folder, worktrees included (T17 also FAILED: a worktree chat won't open in the main repo window). D25 amended to a jump list; D31 superseded. Code recon recorded in the tests doc.
