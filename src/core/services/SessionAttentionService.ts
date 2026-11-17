@@ -64,6 +64,16 @@ export class SessionAttentionService {
    * already there at activation, is left to the row and the list.
    */
   private readonly toastableWaits = new Set<string>();
+  /**
+   * Per chat, when the last agents sample without a wait was taken (the
+   * start of the call behind it). A wait first sighted later began somewhere
+   * between this time and its sighting.
+   */
+  private readonly lastClearAt = new Map<string, number>();
+  /** Per chat, the last time it was seen in front of the user. */
+  private readonly lastFrontAt = new Map<string, number>();
+  /** Chats in front at the last look, so leaving is stamped when it is noticed. */
+  private readonly frontChats = new Set<string>();
 
   /**
    * Latest turn state per chat with an open terminal. The tree reads this to
@@ -143,8 +153,47 @@ export class SessionAttentionService {
     }
   }
 
-  /** R40 red stub: replaced in the fix commit. */
-  noteFront(): void {}
+  /**
+   * Record which open chat is in front. Called on every tick and on tab,
+   * terminal and window-focus events; it only records, it never polls. A
+   * chat that was in front at the previous look is stamped too, so the time
+   * it left counts as seen even when only the next look notices.
+   */
+  noteFront(): void {
+    const now = Date.now();
+    for (const chat of this.activeChats()) {
+      const inFront = this.isChatVisible(chat.id);
+      if (inFront || this.frontChats.has(chat.id)) {
+        this.lastFrontAt.set(chat.id, now);
+      }
+      if (inFront) {
+        this.frontChats.add(chat.id);
+      } else {
+        this.frontChats.delete(chat.id);
+      }
+    }
+  }
+
+  /**
+   * Whether the chat's current wait began unseen: the chat was not in front
+   * at any time between the last sample without a wait and now, the whole
+   * window in which the wait could have started. Judging at the sighting
+   * alone is wrong, because a sighting can lag the wait by a cache cycle,
+   * a tick and a call (about 14 s).
+   *
+   * Known side effect: the window opens at the last no-wait call, up to
+   * about 14 s before the wait began, so a user who glanced at the chat just
+   * before the prompt appeared gets no toast. The mark and the list still
+   * show it.
+   */
+  private beganUnseen(chatId: string): boolean {
+    const front = this.lastFrontAt.get(chatId);
+    if (front === undefined) {
+      return true;
+    }
+    const clear = this.lastClearAt.get(chatId);
+    return clear !== undefined && front < clear;
+  }
 
   private flagNeedsYou(chatId: string): void {
     if (!this.needsYouSince.has(chatId) && !this.isChatVisible(chatId)) {
@@ -176,6 +225,13 @@ export class SessionAttentionService {
     const activeIds = new Set(chats.map((chat) => chat.id));
     let turnStatesChanged = false;
     const rowMarksBefore = this.rowMarkKey();
+    this.noteFront();
+    for (const chatId of [...this.lastFrontAt.keys()]) {
+      if (!activeIds.has(chatId)) {
+        this.lastFrontAt.delete(chatId);
+        this.frontChats.delete(chatId);
+      }
+    }
 
     // Forget chats whose terminal is gone; if one comes back it is seeded
     // again instead of notifying about history.
@@ -186,6 +242,7 @@ export class SessionAttentionService {
         this.lastWaitingFor.delete(chatId);
         this.waitingSince.delete(chatId);
         this.toastableWaits.delete(chatId);
+        this.lastClearAt.delete(chatId);
         this.needsYouSince.delete(chatId);
         if (this.turnStates.delete(chatId)) {
           turnStatesChanged = true;
@@ -203,6 +260,9 @@ export class SessionAttentionService {
       }))
     );
 
+    // The calls take time; look again before judging what they report.
+    this.noteFront();
+
     for (const { group, states } of results) {
       if (!states) {
         continue;
@@ -216,14 +276,14 @@ export class SessionAttentionService {
           continue;
         }
 
-        const { turnState, turnEndedAt, waitingFor } = live;
+        const { turnState, turnEndedAt, waitingFor, observedAt } = live;
 
         if (this.turnStates.get(chat.id) !== turnState) {
           this.turnStates.set(chat.id, turnState);
           turnStatesChanged = true;
         }
 
-        this.updateNeedsInput(chat, waitingFor, prime);
+        this.updateNeedsInput(chat, waitingFor, prime, observedAt);
 
         const done = turnState === 'done';
         const endedAt = done ? turnEndedAt ?? -1 : null;
@@ -311,10 +371,12 @@ export class SessionAttentionService {
   private updateNeedsInput(
     chat: ChatSession,
     waitingFor: string | undefined,
-    prime: boolean
+    prime: boolean,
+    observedAt: number | undefined
   ): void {
     if (!waitingFor) {
       // The wait ended: it leaves the list, and the next wait is new.
+      this.lastClearAt.set(chat.id, observedAt ?? Date.now());
       this.lastWaitingFor.delete(chat.id);
       this.toastableWaits.delete(chat.id);
       if (this.waitingSince.delete(chat.id)) {
@@ -340,15 +402,12 @@ export class SessionAttentionService {
 
     // A wait starts on the first tick that sees its reason, so a changed
     // reason is a new wait. Each wait toasts at most once: only if it began
-    // unseen after activation, and never once it has toasted or been seen.
-    if (waitingFor !== previous) {
-      if (prime || visible) {
-        this.toastableWaits.delete(chat.id);
-      } else {
-        this.toastableWaits.add(chat.id);
-      }
+    // unseen after activation (judged over the whole window in which it could
+    // have started), and never once it has toasted or been seen.
+    if (waitingFor !== previous && !prime) {
+      this.toastableWaits.add(chat.id);
     }
-    if (visible) {
+    if (prime || visible || !this.beganUnseen(chat.id)) {
       this.toastableWaits.delete(chat.id);
     }
     // A toast held back by the settings does not start the cooldown, so it

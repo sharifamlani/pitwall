@@ -59,7 +59,16 @@ export function isChatVisible(sources: ChatVisibilitySources, chatId: string): b
   return chatIdInFront(sources) === chatId;
 }
 
-/** R40 red stub: replaced in the fix commit. */
-export function onFrontMayChange(_listener: () => void): vscode.Disposable[] {
-  return [];
+/**
+ * Calls `listener` whenever the chat in front may have changed: the active
+ * terminal, a tab, a tab group or window focus. The attention service uses
+ * this only to record what the user has looked at; it never polls from here.
+ */
+export function onFrontMayChange(listener: () => void): vscode.Disposable[] {
+  return [
+    vscode.window.onDidChangeActiveTerminal(() => listener()),
+    vscode.window.tabGroups.onDidChangeTabs(() => listener()),
+    vscode.window.tabGroups.onDidChangeTabGroups(() => listener()),
+    vscode.window.onDidChangeWindowState(() => listener()),
+  ];
 }

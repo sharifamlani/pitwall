@@ -74,6 +74,23 @@ test('the service runs agents --json in the profile, caches for 10s, and shares 
   assert.equal(calls.length, 2, 'the cache expires');
 });
 
+test('a snapshot is stamped with the start of its call, and a cached answer keeps that stamp', async () => {
+  let now = 1_000;
+  let release: (output: string) => void = () => undefined;
+  const service = new ClaudeAgentsService({
+    command: () => 'fake-claude',
+    enabled: () => true,
+    now: () => now,
+    exec: () => new Promise((resolve) => (release = resolve)),
+  });
+  const pending = service.getSnapshot();
+  now = 2_500; // the call takes 1.5 s
+  release(fixture());
+  assert.equal((await pending).observedAt, 1_000, 'stamped when the call started');
+  now = 9_000;
+  assert.equal((await service.getSnapshot()).observedAt, 1_000, 'the cached answer keeps its age');
+});
+
 test('a disabled setting never spawns; a failure or malformed output stops further calls', async () => {
   for (const [label, enabled, exec] of [
     ['disabled', false, async () => fixture()],

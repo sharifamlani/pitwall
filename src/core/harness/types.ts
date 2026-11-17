@@ -45,6 +45,11 @@ export interface HarnessLiveState {
   turnEndedAt: number | null;
   /** Raw harness reason, e.g. "permission prompt". Undefined when not waiting. */
   waitingFor?: string;
+  /**
+   * When the sample behind `waitingFor` was taken: the start of the call that
+   * produced it, which may be cached. Undefined means "now".
+   */
+  observedAt?: number;
 }
 
 /**
