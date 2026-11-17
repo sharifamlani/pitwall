@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.36 · 2026-11-17
+> v0.37 · 2026-11-17
 
 ---
 
@@ -178,7 +178,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 3.0 | Every `globalState` record survives Cursor's stale storage echo (finding F3, Task 6 build): first reproduce it live on a non-PID key (chats, stars, repos, dismissals, searches), then generalize the R33a in-memory overlay across `StorageService` keys, with two-window tests | ⏸ | ⏸ | — | Phase 2 Task 6 report, ruling R34 |
 | 3.1 | Repos found from `~/.claude` (sessions in the last 14 days), added by folder icon, dismissed by right-click; no repo needs to be open | ⏸ | ⏸ | — | D13, D28, D36 |
 | 3.2 | Sessions from the last 14 days (incl. the Cursor panel's); branch on every row; ⧉ on worktree chats | ⏸ | ⏸ | — | D14, D18, D35 |
-| 3.3 | Status dots from `~/.claude/sessions` (busy / waiting / idle) + finished → seen when opened. Note: the needs-you (waiting) mark, orange #f0883e, landed early in Phase 2 (row 2.14, ruling R38); 3.3 adds the rest | ⏸ | ⏸ | — | D4, D18, T1 |
+| 3.3 | Status dots from `~/.claude/sessions` (busy / waiting / idle) + finished → seen when opened. Note: the needs-you (waiting) mark, orange #f0883e, landed early in Phase 2 (row 2.14, ruling R38); 3.3 adds the rest | ~ (source ✅ Task 2; dots for every row in Task 5) | ✅ | 2026-11-17 · PR #29 `0d36976` → merge `03e4313` (QA APPROVE; main CI green; ADR 0018; real data 10/10 agree with `claude agents`) | D4, D18, T1 |
 | 3.4 | Inbox order: repos Needs you → Finished → Working → Idle; in-repo order; rows move only on status change | ⏸ | ⏸ | — | D18, D21 |
 | 3.5 | Repo row: "+" new chat, 🕘 session history (older + worktree chats; resume) | ⏸ | ⏸ | — | D28, D34 |
 | 3.6 | Hide Changes, worktree create/delete, PR badges; keep FILES, Find Session, Fork | ✅ | ✅ | 2026-11-17 · PR #26 `f0e1bce` → merge `16a2d12` (QA APPROVE; main CI green; 8+3 tests parked in `test/dry/core/dormant/`) | D19 |
@@ -327,3 +327,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.34 · 2026-11-17.** Phase 3 plan passed QA pre-flight after one revision round (7 blocking findings fixed: wait-drop, first-run "finished", duplicate repos, wave conflicts). Rulings P1–P20, criteria E1–E18. Waiting on Sharif's go.
 - **v0.35 · 2026-11-17.** Row 3.6 ✅ (PR #26 → `16a2d12`): Changes view, worktree create/delete/merge/rebase, PR badges and fork-with-changes hidden; FILES collapsed; docs marked "hidden in v1". S1: F3 not reproduced live on non-PID keys (overlay generalised anyway); new finding P23 (other window's list doesn't redraw) → Task 5.
 - **v0.36 · 2026-11-17.** Row 3.10 icons merged (PR #27 → `c0814b0`): D17 status dots (circles only), "new" is a dashed grey ring (P24, brand book), four-dot activity icon. PR #28 (T1) reworked to write stamps (P25) after QA caught a lost-write race.
+- **v0.37 · 2026-11-17.** Row 3.3 source merged (PR #29 → `03e4313`): live status read from `~/.claude/sessions/*.json` (2–3 ms vs ~0.7 s for the CLI), `claude agents` kept as fallback (ADR 0018). Wave B (T3 discovery, T5 rows) waits on T1 (PR #28).
