@@ -5,6 +5,7 @@ import * as path from 'path';
 import { makeStorage, memento, stub, tempDir } from '../support';
 import { SessionSearchRecord, STORAGE_KEYS } from '../../../src/core/types';
 import { canonicalPath } from '../../../src/core/utils/paths';
+import { RecordOverlay } from '../../../src/core/services/storageOverlay';
 
 test('chats written before multi-harness support migrate on read, once', async () => {
   const globalState = memento();
@@ -429,6 +430,38 @@ test('two StorageService instances adding the same root through a stale echo kee
     assert.deepEqual(savedAt<{ id: string }[]>(globalState, STORAGE_KEYS.REPOSITORIES).map((repo) => repo.id), [a.id]);
     assert.deepEqual(windowB.getRepositories().map((repo) => repo.id), [a.id], 'B converges on the oldest record');
   }
+});
+
+test('the overlay lets go of a write once the store shows it, so another window’s later write wins', () => {
+  let now = 1_000;
+  const overlay = new RecordOverlay<{ name: string; at?: number }>({ fields: true, holdMs: 100, now: () => now });
+
+  overlay.note('mine', { name: 'Mine' }); // created here
+  overlay.note('theirs', { name: 'Renamed', at: 1 }, { name: 'Theirs', at: 1 }); // only renamed here
+  overlay.note('gone', null);
+
+  // A stale copy that lacks this window's writes: created records come back,
+  // an edited record another window may have removed does not, removals hold.
+  assert.deepEqual(overlay.merge({ gone: { name: 'Gone' } }), { mine: { name: 'Mine' } });
+  assert.deepEqual(overlay.merge({ theirs: { name: 'Theirs', at: 2 } }), {
+    theirs: { name: 'Renamed', at: 2 },
+    mine: { name: 'Mine' },
+  });
+
+  // The store shows every write, but within the hold a stale echo can still land.
+  const shown = { mine: { name: 'Mine' }, theirs: { name: 'Renamed', at: 2 } };
+  overlay.settle(shown);
+  assert.equal(overlay.size, 3);
+
+  // After the hold, a write the store does not show yet is kept.
+  now += 100;
+  overlay.settle({ mine: { name: 'Mine' }, theirs: { name: 'Theirs', at: 2 }, gone: { name: 'Gone' } });
+  assert.equal(overlay.size, 2, 'the confirmed creation is let go');
+  overlay.settle(shown);
+  assert.equal(overlay.size, 0);
+
+  // Now another window's later rename wins.
+  assert.deepEqual(overlay.merge({ theirs: { name: 'Later', at: 3 } }), { theirs: { name: 'Later', at: 3 } });
 });
 
 test('a chat created or loaded without seenAt gets a baseline', async () => {
