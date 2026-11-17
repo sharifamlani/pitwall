@@ -30,7 +30,14 @@ _ALLOWED = re.compile(r"^\.claude/skills/pitwall-[^/]+/", re.IGNORECASE)
 
 
 def leaked_paths(paths: Iterable[str]) -> list[str]:
-    return [p for p in paths if _PRIVATE.search(p) and not _TEMPLATE.search(p) and not _ALLOWED.search(p)]
+    leaked = []
+    for p in paths:
+        # Exempt only the allowed prefix; whatever sits beneath it is still checked.
+        m = _ALLOWED.match(p)
+        target = p[m.end() :] if m else p
+        if _PRIVATE.search(target) and not _TEMPLATE.search(target):
+            leaked.append(p)
+    return leaked
 
 
 def main(argv: list[str] | None = None) -> int:

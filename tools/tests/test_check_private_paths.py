@@ -76,3 +76,15 @@ def test_pitwall_skill_folder_allowed():
 def test_other_claude_skill_still_flagged():
     path = ".claude/skills/account-recovery/SKILL.md"
     assert leaked_paths([path]) == [path]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".claude/skills/pitwall-x/.env",
+        ".claude/skills/pitwall-x/transcripts/a.md",
+        ".claude/skills/pitwall-x/.packages/k.json",
+    ],
+)
+def test_private_file_inside_pitwall_skill_still_flagged(path):
+    assert leaked_paths([path]) == [path]
