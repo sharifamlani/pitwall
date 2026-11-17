@@ -63,13 +63,13 @@ else
   pass docker
 fi
 
-# 7. npm — the extension installs, typechecks and compiles
+# 7. npm - the extension installs, typechecks and compiles
 npm ci --no-audit --no-fund >/dev/null || fail npm "npm ci failed"
 npm run typecheck >/dev/null || fail npm "typecheck failed"
 npm run compile >/dev/null || fail npm "compile failed"
 pass npm
 
-# 8. linux-tests — the npm test suite on Linux in the container (host only)
+# 8. linux-tests - the npm test suite on Linux in the container (host only)
 if [[ $SKIP_DOCKER -eq 1 || -f /.dockerenv ]]; then
   echo "SKIP linux-tests (inside container or --skip-docker)"
 elif ! command -v docker >/dev/null 2>&1; then
