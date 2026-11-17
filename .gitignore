@@ -28,6 +28,7 @@ dist/
 *.vsix
 .vscode-test/
 test/dry/.build/
+test/dry/.build-*/
 _site/
 
 # OS

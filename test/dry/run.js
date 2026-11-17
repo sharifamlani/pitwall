@@ -17,7 +17,12 @@ const { spawnSync } = require('child_process');
 const esbuild = require('esbuild');
 
 const TEST_DIR = __dirname;
-const BUILD_DIR = path.join(TEST_DIR, '.build');
+const BUILD_DIR = path.resolve(TEST_DIR, process.env.PITWALL_TEST_BUILD_DIR || '.build');
+// Bundles find fixtures and the repo root relative to their own folder, so the build dir must be a child of test/dry/.
+if (path.dirname(BUILD_DIR) !== TEST_DIR) {
+  console.error(`PITWALL_TEST_BUILD_DIR must be a child of ${TEST_DIR}, got ${BUILD_DIR}`);
+  process.exit(2);
+}
 const STUB = path.join(TEST_DIR, 'vscode-stub.js');
 const TIMEOUT_MS = Number(process.env.PITWALL_TEST_TIMEOUT_MS || 60_000);
 
@@ -27,7 +32,7 @@ function collectTests(dir, prefix = '') {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
-      return entry.name === '.build' || entry.name === 'fixtures' ? [] : collectTests(path.join(dir, entry.name), rel);
+      return entry.name.startsWith('.build') || entry.name === 'fixtures' ? [] : collectTests(path.join(dir, entry.name), rel);
     }
     return entry.name.endsWith('.test.ts') ? [rel] : [];
   });

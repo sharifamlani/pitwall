@@ -12,15 +12,22 @@ const fs = require('fs');
 const stateFile = process.env.FAKE_OPENCODE_STATE;
 const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
 const args = process.argv.slice(2);
-const save = () => fs.writeFileSync(stateFile, JSON.stringify(state));
-state.calls.push(args);
-// A delayed call must be visible while it hangs, so the test can abort it.
-if (state.listDelayMs || state.messageDelayMs) save();
+// Atomic (temp file + rename): the test reads this file while the fake is still writing it.
+const save = () => {
+  const temp = `${stateFile}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(state));
+  fs.renameSync(temp, stateFile);
+};
+// Registered before the call becomes visible: the test aborts as soon as it sees the call, and a SIGTERM
+// that arrives first would kill the process without recording that it was terminated.
 process.on('SIGTERM', () => {
   state.terminated = (state.terminated ?? 0) + 1;
   save();
   process.exit(143);
 });
+state.calls.push(args);
+// A delayed call must be visible while it hangs, so the test can abort it.
+if (state.listDelayMs || state.messageDelayMs) save();
 const reply = (value) => {
   save();
   process.stdout.write(JSON.stringify(value));

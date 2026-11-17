@@ -29,7 +29,11 @@ export function fakeOpencode(t: { after(fn: () => void): void }, state: Omit<Ope
     cli: fakeCli(dir, 'opencode', FIXTURE, { FAKE_OPENCODE_STATE: stateFile }),
     dir,
     read,
-    update: (change: Partial<OpencodeState>) => fs.writeFileSync(stateFile, JSON.stringify({ ...read(), ...change })),
+    update: (change: Partial<OpencodeState>) => {
+      const temp = `${stateFile}.update.tmp`;
+      fs.writeFileSync(temp, JSON.stringify({ ...read(), ...change }));
+      fs.renameSync(temp, stateFile);
+    },
     /** How many calls ran `operation`. */
     calls: (operation: string) => read().calls.filter((args) => args.includes(operation)).length,
   };
