@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { DiscoveredFolder, DiscoveryCounts, HarnessAdapter } from '../harness/types';
 import { BoundedCache } from '../utils/boundedCache';
-import { canonicalPath, samePath } from '../utils/paths';
+import { canonicalRoot, samePath } from '../utils/paths';
 import { GitService } from './GitService';
 import { StorageService } from './StorageService';
 
@@ -224,10 +224,10 @@ export class RepoDiscoveryService implements vscode.Disposable {
     }
     const cached = this.roots.get(cwd);
     if (cached && this.now() - cached.at < ROOT_TTL_MS) {
-      return cached.root ?? canonicalPath(cwd);
+      return canonicalRoot(cached.root ?? cwd);
     }
     const root = await this.gitService.getMainRepoRoot(cwd);
     this.roots.set(cwd, { root, at: this.now() });
-    return root ?? canonicalPath(cwd);
+    return canonicalRoot(root ?? cwd);
   }
 }

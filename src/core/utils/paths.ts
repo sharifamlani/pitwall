@@ -80,6 +80,21 @@ export function nativePath(value: string): string {
 /** Successful native realpath lookups, keyed by resolved path (failures are not cached). */
 const nativeRealpathCache = new BoundedCache<string, string>(2_000);
 
+/**
+ * The one spelling a workspace root is stored under, whether it is a git
+ * repository or a plain folder, added by hand or discovered. On Windows that
+ * is the file system's own native spelling (upper-case drive letter, real
+ * case, backslashes), so a folder picked as `c:\x` and git's `C:/x` store
+ * alike. Elsewhere it is `canonicalPath`.
+ */
+export function canonicalRoot(value: string): string {
+  if (process.platform !== 'win32') {
+    return canonicalPath(value);
+  }
+  const real = comparablePath(value).normalize('NFC');
+  return /^[a-z]:/.test(real) ? real[0].toUpperCase() + real.slice(1) : real;
+}
+
 function comparablePath(value: string): string {
   const resolved = path.resolve(value);
   const cached = nativeRealpathCache.get(resolved);

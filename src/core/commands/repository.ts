@@ -4,7 +4,7 @@ import { StorageService } from '../services/StorageService';
 import { GitService } from '../services/GitService';
 import { WorkspaceTreeItem } from '../providers/WorkspacesTreeProvider';
 import { Repository, Worktree } from '../types';
-import { canonicalPath, samePath } from '../utils/paths';
+import { canonicalPath, canonicalRoot, samePath } from '../utils/paths';
 import { commandRegistrar, withProgress } from './common';
 
 export interface RepositoryCommandDeps {
@@ -45,7 +45,8 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
       );
       return;
     }
-    const rootPath = repoRoot ?? folderPath;
+    // One spelling per root, git repository or plain folder.
+    const rootPath = canonicalRoot(repoRoot ?? folderPath);
     // Adding a dismissed root by hand brings it back for good (P2).
     if (Object.keys(storageService.getDismissedRepos()).some((dismissed) => samePath(dismissed, rootPath))) {
       await storageService.setDismissed(rootPath, null);
@@ -111,7 +112,7 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     // being imported when the folder is added again.
     deps.forgetWorktrees(gitService.listRepositoryWorktrees(repo.rootPath, repo.id).worktrees);
     storageService.removeRepository(repo.id);
-    vscode.window.showInformationMessage(`Removed "${repo.name}" from extension`);
+    vscode.window.showInformationMessage(`Removed "${repo.name}" from Pitwall`);
     refreshTree();
   });
 
