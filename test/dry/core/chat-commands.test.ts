@@ -16,6 +16,7 @@ import { SessionImportService } from '../../../src/core/services/SessionImportSe
 import { WorkspaceTreeItem } from '../../../src/core/providers/WorkspacesTreeProvider';
 import { registerChatCommands } from '../../../src/core/commands/chat';
 import { registerSessionImportCommands } from '../../../src/core/commands/sessionImport';
+import { registerRepositoryCommands } from '../../../src/core/commands/repository';
 import { ForkResult, HarnessSession, NativeUiOpenResult } from '../../../src/core/harness/types';
 import { ChatSession, HarnessId, Worktree } from '../../../src/core/types';
 import {
@@ -90,7 +91,9 @@ function setup(t: { after(fn: () => void): void }, options: { notInstalled?: Har
         ? (item.data as Worktree)
         : item?.itemType === 'repository' && item.data.id === folderRepo.id
           ? folder
-          : undefined,
+          : item?.itemType === 'repository' && item.data.id === repo.id
+            ? main
+            : undefined,
     isGitWorktree: (worktree: Worktree) => worktree.id !== folder.id,
   };
   const shown: string[] = [];
@@ -136,6 +139,13 @@ function setup(t: { after(fn: () => void): void }, options: { notInstalled?: Har
     refreshTree: () => undefined,
   });
   registerSessionImportCommands(context, storage, git as never, catalog, workspaces as never, registry, () => undefined);
+  registerRepositoryCommands(context, {
+    storageService: storage,
+    gitService: git as never,
+    harnessRegistry: registry,
+    forgetWorktrees: () => undefined,
+    refreshTree: () => undefined,
+  });
   vscode.commands.registerCommand('pitwall.refreshWorkspaces', () => undefined);
 
   return {
@@ -171,6 +181,25 @@ test('New Session launches in the worktree, with an ID chosen up front when the 
   await runCommand('pitwall.newChat', new WorkspaceTreeItem('scratch', 1, 'repository', f.folderRepo, 'folderRepository'));
   assert.equal(f.chatsIn(f.folder)[0]?.harness, 'claude', 'the legacy alias works from a plain folder row');
   assert.equal(f.lastTerminal().options.cwd, f.folder.path);
+});
+
+test('"+" starts a Claude chat in the repo\'s main worktree', async (t) => {
+  const f = setup(t);
+  const repoRow = new WorkspaceTreeItem('demo', 1, 'repository', f.storage.getRepositories()[0], 'repository');
+  await runCommand('pitwall.newSessionInRepository', repoRow);
+  assert.deepEqual(f.chatsIn(f.main).map((chat) => chat.harness), ['claude']);
+  assert.deepEqual(f.chatsIn(f.feature), [], 'not in a linked worktree');
+  assert.equal(f.lastTerminal().options.cwd, f.main.path);
+  assert.match(f.lastTerminal().sent[0], /^claude --session-id /);
+
+  await runCommand('pitwall.newSessionInRepository', new WorkspaceTreeItem('scratch', 1, 'repository', f.folderRepo, 'folderRepository'));
+  assert.equal(f.chatsIn(f.folder)[0]?.harness, 'claude', 'a plain folder row works the same');
+});
+
+test('Copy Path copies the repo root', async (t) => {
+  const f = setup(t);
+  await runCommand('pitwall.copyRepositoryPath', new WorkspaceTreeItem('demo', 1, 'repository', f.storage.getRepositories()[0], 'repository'));
+  assert.equal(await vscode.env.clipboard.readText(), '/work/demo');
 });
 
 test('New Session starts the default agent in one click, and asks which agent when none is set', async (t) => {

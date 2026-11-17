@@ -124,7 +124,7 @@ test('picking an older chat imports it and it shows as idle', async (t) => {
   assert.ok(typeof chat.seenAt === 'number', 'it has a seen baseline (P16)');
   assert.equal(
     sessionStatus({
-      live: { turnState: older.turnState, turnEndedAt: older.turnEndedAt },
+      live: { turnState: 'done', turnEndedAt: older.lastUpdated?.getTime() ?? null },
       needsYou: false,
       seenAt: chat.seenAt,
     }),

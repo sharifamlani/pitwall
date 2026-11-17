@@ -144,6 +144,36 @@
       "category": "Pitwall"
     },
     {
+      "command": "pitwall.newSessionInRepository",
+      "title": "New Claude Code session",
+      "category": "Pitwall",
+      "icon": "$(add)"
+    },
+    {
+      "command": "pitwall.sessionHistory",
+      "title": "Session history…",
+      "category": "Pitwall",
+      "icon": "$(history)"
+    },
+    {
+      "command": "pitwall.copyRepositoryPath",
+      "title": "Copy Path",
+      "category": "Pitwall",
+      "icon": "$(copy)"
+    },
+    {
+      "command": "pitwall.revealRepository",
+      "title": "Reveal in File Explorer",
+      "category": "Pitwall",
+      "icon": "$(folder-opened)"
+    },
+    {
+      "command": "pitwall.openNeedsYouChat",
+      "title": "Open Session That Needs You",
+      "category": "Pitwall",
+      "icon": "$(bell)"
+    },
+    {
       "command": "pitwall.newDefaultSession",
       "title": "New Session",
       "category": "Pitwall",
@@ -193,7 +223,7 @@
     },
     {
       "command": "pitwall.openInNewWindow",
-      "title": "Open in New Window",
+      "title": "Open its window",
       "category": "Pitwall",
       "icon": "$(multiple-windows)"
     },
@@ -740,128 +770,103 @@
         "group": "9_destructive@9"
       },
       {
-        "submenu": "pitwall.newSession",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/ && (pitwall.anyHarnessInstalled || pitwall.anyNativeUiInstalled) && !config.pitwall.defaultHarness",
+        "command": "pitwall.sessionHistory",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
         "group": "inline@1"
       },
       {
-        "command": "pitwall.newDefaultSession",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/ && (pitwall.anyHarnessInstalled || pitwall.anyNativeUiInstalled) && config.pitwall.defaultHarness",
-        "group": "inline@1"
-      },
-      {
-        "command": "pitwall.openTerminalAtWorktree",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/",
+        "command": "pitwall.newSessionInRepository",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
         "group": "inline@2"
       },
       {
-        "submenu": "pitwall.newSessionContext",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/ && (pitwall.anyHarnessInstalled || pitwall.anyNativeUiInstalled)",
+        "command": "pitwall.newSessionInRepository",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
         "group": "1_session@1"
       },
       {
-        "command": "pitwall.importSessions",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/",
+        "command": "pitwall.sessionHistory",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
         "group": "1_session@2"
       },
       {
-        "command": "pitwall.switchToWorkspace",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/ && !config.pitwall.autoSwitchWorkspaceFolder",
-        "group": "2_open@1"
-      },
-      {
         "command": "pitwall.openInNewWindow",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/",
-        "group": "2_open@2"
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+        "group": "1_session@3"
       },
       {
-        "command": "pitwall.openTerminalAtWorktree",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/",
-        "group": "2_open@3"
+        "command": "pitwall.copyRepositoryPath",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+        "group": "2_path@1"
       },
       {
-        "command": "pitwall.copyWorktreePath",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|worktree|folderRepository)$/",
-        "group": "2_open@5"
+        "command": "pitwall.revealRepository",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+        "group": "2_path@2"
       },
       {
-        "command": "pitwall.clearWorktreeSessions",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(worktree|folderRepository)$/",
-        "group": "9_destructive@1"
-      },
-      {
-        "command": "pitwall.starChat",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|runningChat)(\\w+Ui)?$/",
+        "command": "pitwall.openNeedsYouChat",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)Needs(\\w+Ui)?$/ && !listMultiSelection",
         "group": "inline@0"
-      },
-      {
-        "command": "pitwall.unstarChat",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(starredChat|runningStarredChat)(\\w+Ui)?$/",
-        "group": "inline@0"
-      },
-      {
-        "command": "pitwall.renameChat",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/",
-        "group": "inline@1"
       },
       {
         "command": "pitwall.openChatInTerminal",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat)(\\w+Ui)?$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat)(Needs)?(\\w+Ui)?$/",
         "group": "inline@2"
       },
       {
-        "command": "pitwall.closeChat",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(runningChat|runningStarredChat)(\\w+Ui)?$/",
-        "group": "inline@4"
+        "command": "pitwall.forkChat",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(Needs)?(\\w+Ui)?$/ && !listMultiSelection",
+        "group": "inline@3"
       },
       {
         "command": "pitwall.openChat",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(Needs)?(\\w+Ui)?$/ && !listMultiSelection",
         "group": "1_open@1"
       },
       {
         "command": "pitwall.openChatInTerminal",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(Needs)?(\\w+Ui)?$/ && !listMultiSelection",
         "group": "1_open@2"
       },
       {
         "command": "pitwall.renameChat",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(Needs)?(\\w+Ui)?$/ && !listMultiSelection",
         "group": "2_edit@1"
       },
       {
         "command": "pitwall.starChat",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|runningChat)(\\w+Ui)?$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|runningChat)(Needs)?(\\w+Ui)?$/",
         "group": "2_edit@2"
       },
       {
         "command": "pitwall.unstarChat",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(starredChat|runningStarredChat)(\\w+Ui)?$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(starredChat|runningStarredChat)(Needs)?(\\w+Ui)?$/",
         "group": "2_edit@2"
       },
       {
         "command": "pitwall.forkChat",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(Needs)?(\\w+Ui)?$/ && !listMultiSelection",
         "group": "3_fork@1"
       },
       {
         "command": "pitwall.copyResumeCommand",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(Needs)?(\\w+Ui)?$/ && !listMultiSelection",
         "group": "4_copy@1"
       },
       {
         "command": "pitwall.copySessionId",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/ && !listMultiSelection",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(Needs)?(\\w+Ui)?$/ && !listMultiSelection",
         "group": "4_copy@2"
       },
       {
         "command": "pitwall.closeChat",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(runningChat|runningStarredChat)(\\w+Ui)?$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(runningChat|runningStarredChat)(Needs)?(\\w+Ui)?$/",
         "group": "9_destructive@1"
       },
       {
         "command": "pitwall.deleteChat",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(\\w+Ui)?$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(Needs)?(\\w+Ui)?$/",
         "group": "9_destructive@2"
       },
       {
@@ -1114,6 +1119,10 @@
       {
         "command": "pitwall.enableFocusOnStartup",
         "when": "!config.pitwall.focusOnStartup"
+      },
+      {
+        "command": "pitwall.openNeedsYouChat",
+        "when": "false"
       }
     ]
   }

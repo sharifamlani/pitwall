@@ -42,12 +42,12 @@
     "view/item/context": [
       {
         "command": "pitwall.openCodexUi",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)CodexUi$/ && pitwall.codexUiInstalled",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(Needs)?CodexUi$/ && pitwall.codexUiInstalled",
         "group": "inline@3"
       },
       {
         "command": "pitwall.openCodexUi",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)CodexUi$/ && !listMultiSelection",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(chat|starredChat|runningChat|runningStarredChat)(Needs)?CodexUi$/ && !listMultiSelection",
         "group": "1_open@3"
       }
     ],

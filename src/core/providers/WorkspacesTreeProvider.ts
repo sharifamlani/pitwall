@@ -547,7 +547,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
         vscode.TreeItemCollapsibleState.None,
         'chat',
         chat,
-        chatContextValue(adapter, isOpen, starredIds.has(chat.id))
+        chatContextValue(adapter, isOpen, starredIds.has(chat.id), status === 'needs')
       );
       item.iconPath = harnessIconPath(this.extensionUri, adapter, statusIconState(status, Boolean(chat.harnessSessionId)));
 
@@ -673,9 +673,15 @@ function sessionStatusLine(session: SessionEntry, meta: SessionMetadata | null):
 
 /**
  * The context value names the row state for menus; an adapter with a native
- * UI appends its own suffix so that UI's entry targets only its rows.
+ * UI appends its own suffix so that UI's entry targets only its rows. A row
+ * that needs you carries `Needs` before that suffix, which shows its bell.
  */
-function chatContextValue(adapter: HarnessAdapter | undefined, isOpen: boolean, isStarred: boolean): string {
+function chatContextValue(
+  adapter: HarnessAdapter | undefined,
+  isOpen: boolean,
+  isStarred: boolean,
+  needsYou = false
+): string {
   const base = isOpen ? (isStarred ? 'runningStarredChat' : 'runningChat') : isStarred ? 'starredChat' : 'chat';
-  return `${base}${adapter?.nativeUi?.contextValueSuffix ?? ''}`;
+  return `${base}${needsYou ? 'Needs' : ''}${adapter?.nativeUi?.contextValueSuffix ?? ''}`;
 }
