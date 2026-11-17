@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.19 · 2026-11-17
+> v0.20 · 2026-11-17
 
 ---
 
@@ -175,6 +175,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
+| 3.0 | Every `globalState` record survives Cursor's stale storage echo (finding F3, Task 6 build): first reproduce it live on a non-PID key (chats, stars, repos, dismissals, searches), then generalize the R33a in-memory overlay across `StorageService` keys, with two-window tests | ⏸ | ⏸ | — | Phase 2 Task 6 report, ruling R34 |
 | 3.1 | Repos found from `~/.claude` (sessions in the last 14 days), added by folder icon, dismissed by right-click; no repo needs to be open | ⏸ | ⏸ | — | D13, D28, D36 |
 | 3.2 | Sessions from the last 14 days (incl. the Cursor panel's); branch on every row; ⧉ on worktree chats | ⏸ | ⏸ | — | D14, D18, D35 |
 | 3.3 | Status dots from `~/.claude/sessions` (busy / waiting / idle) + finished → seen when opened | ⏸ | ⏸ | — | D4, D18, T1 |
@@ -308,3 +309,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.17 · 2026-11-17.** Task 4 (Windows fake CLIs; triage rows 13–25, 27–29) merged → `b4c85bb`. Windows skips 17 → 9 (8 dormant opencode, 1 `/proc`), each with a reason. QA finding F2 becomes row 2.14 (ruling R30): the "needs you" poll never runs on Windows. Backlog for when D9 enables opencode: its spawns hit the same EINVAL.
 - **v0.18 · 2026-11-17.** Task 12 merged: row 2.14 closed as a regression guard (R31; F2 did not reproduce through `ClaudeAgentsService`, whose poll already runs through `harnessInvocation`). Left in Phase 2: Task 6 (restore), Task 5 (de-flake), Task 11 (close).
 - **v0.19 · 2026-11-17.** Task 5 merged → `dd0e1ea`, closing row 2.7: the four flaky tests were fixture races (two non-atomic writes, a SIGTERM handler registered late) and a default time budget; no product change. `scripts/repeat-tests.sh` gives 100-run proofs and fails closed when a pattern matches no test. Left in Phase 2: Task 6 (restore), Task 11 (close).
+- **v0.20 · 2026-11-17.** Finding F3 (Task 6 build) is placed as Phase 3 row 3.0 (ruling R34): Cursor can echo a stale copy of `globalState` over a newer write, which can revert any Pitwall record. Phase 2 fixes it only for terminal PID records (R33a). R34 also accepts that Claude's chat panel can't be re-shown without focus after a background retitle (Phase 4 revisit).
