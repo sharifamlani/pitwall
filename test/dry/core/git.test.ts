@@ -4,7 +4,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { GitService, worktreeId } from '../../../src/core/services/GitService';
+import { GitService, StartQueue, worktreeId } from '../../../src/core/services/GitService';
 import { tempDir } from '../support';
 
 function git(cwd: string, ...args: string[]): string {
@@ -79,6 +79,41 @@ test('the asynchronous worktree listing gives what the synchronous one does, wit
     assert.ok(pending instanceof Promise, 'a promise, so the caller never waits on git');
     assert.deepEqual(await pending, service.listRepositoryWorktrees(rootPath, repoId), rootPath);
   }
+});
+
+test('git listings take turns; an urgent one, or one expedited while it waits, starts at once', async () => {
+  const queue = new StartQueue(1);
+  const started: string[] = [];
+  const turn = (key: string, urgent = false) =>
+    queue.acquire(key, urgent).then((release) => {
+      started.push(key);
+      return release;
+    });
+  const flushAll = async () => {
+    for (let i = 0; i < 3; i++) await new Promise((resolve) => setImmediate(resolve));
+  };
+
+  const releaseA = await turn('a');
+  const b = turn('b');
+  const c = turn('c');
+  await flushAll();
+  assert.deepEqual(started, ['a'], 'b and c wait for a turn');
+
+  queue.expedite('c');
+  await flushAll();
+  assert.deepEqual(started, ['a', 'c'], 'c, expedited, jumps the queue');
+  const releaseD = await turn('d', true);
+  assert.deepEqual(started, ['a', 'c', 'd'], 'an urgent turn never waits');
+
+  releaseA();
+  releaseD();
+  await flushAll();
+  assert.deepEqual(started, ['a', 'c', 'd'], 'b still waits while c runs');
+  (await c)();
+  await flushAll();
+  assert.deepEqual(started, ['a', 'c', 'd', 'b'], 'and starts when a turn frees');
+  (await b)();
+  queue.expedite('nobody');
 });
 
 test('change lists classify every status, including renames and non-ASCII names', (t) => {

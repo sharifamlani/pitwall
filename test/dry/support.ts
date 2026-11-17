@@ -100,6 +100,8 @@ interface StubControls {
   /** Context keys the extension set with `setContext`, by key. */
   __contextKeys: Map<string, unknown>;
   __setTreeViewsVisible(visible: boolean): void;
+  /** A visible tree view created from now on is first drawn this long after it is created. */
+  __setTreeViewFirstRenderDelay(ms: number): void;
   workspace: { workspaceFolders: { uri: { fsPath: string } }[] };
   window: {
     terminals: FakeTerminal[];

@@ -434,6 +434,7 @@ test('worktree lookups never wait on git and list each repository at most once',
   // the lookup starts the listing instead of waiting for it.
   assert.equal(tree.getWorktreeById('wt-b'), undefined);
   assert.equal(tree.findWorktreeByPath('/work/a')?.isMain, true);
+  await waitFor(() => tree.getWorktreeById('wt-b'), 'the background listing');
   await tree.getChildren();
   assert.equal(tree.getWorktreeById('wt-b')?.path, '/work/b');
   assert.equal(tree.getWorktreeById('wt-b')?.path, '/work/b');
@@ -474,6 +475,108 @@ test('the first rows come from the stored worktree listing while git lists again
   const [second] = await tree.getChildren();
   assert.equal(second.description, '0 sessions');
   assert.deepEqual(storage.getWorktreeSnapshot(repo.id), { isGit: true, worktrees: [main] }, 'kept for the next start');
+});
+
+/** A tree whose git listings wait until the test answers each one, in the order they were asked. */
+function heldListings(t: { after(fn: () => void): void }, storage: ReturnType<typeof makeStorage>) {
+  const calls: { repoId: string; urgent: boolean; answer: (listing: RepositoryWorktrees) => void }[] = [];
+  const tree = new WorkspacesTreeProvider(
+    storage,
+    {
+      listRepositoryWorktreesAsync: (_rootPath: string, repoId: string, options: { urgent?: boolean } = {}) =>
+        new Promise<RepositoryWorktrees>((answer) => calls.push({ repoId, urgent: options.urgent === true, answer })),
+      expediteWorktreeListing: () => undefined,
+      getAheadBehind: () => null,
+    } as never,
+    terminals as never,
+    new HarnessRegistry([fakeAdapter('claude')]),
+    vscode.Uri.file('/extension')
+  );
+  t.after(() => tree.dispose());
+  const changes: unknown[] = [];
+  tree.onDidChangeTreeData((change) => changes.push(change));
+  return { tree, calls, changes };
+}
+
+/** A git repository's listing: its main worktree and the linked ones. */
+function gitListing(...worktrees: Worktree[]): RepositoryWorktrees {
+  return { isGit: true, worktrees };
+}
+
+test('with no stored listing and git still listing, the first render shows every stored repo at once (E16)', async (t) => {
+  const storage = makeStorage();
+  const app = storage.addRepository('app', '/work/app');
+  storage.addRepository('notes', '/work/notes');
+  const linked = worktreeRecord({ id: 'wt-fiu', repoId: app.id, name: 'feat/fiu', branch: 'feat/fiu', path: '/work/app-fiu', isMain: false });
+  storage.createChat(linked.id, 'claude', 'Worktree chat', { harnessSessionId: 'fiu' });
+  const { tree, calls, changes } = heldListings(t, storage);
+
+  const first = await Promise.race([
+    tree.getChildren(),
+    new Promise<'waiting on git'>((resolve) => setTimeout(() => resolve('waiting on git'), 500)),
+  ]);
+  assert.notEqual(first, 'waiting on git', 'the first render never waits for a git listing');
+  assert.deepEqual(
+    (first as WorkspaceTreeItem[]).map((row) => row.label).sort(),
+    ['app', 'notes'],
+    'every stored repo, each root standing in as its main worktree'
+  );
+
+  // The listings land: the chat on the linked worktree joins its repo's row.
+  await waitFor(() => calls.length === 2, 'both listings in the background');
+  const main = worktreeRecord({ id: 'wt-app', repoId: app.id, path: '/work/app' });
+  calls.find((call) => call.repoId === app.id)!.answer(gitListing(main, linked));
+  await waitFor(() => changes.length > 0, 'a redraw once git answers');
+  const rows = await tree.getChildren();
+  assert.equal(rows.find((row) => row.label === 'app')?.description, '1 session');
+});
+
+test("a lookup that misses before a repository's first listing waits for it, ahead of the queue (B1)", async (t) => {
+  const storage = makeStorage();
+  const app = storage.addRepository('app', '/work/app');
+  const main = worktreeRecord({ id: 'wt-app', repoId: app.id, path: '/work/app' });
+  const linked = worktreeRecord({ id: 'wt-fiu', repoId: app.id, name: 'feat/fiu', path: '/work/app-fiu', isMain: false });
+  const { tree, calls } = heldListings(t, storage);
+
+  assert.equal(tree.getWorktreeById('wt-fiu'), undefined, 'the stand-in knows only the main worktree');
+  const lookup = tree.getWorktreeByIdAsync('wt-fiu');
+  await waitFor(() => calls.some((call) => call.urgent), 'an urgent listing for the lookup');
+  calls.forEach((call) => call.answer(gitListing(main, linked)));
+  assert.equal((await lookup)?.path, '/work/app-fiu', 'the miss is answered from the listing');
+
+  const asked = calls.length;
+  assert.equal(await tree.getWorktreeByIdAsync('wt-gone'), undefined, 'a worktree that no listing has is not found');
+  assert.equal(calls.length, asked, 'without listing a listed repository again');
+  assert.equal((await tree.findWorktreeByPathAsync('/work/app-fiu'))?.id, 'wt-fiu', 'paths resolve the same way');
+});
+
+test('a listing that started before a hard refresh never overwrites the one after it', async (t) => {
+  const storage = makeStorage();
+  const app = storage.addRepository('app', '/work/app');
+  const main = worktreeRecord({ id: 'wt-app', repoId: app.id, path: '/work/app' });
+  const linked = worktreeRecord({ id: 'wt-fiu', repoId: app.id, name: 'feat/fiu', path: '/work/app-fiu', isMain: false });
+  storage.createChat(linked.id, 'claude', 'Worktree chat', { harnessSessionId: 'fiu' });
+  const { tree, calls, changes } = heldListings(t, storage);
+
+  await tree.getChildren();
+  await waitFor(() => calls.length === 1, 'listing A');
+  const listingA = calls[0];
+
+  // The linked worktree is removed, then the list is refreshed: listing B.
+  tree.refresh();
+  await waitFor(() => changes.length > 0, 'the hard refresh');
+  await tree.getChildren();
+  await waitFor(() => calls.length === 2, 'listing B');
+  calls[1].answer(gitListing(main));
+  await waitFor(() => storage.getWorktreeSnapshot(app.id), 'listing B to land');
+
+  // A, which still saw the linked worktree, answers last.
+  listingA.answer(gitListing(main, linked));
+  for (let i = 0; i < 5; i++) await flush();
+  assert.equal(tree.getWorktreeById('wt-fiu'), undefined, 'the removed worktree stays gone');
+  assert.deepEqual(storage.getWorktreeSnapshot(app.id), gitListing(main), 'the stored listing is B');
+  const [row] = await tree.getChildren();
+  assert.equal(row.description, '0 sessions', 'the rows show B');
 });
 
 test('a repo row stands for its main worktree; a plain folder follows git init and removal through its watcher', async (t) => {

@@ -15,7 +15,7 @@ import { worktreeId } from '../../../src/core/services/GitService';
 import { encodeClaudeProjectPath } from '../../../src/harnesses/claude/paths';
 import { disposeOperationLog } from '../../../src/core/services/OperationLog';
 import { PROCESS_ID_TIMEOUT_MS } from '../../../src/core/services/terminalEvents';
-import { chatRecord, flush, makeStorage, memento, setEnv, stub, tempDir, waitFor } from '../support';
+import { chatRecord, flush, makeStorage, memento, setEnv, shownMessages, stub, tempDir, waitFor } from '../support';
 
 beforeEach(() => stub.__reset());
 
@@ -343,12 +343,19 @@ function requestRows(): Promise<ListRow[]> {
 
 test('activate does not wait for the session scan', async (t) => {
   stub.__setTreeViewsVisible(true);
+  // The workbench is slow to ask for the rows.
+  stub.__setTreeViewFirstRenderDelay(1_000);
   const lab = labFolder(t);
   const f = await seededActivation(t, [], {}, [lab.repository]);
   writeTranscript(f.claudeDir, lab.repository.rootPath, 'scan-me');
   const io = watchStartupIo(t, { transcripts: true });
 
   await f.start();
+  // The scan waits for the list's first render, however long the workbench
+  // takes to ask for it.
+  stub.__treeViews.find((candidate) => candidate.id === 'pitwall.workspacesView')!.__renderDelayMs = 1_000;
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(io.heldCount(), 0, 'no transcript is read before the first render');
   const rows = await requestRows();
   assert.deepEqual(rows.map((row) => row.label), ['lab'], 'the stored repo renders');
   assert.ok(
@@ -396,13 +403,12 @@ test('stored repos render before discovery finishes', async (t) => {
 
   await f.start();
   const rows = await requestRows();
-  assert.deepEqual(
-    rows.map((row) => [row.label, row.description]).sort(),
-    [
-      ['app', '1 session'],
-      ['notes', '0 sessions'],
-    ],
-    'every stored repo, with its stored sessions from every worktree'
+  assert.deepEqual(rows.map((row) => row.label).sort(), ['app', 'notes'], 'every stored repo, before git has listed any');
+  // The listings land in the background and the rows follow, with the
+  // stored sessions from every worktree.
+  await waitFor(
+    async () => (await requestRows()).find((row) => row.label === 'app')?.description === '1 session',
+    "the linked worktree's session once git has listed it"
   );
   assert.notEqual(stub.__contextKeys.get('pitwall.scanned'), true, 'discovery has not finished');
   assert.deepEqual(io.syncGit, [], 'no git call blocked activation or the render');
@@ -464,4 +470,60 @@ test('activate and first-render diagnostics go to the Pitwall Operations channel
   assert.equal(operations().filter((line) => line === '[Pitwall] first render').length, 1, 'the first render is logged once');
   assert.ok(operations().indexOf('[Pitwall] activate') < operations().indexOf('[Pitwall] first render'), 'in order');
   assert.ok(!logged.some((line) => line === '[Pitwall] activate' || line === '[Pitwall] first render'), 'and not to console.log');
+});
+
+// First start after upgrading (B1): no stored worktree listing yet, so the
+// list draws each root as its main worktree until git answers. A chat on a
+// linked worktree must still resolve, by waiting for its repository's listing.
+
+/** A git repository with a linked worktree, stored as a repo with one chat on the linked worktree and no stored listing. */
+async function linkedWorktreeChat(t: { after(fn: () => unknown): void }, pids: Record<string, number> = {}) {
+  const scratch = tempDir(t);
+  const appPath = path.join(scratch, 'app');
+  const linkedPath = path.join(scratch, 'app-fiu');
+  fs.mkdirSync(appPath);
+  execFileSync('git', ['init', '-q', '-b', 'main', appPath]);
+  execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd: appPath });
+  execFileSync('git', ['worktree', 'add', '-q', '-b', 'feat/fiu', linkedPath], { cwd: appPath });
+  const app = { id: 'repo-app', name: 'app', rootPath: appPath } as Repository;
+  const chat: Partial<ChatSession> = {
+    id: 'f1u00000-chat',
+    name: 'Worktree chat',
+    harnessSessionId: 'fiu',
+    worktreeId: worktreeId(app.id, linkedPath),
+    status: 'idle',
+    createdAt: Date.now(),
+    lastAccessedAt: Date.now(),
+  };
+  const f = await seededActivation(t, [chat], pids, [app]);
+  writeTranscript(f.claudeDir, linkedPath, 'fiu');
+  return { f, chat: chatRecord(chat), linkedPath };
+}
+
+test('a chat on a linked worktree opens on the first click of a first start, before git has listed it (B1)', async (t) => {
+  const { f, chat, linkedPath } = await linkedWorktreeChat(t);
+  await f.start();
+
+  await vscode.commands.executeCommand('pitwall.openChat', { itemType: 'chat', data: chat });
+  assert.ok(!shownMessages().includes('Could not find worktree for this session.'), `no error (shown: ${shownMessages().join(' | ')})`);
+  const terminal = await waitFor(
+    () =>
+      stub.window.terminals.find(
+        (candidate) => candidate.options.cwd !== undefined && path.basename(String(candidate.options.cwd)) === path.basename(linkedPath)
+      ),
+    "the chat's terminal in its linked worktree"
+  );
+  assert.ok(terminal, 'the chat opened');
+});
+
+test('a revived tab of a chat on a linked worktree is resumed on the first reload after upgrading (B1)', async (t) => {
+  const { f, linkedPath } = await linkedWorktreeChat(t, { 'f1u00000-chat': 7701 });
+  // A quit revived the tab as a new shell (its PID is not the recorded one).
+  const tab = stub.window.createTerminal({ name: 'Pitwall: Worktree chat [f1u000]', __pid: 8701 });
+  await f.start();
+
+  await waitFor(() => tab.sent.length > 0, 'the resume line in the revived tab', 5_000);
+  assert.equal(tab.sent.length, 1);
+  assert.ok(tab.sent[0].includes('--resume fiu'), tab.sent[0]);
+  assert.ok(tab.sent[0].includes(path.basename(linkedPath)), `resumed in the linked worktree: ${tab.sent[0]}`);
 });
