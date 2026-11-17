@@ -4,7 +4,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { GitService } from '../../../src/core/services/GitService';
+import { GitService, worktreeId } from '../../../src/core/services/GitService';
 import { tempDir } from '../support';
 
 function git(cwd: string, ...args: string[]): string {
@@ -153,4 +153,16 @@ test('force removal only accepts a registered worktree', (t) => {
   const worktree = path.join(scratch, 'worktree');
   assert.ok(service.createWorktreeWithNewBranch(root, 'safety-branch', worktree));
   assert.equal(isSafe(worktree), true);
+});
+
+test('worktree paths from git use native separators and keep their ids', (t) => {
+  const { scratch, root } = makeRepo(t);
+  git(root, 'worktree', 'add', '-q', '-b', 'linked', path.join(scratch, 'linked'));
+  const service = new GitService();
+  const paths = service.listWorktrees(root, 'repo-1').map((w) => w.path);
+  assert.deepEqual(paths, [root, path.join(scratch, 'linked')]);
+  for (const p of paths) {
+    assert.equal(p, path.normalize(p));
+  }
+  assert.equal(worktreeId('repo-1', root.replace(/[\\]/g, '/')), worktreeId('repo-1', root));
 });
