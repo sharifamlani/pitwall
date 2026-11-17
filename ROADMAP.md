@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.13 · 2026-11-17
+> v0.14 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 2 — Windows parity
-- **Current step:** Phase 2: Tasks 1, 2, 3, 7 merged (rows 2.1, 2.8 ✅; 2.2 partial). In QA: #7 (Task 8, fix round), #12 (Task 10), #13 (Task 9). Building: Task 6.
+- **Current step:** Phase 2: Tasks 1, 2, 3, 7, 9, 10 merged (rows 2.1, 2.4, 2.5, 2.8 ✅; 2.2, 2.12 partial). In QA: #7 (Task 8). Building: Task 6, Task 4.
 - **Last update:** 2026-11-17
-- **Next action:** merge QA-approved #7/#12/#13 and Task 6 → Task 4 (Windows fake CLIs) → Task 5 (de-flake) → Task 11 (close, v0.3.0).
+- **Next action:** merge #7, Task 6, Task 4 → Task 5 (de-flake; flakes now reach CI) → Task 11 (close, v0.3.0).
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -154,15 +154,15 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 2.1 | Fix every "real bug" in the triage, each with a failing test first | ✅ (triage rows 2, 9–12; reopens if Task 4 surfaces a Claude-path bug) | ✅ | 2026-11-17 · PR #8 `daa68fa` → merge `704948f` (rows 9–12) · PR #10 `cece25c` → merge `8a1085f` (row 2) | Phase 1 triage |
 | 2.2 | Make POSIX-assumption tests portable; mark env-limit tests (e.g. symlink EPERM) as skips with a reason | ~ rows 1, 3–7 ✅ (Task 3); rows 13–25, 27–29 open (Task 4) | ✅ | 2026-11-17 · PR #11 `0a67e7f` → merge `23623d2` | Phase 1 triage |
 | 2.3 | Windows CI job runs `npm test` | ⏸ | ⏸ | — | D8 |
-| 2.4 | Script launches of Cursor clear `ELECTRON_RUN_AS_NODE` (inherited from the extension host) | ⏸ | ⏸ | — | tests doc side notes |
-| 2.5 | (Reviewer: looks already handled; add a regression test and close) Find Session with an off-enum stored setting (e.g. `pitwall.sessionSearch.harness: "codex"`) falls back to the first enabled harness instead of throwing (QA PR #5 note) | ⏸ | ⏸ | — | D9 |
+| 2.4 | Script launches of Cursor clear `ELECTRON_RUN_AS_NODE` (inherited from the extension host) | ✅ | ✅ | 2026-11-17 · PR #12 `61dd65e` → merge `0095508` | tests doc side notes |
+| 2.5 | (Reviewer: looks already handled; add a regression test and close) Find Session with an off-enum stored setting (e.g. `pitwall.sessionSearch.harness: "codex"`) falls back to the first enabled harness instead of throwing (QA PR #5 note) | ✅ (pinned: already fixed; regression test added) | ✅ | 2026-11-17 · PR #13 `36efa55` → merge `0d520bb` | D9 |
 | 2.6 | After a Cursor restart, a restored chat terminal whose session never wrote a transcript is orphaned: "Remove from Pitwall" leaves it open although the dialog says terminals close (testing UJ run 5; inherited) — re-adopt or close restored tabs | ⏸ | ⏸ | — | testing UJ run 5 |
 | 2.7 | De-flake timing tests seen under load: "stopping an opencode snapshot ends the session listing…", "the opencode snapshot stops at its byte budget…", "server errors keep their JSON-RPC code, and a hung request times out", and (found in wave A) "stopping a search ends the agent and everything it started, and keeps nothing" (`Unexpected end of JSON input`: a JSON file read mid-write) | ⏸ | ✅ | Phase 2 plan Task 5 | R9, QA PR #6, QA wave A |
 | 2.8 | `build-manifest.mjs`: fail on duplicate command ids, setting keys or keybindings between core and harness fragments (final review I2) | ✅ | ✅ | 2026-11-17 · PR #9 `2a5bef8` → merge `1830558` | final review |
 | 2.9 | `package.json` `files` allowlist so any `vsce package` (not only verify.sh) ships only out/, resources/, the manifest and licence docs; must land before the first public `.vsix` (final review I3) | ⏸ | ⏸ | — | final review |
 | 2.10 | CI runs the privacy gate, gitleaks and the vsix allowlist check (final review I4) | ⏸ | ⏸ | — | final review |
 | 2.11 | Windows quit/restore with a live chat: ~4 s activation wait, revived tab not resumed, row click opens a duplicate tab, reload then loses the duplicate (testing UJ run 6) | ⏸ | ⏸ | — | testing UJ run 6 |
-| 2.12 | 9 Minor findings from the Phase 1 final review (`docs/progress_reports/phase1-final-review.md`) and the "No tree item with id" log line after reload | ~ M4 ✅ (PR #9 → `1830558`); M1–M3, M5–M9 and the log line open | ✅ | Phase 2 plan Tasks 7–10 | final review, UJ run 6 |
+| 2.12 | 9 Minor findings from the Phase 1 final review (`docs/progress_reports/phase1-final-review.md`) and the "No tree item with id" log line after reload | ~ M4 ✅ (PR #9 → `1830558`); M1–M3, M5 ✅ (PR #13 → `0d520bb`); M9 + log-line fix merged (PR #12 → `0095508`), log line pending live check; M6–M8 in PR #7 | ✅ | Phase 2 plan Tasks 7–10 | final review, UJ run 6 |
 | 2.13 | New-chat launch with a custom full-path Claude command (`C:\...\claude.exe`) fails in PowerShell (a single-quoted path needs the call operator `&`); finding F1 from the Phase 2 plan | ⏸ | ✅ | Phase 2 plan Task 6 | Phase 2 plan F1 |
 
 ### Phase 3 — Sidebar v1: repos and sessions
@@ -301,3 +301,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.11 · 2026-11-17.** Phase 2 plan approved by QA after two pre-flight rounds (fixes `c0dd3a5`, N1 `73ea80a`/`298f44d`). Wave A: Task 1 (Windows worktree paths, triage rows 9–12) merged, PR #8 → `704948f`; row 2.1 partial until Task 2 (PR #10) merges. Ruling R25: row 2 root cause was TTL expiry re-creating the window as "restored", not an in-flight check.
 - **v0.12 · 2026-11-17.** Task 2 (triage row 2, ruling R25) merged → `8a1085f`, closing row 2.1. Task 7 (manifest refuses duplicates; I2 + M4) merged → `1830558`, closing row 2.8. QA found a fourth flaky test ("stopping a search ends the agent and everything it started, and keeps nothing", a JSON file read mid-write); added to row 2.7 and plan Task 5.
 - **v0.13 · 2026-11-17.** Task 3 (POSIX-assumption tests portable; triage rows 1, 3–7) merged → `23623d2`; row 2.2 partial until Task 4. Windows failures on main: 1 (row 8, Task 6). UJ run 7: W1 + 4 worktree negatives PASS on Windows.
+- **v0.14 · 2026-11-17.** Task 10 (Electron-safe launches, settled reveals, Phase 1 doc refresh) merged → `0095508`, closing row 2.4. Task 9 (enabled.json validation, disabled-harness searches kept, transitive architecture test, 2.5 pinned) merged → `0d520bb`, closing row 2.5. Windows failures on main: 1 (row 8). The 2.7 timing flakes now fail Linux runs often under load (main CI red once at `23623d2`).
