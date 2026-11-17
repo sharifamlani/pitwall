@@ -46,6 +46,29 @@ Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pit
 | **Pitwall: Import Existing Sessions…** | Add sessions the agents already hold for a worktree |
 | **Pitwall: Starred Sessions…** | Pick one of your starred sessions to open |
 | **Pitwall: Go to Next Session That Needs You** | Open the session that has waited longest since it finished or asked you something |
+| **Pitwall: Go to the Session Waiting Longest** | The same, on `Ctrl+Alt+0` and `Ctrl+Alt+N` |
+| **Pitwall: Go to Repo 1** | Reveal and select repo 1 in the list; again opens its next session (key only) |
+| **Pitwall: Go to Repo 2** | Reveal and select repo 2 in the list; again opens its next session (key only) |
+| **Pitwall: Go to Repo 3** | Reveal and select repo 3 in the list; again opens its next session (key only) |
+| **Pitwall: Go to Repo 4** | Reveal and select repo 4 in the list; again opens its next session (key only) |
+| **Pitwall: Go to Repo 5** | Reveal and select repo 5 in the list; again opens its next session (key only) |
+| **Pitwall: Go to Repo 6** | Reveal and select repo 6 in the list; again opens its next session (key only) |
+| **Pitwall: Go to Repo 7** | Reveal and select repo 7 in the list; again opens its next session (key only) |
+| **Pitwall: Go to Repo 8** | Reveal and select repo 8 in the list; again opens its next session (key only) |
+| **Pitwall: Go to Repo 9** | Reveal and select repo 9 in the list; again opens its next session (key only) |
+| **Pitwall: Open Repo 1 in Its Window** | Open repo 1 in a window of its own (key only) |
+| **Pitwall: Open Repo 2 in Its Window** | Open repo 2 in a window of its own (key only) |
+| **Pitwall: Open Repo 3 in Its Window** | Open repo 3 in a window of its own (key only) |
+| **Pitwall: Open Repo 4 in Its Window** | Open repo 4 in a window of its own (key only) |
+| **Pitwall: Open Repo 5 in Its Window** | Open repo 5 in a window of its own (key only) |
+| **Pitwall: Open Repo 6 in Its Window** | Open repo 6 in a window of its own (key only) |
+| **Pitwall: Open Repo 7 in Its Window** | Open repo 7 in a window of its own (key only) |
+| **Pitwall: Open Repo 8 in Its Window** | Open repo 8 in a window of its own (key only) |
+| **Pitwall: Open Repo 9 in Its Window** | Open repo 9 in a window of its own (key only) |
+| **Pitwall: Open Current Repo in Its Window** | Open the selected repo in a window of its own |
+| **Pitwall: Show or Hide Files** | Show the FILES panel, or hide it when it is shown |
+| **Pitwall: Move Down and Open** | Move one row down the list and open it (`Ctrl+Down`; key only) |
+| **Pitwall: Move Up and Open** | Move one row up the list and open it (`Ctrl+Up`; key only) |
 
 ### Find Session
 

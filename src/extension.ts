@@ -25,6 +25,7 @@ import { registerWorktreeRowCommands } from './core/commands/worktree-rows';
 import { registerChatCommands } from './core/commands/chat';
 import { registerSessionImportCommands } from './core/commands/sessionImport';
 import { registerFileCommands } from './core/commands/files';
+import { registerNavigationCommands } from './core/commands/navigation';
 import { SESSION_SEARCH_VIEW, registerSessionSearchCommands } from './core/commands/sessionSearch';
 import { commandRegistrar } from './core/commands/common';
 import { debounce } from './core/utils/debounce';
@@ -338,6 +339,8 @@ export async function activate(context: vscode.ExtensionContext) {
     const [row] = filesTreeView.selection;
     return row instanceof FileTreeItem ? row : undefined;
   });
+
+  registerNavigationCommands(context, { workspacesProvider, workspacesTreeView, filesTreeView });
 
   // Each search runs in a short temp folder of its own, so its leftovers
   // never mix with a real project's sessions.

@@ -388,6 +388,124 @@
       "title": "Go to Next Session That Needs You",
       "icon": "$(bell-dot)",
       "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.goToRepo1",
+      "title": "Go to Repo 1",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.goToRepo2",
+      "title": "Go to Repo 2",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.goToRepo3",
+      "title": "Go to Repo 3",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.goToRepo4",
+      "title": "Go to Repo 4",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.goToRepo5",
+      "title": "Go to Repo 5",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.goToRepo6",
+      "title": "Go to Repo 6",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.goToRepo7",
+      "title": "Go to Repo 7",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.goToRepo8",
+      "title": "Go to Repo 8",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.goToRepo9",
+      "title": "Go to Repo 9",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.openRepoWindow1",
+      "title": "Open Repo 1 in Its Window",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.openRepoWindow2",
+      "title": "Open Repo 2 in Its Window",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.openRepoWindow3",
+      "title": "Open Repo 3 in Its Window",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.openRepoWindow4",
+      "title": "Open Repo 4 in Its Window",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.openRepoWindow5",
+      "title": "Open Repo 5 in Its Window",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.openRepoWindow6",
+      "title": "Open Repo 6 in Its Window",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.openRepoWindow7",
+      "title": "Open Repo 7 in Its Window",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.openRepoWindow8",
+      "title": "Open Repo 8 in Its Window",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.openRepoWindow9",
+      "title": "Open Repo 9 in Its Window",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.openLongestWaiting",
+      "title": "Go to the Session Waiting Longest",
+      "category": "Pitwall",
+      "icon": "$(bell-dot)"
+    },
+    {
+      "command": "pitwall.openCurrentRepoWindow",
+      "title": "Open Current Repo in Its Window",
+      "category": "Pitwall",
+      "icon": "$(multiple-windows)"
+    },
+    {
+      "command": "pitwall.toggleFiles",
+      "title": "Show or Hide Files",
+      "category": "Pitwall",
+      "icon": "$(files)"
+    },
+    {
+      "command": "pitwall.list.moveDownAndOpen",
+      "title": "Move Down and Open",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.list.moveUpAndOpen",
+      "title": "Move Up and Open",
+      "category": "Pitwall"
     }
   ],
   "submenus": [
@@ -404,7 +522,7 @@
   ],
   "keybindings": [
     {
-      "command": "pitwall.openNextSessionNeedingYou",
+      "command": "pitwall.openLongestWaiting",
       "key": "ctrl+alt+n",
       "mac": "ctrl+cmd+n"
     },
@@ -419,7 +537,7 @@
       "mac": "ctrl+cmd+enter"
     },
     {
-      "command": "pitwall.findSession",
+      "command": "pitwall.toggleFiles",
       "key": "ctrl+alt+f",
       "mac": "ctrl+cmd+f"
     },
@@ -427,6 +545,106 @@
       "command": "workbench.view.extension.pitwall",
       "key": "ctrl+alt+a",
       "mac": "ctrl+cmd+a"
+    },
+    {
+      "command": "pitwall.openLongestWaiting",
+      "key": "ctrl+alt+0",
+      "mac": "ctrl+cmd+0"
+    },
+    {
+      "command": "pitwall.goToRepo1",
+      "key": "ctrl+alt+1",
+      "mac": "ctrl+cmd+1"
+    },
+    {
+      "command": "pitwall.goToRepo2",
+      "key": "ctrl+alt+2",
+      "mac": "ctrl+cmd+2"
+    },
+    {
+      "command": "pitwall.goToRepo3",
+      "key": "ctrl+alt+3",
+      "mac": "ctrl+cmd+3"
+    },
+    {
+      "command": "pitwall.goToRepo4",
+      "key": "ctrl+alt+4",
+      "mac": "ctrl+cmd+4"
+    },
+    {
+      "command": "pitwall.goToRepo5",
+      "key": "ctrl+alt+5",
+      "mac": "ctrl+cmd+5"
+    },
+    {
+      "command": "pitwall.goToRepo6",
+      "key": "ctrl+alt+6",
+      "mac": "ctrl+cmd+6"
+    },
+    {
+      "command": "pitwall.goToRepo7",
+      "key": "ctrl+alt+7",
+      "mac": "ctrl+cmd+7"
+    },
+    {
+      "command": "pitwall.goToRepo8",
+      "key": "ctrl+alt+8",
+      "mac": "ctrl+cmd+8"
+    },
+    {
+      "command": "pitwall.goToRepo9",
+      "key": "ctrl+alt+9",
+      "mac": "ctrl+cmd+9"
+    },
+    {
+      "command": "pitwall.openRepoWindow1",
+      "key": "ctrl+alt+shift+1",
+      "mac": "ctrl+cmd+shift+1"
+    },
+    {
+      "command": "pitwall.openRepoWindow2",
+      "key": "ctrl+alt+shift+2",
+      "mac": "ctrl+cmd+shift+2"
+    },
+    {
+      "command": "pitwall.openRepoWindow3",
+      "key": "ctrl+alt+shift+3",
+      "mac": "ctrl+cmd+shift+3"
+    },
+    {
+      "command": "pitwall.openRepoWindow4",
+      "key": "ctrl+alt+shift+4",
+      "mac": "ctrl+cmd+shift+4"
+    },
+    {
+      "command": "pitwall.openRepoWindow5",
+      "key": "ctrl+alt+shift+5",
+      "mac": "ctrl+cmd+shift+5"
+    },
+    {
+      "command": "pitwall.openRepoWindow6",
+      "key": "ctrl+alt+shift+6",
+      "mac": "ctrl+cmd+shift+6"
+    },
+    {
+      "command": "pitwall.openRepoWindow7",
+      "key": "ctrl+alt+shift+7",
+      "mac": "ctrl+cmd+shift+7"
+    },
+    {
+      "command": "pitwall.openRepoWindow8",
+      "key": "ctrl+alt+shift+8",
+      "mac": "ctrl+cmd+shift+8"
+    },
+    {
+      "command": "pitwall.openRepoWindow9",
+      "key": "ctrl+alt+shift+9",
+      "mac": "ctrl+cmd+shift+9"
+    },
+    {
+      "command": "pitwall.openCurrentRepoWindow",
+      "key": "ctrl+alt+o",
+      "mac": "ctrl+cmd+o"
     },
     {
       "command": "pitwall.renameChat",
@@ -473,6 +691,16 @@
       "key": "ctrl+v",
       "mac": "cmd+v",
       "when": "focusedView == 'pitwall.filesView' && !inputFocus && pitwall.hasFileClipboard"
+    },
+    {
+      "command": "pitwall.list.moveDownAndOpen",
+      "key": "ctrl+down",
+      "when": "focusedView == 'pitwall.workspacesView' && !inputFocus"
+    },
+    {
+      "command": "pitwall.list.moveUpAndOpen",
+      "key": "ctrl+up",
+      "when": "focusedView == 'pitwall.workspacesView' && !inputFocus"
     }
   ],
   "configuration": [
@@ -1122,6 +1350,86 @@
       },
       {
         "command": "pitwall.openNeedsYouChat",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.goToRepo1",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.goToRepo2",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.goToRepo3",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.goToRepo4",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.goToRepo5",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.goToRepo6",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.goToRepo7",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.goToRepo8",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.goToRepo9",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openRepoWindow1",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openRepoWindow2",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openRepoWindow3",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openRepoWindow4",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openRepoWindow5",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openRepoWindow6",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openRepoWindow7",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openRepoWindow8",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openRepoWindow9",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.list.moveDownAndOpen",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.list.moveUpAndOpen",
         "when": "false"
       }
     ]
