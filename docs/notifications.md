@@ -63,7 +63,7 @@ Open **Pitwall Settings…** from the Pitwall `…` menu. Under **Notifications*
 
 Pitwall installs no hooks and does not edit any agent's configuration.
 
-- **Claude Code:** the end of the session transcript shows whether a turn is running, and `claude agents --json` reports a session that is waiting on you. A background subagent that is still running keeps the session marked as working.
+- **Claude Code:** the end of the session transcript shows whether a turn is running, and the session's live-status file in `~/.claude/sessions` reports a session that is waiting on you (`claude agents --json` when that file is missing). A background subagent that is still running keeps the session marked as working.
 - **Codex:** the session's rollout file records when a task starts, completes, or is aborted.
 - **opencode:** its API reports when a session last went idle.
 - **Pi:** the last entry in the session record shows whether the agent is mid-turn.

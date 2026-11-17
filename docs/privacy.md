@@ -17,7 +17,7 @@ To list and watch sessions, Pitwall reads what each agent already keeps on your 
 
 | Agent | What is read |
 | --- | --- |
-| Claude Code | Session transcripts under `~/.claude/projects/`, and the output of `claude agents --json` |
+| Claude Code | Session transcripts under `~/.claude/projects/`; the live-status files `~/.claude/sessions/*.json` (only those: the `.key` files in that folder are never opened, read or logged); and the output of `claude agents --json` when those files are missing |
 | Codex | Threads through a local `codex app-server`, and rollout files under `~/.codex/sessions/` |
 | opencode | Sessions through the `opencode` CLI and API. Its database is never opened |
 | Pi | Session records under `~/.pi/agent/sessions/` |

@@ -5,6 +5,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-24
 - Superseded in Phase 2 (R36, R40): the agents call runs every 4 s whenever any chat is open, independent of focus.
+- Amended by [0018](0018-live-status-from-sessions-file.md): live status and waiting reasons come from `~/.claude/sessions` first; this call is the per-session fallback.
 
 ## Context
 
