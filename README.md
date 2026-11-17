@@ -30,7 +30,7 @@ cd pitwall
 npm ci
 npm run compile
 mkdir -p dist
-npx @vscode/vsce package --out dist/
+npm run package -- --out dist/
 ```
 
 Then in Cursor or VS Code: **Extensions: Install from VSIX...** and pick `dist/pitwall-0.2.0.vsix`.

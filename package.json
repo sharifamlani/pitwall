@@ -1550,6 +1550,7 @@
     "compile": "node esbuild.js",
     "generate:icons": "node scripts/generate-harness-icons.mjs",
     "watch": "node esbuild.js --watch",
+    "package": "npx -y @vscode/vsce@3.2.1 package --allow-unused-files-pattern",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "npm run test:dry",
     "test:dry": "node test/dry/run.js",
