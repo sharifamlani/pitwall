@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.9.2 · 2026-11-16
+> v0.10 · 2026-11-16
 
 ---
 
 ## §0 You are here
 
-- **Current phase:** Phase 1 — Import Agntree (harness-modular, Claude-only)
-- **Current step:** 1.6 CI, package, install, evaluator, tag v0.2.0 (1.1–1.5 merged)
+- **Current phase:** Phase 2 — Windows parity
+- **Current step:** write the Phase 2 plan (rows 2.1–2.12) — autonomous build continuing
 - **Last update:** 2026-11-16
-- **Next action:** Autonomous build running (Sharif go, 2026-11-16): Phase 1 Task 1, the import, via subagent-driven development; QA → merge → testing flywheel per D39.
+- **Next action:** Phase 2 plan from the triage doc + final-review findings → QA → build → testing → post.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -130,7 +130,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 **Goal:** Agntree's code in this repo with its history and MIT credit, renamed to Pitwall, reorganized so each agent lives in its own folder, shipping with only Claude Code enabled. Behaviour otherwise unchanged.
 **Entry gate:** Phase 0 ✅ (`v0.1.0`); Sharif approves the plan.
 **Exit gate:** Evaluator scorecard E1–E12 all PASS; `.vsix` installs and activates in Cursor; tag `v0.2.0`.
-**Status:** ⏸ plan written, waiting on Sharif's review.
+**Status:** ✅ done · tag `v0.2.0` (2026-11-16).
 **Plan:** [2026-11-16-phase1-import-agntree.md](docs/superpowers/plans/2026-11-16-phase1-import-agntree.md)
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
@@ -140,7 +140,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 1.3 | Scripted rename `agntree` → `pitwall` (ids, package, docs); `version` → `0.2.0` | ✅ | — | 2026-11-16 · PR #3 `ee6e36a` → merge `f94f66f` (1612 replacements, idempotent; behaviour-neutral proven by reverse-map) | D5, D8 |
 | 1.4 | Reorganize into `src/core/` + `src/harnesses/<id>/` behind `HarnessModule` (moves only); architecture test | ✅ | — | 2026-11-16 · PR #4 `88ea364` → merge `85d14d7` (182 → 184 tests, 0 dropped by name; architecture test proven to catch violations) | D9 |
 | 1.5 | One switch `enabled.json = ["claude"]`; manifest fragments; disabled-agent records can't crash the tree | ✅ | — | 2026-11-16 · PR #5 `3b3d316` → merge `5caa2cb` (192 tests; 77 commands, 0 non-Claude; manifest split proven lossless; integration suite passes) | D9 |
-| 1.6 | CI (ubuntu + windows), package, install in Cursor, evaluator E1–E12, tag `v0.2.0` | ⏸ | ✅ | plan Task 6 | D8 |
+| 1.6 | CI (ubuntu + windows), package, install in Cursor, evaluator E1–E12, tag `v0.2.0` | ✅ | — | 2026-11-16 · PR #6 `d5355fb` → merge `d5b54ba`; independent evaluator E1–E11 PASS on a fresh clone; testing UJ run 6 PASS 14/14 (E8); final review 0 Critical; tag `v0.2.0` | D8 |
 
 ### Phase 2 — Windows parity
 **Goal:** The inherited code works on native Windows, the way it does on Linux.
@@ -155,9 +155,14 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 2.2 | Make POSIX-assumption tests portable; mark env-limit tests (e.g. symlink EPERM) as skips with a reason | ⏸ | ⏸ | — | Phase 1 triage |
 | 2.3 | Windows CI job runs `npm test` | ⏸ | ⏸ | — | D8 |
 | 2.4 | Script launches of Cursor clear `ELECTRON_RUN_AS_NODE` (inherited from the extension host) | ⏸ | ⏸ | — | tests doc side notes |
-| 2.5 | Find Session with an off-enum stored setting (e.g. `pitwall.sessionSearch.harness: "codex"`) falls back to the first enabled harness instead of throwing (QA PR #5 note) | ⏸ | ⏸ | — | D9 |
+| 2.5 | (Reviewer: looks already handled; add a regression test and close) Find Session with an off-enum stored setting (e.g. `pitwall.sessionSearch.harness: "codex"`) falls back to the first enabled harness instead of throwing (QA PR #5 note) | ⏸ | ⏸ | — | D9 |
 | 2.6 | After a Cursor restart, a restored chat terminal whose session never wrote a transcript is orphaned: "Remove from Pitwall" leaves it open although the dialog says terminals close (testing UJ run 5; inherited) — re-adopt or close restored tabs | ⏸ | ⏸ | — | testing UJ run 5 |
 | 2.7 | De-flake timing tests seen under load: "stopping an opencode snapshot ends the session listing…", "the opencode snapshot stops at its byte budget…", "server errors keep their JSON-RPC code, and a hung request times out" | ⏸ | ⏸ | — | R9, QA PR #6 |
+| 2.8 | `build-manifest.mjs`: fail on duplicate command ids, setting keys or keybindings between core and harness fragments (final review I2) | ⏸ | ⏸ | — | final review |
+| 2.9 | `package.json` `files` allowlist so any `vsce package` (not only verify.sh) ships only out/, resources/, the manifest and licence docs; must land before the first public `.vsix` (final review I3) | ⏸ | ⏸ | — | final review |
+| 2.10 | CI runs the privacy gate, gitleaks and the vsix allowlist check (final review I4) | ⏸ | ⏸ | — | final review |
+| 2.11 | Windows quit/restore with a live chat: ~4 s activation wait, revived tab not resumed, row click opens a duplicate tab, reload then loses the duplicate (testing UJ run 6) | ⏸ | ⏸ | — | testing UJ run 6 |
+| 2.12 | 9 Minor findings from the Phase 1 final review (`docs/progress_reports/phase1-final-review.md`) and the "No tree item with id" log line after reload | ⏸ | ⏸ | — | final review, UJ run 6 |
 
 ### Phase 3 — Sidebar v1: repos and sessions
 **Goal:** The Pitwall list as designed on the canvas: every repo and chat from one window, sorted by who needs you.
@@ -290,3 +295,5 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.9.2 · 2026-11-16.** Sharif: go for the autonomous build. D39 updated: posts go live on LinkedIn **and X** after Sharif approves each draft via the lead; kickoff post added to the series. Pitwall gets installed into Sharif's Cursor but windows are never reloaded by us.
 - **2026-11-16 · Kickoff post live** (problem only, no product name; Sharif approved): [LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7528288767141552128/) · [X](https://x.com/SharifAmlani/status/2122523753594978617). Later posts reply in the same X thread.
 - **2026-11-16 · Phase 1 post live** (Sharif approved): [LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7528304693920538624/) · [X reply 1](https://x.com/SharifAmlani/status/2122539952831607019). The repo-link posts wait for the Task 6 README refresh.
+- **2026-11-16 · Repo-link posts live:** [LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7528309644751077376/) · [X reply 2](https://x.com/SharifAmlani/status/2122544270699888801).
+- **v0.10 · 2026-11-16 · Phase 1 closed, tag `v0.2.0`.** Agntree imported with history (credit kept), renamed to Pitwall 0.2.0, reorganized into `src/core/` + `src/harnesses/<id>/`, Claude-only via `enabled.json` + generated manifest, CI on Linux + Windows, privacy-hardened packaging, honest public README. 6 PRs, each QA-approved (≤1 fix round each); independent evaluator E1–E11 PASS on a fresh clone; testing agent 6 live walks, last 14/14; final review 0 Critical / 4 Important (1 fixed, 3 → Phase 2) / 9 Minor. Found along the way: a likely Windows worktree-path bug, two restore bugs, three flaky timing tests (all Phase 2). Posts: kickoff, Phase 1, repo link (LinkedIn + X). Phase 2 unblocked.
