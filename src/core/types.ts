@@ -12,6 +12,17 @@ export interface Repository {
    * folder revives its id, which every worktree id (and chat) derives from.
    */
   hidden?: boolean;
+  /**
+   * How the root got here: added by hand, or found from the agent's session
+   * history (P1). Absent on records written before Phase 3 (manual).
+   */
+  origin?: 'manual' | 'discovered';
+  /**
+   * When this window added the record. Two windows can add one root at once;
+   * the merge keeps the oldest record (P17). Absent on older records, which
+   * count as oldest.
+   */
+  addedAt?: number;
 }
 
 export interface Worktree {
@@ -80,6 +91,11 @@ export interface ChatSession {
   autoImported?: boolean;
   /** The user renamed this chat, so automatic naming must leave it alone. */
   customName?: boolean;
+  /**
+   * The "seen" baseline (P16): a turn that ended after it shows as finished.
+   * Set at creation; records written before Phase 3 get it on first load.
+   */
+  seenAt?: number;
   createdAt: number;
   lastAccessedAt: number;
   status: 'active' | 'idle' | 'closed';
@@ -130,6 +146,8 @@ export const STORAGE_KEYS = {
    * harness they belong to. Used to drop a choice when the harness changes.
    */
   SESSION_SEARCH_ENGINE_CHOICE: 'pitwall.sessionSearchEngineChoice',
+  /** Repository roots the user dismissed, with when, by root path (P1). */
+  DISMISSED_REPOS: 'pitwall.dismissedRepos',
 } as const;
 
 /** The harness, model, and effort that run a session search. */
