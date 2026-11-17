@@ -281,6 +281,12 @@ const tabChangeListeners = new Set();
 const tabGroupChangeListeners = new Set();
 const configurationChangeListeners = new Set();
 let activeTerminal;
+/**
+ * The terminal holding keyboard focus, if any. The workbench's rename command
+ * renames this terminal before the active one (`TerminalService.activeInstance`
+ * returns a focused host terminal first), and `show(true)` leaves it alone.
+ */
+let focusedTerminal;
 let activeTextEditor;
 const shownDocuments = [];
 let nextTerminalPid = 4100;
@@ -457,6 +463,18 @@ module.exports = {
         }
       }
     },
+    /** Test helper: the user clicks into a terminal: it takes keyboard focus and becomes active. */
+    __focusTerminal: (terminal) => {
+      focusedTerminal = terminal;
+      activeTerminal = terminal;
+      for (const listener of activeTerminalListeners) {
+        listener(terminal);
+      }
+    },
+    /** The terminal holding keyboard focus (see `focusedTerminal`). */
+    get __focusedTerminal() {
+      return focusedTerminal;
+    },
     __setActiveTerminal: (terminal) => {
       activeTerminal = terminal;
       for (const listener of activeTerminalListeners) {
@@ -489,9 +507,12 @@ module.exports = {
             listener({ terminal: this, execution: { commandLine: text } });
           }
         },
-        show() {
+        show(preserveFocus) {
           this.shown += 1;
           activeTerminal = this;
+          if (!preserveFocus) {
+            focusedTerminal = this;
+          }
           // An editor-area terminal takes the text editor's place in front.
           if (options.location === 2) {
             activeTextEditor = undefined;
@@ -505,6 +526,9 @@ module.exports = {
           const index = openTerminals.indexOf(this);
           if (index >= 0) {
             openTerminals.splice(index, 1);
+          }
+          if (focusedTerminal === this) {
+            focusedTerminal = undefined;
           }
           if (activeTerminal === this) {
             activeTerminal = undefined;
@@ -639,6 +663,7 @@ module.exports = {
     quickPickHandler = null;
     clipboardText = '';
     activeTerminal = undefined;
+    focusedTerminal = undefined;
     activeTextEditor = undefined;
     silentExecutionEvents = false;
     defaultPidDelayMs = undefined;

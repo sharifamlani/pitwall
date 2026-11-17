@@ -645,3 +645,120 @@ test('a background retitle brings back a custom or diff tab without focus; a web
   assert.equal(calls.length, before, 'nothing is reopened for a webview tab');
   assert.equal(stub.window.activeTerminal, webview.tab, 'the renamed terminal stays in front of it');
 });
+
+/**
+ * The workbench's rename, as the editor's own code runs it:
+ * `workbench.action.terminal.renameWithArg` renames
+ * `TerminalService.activeInstance`, which returns a terminal that holds
+ * keyboard focus first and the last active terminal only when none does.
+ * `show(true)` makes a tab active without moving focus, so with focus in
+ * another terminal the extension host's `activeTerminal` and the rename's
+ * target differ.
+ */
+function focusFirstRename() {
+  const renames: { name: string; target: FakeTerminal | undefined }[] = [];
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    const target = stub.window.__focusedTerminal ?? stub.window.activeTerminal;
+    renames.push({ name: arg.name, target });
+    if (target) target.name = arg.name;
+  });
+  return renames;
+}
+
+/** Terminals other than `owner` that carry a Pitwall title. */
+function pitwallTitledOthers(owner: FakeTerminal): string[] {
+  return stub.window.terminals.filter((t) => t !== owner && /^Pitwall: .*\[[a-f0-9]{6}\]$/.test(t.name)).map((t) => t.name);
+}
+
+test('a late title never lands on the user’s own terminal that holds keyboard focus (F-a)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab' }] });
+  const renames = focusFirstRename();
+  // Opened from its row; Windows PowerShell 5.1 integrates after openChat returns.
+  const tab = (await f.open('40de4f00-lab'))!;
+  // The user pastes the copied resume command into a panel terminal of their own.
+  const panel = stub.window.createTerminal({ name: 'powershell', location: vscode.TerminalLocation.Panel });
+  stub.window.__focusTerminal(panel);
+  const before = renames.length;
+  // The chat tab's slow command starts now, so its late title is applied.
+  stub.window.__integrateShell(tab);
+
+  await waitFor(() => renames.length > before, 'the late rename to run');
+  await waitFor(() => stub.window.activeTerminal === panel, 'the user’s terminal to be in front again');
+  assert.equal(panel.name, 'powershell', 'the user’s terminal keeps its own name');
+  assert.deepEqual(pitwallTitledOthers(tab), [], 'no other terminal carries the chat’s identity');
+});
+
+test('after a reload, adopting tabs never renames the tab that holds keyboard focus (R1(d))', async (t) => {
+  const f = setup(t, {
+    chats: [
+      { id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab', status: 'active' },
+      { id: '0ad61000-new', name: 'New Session', harnessSessionId: 'new', status: 'active' },
+    ],
+  });
+  await f.storage.rememberTerminalPid('40de4f00-lab', 82260);
+  await f.storage.rememberTerminalPid('0ad61000-new', 13740);
+  const lab = f.restoredTab('Pitwall: Lab ready [40de4f]', 82260);
+  const fresh = f.restoredTab('Pitwall: New Session [0ad610]', 13740);
+  // After the reload, keyboard focus is in Lab ready's tab while the window's
+  // last active terminal is New Session (shown without focus).
+  stub.window.__focusTerminal(lab);
+  stub.window.__setActiveTerminal(fresh);
+  const renames = focusFirstRename();
+
+  const restore = f.manager.beginRestoreSync(() => WORKTREE);
+  await restore.adopted;
+  await restore.complete;
+  await waitFor(() => renames.length > 0, 'an adoption rename to run');
+  await flush();
+  assert.ok(f.manager.isActive('40de4f00-lab') && f.manager.isActive('0ad61000-new'), 'both live tabs are adopted');
+  assert.equal(lab.name, 'Pitwall: Lab ready [40de4f]', 'Lab ready keeps its own title');
+  assert.equal(new Set(stub.window.terminals.map((t) => t.name)).size, 2, 'no two tabs share a title');
+});
+
+test('after a reload, a live tab whose PID arrives after the wait is still adopted, and a click focuses it (R1(d))', async (t) => {
+  const f = setup(t, { chats: [{ id: '40de4f00-lab', name: 'Lab ready', harnessSessionId: 'lab', status: 'active' }] });
+  await f.storage.rememberTerminalPid('40de4f00-lab', 82260);
+  // The surviving pty reports its PID after activation's bounded read gave up.
+  const lab = stub.window.createTerminal({
+    name: 'Pitwall: Lab ready [40de4f]',
+    __pid: 82260,
+    __pidDelayMs: PROCESS_ID_TIMEOUT_MS + 500,
+  });
+
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  await waitFor(() => f.manager.isActive('40de4f00-lab'), 'the late live tab to be adopted', PROCESS_ID_TIMEOUT_MS);
+  assert.equal(f.chat('40de4f00-lab').status, 'active', 'the row does not fall back to idle');
+  assert.equal(await f.open('40de4f00-lab'), lab, 'a click focuses the live tab');
+  assert.deepEqual([stub.window.terminals.length, lab.sent.length], [1, 0], 'no second tab, and the live agent is never typed into');
+});
+
+test('guard: a tab activated between the retitle’s show and its rename is never renamed (active-only rename)', async (t) => {
+  // The suspect in R37: something else becomes active after the queue shows
+  // the tab and before the rename runs. writeTitle re-checks the active tab
+  // in the same turn as the rename, so this passes before and after the fix.
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: '7a7a7a00-slow', name: 'Slow', harnessSessionId: 'slow' }] });
+  const renames: { name: string; target: unknown }[] = [];
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    renames.push({ name: arg.name, target: stub.window.activeTerminal });
+    if (stub.window.activeTerminal) stub.window.activeTerminal.name = arg.name;
+  });
+  const tab = (await f.open('7a7a7a00-slow'))!;
+  const other = f.restoredTab('the user’s shell', 9300);
+  stub.window.__setActiveTerminal(other);
+  // The moment the retitle shows the slow tab, another tab takes the front.
+  let stolen = false;
+  vscode.window.onDidChangeActiveTerminal((active) => {
+    if (active === (tab as unknown) && !stolen) {
+      stolen = true;
+      queueMicrotask(() => stub.window.__setActiveTerminal(other));
+    }
+  });
+  stub.window.__integrateShell(tab);
+  await waitFor(() => stolen, 'the retitle to show the slow tab');
+  await flush();
+  await flush();
+  assert.equal(other.name, 'the user’s shell');
+  assert.ok(renames.every((r) => r.target === tab));
+});

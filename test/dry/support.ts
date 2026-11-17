@@ -30,6 +30,7 @@ export interface FakeTerminal {
     __pid?: number;
     __pidDelayMs?: number;
     __exitStatus?: unknown;
+    location?: number;
   };
   sent: string[];
   shown: number;
@@ -91,6 +92,8 @@ interface StubControls {
     __fireDidOpenTerminal(terminal: unknown): void;
     __fireDidStartTerminalShellExecution(terminal: unknown, commandLine?: string): void;
     __setActiveTerminal(terminal: unknown): void;
+    __focusTerminal(terminal: unknown): void;
+    readonly __focusedTerminal: FakeTerminal | undefined;
     __setActiveTextEditor(editor: { document: { uri: unknown }; viewColumn?: number } | undefined): void;
     __integrateShell(terminal: unknown): void;
   };
