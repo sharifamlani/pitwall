@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.21 · 2026-11-17
+> v0.22 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 2 — Windows parity
-- **Current step:** Phase 2: all build tasks merged (Tasks 1–10, 12); Windows dry suite 0 fail for the first time. Next: Task 11 (Windows CI full suite, triage resolutions) → testing walk (Smoke 12) → independent evaluator → v0.3.0.
+- **Current step:** Phase 2: Task 11 Steps 1–3 merged (row 2.3 ✅; Windows CI runs the full suite and packages the .vsix). Open: row 2.14 reopened (live needs-you failure, root cause in progress); testing walk of Smoke 12 in progress.
 - **Last update:** 2026-11-17
-- **Next action:** Task 11.
+- **Next action:** rule on the needs-you root cause → fix PR → full Smoke 12 → independent evaluator → v0.3.0.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -153,7 +153,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 |---|---|---|---|---|---|
 | 2.1 | Fix every "real bug" in the triage, each with a failing test first | ✅ (triage rows 2, 9–12; reopens if Task 4 surfaces a Claude-path bug) | ✅ | 2026-11-17 · PR #8 `daa68fa` → merge `704948f` (rows 9–12) · PR #10 `cece25c` → merge `8a1085f` (row 2) | Phase 1 triage |
 | 2.2 | Make POSIX-assumption tests portable; mark env-limit tests (e.g. symlink EPERM) as skips with a reason | ✅ (rows 1, 3–7 Task 3; rows 13–25, 27–29 Task 4; row 26 and 8 dormant-opencode tests skip with reasons) | ✅ | 2026-11-17 · PR #11 `0a67e7f` → `23623d2` · PR #15 `5194a10` → `b4c85bb` | Phase 1 triage |
-| 2.3 | Windows CI job runs `npm test` | ⏸ | ⏸ | — | D8 |
+| 2.3 | Windows CI job runs `npm test` | ✅ (windows job runs the full suite, builds the .vsix via `npm run package` and checks the archive; R35) | ✅ | 2026-11-17 · PR #19 `b000545` → merge `f8ea023` | D8 |
 | 2.4 | Script launches of Cursor clear `ELECTRON_RUN_AS_NODE` (inherited from the extension host) | ✅ | ✅ | 2026-11-17 · PR #12 `61dd65e` → merge `0095508` | tests doc side notes |
 | 2.5 | (Reviewer: looks already handled; add a regression test and close) Find Session with an off-enum stored setting (e.g. `pitwall.sessionSearch.harness: "codex"`) falls back to the first enabled harness instead of throwing (QA PR #5 note) | ✅ (pinned: already fixed; regression test added) | ✅ | 2026-11-17 · PR #13 `36efa55` → merge `0d520bb` | D9 |
 | 2.6 | After a Cursor restart, a restored chat terminal whose session never wrote a transcript is orphaned: "Remove from Pitwall" leaves it open although the dialog says terminals close (testing UJ run 5; inherited) — re-adopt or close restored tabs | ✅ (Remove closes an orphaned restored tab; never a user terminal) | ✅ | 2026-11-17 · PR #18 `8cac588` → merge `1914f21` | testing UJ run 5 |
@@ -164,7 +164,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 2.11 | Windows quit/restore with a live chat: ~4 s activation wait, revived tab not resumed, row click opens a duplicate tab, reload then loses the duplicate (testing UJ run 6) | ✅ (one PID wait, late PIDs/titles recorded, shell-aware resume line, readiness wait, stale-echo-safe PID records; Smoke 7 15/15 incl. under load) | ✅ | 2026-11-17 · PR #18 `8cac588` → merge `1914f21` | testing UJ run 6 |
 | 2.12 | 9 Minor findings from the Phase 1 final review (`docs/progress_reports/phase1-final-review.md`) and the "No tree item with id" log line after reload | ✅ (M1–M3, M5 PR #13; M4 PR #9; M6–M8 PR #7; M9 + log line PR #12, live-verified UJ run 8: 0 "No tree item" in 5 starts + hidden-view start) | ✅ | 2026-11-17 · merges `1830558`, `0d520bb`, `131a2d5`, `0095508` | final review, UJ run 6 |
 | 2.13 | New-chat launch with a custom full-path Claude command (`C:\...\claude.exe`) fails in PowerShell (a single-quoted path needs the call operator `&`); finding F1 from the Phase 2 plan | ✅ (`& ` before a quoted command in PowerShell, for new chats and Find Session resume) | ✅ | 2026-11-17 · PR #18 `8cac588` → merge `1914f21` | Phase 2 plan F1 |
-| 2.14 | The Claude agents poll (`claude agents --json`, behind "needs you", ADR 0006) runs on Windows: `ClaudeAgentsService` calls `execFile` directly, so an npm `claude.cmd` fails (ENOENT / EINVAL); route it through `harnessInvocation` (finding F2, QA). Ruling R31: already routed through `harnessInvocation` at `fetchStates`; F2 did not reproduce through the service, so guards only | ✅ (pinned: already worked; regression guards added) | ✅ | 2026-11-17 · PR #16 `d255e13` → merge `34003bd` | QA wave B, rulings R30, R31 |
+| 2.14 | The Claude agents poll (`claude agents --json`, behind "needs you", ADR 0006) runs on Windows: `ClaudeAgentsService` calls `execFile` directly, so an npm `claude.cmd` fails (ENOENT / EINVAL); route it through `harnessInvocation` (finding F2, QA). Ruling R31: already routed through `harnessInvocation` at `fetchStates`; F2 did not reproduce through the service, so guards only | ⏳ reopened: live S1 FAIL (needs-you never shows while `claude agents --json` reports waiting); root cause in progress | ✅ | 2026-11-17 · PR #16 `d255e13` → merge `34003bd` | QA wave B, rulings R30, R31 |
 
 ### Phase 3 — Sidebar v1: repos and sessions
 **Goal:** The Pitwall list as designed on the canvas: every repo and chat from one window, sorted by who needs you.
@@ -311,3 +311,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.19 · 2026-11-17.** Task 5 merged → `dd0e1ea`, closing row 2.7: the four flaky tests were fixture races (two non-atomic writes, a SIGTERM handler registered late) and a default time budget; no product change. `scripts/repeat-tests.sh` gives 100-run proofs and fails closed when a pattern matches no test. Left in Phase 2: Task 6 (restore), Task 11 (close).
 - **v0.20 · 2026-11-17.** Finding F3 (Task 6 build) is placed as Phase 3 row 3.0 (ruling R34): Cursor can echo a stale copy of `globalState` over a newer write, which can revert any Pitwall record. Phase 2 fixes it only for terminal PID records (R33a). R34 also accepts that Claude's chat panel can't be re-shown without focus after a background retitle (Phase 4 revisit).
 - **v0.21 · 2026-11-17.** Task 6 merged → `1914f21`, closing rows 2.6, 2.11 and 2.13. Revived tabs resume after a quit on Windows PowerShell 5.1 (Smoke 7 15/15, incl. 5 under CPU load). Rulings R29–R34. The Windows dry suite is fully green (234 tests, 0 fail, 9 reasoned skips).
+- **v0.22 · 2026-11-17.** Task 11 Steps 1–3 merged → `f8ea023`, closing row 2.3: CI windows runs all 234 dry tests (0 fail, 9 reasoned skips) and builds and checks the .vsix. R35: `vsce package` fails on Windows without `--allow-unused-files-pattern`, so `npm run package` carries it. The archive check fails closed on STRAY and MISSING entries. All 29 triage rows record their resolution. Row 2.14 reopened: the testing agent saw needs-you never appear live.
