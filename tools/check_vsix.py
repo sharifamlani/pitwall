@@ -5,7 +5,8 @@
 Runs `npx -y @vscode/vsce@3.2.1 ls` (or reads the listing from PATH) and accepts
 only the paths Pitwall ships.
 
-Exit codes: 0 all allowlisted, 1 stray paths (printed as STRAY <path>), 2 vsce failed.
+Exit codes: 0 all allowlisted and every required path present, 1 stray paths (STRAY <path>)
+or missing required paths (MISSING <path-or-pattern>), 2 vsce failed.
 """
 
 import argparse
@@ -22,6 +23,27 @@ _ALLOWED = re.compile(
     r"|resources/icons/[^/]+\.(png|svg)"
     r"|resources/icons/harness/[^/]+\.svg)$"
 )
+
+
+_REQUIRED_FILES = (
+    "package.json",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md",
+    "out/extension.js",
+)
+_REQUIRED_PATTERNS = (
+    r"resources/icons/[^/]+\.(png|svg)",
+    r"resources/icons/harness/[^/]+\.svg",
+)
+
+
+def missing_paths(paths: Iterable[str]) -> list[str]:
+    present = set(paths)
+    missing = [f for f in _REQUIRED_FILES if f not in present]
+    missing += [pat for pat in _REQUIRED_PATTERNS if not any(re.fullmatch(pat, p) for p in present)]
+    return missing
 
 
 def stray_paths(paths: Iterable[str]) -> list[str]:
@@ -52,9 +74,12 @@ def main(argv: list[str] | None = None) -> int:
     if paths is None:
         return 2
     stray = stray_paths(paths)
-    if stray:
-        for p in stray:
-            print(f"STRAY {p}")
+    missing = missing_paths(paths)
+    for p in stray:
+        print(f"STRAY {p}")
+    for p in missing:
+        print(f"MISSING {p}")
+    if stray or missing:
         return 1
     print(f"OK: {len(paths)} packaged paths, all allowlisted")
     return 0
