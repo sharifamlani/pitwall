@@ -1,4 +1,5 @@
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
+import * as fs from 'fs';
 import assert from 'node:assert/strict';
 import { nextForkName } from '../../../src/core/utils/text';
 import * as path from 'path';
@@ -149,6 +150,22 @@ test('isWithin treats a lower-case drive letter as the same folder on Windows', 
     assert.equal(isWithin(root.toUpperCase(), root), false, 'POSIX paths stay case-sensitive');
   }
   assert.equal(isWithin(root, root), true);
+});
+
+test('isWithin reuses the cached real path', (t) => {
+  const root = tempDir(t);
+  const child = path.join(root, 'a.ts');
+  fs.writeFileSync(child, '');
+  assert.equal(isWithin(child, root), true); // warms the cache
+  // Windows compares native real paths; POSIX compares plain real paths.
+  const spy = process.platform === 'win32'
+    ? mock.method(fs.realpathSync, 'native')
+    : mock.method(fs, 'realpathSync');
+  t.after(() => spy.mock.restore());
+  for (let i = 0; i < 5; i++) {
+    assert.equal(isWithin(child, root), true);
+  }
+  assert.equal(spy.mock.callCount(), 0, 'no path is resolved twice');
 });
 
 test('isWithin still rejects a sibling folder sharing a prefix and a .. escape', (t) => {
