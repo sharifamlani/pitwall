@@ -62,7 +62,8 @@ jobs:
       - name: gitleaks scanned every commit
         run: |
           scanned=$(grep -Eo '[0-9]+ commits scanned' gitleaks.log | grep -Eo '^[0-9]+' | tail -n1)
-          total=$(git rev-list --count HEAD)
+          # gitleaks reports commits that carry a diff; a merge commit has none, so merges are not counted.
+          total=$(git rev-list --count --no-merges HEAD)
           echo "scanned=${scanned:-none} total=$total"
           [ -n "$scanned" ] && [ "$scanned" -ge "$total" ]
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
