@@ -49,6 +49,17 @@ interface StartedTerminal {
   terminal: vscode.Terminal;
   integrated: Promise<boolean>;
   started: Promise<boolean>;
+  /** An unbounded wait for the first command start, for a start after `started` gave up. */
+  lateStart?: Promise<CommandStartWatch | undefined>;
+}
+
+type CommandStartWatch = ReturnType<typeof watchCommandStart>;
+
+/** What the user had in front before a background retitle showed a tab. */
+interface FrontView {
+  terminal?: vscode.Terminal;
+  tab?: vscode.Tab;
+  viewColumn?: vscode.ViewColumn;
 }
 
 /** The two phases of terminal restore, split by what activation may await. */
@@ -296,7 +307,7 @@ export class TerminalManager {
         this.terminals.get(chat.id) !== terminal ||
         !isLiveTerminal(terminal)
       ) {
-        return { readiness, started: Promise.resolve(false) };
+        return { readiness, started: Promise.resolve(false), lateStart: undefined };
       }
       if (readiness === 'cap') {
         console.warn(
@@ -304,9 +315,11 @@ export class TerminalManager {
         );
       }
       // Watched from before the send, which can start the command at once.
+      const lateStart = watchCommandStart(terminal);
+      this.lateStarts.add(lateStart.cancel);
       const started = waitForCommandStart(terminal, RESTORED_SHELL_TIMEOUT_MS);
       terminal.sendText(command);
-      return { readiness, started };
+      return { readiness, started, lateStart };
     });
 
     return {
@@ -314,6 +327,7 @@ export class TerminalManager {
       // Only an integrated shell re-tags the title, so only it needs a retitle.
       integrated: sent.then(({ readiness }) => readiness === 'ready'),
       started: sent.then(({ started }) => started),
+      lateStart: sent.then(({ lateStart }) => lateStart),
     };
   }
 
@@ -1100,9 +1114,13 @@ export class TerminalManager {
       return;
     }
     const previous = vscode.window.activeTerminal;
+    // Late-start watches not handed to `retitleOnLateStart` are cancelled
+    // when the pass ends, however it ends.
+    const unhanded = new Set(revived);
     void (async () => {
       let expected = previous;
-      for (const { terminal, integrated, started } of revived) {
+      for (const item of revived) {
+        const { terminal, integrated, started } = item;
         if (this.isDisposed || vscode.window.activeTerminal !== expected) {
           return;
         }
@@ -1111,7 +1129,17 @@ export class TerminalManager {
         if (!(await integrated)) {
           continue;
         }
-        await started;
+        if (!(await started)) {
+          // The command started after the bounded wait, or has not started
+          // yet. Only a rename after the start survives a quit, so rename
+          // then, in the background, like a launched tab (R29).
+          const late = await item.lateStart;
+          if (late) {
+            unhanded.delete(item);
+            this.retitleOnLateStart(terminal, late);
+          }
+          continue;
+        }
         if (
           this.isDisposed ||
           vscode.window.activeTerminal !== expected ||
@@ -1146,6 +1174,17 @@ export class TerminalManager {
           await this.showForRetitle(previous);
         }
       });
-    })().catch(() => undefined);
+    })()
+      .catch(() => undefined)
+      .finally(() => {
+        for (const { lateStart } of unhanded) {
+          void lateStart?.then((watch) => {
+            if (watch) {
+              this.lateStarts.delete(watch.cancel);
+              watch.cancel();
+            }
+          });
+        }
+      });
   }
 }
