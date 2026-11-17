@@ -10,7 +10,7 @@ import * as path from 'path';
 import { OpencodeHarness } from '../../../../src/harnesses/opencode/OpencodeHarness';
 import { deriveTurnState, OpencodeSessionService } from '../../../../src/harnesses/opencode/OpencodeSessionService';
 import { fakeOpencode, OpencodeState } from './opencodeFixture';
-import { posixOnly, stub } from '../../support';
+import { skipOnWindows, stub } from '../../support';
 
 /** Point the adapter at a fake CLI playing `state`. */
 function setup(t: { after(fn: () => void): void }, state: Omit<OpencodeState, 'calls'>) {
@@ -28,7 +28,7 @@ const session = (id: string, directory: string, extra: object = {}) => ({
   ...extra,
 });
 
-test('discovery follows the API cursor once for concurrent callers and keeps top-level sessions in the worktree', posixOnly, async (t) => {
+test('discovery follows the API cursor once for concurrent callers and keeps top-level sessions in the worktree', skipOnWindows('dormant opencode harness: OpencodeSessionService spawns the opencode .cmd without a shell, so Node 22 throws spawn EINVAL; revisit when opencode is enabled (D9)'), async (t) => {
   const fake = setup(t, { sessions: [], exports: {} });
   const worktree = path.join(fake.dir, 'repo');
   fs.mkdirSync(path.join(worktree, 'sub'), { recursive: true });
@@ -49,7 +49,7 @@ test('discovery follows the API cursor once for concurrent callers and keeps top
   assert.equal(fake.calls('session.list'), 3, 'one pass over three pages, shared by both callers');
 });
 
-test('previews come from one export, and metadata only uses an export that is already cached', posixOnly, async (t) => {
+test('previews come from one export, and metadata only uses an export that is already cached', skipOnWindows('dormant opencode harness: OpencodeSessionService spawns the opencode .cmd without a shell, so Node 22 throws spawn EINVAL; revisit when opencode is enabled (D9)'), async (t) => {
   const fake = setup(t, { sessions: [], exports: {} });
   fake.update({
     sessions: [
@@ -88,7 +88,7 @@ test('previews come from one export, and metadata only uses an export that is al
   assert.deepEqual([meta?.model, meta?.agent], ['provider/model', 'build']);
 });
 
-test('a fork into a new worktree is forked, then moved; a failed move deletes the orphan fork', posixOnly, async (t) => {
+test('a fork into a new worktree is forked, then moved; a failed move deletes the orphan fork', skipOnWindows('dormant opencode harness: OpencodeSessionService spawns the opencode .cmd without a shell, so Node 22 throws spawn EINVAL; revisit when opencode is enabled (D9)'), async (t) => {
   const fake = setup(t, { sessions: [], exports: {} });
   fake.update({ sessions: [session('ses_main', fake.dir)] });
   const harness = new OpencodeHarness();
@@ -115,7 +115,7 @@ test('a fork into a new worktree is forked, then moved; a failed move deletes th
   );
 });
 
-test('a down background service falls back to a standalone API server', posixOnly, async (t) => {
+test('a down background service falls back to a standalone API server', skipOnWindows('dormant opencode harness: OpencodeSessionService spawns the opencode .cmd without a shell, so Node 22 throws spawn EINVAL; revisit when opencode is enabled (D9)'), async (t) => {
   const fake = setup(t, { sessions: [], exports: {}, serviceDown: true });
   fake.update({ sessions: [session('ses_main', fake.dir)] });
   assert.equal(await new OpencodeHarness().isSessionResumable('ses_main', fake.dir), true);

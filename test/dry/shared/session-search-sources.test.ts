@@ -23,7 +23,7 @@ import { SessionSearchService } from '../../../src/core/services/SessionSearchSe
 import { claudeProfile, entry } from '../harnesses/claude/claudeFixture';
 import { piEntry, piProfile } from '../harnesses/pi/piFixture';
 import { fakeOpencode } from '../harnesses/opencode/opencodeFixture';
-import { fakeAdapter, fakeCli, fakeSearchRunner, makeStorage, posixOnly, setEnv, stub, tempDir, waitFor } from '../support';
+import { fakeAdapter, fakeCli, fakeSearchRunner, makeStorage, setEnv, skipOnWindows, stub, tempDir, waitFor } from '../support';
 
 const CLAUDE_FIXTURE = path.resolve(__dirname, '..', 'fixtures', 'fake-claude-search.js');
 const CODEX_FIXTURE = path.resolve(__dirname, '..', 'fixtures', 'fake-codex-app-server.js');
@@ -33,7 +33,7 @@ const PI_SESSION = '33333333-3333-4333-8333-333333333333';
 const OPENCODE_SESSION = 'ses_review';
 const OPENCODE_CWD = '/tmp/opencode-repo';
 
-test('one search reads Claude, Codex, opencode, and Pi records and keeps only what each harness confirms', posixOnly, async (t) => {
+test('one search reads Claude, Codex, opencode, and Pi records and keeps only what each harness confirms', skipOnWindows('dormant opencode harness: OpencodeSessionService spawns the opencode .cmd without a shell, so Node 22 throws spawn EINVAL; revisit when opencode is enabled (D9)'), async (t) => {
   stub.__reset();
   const claude = claudeProfile(t);
   const claudeHome = claude.dir('home');
@@ -162,7 +162,7 @@ test('one search reads Claude, Codex, opencode, and Pi records and keeps only wh
   assert.ok(opencode.read().calls.some((args) => args.includes('session.message.list')), 'the snapshot used the message API');
 });
 
-test('stopping an opencode snapshot ends the session listing and unblocks preparation', posixOnly, async (t) => {
+test('stopping an opencode snapshot ends the session listing and unblocks preparation', skipOnWindows('dormant opencode harness: OpencodeSessionService spawns the opencode .cmd without a shell, so Node 22 throws spawn EINVAL; revisit when opencode is enabled (D9)'), async (t) => {
   stub.__reset();
   const opencode = fakeOpencode(t, {
     sessions: [
@@ -191,7 +191,7 @@ test('stopping an opencode snapshot ends the session listing and unblocks prepar
   await waitFor(() => opencode.read().terminated, 'the listing process to stop');
 });
 
-test('the opencode preparation budget covers the session listing', posixOnly, async (t) => {
+test('the opencode preparation budget covers the session listing', skipOnWindows('dormant opencode harness: OpencodeSessionService spawns the opencode .cmd without a shell, so Node 22 throws spawn EINVAL; revisit when opencode is enabled (D9)'), async (t) => {
   stub.__reset();
   const opencode = fakeOpencode(t, {
     sessions: [
@@ -221,7 +221,7 @@ test('the opencode preparation budget covers the session listing', posixOnly, as
   assert.match(preparation, /holding 0 recent/);
 });
 
-test('the opencode snapshot stops at its byte budget and says so', posixOnly, async (t) => {
+test('the opencode snapshot stops at its byte budget and says so', skipOnWindows('dormant opencode harness: OpencodeSessionService spawns the opencode .cmd without a shell, so Node 22 throws spawn EINVAL; revisit when opencode is enabled (D9)'), async (t) => {
   stub.__reset();
   const text = 'x'.repeat(100);
   const sessions = ['ses_one', 'ses_two', 'ses_three'].map((id, index) => ({
