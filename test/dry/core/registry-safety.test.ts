@@ -82,6 +82,7 @@ test('disabled harness records are skipped, not thrown', async (t) => {
     vscode.Uri.file('/extension')
   );
   t.after(() => tree.dispose());
+  await tree.whenListed();
 
   const rows = await tree.getChildren(new WorkspaceTreeItem(WORKTREE.name, 1, 'worktree', WORKTREE, 'worktree'));
   assert.deepEqual(rows.map((row) => row.label), ['Claude chat'], 'the Codex row is hidden and the tree renders');
@@ -154,6 +155,7 @@ test('pitwall.newChat creates a session with the first enabled harness', async (
     workspacesProvider: {
       getWorktreeForItem: () => WORKTREE,
       getWorktreeById: () => WORKTREE,
+      getWorktreeByIdAsync: async () => WORKTREE,
     } as never,
     harnessRegistry: registry,
     harnessWatcherRegistry: { registerPendingChat: () => undefined } as never,

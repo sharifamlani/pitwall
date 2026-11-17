@@ -487,7 +487,7 @@ async function needsYouFlow(t: { after(fn: () => void): void }) {
     storageService: storage,
     gitService: {} as never,
     terminalManager: terminals,
-    workspacesProvider: { getWorktreeById: getWorktree } as never,
+    workspacesProvider: { getWorktreeById: getWorktree, getWorktreeByIdAsync: async (id: string) => getWorktree(id) } as never,
     harnessRegistry: registry,
     harnessWatcherRegistry: watchers as never,
     sessionImporter: { expectChat: async () => undefined, cancelExpectation: () => undefined },
@@ -515,6 +515,7 @@ async function needsYouFlow(t: { after(fn: () => void): void }) {
       waiting = true;
     },
     rowMark: async () => {
+      await tree.whenListed();
       const row = (await tree.getChildren(worktreeRow)).find((item) => item.label === chat.name)!;
       return (row.iconPath as { light: vscode.Uri }).light.path.split('/').pop();
     },

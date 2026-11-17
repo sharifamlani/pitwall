@@ -57,6 +57,10 @@ function setup(t: { after(fn: () => void): void }, repoCount = 3) {
     worktrees.set(repo.id, worktreeRecord({ id: `wt-${name}`, repoId: repo.id, name, path: `/work/${name}` }));
   }
   const chats = ['one', 'two'].map((title, i) => storage.createChat('wt-b', 'claude', title, { harnessSessionId: `s${i}` }));
+  // As on a reload: each repo's last listing is stored.
+  for (const [repoId, worktree] of worktrees) {
+    storage.saveWorktreeSnapshot(repoId, { isGit: true, worktrees: [worktree] });
+  }
   const tree = new WorkspacesTreeProvider(
     storage,
     {

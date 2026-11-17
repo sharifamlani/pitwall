@@ -7,7 +7,7 @@ import { HarnessAdapter, SessionMetadata } from '../../../src/core/harness/types
 import { SessionStatus } from '../../../src/core/providers/sessionStatus';
 import { ChatSession, Repository, RepositoryWorktrees, Worktree } from '../../../src/core/types';
 import { disposeOperationLog } from '../../../src/core/services/OperationLog';
-import { fakeAdapter, fakeNativeUi, makeStorage, memento, flush, stub, waitFor, worktreeRecord } from '../support';
+import { fakeAdapter, fakeNativeUi, fakeWorktreeListing, makeStorage, memento, flush, stub, waitFor, worktreeRecord } from '../support';
 
 beforeEach(() => stub.__reset());
 
@@ -18,15 +18,18 @@ function provider(
   t: { after(fn: () => void): void },
   storage: ReturnType<typeof makeStorage>,
   listWorktrees: (repo: Repository) => RepositoryWorktrees,
-  adapters: HarnessAdapter[]
+  adapters: HarnessAdapter[],
+  { stored = true }: { stored?: boolean } = {}
 ) {
+  // As on a reload: each stored repo's last listing is stored, so rows draw
+  // from it at once while git lists again in the background.
+  for (const repo of stored ? storage.getRepositories() : []) {
+    storage.saveWorktreeSnapshot(repo.id, listWorktrees(repo));
+  }
   const tree = new WorkspacesTreeProvider(
     storage,
     {
-      listRepositoryWorktrees: (_rootPath: string, repoId: string) =>
-        listWorktrees(storage.getRepository(repoId)!),
-      listRepositoryWorktreesAsync: async (_rootPath: string, repoId: string) =>
-        listWorktrees(storage.getRepository(repoId)!),
+      ...fakeWorktreeListing((_rootPath: string, repoId: string) => listWorktrees(storage.getRepository(repoId)!)),
       getAheadBehind: () => null,
     } as never,
     terminals as never,
@@ -428,7 +431,7 @@ test('worktree lookups never wait on git and list each repository at most once',
   const tree = provider(t, storage, (repo) => {
     listed.push(repo.name);
     return { isGit: true, worktrees: [worktreeRecord({ id: `wt-${repo.name}`, repoId: repo.id, path: repo.rootPath })] };
-  }, [fakeAdapter('claude')]);
+  }, [fakeAdapter('claude')], { stored: false });
 
   // Nothing listed or stored yet: the root stands in as a plain folder, and
   // the lookup starts the listing instead of waiting for it.
@@ -480,12 +483,13 @@ test('the first rows come from the stored worktree listing while git lists again
 /** A tree whose git listings wait until the test answers each one, in the order they were asked. */
 function heldListings(t: { after(fn: () => void): void }, storage: ReturnType<typeof makeStorage>) {
   const calls: { repoId: string; urgent: boolean; answer: (listing: RepositoryWorktrees) => void }[] = [];
+  const expedited: string[] = [];
   const tree = new WorkspacesTreeProvider(
     storage,
     {
       listRepositoryWorktreesAsync: (_rootPath: string, repoId: string, options: { urgent?: boolean } = {}) =>
         new Promise<RepositoryWorktrees>((answer) => calls.push({ repoId, urgent: options.urgent === true, answer })),
-      expediteWorktreeListing: () => undefined,
+      expediteWorktreeListing: (_rootPath: string, repoId: string) => expedited.push(repoId),
       getAheadBehind: () => null,
     } as never,
     terminals as never,
@@ -495,7 +499,7 @@ function heldListings(t: { after(fn: () => void): void }, storage: ReturnType<ty
   t.after(() => tree.dispose());
   const changes: unknown[] = [];
   tree.onDidChangeTreeData((change) => changes.push(change));
-  return { tree, calls, changes };
+  return { tree, calls, changes, expedited };
 }
 
 /** A git repository's listing: its main worktree and the linked ones. */
@@ -536,11 +540,13 @@ test("a lookup that misses before a repository's first listing waits for it, ahe
   const app = storage.addRepository('app', '/work/app');
   const main = worktreeRecord({ id: 'wt-app', repoId: app.id, path: '/work/app' });
   const linked = worktreeRecord({ id: 'wt-fiu', repoId: app.id, name: 'feat/fiu', path: '/work/app-fiu', isMain: false });
-  const { tree, calls } = heldListings(t, storage);
+  const { tree, calls, expedited } = heldListings(t, storage);
 
   assert.equal(tree.getWorktreeById('wt-fiu'), undefined, 'the stand-in knows only the main worktree');
   const lookup = tree.getWorktreeByIdAsync('wt-fiu');
-  await waitFor(() => calls.some((call) => call.urgent), 'an urgent listing for the lookup');
+  // The sync miss queued a background listing; the lookup hurries it.
+  await waitFor(() => expedited.includes(app.id), 'the lookup to hurry the listing ahead of the queue');
+  assert.equal(calls.length, 1, 'one listing serves both');
   calls.forEach((call) => call.answer(gitListing(main, linked)));
   assert.equal((await lookup)?.path, '/work/app-fiu', 'the miss is answered from the listing');
 
