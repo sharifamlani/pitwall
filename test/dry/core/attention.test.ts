@@ -275,6 +275,22 @@ test('a wait that begins while you look elsewhere toasts once', async (t) => {
 test('a suppressed toast does not start the cooldown', async (t) => {
   const clock = useClock(t);
   windowState().state = { focused: true };
+  const { service, set } = liveAttention(() => false);
+  await service.poll(true);
+  stub.__setConfiguration('notifications.onNeedsInput', false);
+  set(WAITING);
+  await service.poll();
+  assert.equal(toasts().length, 0, 'held back by the setting');
+
+  stub.__setConfiguration('notifications.onNeedsInput', true);
+  clock.advance(4_000);
+  await service.poll();
+  assert.equal(toasts().length, 1, 'the held-back toast fires on the next tick, not after a cooldown');
+});
+
+test('a wait toasts at most once, even after the user looks at it and leaves', async (t) => {
+  const clock = useClock(t);
+  windowState().state = { focused: true };
   let visible = false;
   const { service, set } = liveAttention(() => visible);
   await service.poll(true);
@@ -282,15 +298,22 @@ test('a suppressed toast does not start the cooldown', async (t) => {
   await service.poll();
   assert.equal(toasts().length, 1, 'the wait began unseen');
 
-  visible = true; // the user is looking at it when the cooldown ends
-  clock.advance(NEEDS_INPUT_COOLDOWN_MS);
-  await service.poll();
-  assert.equal(toasts().length, 1, 'held back while in front');
-
-  visible = false;
+  visible = true; // the user looks at it and does not answer
   clock.advance(4_000);
   await service.poll();
-  assert.equal(toasts().length, 2, 'the held-back reminder fires once the user looks away');
+  visible = false;
+  clock.advance(61_000);
+  await service.poll();
+  assert.equal(toasts().length, 1, 'the same wait never toasts again');
+  assert.deepEqual(service.sessionsNeedingYou(), ['chat-1'], 'it is still listed');
+
+  set({ turnState: 'working', turnEndedAt: null }); // answered
+  clock.advance(4_000);
+  await service.poll();
+  set(WAITING); // a new wait begins unseen, past the cooldown
+  clock.advance(NEEDS_INPUT_COOLDOWN_MS);
+  await service.poll();
+  assert.equal(toasts().length, 2, 'a new wait may toast');
 });
 
 /** Editor tabs for the visibility tests; the first becomes the active tab of the one group. */
