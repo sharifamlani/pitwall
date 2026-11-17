@@ -480,3 +480,16 @@ test('whenSettled waits for the render that follows a refresh', async (t) => {
   await waiting;
   assert.equal(settled, true);
 });
+
+test('only needs-you rows carry the Needs marker that shows the row bell', async (t) => {
+  const { rows, statuses, networking, open } = worktreeRepo(t, { open: ['One-off apply'] });
+  const values = async () => Object.fromEntries((await rows()).items.map((item) => [item.label, item.contextValue]));
+  assert.deepEqual(await values(), {
+    'One-off apply': 'runningChatNeeds',
+    'Job market networking': 'chat',
+    'LinkedIn job scroller': 'chat',
+  });
+  statuses.set(networking.id, 'needs', Date.now());
+  open.clear();
+  assert.equal((await values())['Job market networking'], 'chatNeeds');
+});

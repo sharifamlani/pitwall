@@ -11,6 +11,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import pkg from '../../../package.json';
 import { activate } from '../../../src/extension';
+import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { GitService } from '../../../src/core/services/GitService';
 import { RepoDiscoveryService } from '../../../src/core/services/RepoDiscoveryService';
 import { registerRepositoryCommands } from '../../../src/core/commands/repository';
@@ -55,12 +56,14 @@ function setup(t: { after(fn: () => void): void }, globalState = memento()) {
   registerRepositoryCommands({ subscriptions: [] } as never, {
     storageService: storage,
     gitService,
+    harnessRegistry: new HarnessRegistry([adapter]),
     forgetWorktrees: () => undefined,
     refreshTree: () => undefined,
   });
   return {
     storage,
     gitService,
+    harnessRegistry: new HarnessRegistry([adapter]),
     service,
     /** A session in `cwd` that started at `startedAt` and was last written now. */
     session(cwd: string, startedAt = Date.now()) {

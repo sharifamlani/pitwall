@@ -8,6 +8,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import pkg from '../../../package.json';
 import { activate } from '../../../src/extension';
 import { ChatSession, Repository, STORAGE_KEYS } from '../../../src/core/types';
 import { worktreeId } from '../../../src/core/services/GitService';
@@ -226,4 +227,12 @@ test("clicking a repo row points FILES at its main worktree; opening a chat poin
   await vscode.commands.executeCommand('pitwall.openChat', chatRow);
   await waitFor(() => files.description === 'app ⎇ feat/fiu', 'FILES follows the opened chat');
   assert.equal(fs.realpathSync(files.message ?? ''), fs.realpathSync(linkedPath));
+});
+
+test('every command the manifest contributes is registered after activation', async (t) => {
+  const f = await seededActivation(t, [], {});
+  await f.start();
+  const registered = new Set(await vscode.commands.getCommands());
+  const contributed = (pkg.contributes.commands as { command: string }[]).map((entry) => entry.command);
+  assert.deepEqual(contributed.filter((command) => !registered.has(command)), [], 'a contributed command with no handler is a dead button');
 });

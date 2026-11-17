@@ -315,7 +315,7 @@ export async function activate(context: vscode.ExtensionContext) {
   workspacesProvider.setStatusSource(attentionService);
 
   // Commands
-  registerRepositoryCommands(context, { storageService, gitService, forgetWorktrees, refreshTree });
+  registerRepositoryCommands(context, { storageService, gitService, harnessRegistry, forgetWorktrees, refreshTree });
   registerWorktreeRowCommands(context, { workspacesProvider, switchWorkspaceFolder });
   registerChatCommands(context, {
     storageService,

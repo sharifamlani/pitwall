@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { GitService } from '../../../src/core/services/GitService';
 import { registerRepositoryCommands } from '../../../src/core/commands/repository';
 import { makeStorage, runCommand, shownMessages, stub, tempDir } from '../support';
@@ -16,6 +17,7 @@ function setup() {
   registerRepositoryCommands({ subscriptions: [] } as never, {
     storageService: storage,
     gitService: new GitService(),
+    harnessRegistry: new HarnessRegistry([]),
     forgetWorktrees: (worktrees) => forgotten.push(...worktrees.map((worktree) => worktree.path)),
     refreshTree: () => refreshes++,
   });

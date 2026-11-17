@@ -25,17 +25,53 @@ const rowMenu = (menus['view/item/context'] ?? []).filter((entry) =>
 const isInline = (entry: MenuEntry) => entry.group?.split('@')[0] === 'inline';
 const id = (entry: MenuEntry) => entry.command ?? entry.submenu ?? '';
 
-test('the hover row keeps frequent actions and nothing destructive or occasional', () => {
-  const inline = new Set(rowMenu.filter(isInline).map(id));
-  for (const command of [
-    'pitwall.deleteChat',
-    'pitwall.dismissRepository',
-    'pitwall.clearWorktreeSessions',
-  ]) {
-    assert.ok(!inline.has(command), `${command} is not a hover action`);
+/** Whether a menu entry's `viewItem =~ /…/` pattern matches a row's context value. */
+const shownOn = (entry: MenuEntry, contextValue: string) => {
+  const pattern = /viewItem =~ \/(.+?)\/(?= &&|$)/.exec(entry.when ?? '')?.[1];
+  return pattern !== undefined && new RegExp(pattern).test(contextValue);
+};
+const orderOf = (entry: MenuEntry) => {
+  const [group, order] = (entry.group ?? '').split('@');
+  return `${group}@${order.padStart(3, '0')}`;
+};
+
+test('session rows show bell (needs you only), terminal and fork inline; star, rename and close are in the right-click menu only', () => {
+  const inline = rowMenu.filter(isInline);
+  // The values real Claude rows carry: the ClaudeUi suffix is always present (claudeUi.ts).
+  const slots = (contextValue: string) =>
+    inline
+      .filter((entry) => shownOn(entry, contextValue))
+      .sort((a, b) => orderOf(a).localeCompare(orderOf(b)))
+      .map((entry) => `${id(entry)}@${entry.group}`);
+  const BELL = 'pitwall.openNeedsYouChat@inline@0';
+  const TERMINAL = 'pitwall.openChatInTerminal@inline@2';
+  const FORK = 'pitwall.forkChat@inline@3';
+  for (const value of ['chatNeedsClaudeUi', 'starredChatNeedsClaudeUi']) {
+    assert.deepEqual(slots(value), [BELL, TERMINAL, FORK], `${value}: bell, terminal and fork, each in its own slot`);
   }
-  for (const command of ['pitwall.newSession', 'pitwall.newDefaultSession', 'pitwall.openTerminalAtWorktree', 'pitwall.renameChat', 'pitwall.starChat', 'pitwall.unstarChat']) {
-    assert.ok(inline.has(command), `${command} stays one click away`);
+  for (const value of ['chatClaudeUi', 'starredChatClaudeUi']) {
+    assert.deepEqual(slots(value), [TERMINAL, FORK], `${value}: terminal and fork, no bell`);
+  }
+  // A running row already has its terminal, so it shows the bell (when it needs you) and fork.
+  assert.deepEqual(slots('runningChatNeedsClaudeUi'), [BELL, FORK]);
+  assert.deepEqual(slots('runningChatClaudeUi'), [FORK]);
+  const sessionCommands = new Set(inline.filter((entry) => shownOn(entry, 'chatNeedsClaudeUi')).map(id));
+  for (const command of ['pitwall.starChat', 'pitwall.unstarChat', 'pitwall.renameChat', 'pitwall.closeChat']) {
+    assert.ok(!inline.some((entry) => entry.command === command), `${command} is not a hover action`);
+    assert.ok(
+      rowMenu.some((entry) => entry.command === command && !isInline(entry)),
+      `${command} stays in the right-click menu`
+    );
+  }
+  assert.ok(sessionCommands.has('pitwall.openNeedsYouChat'));
+  const bell = commands.find((entry) => entry.command === 'pitwall.openNeedsYouChat') as { icon?: string } | undefined;
+  assert.equal(bell?.icon, '$(bell)');
+  assert.ok(
+    (menus.commandPalette ?? []).some((entry) => entry.command === 'pitwall.openNeedsYouChat' && entry.when === 'false'),
+    'the bell is a row action, not a palette command'
+  );
+  for (const command of ['pitwall.deleteChat', 'pitwall.dismissRepository', 'pitwall.clearWorktreeSessions']) {
+    assert.ok(!inline.some((entry) => entry.command === command), `${command} is not a hover action`);
   }
   assert.ok(
     rowMenu.some((entry) => entry.command === 'pitwall.deleteChat' && entry.group?.includes('destructive')),
@@ -48,11 +84,43 @@ test('the hover row keeps frequent actions and nothing destructive or occasional
   assert.deepEqual(titleInline.map(id), ['pitwall.addRepository'], 'one inline title action');
 });
 
-test('a plain folder row offers shared actions but no git-only ones', () => {
-  const folderActions = new Set(rowMenu.filter((entry) => entry.when?.includes('folderRepository')).map(id));
-  for (const shared of ['pitwall.newSession', 'pitwall.openTerminalAtWorktree', 'pitwall.dismissRepository']) {
-    assert.ok(folderActions.has(shared), shared);
-  }
+test('the repo menu has exactly the §3c items in order, and the row shows history and "+" on hover', () => {
+  const onRepo = rowMenu.filter((entry) => shownOn(entry, 'repository') || shownOn(entry, 'folderRepository'));
+  const title = (command: string) => commands.find((entry) => entry.command === command)?.title;
+  const byOrder = (a: MenuEntry, b: MenuEntry) => orderOf(a).localeCompare(orderOf(b));
+  const menu = onRepo.filter((entry) => !isInline(entry)).sort(byOrder);
+  const expected = [
+    'pitwall.newSessionInRepository',
+    'pitwall.sessionHistory',
+    'pitwall.openInNewWindow',
+    'pitwall.copyRepositoryPath',
+    'pitwall.revealRepository',
+    'pitwall.dismissRepository',
+  ];
+  assert.deepEqual(menu.map(id), expected);
+  assert.deepEqual(expected.map(title), [
+    'New Claude Code session',
+    'Session history…',
+    'Open its window',
+    'Copy Path',
+    'Reveal in File Explorer',
+    'Dismiss from Pitwall',
+  ]);
+  assert.deepEqual(menu.map((entry) => entry.group?.split('_')[0]), ['1', '1', '1', '2', '2', '9'], 'separators fall after Open its window and before Dismiss');
+  assert.deepEqual(
+    onRepo.filter(isInline).sort(byOrder).map(id),
+    ['pitwall.sessionHistory', 'pitwall.newSessionInRepository'],
+    'hover shows the history clock, then "+"'
+  );
+  const icon = (command: string) => (commands.find((entry) => entry.command === command) as { icon?: string }).icon;
+  assert.equal(icon('pitwall.sessionHistory'), '$(history)');
+  assert.equal(icon('pitwall.newSessionInRepository'), '$(add)');
+});
+
+test('a plain folder row offers the same repo menu as a git repo', () => {
+  const folderActions = new Set(rowMenu.filter((entry) => shownOn(entry, 'folderRepository') && !isInline(entry)).map(id));
+  const repoActions = new Set(rowMenu.filter((entry) => shownOn(entry, 'repository') && !isInline(entry)).map(id));
+  assert.deepEqual([...folderActions].sort(), [...repoActions].sort());
 });
 
 test('New Session entries are gated on their harness, and the submenus on any harness', () => {
@@ -77,17 +145,9 @@ test('New Session entries are gated on their harness, and the submenus on any ha
   }
 });
 
-test('the New Session button is the menu until a default agent is set, then one click; the context menu always lists every agent', () => {
-  const worktreeInline = rowMenu.filter((entry) => isInline(entry) && entry.when?.includes('worktree|folderRepository'));
-  const button = (entryId: string) => worktreeInline.find((entry) => id(entry) === entryId);
-  assert.match(button('pitwall.newSession')?.when ?? '', /!config\.pitwall\.defaultHarness/);
-  assert.match(button('pitwall.newDefaultSession')?.when ?? '', /[^!]config\.pitwall\.defaultHarness/);
-  assert.equal(button('pitwall.newSession')?.group, button('pitwall.newDefaultSession')?.group, 'the same slot');
-  const context = rowMenu.find((entry) => entry.submenu === 'pitwall.newSessionContext');
-  assert.ok(context && !context.when?.includes('defaultHarness'), 'every agent stays one right-click away');
-
+test('the default agent can be any harness, or none', () => {
   const harnesses = Object.keys(settings).flatMap((key) => /^pitwall\.harnessCommands\.(\w+)$/.exec(key)?.[1] ?? []);
-  assert.deepEqual(settings['pitwall.defaultHarness'].enum, ['', ...harnesses], 'the default agent can be any harness, or none');
+  assert.deepEqual(settings['pitwall.defaultHarness'].enum, ['', ...harnesses]);
 });
 
 test('every setting sits in a titled section, explains itself, and names its choices; Pitwall Settings is in the view menu', () => {
@@ -141,7 +201,7 @@ test('global shortcuts use Ctrl+Alt (Ctrl+Cmd on macOS); plain keys work only in
   );
 });
 
-test('Open in UI stays in the context menu without its extension and is a hover action only with it', () => {
+test('Open in UI is a context-menu item only, never a hover action', () => {
   // One Open in UI command per enabled harness that has a VS Code UI.
   const openUi = [...new Set(rowMenu.map(id))].flatMap((command) => {
     const name = /^pitwall\.open(\w+)Ui$/.exec(command)?.[1];
@@ -154,7 +214,7 @@ test('Open in UI stays in the context menu without its extension and is a hover 
     const inline = entries.filter(isInline);
     assert.equal(context.length, 1, command);
     assert.ok(!context[0].when?.includes(`${ui}UiInstalled`), `${command} explains a missing extension`);
-    assert.ok(inline.length > 0 && inline.every((entry) => entry.when?.includes(`pitwall.${ui}UiInstalled`)), command);
+    assert.equal(inline.length, 0, `${command} is not a hover action: the canvas shows only bell, terminal and fork`);
   }
   const inTerminal = rowMenu.filter((entry) => entry.command === 'pitwall.openChatInTerminal');
   assert.ok(inTerminal.some((entry) => isInline(entry) && entry.when?.includes('chat|starredChat')), 'inline for closed rows');
@@ -195,11 +255,4 @@ test('the list is named Repos, with the canvas empty state; FILES asks for a rep
     (menus['view/title'] ?? []).some((entry) => entry.command === 'pitwall.cloneRepository' && !entry.group?.startsWith('navigation')),
     'Clone stays in the overflow menu'
   );
-});
-
-test('a git repo row offers the session actions of its main worktree now that worktree rows are gone (P8)', () => {
-  const repoActions = new Set(rowMenu.filter((entry) => /\(repository\|/.test(entry.when ?? '')).map(id));
-  for (const command of ['pitwall.newSession', 'pitwall.newDefaultSession', 'pitwall.newSessionContext', 'pitwall.openTerminalAtWorktree', 'pitwall.importSessions']) {
-    assert.ok(repoActions.has(command), command);
-  }
 });

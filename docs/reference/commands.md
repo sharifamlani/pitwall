@@ -16,12 +16,21 @@ Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pit
 | **Pitwall: Clone from GitHub…** | Clone a repository and add it |
 | **Pitwall: Remove from Pitwall…** | Remove a folder or repository from the sidebar. Files and conversations are kept. Like Dismiss, it stays off the list until a new session starts in it or you add it again |
 | **Pitwall: Dismiss from Pitwall** | Hide a repository from the sidebar until a new Claude Code session starts in it, or you add it again. Nothing on disk changes |
+| **Pitwall: Copy Path** | Copy a repository's folder path |
+| **Pitwall: Reveal in File Explorer** | Show a repository's folder in your system file manager |
+| **Pitwall: Open in This Window** | Switch this window's workspace folder to a repository's folder |
+| **Pitwall: Open Terminal Here** | Open a plain terminal in a repository's folder |
+| **Pitwall: Remove All Sessions from List…** | Take every session of a folder off the list. Conversations are kept |
+| **Pitwall: Open its window** | Open a repository's folder in its own window; an open window for it is focused instead |
 
 ### Sessions
 
 | Command | What it does |
 | --- | --- |
 | **Pitwall: New Session** | Start a session with your default agent in the current worktree. Asks which agent when none is set |
+| **Pitwall: New Claude Code session** | Start a Claude Code session in a repository's main worktree. The **+** on a repository row |
+| **Pitwall: Session history…** | List a repository's chats: those in the sidebar, then older ones that are not. Picking an older one brings it back and opens it |
+| **Pitwall: Open Session That Needs You** | The bell on a session row that needs you. Opens that session |
 | **Pitwall: Set Default Agent…** | Choose the agent **New Session** starts, or go back to asking every time |
 | **Pitwall: New Claude Code Session** | Start a Claude Code session where your settings say sessions open |
 | **Pitwall: New Claude Code Session in Terminal** | Start a Claude Code session in a terminal |
@@ -78,36 +87,27 @@ The view's title bar has **Add Local Folder or Repository…**. Its `…` menu h
 
 | Action | Where | Notes |
 | --- | --- | --- |
-| **Move Up**, **Move Down** | Right-click | Reorder the list |
-| **Dismiss from Pitwall** | Right-click | Hides the repo until a new session starts in it; nothing on disk changes |
-
-A plain folder row also has every action of a worktree row except the git ones, because sessions run directly in it.
-
-## Worktree rows
-
-| Action | Where | Notes |
-| --- | --- | --- |
-| **New Session** | Hover icon, right-click | A menu of installed agents, or your default agent in one click |
-| **Import Existing Sessions…** | Right-click | |
-| **Open in This Window** | Right-click | Shown when Auto-Switch Workspace Folder is off |
-| **Open in New Window** | Right-click | |
-| **Open Terminal Here** | Hover icon, right-click | A plain terminal |
+| **Session history…** | Hover icon, right-click | Chats in the sidebar, then older ones that are not; picking an older one brings it back |
+| **New Claude Code session** | Hover **+**, right-click | A Claude Code session in the repo's main worktree |
+| **Open its window** | Right-click | Opens the repo's folder in its own window |
 | **Copy Path** | Right-click | |
-| **Remove All Sessions from List…** | Right-click | Conversations are kept |
+| **Reveal in File Explorer** | Right-click | |
+| **Dismiss from Pitwall** | Right-click | Hides the repo until a new session starts in it; nothing on disk changes |
 
 ## Session rows
 
 | Action | Where | Notes |
 | --- | --- | --- |
 | **Open Session** | Click, right-click | Opens where your settings say, or focuses it where it is open |
+| **Open Session That Needs You** | Hover bell | Only on a session that needs you |
 | **Open Session in Terminal** | Hover icon, right-click | |
 | **Open in Claude Code UI**, **Open in Codex UI** | Hover icon, right-click | Claude Code and Codex sessions |
-| **Rename Session…** | Hover icon, right-click, `F2` | |
-| **Star Session**, **Unstar Session** | Hover icon, right-click | Works on several selected rows |
-| **Fork Session Here** | Right-click | |
+| **Rename Session…** | Right-click, `F2` | |
+| **Star Session**, **Unstar Session** | Right-click | Works on several selected rows |
+| **Fork Session Here** | Hover icon, right-click | |
 | **Copy Resume Command** | Right-click, `Ctrl+C` / `Cmd+C` | |
 | **Copy Session ID** | Right-click | |
-| **Close Session** | Hover icon, right-click | Open sessions; works on several selected rows |
+| **Close Session** | Right-click | Open sessions; works on several selected rows |
 | **Remove Session from List…** | Right-click, `Delete` / `Cmd+Backspace` | Works on several selected rows; conversations are kept |
 
 Select several sessions with `Shift` or `Ctrl`/`Cmd` click.
