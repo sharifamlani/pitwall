@@ -28,6 +28,7 @@ import { registerFileCommands } from './core/commands/files';
 import { SESSION_SEARCH_VIEW, registerSessionSearchCommands } from './core/commands/sessionSearch';
 import { commandRegistrar } from './core/commands/common';
 import { debounce } from './core/utils/debounce';
+import { samePath } from './core/utils/paths';
 
 /** Panels re-read the worktree this long after its files stop changing. */
 const FILE_CHANGE_DEBOUNCE_MS = 300;
@@ -204,7 +205,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const switchWorkspaceFolder = (folderPath: string): void => {
     const folders = vscode.workspace.workspaceFolders ?? [];
-    if (folders[0]?.uri.fsPath !== folderPath) {
+    if (!folders[0] || !samePath(folders[0].uri.fsPath, folderPath)) {
       vscode.workspace.updateWorkspaceFolders(0, folders.length, { uri: vscode.Uri.file(folderPath) });
     }
   };

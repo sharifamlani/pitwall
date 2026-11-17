@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
 import { Worktree, FileChange, RepositoryWorktrees } from '../types';
-import { canonicalPath, isWithin } from '../utils/paths';
+import { canonicalPath, isWithin, nativePath, samePath } from '../utils/paths';
 
 /** Outcome of a git command whose failure message the user should see. */
 export interface GitOutcome {
@@ -149,10 +149,11 @@ export class GitService {
       if (lines.includes('bare')) {
         return [];
       }
-      const worktreePath = lines.find((l) => l.startsWith('worktree '))?.slice('worktree '.length);
-      if (!worktreePath) {
+      const rawPath = lines.find((l) => l.startsWith('worktree '))?.slice('worktree '.length);
+      if (!rawPath) {
         continue;
       }
+      const worktreePath = nativePath(rawPath);
       const branch = lines.find((l) => l.startsWith('branch '))?.slice('branch refs/heads/'.length);
       worktrees.push({
         id: worktreeId(repoId, worktreePath),
@@ -162,7 +163,7 @@ export class GitService {
         path: worktreePath,
         // Git reports physical paths, while a folder added through a symlink
         // keeps the spelling the user picked.
-        isMain: canonicalPath(worktreePath) === canonicalPath(repoPath),
+        isMain: samePath(worktreePath, repoPath),
       });
     }
 

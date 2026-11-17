@@ -9,7 +9,7 @@ import {
   harnessSessionKey,
   snapshotSessionIds,
 } from '../harness/sessionUtils';
-import { deepestContainingRoot } from '../utils/paths';
+import { deepestContainingRoot, samePath } from '../utils/paths';
 import { truncateName } from '../utils/text';
 import { Scope, WorktreeCatalog } from './WorktreeCatalog';
 import { StorageService } from './StorageService';
@@ -404,7 +404,7 @@ export class SessionImportService implements vscode.Disposable {
       const adapter = adapters.find(
         (candidate) => candidate.id === expectation.harness
       );
-      const worktree = this.findWorktree(scopes, (candidate) => candidate.path === expectation.worktreePath);
+      const worktree = this.findWorktree(scopes, (candidate) => samePath(candidate.path, expectation.worktreePath));
       if (adapter && worktree) {
         jobs.set(`${expectation.harness}\u0000${worktree.path}`, {
           adapter,
@@ -522,7 +522,7 @@ export class SessionImportService implements vscode.Disposable {
     )) {
       if (
         expectation.harness !== adapter.id ||
-        expectation.worktreePath !== worktree.path
+        !samePath(expectation.worktreePath, worktree.path)
       ) {
         continue;
       }
