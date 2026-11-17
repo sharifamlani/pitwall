@@ -79,6 +79,8 @@ Reruns: each of the 12 failing files was rerun alone (`npm test -- <name>`). All
 
 Final `npm test` on Windows 10 (Git Bash, Node test runner), Pitwall main f45c203 plus the CI change. The 9 skips are the 8 dormant-opencode tests and row 26's `/proc` test, each with a reason. CI's `windows` job now runs the same command.
 
+At the v0.3.0 release (897714f), CI's windows job ran `ℹ tests 292 · pass 283 · fail 0 · skipped 9` (run 44120966992); later tasks added tests, and the fail and skip counts are unchanged. The block below is the snapshot taken when this table was finished.
+
 ```
 ℹ tests 234
 ℹ suites 0
