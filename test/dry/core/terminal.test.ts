@@ -455,3 +455,33 @@ test('a background tab whose shell integration arrives late still gets its resto
   assert.ok(renames.every((r) => r.target === tab), 'only the slow tab is renamed');
   assert.equal(front.name, 'the user’s shell');
 });
+
+test('a late title still lands when another tab takes the front while the rename waits its turn', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { chats: [{ id: '6f6f6f00-slow-shell', name: 'Slow Shell', harnessSessionId: 'linked' }] });
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  // Renames as requested, in order; each completes once the gate opens.
+  const renames: { name: string; target: unknown }[] = [];
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', async (arg: { name: string }) => {
+    const target = stub.window.activeTerminal;
+    renames.push({ name: arg.name, target });
+    await gate;
+    if (target) target.name = arg.name;
+  });
+
+  const tab = (await f.open('6f6f6f00-slow-shell'))!;
+  // A focus rename is in flight, so the late title has to queue behind it.
+  stub.window.__setActiveTerminal(tab);
+  stub.window.__integrateShell(tab);
+  await flush();
+  // The command started while the tab was in front; then the user moves on.
+  const front = f.restoredTab('the user’s shell', 9200);
+  stub.window.__setActiveTerminal(front);
+  const before = renames.length;
+  release();
+
+  const title = terminalTitle(f.chat('6f6f6f00-slow-shell'));
+  await waitFor(() => renames.slice(before).some((r) => r.target === tab && r.name === title), 'the late title');
+  await waitFor(() => stub.window.activeTerminal === front, 'the user’s tab to be active again');
+});
