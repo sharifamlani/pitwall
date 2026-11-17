@@ -14,7 +14,7 @@ differ sharply:
 
 - Claude Code, Codex, and Pi keep readable session files, so a read-only agent can search
   them directly.
-- opencode keeps sessions only in its SQLite database. [AGENTS.md](../AGENTS.md) forbids
+- opencode keeps sessions only in its SQLite database. [AGENTS.md](../../AGENTS.md) forbids
   reading that database, and its `session.list` search matches titles only.
 - Claude Code offers a tool allow list (`Read,Grep,Glob`) and `--no-session-persistence`;
   Codex offers an ephemeral thread in a read-only sandbox; Pi offers built-in

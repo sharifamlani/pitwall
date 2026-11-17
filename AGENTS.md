@@ -15,7 +15,7 @@ Deeper references:
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Setup and the PR process for human contributors |
 | [`test/README.md`](test/README.md) | Test suites, coverage matrix, fakes, and environment variables |
 | [`ROADMAP.md`](ROADMAP.md) | Deferred and experimental work; check it before proposing a large design |
-| [`adr/`](adr/README.md) | Accepted decisions and the evidence behind them; read before changing session identity, discovery, or turn state |
+| [`docs/adr/`](docs/adr/README.md) | Accepted decisions and the evidence behind them; read before changing session identity, discovery, or turn state |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release-note format; user-visible changes land under `Unreleased` |
 
 This is the only instruction file: Claude Code (v2.1.277+), Codex, opencode, and other
@@ -56,7 +56,7 @@ is not loaded every session; read the relevant section when you touch that subsy
   goes in the matching page under `docs/` and in `CHANGELOG.md`, and `README.md` carries
   only the overview that links there; architecture goes in `ARCHITECTURE.md`; test
   coverage goes in `test/README.md`; deferred work goes in `ROADMAP.md`; a decision with a
-  lasting trade-off goes in `adr/`. Link to a fact instead of restating it. When code an ADR
+  lasting trade-off goes in `docs/adr/`. Link to a fact instead of restating it. When code an ADR
   names moves or is renamed, update the reference; when the decision itself changes, write
   a new ADR that supersedes it.
 - **Small, focused diffs.** One feature or fix per PR. Follow the surrounding patterns
@@ -222,7 +222,7 @@ watcher, a command and menu entries, icons, tests, and documentation.
   text and takes follow-up messages, plus its default model and effort levels and a probe
   for whether its CLI is available; add the id to the `agntree.sessionSearch.harness`
   enum). Shared code needs no edit; see
-  `ARCHITECTURE.md` → Find Session and [ADR 0016](adr/0016-find-session-sources-across-harnesses.md).
+  `ARCHITECTURE.md` → Find Session and [ADR 0016](docs/adr/0016-find-session-sources-across-harnesses.md).
 - Adapter, service/watcher, menu, icon, and integration tests as applicable. Commands are
   harness-agnostic, so they need no per-harness test.
 - A `docs/agents/<harness>.md` page listed in `site/pages.mjs`, the agent tables in
@@ -386,7 +386,7 @@ shortens the code but makes failure behavior less clear is a regression; revert 
   reload. `TerminalManager.beginRestoreSync()` adopts by PID and resumes revived tabs by
   title. Never type into a terminal whose PID matches the record — it is the running
   agent. A rename is durable only after the command starts and only for the active tab.
-  See [ADR 0009](adr/0009-restored-terminals-keep-their-chat.md).
+  See [ADR 0009](docs/adr/0009-restored-terminals-keep-their-chat.md).
 - **`treeView.reveal()` needs stable ids, `getParent()`, and a visible tree.** See the
   pattern in `ARCHITECTURE.md`.
 - **A tree item shows one icon.** Working/done/closed/new are baked into generated SVGs;

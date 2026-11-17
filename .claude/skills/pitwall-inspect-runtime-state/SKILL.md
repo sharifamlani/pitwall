@@ -1,5 +1,5 @@
 ---
-name: inspect-runtime-state
+name: pitwall-inspect-runtime-state
 description: Read Agntree's live state from a running VS Code editor — installed bundle, extension-host logs, globalState database, and harness session files. Use when a symptom in the running extension does not match the code, a session or chat row behaves oddly, or a freshly installed build still seems stale.
 allowed-tools:
   - Bash

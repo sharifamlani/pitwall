@@ -1,5 +1,5 @@
 ---
-name: debug-extension
+name: pitwall-debug-extension
 description: Debug and troubleshoot the Agntree VS Code extension. Use when there are errors, the extension isn't working, or when investigating issues.
 allowed-tools:
   - Bash

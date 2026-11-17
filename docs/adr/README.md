@@ -1,7 +1,7 @@
 # Architecture decision records
 
 An ADR records a decision that is expensive to reverse, what it replaced, and the evidence
-behind it. It is not a design document and not a changelog: read [`ARCHITECTURE.md`](../ARCHITECTURE.md)
+behind it. It is not a design document and not a changelog: read [`ARCHITECTURE.md`](../../ARCHITECTURE.md)
 to learn how a subsystem works today, and the ADR to learn why it is shaped that way.
 
 | # | Decision | Status |

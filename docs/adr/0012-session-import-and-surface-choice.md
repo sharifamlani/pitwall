@@ -138,4 +138,4 @@ surface a capability with an explicit default.
 
 - [ADR 0010](0010-claude-ui-handoff.md)
 - [ADR 0011](0011-codex-ui-handoff.md)
-- [`ARCHITECTURE.md`](../ARCHITECTURE.md#session-import-naming-and-retention)
+- [`ARCHITECTURE.md`](../../ARCHITECTURE.md#session-import-naming-and-retention)

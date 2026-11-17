@@ -6,7 +6,7 @@ coding, testing doctrine, and the definition of done. Build and verification com
 there too.
 
 Decisions that are expensive to reverse, and the evidence behind them, are recorded in
-[`adr/`](adr/README.md). Read the matching record before changing a subsystem's shape; this
+[`docs/adr/`](docs/adr/README.md). Read the matching record before changing a subsystem's shape; this
 file describes what the code does today, the ADR explains why.
 
 ## Subsystem map
@@ -276,8 +276,8 @@ first, takes a session snapshot, opens the conversation, and leaves
 native session in that worktree to the placeholder and clears the flag. The
 same first-folder rule applies: the extension always starts the conversation
 in the first VS Code folder. See
-[ADR 0010](adr/0010-claude-ui-handoff.md) and
-[ADR 0012](adr/0012-session-import-and-surface-choice.md).
+[ADR 0010](docs/adr/0010-claude-ui-handoff.md) and
+[ADR 0012](docs/adr/0012-session-import-and-surface-choice.md).
 
 ## opencode Sessions
 
@@ -365,7 +365,7 @@ chat's tree row checks that map first, so an open panel is revealed with the sam
 `vscode.openWith` call instead of starting a CLI. The Codex sidebar view is not an editor
 tab and is not tracked. Both harnesses share `NativeUiTabSurfaceService`: the Claude
 policy binds a tab by expectation and label, while the Codex policy reads the exact ID.
-See [ADR 0011](adr/0011-codex-ui-handoff.md).
+See [ADR 0011](docs/adr/0011-codex-ui-handoff.md).
 
 A new Codex conversation is different from an existing panel. `chatgpt.newCodexPanel`
 opens `/extension/panel/new`, and the extension's workspace project comes from the VS
@@ -428,7 +428,7 @@ private install path. Pi has no state database to read.
 
 Pi's RPC mode exposes richer events, including `agent_settled`, but only to the process that
 starts Pi. The decision to observe the transcript instead is recorded in
-[ADR 0015](adr/0015-pi-sessions-from-transcript.md).
+[ADR 0015](docs/adr/0015-pi-sessions-from-transcript.md).
 
 `PiSessionWatcher` extends `ExactIdSessionWatcher`: it watches the sessions root and the
 pending worktree's encoded directories, links the chosen ID when the record appears, and
@@ -571,7 +571,7 @@ Deletion is narrow by design; the rules are in
 - Deleting a worktree removes its session rows (closing their terminals) without
   tombstones, and removing a workspace root does the same for each of its worktrees, so
   re-adding the folder can import the sessions again. The confirmation says so
-  ([ADR 0013](adr/0013-rows-leave-with-their-worktree.md)).
+  ([ADR 0013](docs/adr/0013-rows-leave-with-their-worktree.md)).
 - User-triggered destructive actions and refusals are recorded with `logOperation()`.
 
 ## Dynamic View Titles
@@ -652,7 +652,7 @@ Using `pr-<number>` (e.g., `pr-4267`) instead of the PR's actual branch name avo
 **Find Session** answers a question in the user's words ("which session set up the usage
 mod?") across every session on the machine, not only those under a workspace root. It
 builds no index: an agent searches the records the harnesses already keep, and Agntree
-trusts only what those harnesses confirm. [ADR 0014](adr/0014-find-session-agent-over-native-records.md)
+trusts only what those harnesses confirm. [ADR 0014](docs/adr/0014-find-session-agent-over-native-records.md)
 records why.
 
 Two optional adapter capabilities divide the work, so the agent that answers and the
@@ -844,7 +844,7 @@ built-in Plan agent allows shell and may write plan files, Explore is a subagent
 shell and web access is only prompt-restricted, and every run persists a session.
 Installing Claude Code, Codex, or Pi is required to *run* a search; opencode sessions are
 still searched when one of those runs it. See
-[ADR 0017](adr/0017-opencode-find-session-source-only.md).
+[ADR 0017](docs/adr/0017-opencode-find-session-source-only.md).
 
 ## Important VS Code Extension Gotchas
 
@@ -874,7 +874,7 @@ To use `treeView.reveal()` on nested items:
 ### Terminal Persistence Across Restarts
 
 An Agntree terminal has two identities, and
-[ADR 0009](adr/0009-restored-terminals-keep-their-chat.md) records why and what each
+[ADR 0009](docs/adr/0009-restored-terminals-keep-their-chat.md) records why and what each
 costs: the title `Agntree: <chat name> [<shortId>]` (`terminalTitle()` /
 `titleShortId()` in `terminalEvents.ts`) identifies a tab after a quit, and the pty PID
 recorded per workspace folder (`StorageService.getTerminalPids()` /

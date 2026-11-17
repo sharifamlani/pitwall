@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Runs every Pitwall foundation check. Prints PASS/FAIL per check; exits 1 on the first failure.
+# Runs every Pitwall check. Prints PASS/FAIL per check; exits 1 on the first failure.
 #
-#   bash scripts/verify-foundation.sh                # host: all checks, including the container build
-#   bash scripts/verify-foundation.sh --skip-docker  # skip the container build (e.g. inside the container)
+#   bash scripts/verify.sh                # host: all checks, including the container build and Linux tests
+#   bash scripts/verify.sh --skip-docker  # skip the container build and Linux tests (e.g. inside the container)
 set -euo pipefail
 
 SKIP_DOCKER=0
@@ -63,4 +63,20 @@ else
   pass docker
 fi
 
-echo "FOUNDATION: ALL CHECKS PASSED"
+# 7. npm — the extension installs, typechecks and compiles
+npm ci --no-audit --no-fund >/dev/null || fail npm "npm ci failed"
+npm run typecheck >/dev/null || fail npm "typecheck failed"
+npm run compile >/dev/null || fail npm "compile failed"
+pass npm
+
+# 8. linux-tests — the npm test suite on Linux in the container (host only)
+if [[ $SKIP_DOCKER -eq 1 || -f /.dockerenv ]]; then
+  echo "SKIP linux-tests (inside container or --skip-docker)"
+elif ! command -v docker >/dev/null 2>&1; then
+  echo "SKIP linux-tests (docker not installed)"
+else
+  bash scripts/run-linux-tests.sh || fail linux-tests "Linux npm tests failed"
+  pass linux-tests
+fi
+
+echo "VERIFY: ALL CHECKS PASSED"

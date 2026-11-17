@@ -36,4 +36,4 @@ command is missing, the CLI's own error is the user-visible failure.
   missing flag.
 - A future CLI change fails visibly instead of degrading.
 - `--bg` sessions, duplicate-transcript cleanup from old forks, and incremental parsing for the
-  full-metadata path stay deferred in [`ROADMAP.md`](../ROADMAP.md).
+  full-metadata path stay deferred in [`ROADMAP.md`](../../ROADMAP.md).

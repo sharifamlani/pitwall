@@ -40,7 +40,7 @@ fifteen transcripts matched the mod's name.
 - **An MCP server exposing search tools to the agent.** Cleaner tool results, but a second
   process and protocol to own, configured differently for every harness CLI.
 - **Shared code that reads every harness's sessions.** It would read opencode's database,
-  which [AGENTS.md](../AGENTS.md) forbids, and would put harness knowledge outside the
+  which [AGENTS.md](../../AGENTS.md) forbids, and would put harness knowledge outside the
   adapters.
 
 ## Evidence

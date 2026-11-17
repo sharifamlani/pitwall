@@ -1,5 +1,5 @@
 ---
-name: build-extension
+name: pitwall-build-extension
 description: Build, package, and install the Agntree VS Code extension. Use when asked to build, compile, package, create a VSIX, or install/update the extension.
 allowed-tools:
   - Bash

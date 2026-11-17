@@ -1,5 +1,5 @@
 ---
-name: add-feature
+name: pitwall-add-feature
 description: Add a feature to the Agntree VS Code extension following the project's working agreement. Use when implementing new functionality, adding commands, extending a harness, or changing tree/menu behavior.
 allowed-tools:
   - Read
