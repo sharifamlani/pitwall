@@ -29,7 +29,6 @@ jobs:
       - run: npm test
 
   windows:
-    # Windows runs the build only. The test suite joins in Phase 2 (Windows parity).
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -42,6 +41,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run compile
       - run: node scripts/build-manifest.mjs --check
+      - run: npm test
 
   privacy:
     runs-on: ubuntu-latest
