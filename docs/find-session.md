@@ -8,7 +8,7 @@ Use it when you remember the work but not the name, the folder, or even which ag
 
 ## Ask a question
 
-1. Press `Ctrl+Alt+F` (`Ctrl+Cmd+F` on macOS), or choose **Find Session…** in the Pitwall `…` menu.
+1. Press `Ctrl+Alt+R` (`Ctrl+Cmd+R` on macOS) and pick the last row, or choose **Find Session…** in the Pitwall `…` menu.
 2. Describe the session in your own words and press `Enter`.
 
 The **Find Session** view opens in the sidebar and shows the search running, with the step the agent is on. How long it takes depends on how much history you have and the model you use. **Stop Search** cancels it.

@@ -43,8 +43,8 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
   /** The chat each repo's key last opened, so repeating the key walks its sessions. */
   const lastOpened = new Map<string, string>();
 
-  const goToRepo = (position: number) => async (): Promise<void> => {
-    const row = workspacesProvider.repoRowAt(position);
+  /** Reveal a repo row; pressed again on the repo it already shows, open its next chat. */
+  const goToRepoRow = async (row: WorkspaceTreeItem | undefined): Promise<void> => {
     const repo = repoOfRow(row);
     if (!row || !repo) {
       return;
@@ -65,6 +65,11 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
     lastOpened.set(repo.id, (next.data as ChatSession).id);
     await run('pitwall.openChat', next);
   };
+
+  const goToRepo = (position: number) => () => goToRepoRow(workspacesProvider.repoRowAt(position));
+
+  // Internal: the search box's repo pick behaves exactly like the hotkey (row 3.9).
+  register('pitwall.goToRepoRow', goToRepoRow);
 
   const openWindow = async (repo: Repository | undefined): Promise<void> => {
     if (repo) {

@@ -81,7 +81,7 @@ test('session rows show bell (needs you only), terminal and fork inline; star, r
   const titleInline = (menus['view/title'] ?? []).filter(
     (entry) => entry.when?.includes('pitwall.workspacesView') && entry.group?.startsWith('navigation')
   );
-  assert.deepEqual(titleInline.map(id), ['pitwall.addRepository'], 'one inline title action');
+  assert.deepEqual(titleInline.map(id), ['pitwall.search', 'pitwall.addRepository'], 'search then add, in canvas order');
 });
 
 test('the repo menu has exactly the §3c items in order, and the row shows history and "+" on hover', () => {
