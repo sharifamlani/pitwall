@@ -5,6 +5,7 @@ import {
 import { ClaudeAgentsService } from './ClaudeAgentsService';
 import { ClaudeSessionFileState, ClaudeSessionsFile, ClaudeSessionsSnapshot } from './ClaudeSessionsFile';
 import { ClaudeTurnReading } from './ClaudeTurnState';
+import { ClaudeRepoDiscovery } from './ClaudeRepoDiscovery';
 import { ClaudeUi } from './claudeUi';
 import { ClaudeSearchRunner, ClaudeSessionSearch } from './claudeSearch';
 import { generateId } from '../../core/types';
@@ -66,6 +67,7 @@ export class ClaudeHarness implements HarnessAdapter {
   private readonly lastFileWaits = new Map<string, ClaudeSessionFileState>();
   /** Sessions whose wait the previous tick carried over a torn read. */
   private readonly carriedWaits = new Set<string>();
+  private readonly repoDiscovery: ClaudeRepoDiscovery;
 
   constructor(options: ClaudeHarnessOptions = {}) {
     this.sessionService =
@@ -74,6 +76,7 @@ export class ClaudeHarness implements HarnessAdapter {
       options.agentsService ??
       new ClaudeAgentsService({ command: () => this.command });
     this.sessionsFile = options.sessionsFile ?? new ClaudeSessionsFile();
+    this.repoDiscovery = new ClaudeRepoDiscovery(this.sessionService.getProjectsDirectory());
     this.nativeUi = options.nativeUi ?? new ClaudeUi();
     this.sessionSearch = new ClaudeSessionSearch(this.sessionService);
     this.sessionSearchRunner = new ClaudeSearchRunner({
@@ -119,8 +122,9 @@ export class ClaudeHarness implements HarnessAdapter {
     return command;
   }
 
-  async discoverRecentFolders(_sinceMs: number, _counts?: DiscoveryCounts): Promise<DiscoveredFolder[]> {
-    throw new Error('not implemented');
+  /** Folders sessions ran in, from the transcripts' heads (ADR 0019). */
+  discoverRecentFolders(sinceMs: number, counts?: DiscoveryCounts): Promise<DiscoveredFolder[]> {
+    return this.repoDiscovery.discoverRecentFolders(sinceMs, counts);
   }
 
   async isSessionResumable(sessionId: string): Promise<boolean> {
