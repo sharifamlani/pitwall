@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.30 · 2026-11-17
+> v0.31 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
-- **Current phase:** Phase 2 — Windows parity
-- **Current step:** Phase 2 build done. Terminal-mode restore work stopped (Sharif 2026-11-17, R48); file-in-front restore is a VS Code/Cursor limitation → Phase 4. Next: independent evaluator (E1–E13 + E15) → close docs → v0.3.0.
+- **Current phase:** Phase 3 — Sidebar v1 (not started). **Development PAUSED by Sharif on 2026-11-17 after v0.3.0.**
+- **Current step:** Phase 2 closed and tagged `v0.3.0`. Paused; no work in flight.
 - **Last update:** 2026-11-17
-- **Next action:** independent evaluator on a fresh clone of `main`.
+- **Next action (on resume):** write the Phase 3 plan, starting with row 3.0 (finding F3, a live repro first); read docs/progress_reports/phase2-handoff.md.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -146,7 +146,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 **Goal:** The inherited code works on native Windows, the way it does on Linux.
 **Entry gate:** Phase 1 ✅ (`v0.2.0`), with the triage doc.
 **Exit gate:** Windows CI runs the full test suite green (env-limit tests skip with a stated reason); tag `v0.3.0`.
-**Status:** ⏸ planned.
+**Status:** ✅ done · tag `v0.3.0` (2026-11-17). Evaluator: E1–E13 + E15 PASS ([phase2-scorecard.md](docs/progress_reports/phase2-scorecard.md)).
 **Plan:** [2026-11-16-phase2-windows-parity.md](docs/superpowers/plans/2026-11-16-phase2-windows-parity.md)
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
@@ -161,10 +161,10 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 2.8 | `build-manifest.mjs`: fail on duplicate command ids, setting keys or keybindings between core and harness fragments (final review I2) | ✅ | ✅ | 2026-11-17 · PR #9 `2a5bef8` → merge `1830558` | final review |
 | 2.9 | `package.json` `files` allowlist so any `vsce package` (not only verify.sh) ships only out/, resources/, the manifest and licence docs; must land before the first public `.vsix` (final review I3) | ✅ | ✅ | 2026-11-17 · PR #7 `186a384` → merge `131a2d5` | final review |
 | 2.10 | CI runs the privacy gate, gitleaks and the vsix allowlist check (final review I4) | ✅ | ✅ | 2026-11-17 · PR #7 `186a384` → merge `131a2d5`; probe PR #14 run `44025011704`: privacy failure at path gate | final review |
-| 2.11 | Windows quit/restore with a live chat: ~4 s activation wait, revived tab not resumed, row click opens a duplicate tab, reload then loses the duplicate (testing UJ run 6) | ✅ (one PID wait, late PIDs/titles recorded, shell-aware resume line, readiness wait, stale-echo-safe PID records; Smoke 7 15/15 incl. under load); follow-up Task 6b (R37/R39/R42/R43): one terminal per chat across reloads, activation never waits, renames check-and-undo, resume line guarded; live re-walk pending | ✅ | 2026-11-17 · PR #18 `8cac588` → merge `1914f21` · PR #22 `cd8ebd3` → merge `68ad3d2` | testing UJ run 6 |
+| 2.11 | Windows quit/restore with a live chat: ~4 s activation wait, revived tab not resumed, row click opens a duplicate tab, reload then loses the duplicate (testing UJ run 6) | ✅ (restore after quit and reload, live UJ run 12; file-in-front restore is an editor limitation → 4.2b, R48) | ✅ | 2026-11-17 · PR #18 `8cac588` → merge `1914f21` · PR #22 `cd8ebd3` → merge `68ad3d2` | testing UJ run 6 |
 | 2.12 | 9 Minor findings from the Phase 1 final review (`docs/progress_reports/phase1-final-review.md`) and the "No tree item with id" log line after reload | ✅ (M1–M3, M5 PR #13; M4 PR #9; M6–M8 PR #7; M9 + log line PR #12, live-verified UJ run 8: 0 "No tree item" in 5 starts + hidden-view start) | ✅ | 2026-11-17 · merges `1830558`, `0d520bb`, `131a2d5`, `0095508` | final review, UJ run 6 |
 | 2.13 | New-chat launch with a custom full-path Claude command (`C:\...\claude.exe`) fails in PowerShell (a single-quoted path needs the call operator `&`); finding F1 from the Phase 2 plan | ✅ (`& ` before a quoted command in PowerShell, for new chats and Find Session resume) | ✅ | 2026-11-17 · PR #18 `8cac588` → merge `1914f21` | Phase 2 plan F1 |
-| 2.14 | The Claude agents poll (`claude agents --json`, behind "needs you", ADR 0006) runs on Windows: `ClaudeAgentsService` calls `execFile` directly, so an npm `claude.cmd` fails (ENOENT / EINVAL); route it through `harnessInvocation` (finding F2, QA). Ruling R31: already routed through `harnessInvocation` at `fetchStates`; F2 did not reproduce through the service, so guards only | ~ fixes merged (R36, R38, R40, R41); live S1 re-walk pending, after Task 6b merges | ✅ | 2026-11-17 · PR #16 `d255e13` → `34003bd` (guards) · PR #20 `655e1aa` → merge `a82f0f5` (R36/R38) · PR #21 `f4c5df5` → merge `3d0bd98` (R40/R41) | QA wave B, rulings R30, R31 |
+| 2.14 | The Claude agents poll (`claude agents --json`, behind "needs you", ADR 0006) runs on Windows: `ClaudeAgentsService` calls `execFile` directly, so an npm `claude.cmd` fails (ENOENT / EINVAL); route it through `harnessInvocation` (finding F2, QA). Ruling R31: already routed through `harnessInvocation` at `fetchStates`; F2 did not reproduce through the service, so guards only | ✅ (needs-you live S1-a/b/c + new chat PASS, UJ run 12; R36–R45) | ✅ | 2026-11-17 · PR #16 `d255e13` → `34003bd` (guards) · PR #20 `655e1aa` → merge `a82f0f5` (R36/R38) · PR #21 `f4c5df5` → merge `3d0bd98` (R40/R41) | QA wave B, rulings R30, R31 |
 
 ### Phase 3 — Sidebar v1: repos and sessions
 **Goal:** The Pitwall list as designed on the canvas: every repo and chat from one window, sorted by who needs you.
@@ -321,3 +321,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.28 · 2026-11-17.** Main CI green again at `dad160c` (hotfix PR #24: transcript mtime compared at ms resolution; main had been red since `3e6434a` on a same-ms race the local runs missed). PR #23 merged earlier (R45: a wait pending at activation never toasts). Rule added: no merge without green PR checks, and main CI confirmed after every merge. R46: the command-start focus yank is Claude Code's IDE integration (out of scope). R1-x (restore front-tab steal) confirmed as Pitwall's, fix in Task 6c.
 - **v0.29 · 2026-11-17.** Task 6c merged → `ae775fc` (R44). Restore puts back the group's real front tab, not `activeTerminal`, which differs in Cursor. Reveals wait for render and hold refreshes, so no more "No tree item". Pitwall's own shows never select or reveal. e2e asserts both; Smoke 7 10/10 (builder 5 + QA 5). Main CI green.
 - **v0.30 · 2026-11-17.** Sharif: move off the terminal path as fast as possible (the product is Claude's panel). R48: terminal restore stops in Phase 2. Restore with a file in front at quit fails because VS Code itself drops the revived terminals' names (reproduced with no Pitwall) → known issue, Phase 4 row 4.2b. R1(b) is timed from Pitwall's activation (lead, delegated).
+- **v0.31 · 2026-11-17 · Phase 2 closed, tag `v0.3.0`.** Independent evaluator: E1–E13 + E15 PASS (round 2, after R49 updated the packaged count to 49). Windows: 0 dry-test failures (was 12), full suite + `.vsix` build on Windows CI, privacy gate. Restore after quit/reload, needs-you (orange mark, Ctrl+Alt+N, one pop-up per unseen wait). Rulings R20–R50 in the plan. Unblocked: Phase 3. Deferred: 3.0 (F3), 4.2b (F4 + the file-in-front editor race), the opencode Windows spawn (when D9 enables it). Development paused by Sharif after this release.
