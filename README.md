@@ -10,7 +10,7 @@ On an F1 pit wall, the team watches every car at once and calls in whichever one
 
 **v0.2.0 (Phase 1): Agntree forked, renamed and made Claude-only.** What works today:
 
-- A sidebar lists your repos and their Claude Code chats, imported automatically from your local Claude Code session files.
+- A sidebar lists the repos you add and their Claude Code chats, imported automatically from your local Claude Code session files.
 - Clicking a chat reopens it in a terminal.
 
 **Planned, not built yet:** chats opening in Claude Code's own chat panel, live status dots (working, needs you, finished), Windows pop-ups when a session finishes or needs approval, and the redesigned sidebar. The plan and its order are in [ROADMAP.md](ROADMAP.md).
@@ -43,7 +43,7 @@ Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) fi
 
 Forked from [Agntree](https://github.com/subhashkhileri/agntree) by Subhash Khileri (MIT), at 47124cd. <!-- credit-allow -->
 
-Pitwall is independent and not affiliated with or endorsed by Anthropic. It drives the official Claude Code extension only through its public link handler and never copies or modifies it.
+Pitwall is independent and not affiliated with or endorsed by Anthropic. It drives the official Claude Code extension only through its public link handler and commands, and never copies or modifies it.
 
 ## Development
 
@@ -74,3 +74,6 @@ The container is for building and testing. Pitwall itself runs in Cursor on Wind
 | `docs/` | Plans and design notes; `docs/adr/` holds upstream's decision records |
 | `src/`, `test/`, `package.json` | The extension, imported from Agntree | <!-- credit-allow -->
 
+## License
+
+MIT. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
