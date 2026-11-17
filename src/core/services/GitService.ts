@@ -90,16 +90,54 @@ export class GitService {
     return this.attemptAsync(['clone', url, destination], path.dirname(destination), 'Clone');
   }
 
+  /** The working tree's top level, in native spelling (Phase 2); null outside git. */
   getRepoRoot(dirPath: string): string | null {
-    return this.output(['rev-parse', '--show-toplevel'], dirPath);
+    const top = this.output(['rev-parse', '--show-toplevel'], dirPath);
+    return top ? nativePath(top) : null;
   }
 
   /**
    * The main repository root for a folder inside any of its worktrees, from
-   * the git common dir; null when the folder is not in a git repository.
+   * the git common dir, in the native spelling `git worktree list` gives
+   * (Phase 2). A common dir that is not a `.git` folder (a submodule's lives
+   * under the superproject's `.git/modules`) falls back to the working tree's
+   * top level. Null when the folder is missing, not in a git repository, or
+   * in a bare one. Asynchronous, so a discovery pass never blocks the
+   * extension host.
    */
-  async getMainRepoRoot(_cwd: string): Promise<string | null> {
-    throw new Error('not implemented');
+  async getMainRepoRoot(cwd: string): Promise<string | null> {
+    const lines = async (args: string[], dir: string): Promise<string[] | null> => {
+      try {
+        const { stdout } = await execFileAsync('git', args, { cwd: dir, encoding: 'utf-8' });
+        return stdout.split('\n').map((line) => line.trim()).filter(Boolean);
+      } catch {
+        return null;
+      }
+    };
+    const topLevel = async (): Promise<string | null> => {
+      const [top] = (await lines(['rev-parse', '--show-toplevel'], cwd)) ?? [];
+      return top ? nativePath(top) : null;
+    };
+
+    let commonDir: string | undefined;
+    const absolute = await lines(['rev-parse', '--path-format=absolute', '--git-common-dir'], cwd);
+    if (!absolute) {
+      return null;
+    }
+    if (absolute.length === 1 && path.isAbsolute(absolute[0])) {
+      commonDir = absolute[0];
+    } else {
+      // Git before 2.31 has no --path-format and echoes it back. Asked from
+      // the working tree's top level, a relative common dir is relative to it.
+      const top = await topLevel();
+      const [relative] = (top && (await lines(['rev-parse', '--git-common-dir'], top))) || [];
+      if (!top || !relative) {
+        return null;
+      }
+      commonDir = path.resolve(top, relative);
+    }
+    commonDir = nativePath(commonDir);
+    return path.basename(commonDir) === '.git' ? path.dirname(commonDir) : topLevel();
   }
 
   listWorktrees(repoPath: string, repoId: string): Worktree[] {
