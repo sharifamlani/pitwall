@@ -196,7 +196,12 @@ function writeFakeCommand(root, runsPath) {
       cmdPath,
       `@echo off\r\n"${process.execPath}" "${FAKE_CLI}" --e2e-runs "${runsPath}" %*\r\n`
     );
-    return cmdPath;
+    // The bare name keeps this e2e about restore alone; the quoted full-path
+    // case (finding F1) is covered by Task 6 Step 8b's dry test and Smoke 12
+    // N1. The editor's terminals inherit PATH from the launch env, which
+    // copies process.env.
+    process.env.PATH = `${root}${path.delimiter}${process.env.PATH}`;
+    return 'fake-claude';
   }
 
   const shPath = path.join(root, 'fake-claude');
