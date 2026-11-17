@@ -245,6 +245,7 @@ export function watchShellReady(
   if (!shellIntegrationEnabled()) {
     return { ready: Promise.resolve('off'), cancel: () => undefined };
   }
+  // Revived tabs report integration restored from the previous session, so this passes at once for them.
   if (terminal.shellIntegration) {
     return { ready: Promise.resolve('ready'), cancel: () => undefined };
   }
