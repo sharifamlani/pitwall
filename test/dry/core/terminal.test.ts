@@ -1340,3 +1340,63 @@ test('guard: after a quit, the user activating a tab during the revived-tab pass
   assert.equal(stub.window.activeTerminal, two, 'the user’s choice stays in front');
   assert.deepEqual(userShows, [], 'the tab in front before the pass is not shown again');
 });
+
+/**
+ * UJ run 11 R1-x, the exact pair: "Lab ready" (a transcript, resumed with
+ * --resume) in front at quit, "New Session" (no transcript, relaunched with
+ * --session-id) behind it. Cursor reports a revived window's active terminal
+ * as the last revived tab, not the tab in front (Task 6b saw New Session as
+ * the active terminal while Lab ready held the front and focus), or reports
+ * none yet; and its agent pane can be the active editor group.
+ */
+for (const [what, arrange] of [
+  ['the extension host reports New Session as the active terminal', (_lab: FakeTerminal, fresh: FakeTerminal) => stub.window.__setActiveTerminal(fresh)],
+  ['the extension host reports no active terminal yet', () => stub.window.__setActiveTerminal(undefined)],
+  [
+    'an agent pane in another editor group is the active group',
+    () => {
+      const agent = { input: new vscode.TabInputWebview('cursor-agent'), label: 'New Agent', isPreview: false, isActive: true };
+      const groups = stub.window.tabGroups.all as { isActive: boolean }[];
+      groups[0].isActive = false;
+      groups.push({ isActive: true, viewColumn: 2, tabs: [agent], activeTab: agent } as never);
+    },
+  ],
+] as const) {
+  test(`after a quit, the revived-tab pass puts Lab ready back in front of New Session when ${what} (R1-x)`, async (t) => {
+    const f = setup(t, {
+      chats: [
+        { id: '06be7b00-lab', name: 'Lab ready', harnessSessionId: 'lab-transcript', status: 'closed' },
+        { id: '590a3400-new', name: 'New Session', pendingHarnessSessionId: 'new-pending', status: 'closed' },
+      ],
+      adapter: { isSessionResumable: async (id) => id === 'lab-transcript' },
+    });
+    await f.storage.rememberTerminalPid('06be7b00-lab', 7061);
+    await f.storage.rememberTerminalPid('590a3400-new', 7062);
+    const lab = f.restoredTab('Pitwall: Lab ready [06be7b]', 8061);
+    const fresh = f.restoredTab('Pitwall: New Session [590a34]', 8062);
+    terminalTabsWithFront(lab);
+    stub.window.__setActiveTerminal(lab);
+    // Only Pitwall's own shows move the front from here on, as in the walk.
+    const following = vscode.window.onDidChangeActiveTerminal((terminal) => {
+      if (!terminal) return;
+      const group = (stub.window.tabGroups.all as { tabs: { label: string; isActive: boolean }[]; activeTab: unknown }[]).find((candidate) =>
+        candidate.tabs.some((tab) => tab.label === terminal.name)
+      );
+      if (group) {
+        for (const tab of group.tabs) tab.isActive = tab.label === terminal.name;
+        group.activeTab = group.tabs.find((tab) => tab.isActive);
+      }
+    });
+    t.after(() => following.dispose());
+    arrange(lab, fresh);
+
+    await f.manager.beginRestoreSync(() => WORKTREE).complete;
+    assert.match(String(lab.sent[0]), /claude --resume lab-transcript/);
+    assert.match(String(fresh.sent[0]), /claude --session-id new-pending/);
+    await waitFor(() => fresh.name === 'Pitwall: New Session [590a34]' && fresh.shown > 0, 'New Session shown and renamed');
+    for (let i = 0; i < 10; i++) await flush();
+    const group = (stub.window.tabGroups.all as { viewColumn: number; activeTab?: { label: string } }[]).find((candidate) => candidate.viewColumn === 1);
+    assert.equal(group?.activeTab?.label, 'Pitwall: Lab ready [06be7b]', 'Lab ready is in front of its group again');
+    assert.equal(stub.window.__focusedTerminal, undefined, 'and keyboard focus never moved');
+  });
+}
