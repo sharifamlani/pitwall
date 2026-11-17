@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.29 · 2026-11-17
+> v0.30 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 2 — Windows parity
-- **Current step:** Phase 2: every build and fix PR merged (last: Task 6c, PR #25 → `ae775fc`; main CI green). Next: the testing agent's final live re-walk (R1-x incl. a two-transcribed control, L1, S1-b variant, S1-c) → independent evaluator → Sharif's R1(b) timing decision → v0.3.0.
+- **Current step:** Phase 2 build done. Terminal-mode restore work stopped (Sharif 2026-11-17, R48); file-in-front restore is a VS Code/Cursor limitation → Phase 4. Next: independent evaluator (E1–E13 + E15) → close docs → v0.3.0.
 - **Last update:** 2026-11-17
-- **Next action:** final live re-walk on `ae775fc`.
+- **Next action:** independent evaluator on a fresh clone of `main`.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -198,7 +198,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 |---|---|---|---|---|---|
 | 4.1 | Chats open in Claude's panel by default; link uses `vscode.env.uriScheme` (Agntree hardcodes `vscode://`) (was 3.1) | ⏸ | ⏸ | — | D3 |
 | 4.2 | Click a chat → Pitwall focuses (or opens) its folder's window, then opens the chat there (was 3.2) | ⏸ | ⏸ | — | D35, D36, T5, T6 |
-| 4.2b | Terminal ↔ chat identity without titles (finding F4, Phase 2 Task 6b): `renameWithArg` renames the terminal with keyboard focus, not the target, so title-based identity is fragile. Spike tagging Pitwall terminals (e.g. `creationOptions.env`) and whether revived terminals keep it on reload and quit, in Cursor and VS Code; if so, match on the tag and retire title matching (amends ADR 0009) | ⏸ | ⏸ | — | Task 6b report, ruling R39 |
+| 4.2b | Terminal ↔ chat identity without titles (finding F4, Phase 2 Task 6b): `renameWithArg` renames the terminal with keyboard focus, not the target, so title-based identity is fragile. Spike tagging Pitwall terminals (e.g. `creationOptions.env`) and whether revived terminals keep it on reload and quit, in Cursor and VS Code; if so, match on the tag and retire title matching (amends ADR 0009). Also: chats don't restore when a FILE is in front at quit, because VS Code and Cursor drop the revived terminals' names (editor limitation, reproduced without Pitwall); and a plain panel terminal in front can leave the last chat in front. Parked branch `phase2/task-6d-restore-file-front` has the e2e coverage (R48) | ⏸ | ⏸ | — | Task 6b/6d reports, rulings R39, R48 |
 | 4.3 | Repo click opens all its chats as tabs; chat clicks add tabs; never duplicates | ⏸ | ⏸ | — | D11, T6 |
 | 4.4 | Match Claude tabs to chats reliably (titles are truncated, new chats all say "Claude Code") | ⏸ | ⏸ | — | T10 |
 | 4.5 | Repo + branch under tabs: file tabs via label setting; find a way for Claude tabs, else window title + bottom bar (was 2.5) | ⏸ | ⏸ | — | D26, T9 |
@@ -320,3 +320,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.27 · 2026-11-17.** Task 6b merged → `68ad3d2`. Root cause: `renameWithArg` renames the keyboard-focused terminal, not the target. Fixes: check-and-undo renames with event-triggered retries; no second terminal per chat; activation never waits on terminals; the hidden-view reveal is deferred; a leading space guards resume lines typed into revived tabs (R42); Pitwall's own background shows don't count as the user looking (R43). Smoke 7 15/15 plus QA 5/5. Finding F4 (title-free identity) is row 4.2b.
 - **v0.28 · 2026-11-17.** Main CI green again at `dad160c` (hotfix PR #24: transcript mtime compared at ms resolution; main had been red since `3e6434a` on a same-ms race the local runs missed). PR #23 merged earlier (R45: a wait pending at activation never toasts). Rule added: no merge without green PR checks, and main CI confirmed after every merge. R46: the command-start focus yank is Claude Code's IDE integration (out of scope). R1-x (restore front-tab steal) confirmed as Pitwall's, fix in Task 6c.
 - **v0.29 · 2026-11-17.** Task 6c merged → `ae775fc` (R44). Restore puts back the group's real front tab, not `activeTerminal`, which differs in Cursor. Reveals wait for render and hold refreshes, so no more "No tree item". Pitwall's own shows never select or reveal. e2e asserts both; Smoke 7 10/10 (builder 5 + QA 5). Main CI green.
+- **v0.30 · 2026-11-17.** Sharif: move off the terminal path as fast as possible (the product is Claude's panel). R48: terminal restore stops in Phase 2. Restore with a file in front at quit fails because VS Code itself drops the revived terminals' names (reproduced with no Pitwall) → known issue, Phase 4 row 4.2b. R1(b) is timed from Pitwall's activation (lead, delegated).
