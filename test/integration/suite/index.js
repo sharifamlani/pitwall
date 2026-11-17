@@ -1,0 +1,207 @@
+const assert = require('assert');
+const path = require('path');
+const vscode = require('vscode');
+
+const repoRoot = path.resolve(__dirname, '..', '..', '..');
+const manifest = require(path.join(repoRoot, 'package.json'));
+const extensionId = `${manifest.publisher}.${manifest.name}`;
+
+let failures = 0;
+
+function check(condition, message) {
+  if (condition) {
+    console.log(`PASS  ${message}`);
+  } else {
+    failures++;
+    console.error(`FAIL  ${message}`);
+  }
+}
+
+exports.run = async function run() {
+  console.log('== activation ==');
+  const extension = vscode.extensions.getExtension(extensionId);
+  assert(extension, `Agntree extension (${extensionId}) is discoverable`);
+
+  await extension.activate();
+  check(extension.isActive, 'extension activates without throwing');
+
+  console.log('\n== commands ==');
+  const commands = await vscode.commands.getCommands(true);
+  // Every contributed command needs a handler, or its menu entry fails when clicked.
+  const unregistered = manifest.contributes.commands
+    .map((entry) => entry.command)
+    .filter((command) => !commands.includes(command));
+  check(
+    unregistered.length === 0,
+    `all ${manifest.contributes.commands.length} contributed commands are registered${unregistered.length ? `; missing: ${unregistered.join(', ')}` : ''}`
+  );
+
+  console.log('\n== configuration ==');
+  const config = vscode.workspace.getConfiguration('agntree');
+  check(
+    JSON.stringify(config.get('harnessCommands')) ===
+      JSON.stringify({
+        claude: 'claude',
+        opencode: 'opencode',
+        codex: 'codex',
+        pi: 'pi-legacy',
+      }),
+    'harnessCommands has a default per harness, and an object saved by an earlier version still overrides one'
+  );
+  check(
+    config.get('notifications.enabled') === true &&
+      config.get('notifications.onTurnEnd') === true &&
+      config.get('notifications.onNeedsInput') === true &&
+      config.get('notifications.nativeBanner') === true,
+    'notification settings default to on'
+  );
+  check(
+    config.get('defaultSessionSurface') === 'terminal',
+    'sessions default to the terminal surface'
+  );
+  check(
+    config.get('defaultHarness') === '',
+    'New Session asks which agent until a default agent is set'
+  );
+  check(
+    config.get('sessionSearch.harness') === 'claude' &&
+      config.get('sessionSearch.model') === '' &&
+      config.get('sessionSearch.effort') === '',
+    "Find Session defaults to Claude Code with the harness's configured model and effort"
+  );
+  check(
+    config.get('autoImport.enabled') === true &&
+      config.get('autoImport.retentionDays') === 15,
+    'auto-import defaults to on with a fifteen-day retention'
+  );
+
+  console.log('\n== manifest ==');
+  const contributes = manifest.contributes || {};
+  const menus = contributes.menus || {};
+  const contextMenus = menus['view/item/context'] || [];
+  const submenuIds = new Set(
+    (contributes.submenus || []).map((submenu) => submenu.id)
+  );
+  check(
+    contextMenus.some((item) => item.submenu === 'agntree.newSession'),
+    'worktree context menu opens the new-session submenu'
+  );
+  const newSessionChildren = [
+    ...(menus['agntree.newSession'] || []),
+    ...(menus['agntree.newSessionContext'] || []),
+  ];
+  check(submenuIds.has('agntree.newSession'), 'agntree.newSession submenu is contributed');
+  check(
+    submenuIds.has('agntree.newSessionContext'),
+    'agntree.newSessionContext submenu is contributed'
+  );
+  check(
+    newSessionChildren.some(
+      (item) =>
+        item.command === 'agntree.newClaudeChat' &&
+        item.when.includes('agntree.claudeInstalled') &&
+        item.when.includes('config.agntree.defaultSessionSurface')
+    ),
+    'Claude new-session entry follows the configured surface'
+  );
+  check(
+    newSessionChildren.some(
+      (item) => item.command === 'agntree.newClaudeChatInUi'
+    ),
+    'Claude exposes an explicit UI new-session entry'
+  );
+  check(
+    newSessionChildren.some(
+      (item) =>
+        item.command === 'agntree.newOpencodeChat' &&
+        item.when.includes('agntree.opencodeInstalled')
+    ),
+    'opencode new-session entry is gated on the installed context key'
+  );
+  check(
+    newSessionChildren.some(
+      (item) =>
+        item.command === 'agntree.newCodexChat' &&
+        item.when.includes('agntree.codexInstalled') &&
+        item.when.includes('config.agntree.defaultSessionSurface')
+    ),
+    'Codex new-session entry follows the configured surface'
+  );
+  check(
+    newSessionChildren.some(
+      (item) => item.command === 'agntree.newCodexChatInUi'
+    ),
+    'Codex exposes an explicit UI new-session entry'
+  );
+  check(
+    newSessionChildren.some(
+      (item) =>
+        item.command === 'agntree.newPiChat' &&
+        item.when.includes('agntree.piInstalled')
+    ),
+    'Pi new-session entry is gated on the installed context key'
+  );
+  check(
+    contextMenus.some(
+      (item) =>
+        item.command === 'agntree.openClaudeUi' &&
+        item.when.includes('ClaudeUi') &&
+        !item.when.includes('claudeUiInstalled') &&
+        !String(item.group).startsWith('inline')
+    ),
+    'Claude UI entry stays visible on Claude rows without the extension'
+  );
+  check(
+    contextMenus.some(
+      (item) =>
+        item.command === 'agntree.openClaudeUi' &&
+        item.when.includes('agntree.claudeUiInstalled') &&
+        String(item.group).startsWith('inline')
+    ),
+    'Claude UI hover action appears only when installed'
+  );
+  check(
+    contextMenus.some(
+      (item) =>
+        item.command === 'agntree.openCodexUi' &&
+        item.when.includes('CodexUi') &&
+        !item.when.includes('codexUiInstalled') &&
+        !String(item.group).startsWith('inline')
+    ),
+    'Codex UI entry stays visible on Codex rows without the extension'
+  );
+  check(
+    contextMenus.some(
+      (item) =>
+        item.command === 'agntree.openCodexUi' &&
+        item.when.includes('agntree.codexUiInstalled') &&
+        String(item.group).startsWith('inline')
+    ),
+    'Codex UI hover action appears only when installed'
+  );
+
+  const viewTitleMenus = menus['view/title'] || [];
+  check(
+    !commands.some((command) => command.includes('AttentionHooks')),
+    'no attention-hook commands are registered'
+  );
+  check(
+    !viewTitleMenus.some(
+      (item) =>
+        String(item.command).includes('AttentionHooks') ||
+        String(item.when).includes('attentionHooks')
+    ),
+    'no attention-hook toggles remain in the view menu'
+  );
+
+  console.log('\n== wiring smoke tests ==');
+  await vscode.commands.executeCommand('agntree.refreshWorkspaces');
+  check(true, 'refreshWorkspaces executes');
+
+  console.log(
+    `\n${failures === 0 ? 'ALL ACTIVATION CHECKS PASSED' : `${failures} ACTIVATION FAILURE(S)`}`
+  );
+  if (failures > 0) {
+    throw new Error(`${failures} activation check(s) failed`);
+  }
+};

@@ -1,0 +1,211 @@
+import { ChatSession, HarnessId } from '../types';
+import type { StorageService } from '../services/StorageService';
+import {
+  HarnessIconState,
+  HarnessSession,
+  PreviewMessage,
+  SessionMetadata,
+  TurnState,
+} from './types';
+import { truncateName } from '../utils/text';
+
+/** The name a chat carries until its harness or first prompt names it. */
+export const DEFAULT_CHAT_NAME = 'New Session';
+
+/**
+ * Whether automatic naming may still rename this chat. A fork of an unnamed
+ * chat ("New Session (1)") is still unnamed.
+ */
+export function hasDefaultName(chat: { name: string; customName?: boolean }): boolean {
+  return !chat.customName && chat.name.startsWith(DEFAULT_CHAT_NAME);
+}
+
+/** The payload every session watcher emits after renaming a chat. */
+export interface ChatNameUpdatedEvent {
+  chatId: string;
+  name: string;
+}
+
+/**
+ * Rename a chat from a native session summary and tell the tree. Both watchers
+ * share it so truncation and the event shape cannot drift apart. Returns false
+ * when there is no usable summary.
+ */
+export function renameChatFromSummary(
+  storageService: StorageService,
+  onNameUpdated: { fire(event: ChatNameUpdatedEvent): void },
+  chatId: string,
+  summary: string | null | undefined
+): boolean {
+  const trimmed = summary?.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  const name = truncateName(trimmed);
+  storageService.updateChat(chatId, { name });
+  onNameUpdated.fire({ chatId, name });
+  return true;
+}
+
+/** Stable key for one native session of one harness. */
+export function harnessSessionKey(harness: HarnessId, sessionId: string): string {
+  return `${harness}:${sessionId}`;
+}
+
+/**
+ * Native session IDs already linked to a chat of `harness`. A native session
+ * belongs to exactly one chat; every watcher enforces that through this set.
+ */
+export function linkedSessionIds(
+  chats: Iterable<ChatSession>,
+  harness: HarnessId
+): Set<string> {
+  const linked = new Set<string>();
+  for (const chat of chats) {
+    if (chat.harness === harness && chat.harnessSessionId) {
+      linked.add(chat.harnessSessionId);
+    }
+  }
+  return linked;
+}
+
+/** Native session IDs a chat can be associated with, linked or pending. */
+export function chatNativeSessionIds(chat: ChatSession): string[] {
+  return [chat.harnessSessionId, chat.pendingHarnessSessionId].filter(
+    (id): id is string => Boolean(id)
+  );
+}
+
+/** The session a chat should act on: a linked session wins over a pending one. */
+export function chatPrimarySessionId(chat: ChatSession): string | undefined {
+  return chat.harnessSessionId ?? chat.pendingHarnessSessionId ?? undefined;
+}
+
+/** Sessions created just before a launch can still be the launched one. */
+export const SESSION_CREATED_SLACK_MS = 2_000;
+
+/**
+ * The IDs that already existed when a launch began, newest first and bounded:
+ * only a session created after the launch can be claimed, and the newest ones
+ * are the only ones whose activity could pass the cutoff.
+ */
+export function snapshotSessionIds(
+  sessions: HarnessSession[],
+  limit = 200
+): string[] {
+  return [...sessions]
+    .sort(
+      (a, b) =>
+        (b.lastUpdated?.getTime() ?? 0) - (a.lastUpdated?.getTime() ?? 0)
+    )
+    .slice(0, limit)
+    .map((session) => session.sessionId);
+}
+
+/**
+ * The oldest session a launch may claim: unseen at launch, not excluded by the
+ * caller, and created at or after `since`. Watchers and the importer share this
+ * rule so two claimers cannot disagree about which session a chat owns.
+ */
+export function findClaimableSession(
+  sessions: HarnessSession[],
+  since: number,
+  isExcluded: (sessionId: string) => boolean = () => false
+): HarnessSession | undefined {
+  let match: HarnessSession | undefined;
+  let matchCreated = 0;
+
+  for (const session of sessions) {
+    if (isExcluded(session.sessionId)) {
+      continue;
+    }
+    const created = session.lastUpdated?.getTime() ?? 0;
+    if (created < since - SESSION_CREATED_SLACK_MS) {
+      continue;
+    }
+    if (!match || created < matchCreated) {
+      match = session;
+      matchCreated = created;
+    }
+  }
+  return match;
+}
+
+/**
+ * Row icon variant for a chat. A session whose terminal is not open is closed,
+ * whatever `status` says: status is only updated when a terminal close event is
+ * observed, so sessions left behind by a window restart stay `idle`/`active`.
+ *
+ * An open terminal shows the animated mark while the harness reports a turn in
+ * flight, and the green dot otherwise. Unknown turn state keeps the dot so a
+ * freshly opened terminal does not flash the animation before the first poll.
+ */
+export function selectHarnessIconState(
+  chat: ChatSession,
+  isActive: boolean,
+  turnState?: TurnState
+): HarnessIconState {
+  if (!isActive) {
+    return chat.harnessSessionId ? 'closed' : 'new';
+  }
+  return turnState === 'working' ? 'working' : 'done';
+}
+
+/** Display name for a session, falling back to its prefix plus a short ID. */
+export function sessionDisplayName(
+  session: Pick<HarnessSession, 'summary' | 'sessionId'>,
+  prefix = 'Session '
+): string {
+  return session.summary?.trim() || `${prefix}${session.sessionId.substring(0, 12)}`;
+}
+
+/**
+ * The last user/assistant exchange for a brief. A reply older than the last
+ * ask means the agent has not answered yet; showing it would misrepresent
+ * where the session stopped.
+ */
+export function lastExchange(meta: SessionMetadata | null): {
+  lastAsk: PreviewMessage | null;
+  lastReply: PreviewMessage | null;
+} {
+  const pool = meta?.preview ?? [];
+  const lastAsk =
+    meta?.lastAsk ?? (pool.length ? pool[pool.length - 1] : null) ?? null;
+  const lastReply =
+    meta?.lastReply &&
+    (!lastAsk?.timestamp ||
+      !meta.lastReply.timestamp ||
+      meta.lastReply.timestamp >= lastAsk.timestamp)
+      ? meta.lastReply
+      : null;
+  return { lastAsk, lastReply };
+}
+
+/**
+ * Compact footer shared by the tree tooltip: "12 messages · model · agent".
+ * Token counts and cost are deliberately not kept: the session's output and
+ * last exchange answer the user's question, and the numbers would need a
+ * parser and a cache path of their own in every harness.
+ */
+export function sessionUsageLine(
+  meta: SessionMetadata | null,
+  fallback?: HarnessSession
+): string | undefined {
+  const parts: string[] = [];
+
+  const messageCount = meta?.messageCount ?? fallback?.messageCount;
+  if (messageCount && messageCount > 0) {
+    parts.push(`${messageCount} message${messageCount === 1 ? '' : 's'}`);
+  }
+  const model = meta?.model ?? fallback?.model;
+  if (model) {
+    parts.push(model);
+  }
+  const agent = meta?.agent ?? fallback?.agent;
+  if (agent) {
+    parts.push(agent);
+  }
+
+  return parts.length > 0 ? parts.join(' · ') : undefined;
+}

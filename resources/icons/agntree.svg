@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <!--
+    The Agntree icon: an upward prompt caret with a cursor block for its
+    crossbar, which reads as the letter A. This file is the source. After
+    editing it, run `npm run build:icon` to redraw agntree.png (the Marketplace
+    icon), and keep agntree-activitybar.svg (the same mark in one color) in step.
+  -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#24252b"/>
+      <stop offset="1" stop-color="#0c0c0e"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".28"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="caret" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="1" stop-color="#c9c9d1"/>
+    </linearGradient>
+  </defs>
+  <path d="M48 2C14 2 2 14 2 48s12 46 46 46 46-12 46-46S82 2 48 2Z" fill="url(#tile)"/>
+  <path d="M48 2C14 2 2 14 2 48s12 46 46 46 46-12 46-46S82 2 48 2Z" fill="none" stroke="url(#edge)" stroke-width="1.5"/>
+  <path d="M26 70 48 27l22 43" fill="none" stroke="url(#caret)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="40.500" y="58" width="15" height="10" rx="5" fill="#4ade80"/>
+</svg>

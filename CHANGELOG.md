@@ -1,0 +1,276 @@
+# Changelog
+
+All notable changes to Agntree will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [4.0.0] - 2026-11-14
+
+### Added
+
+- **Pi sessions** — Pi is now a first-class harness alongside Claude Code, opencode, and Codex. Create, resume, import, auto-name, fork (in the same worktree and into a new one), and get finished-turn notifications for `pi` sessions from the sidebar. New chats choose their session ID up front (`pi --session-id`), forks use `pi --fork`, and sessions are read from Pi's documented JSONL records under `~/.pi/agent/sessions/` (or the directory set by `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, or the `sessionDir` setting) — never an internal database. Use `agntree.harnessCommands.pi` to override the command.
+- **Find Session** — Describe what you worked on (*"the mod that shows context and usage limits"*) and a coding agent finds the session among your past ones, in any folder and across every installed agent. Hover a search in the new **Find Session** view to read the agent's answer and what it searched; each session it found can be resumed, shown in the Workspaces tree, or copied as a resume command. Claude Code, Codex, and Pi can run the search, each with read-only file tools and no saved search session. The search uses the model, effort, and other settings configured in that agent; the gear in the question box or the `agntree.sessionSearch.*` settings overrides the model or effort for searches only, and changing the agent clears the previous agent's model and effort. MCP servers declared in the agent's config are off for the run so the agent cannot call a configured tool that writes; prompts travel on stdin and the empty MCP config is a file, so a search also works on Windows. Claude Code transcripts, Codex rollouts, Pi records, and opencode sessions are all searched; opencode sessions are read through a short-lived snapshot made with opencode's documented CLI/API within a 45-second budget and a 4 MB cap, so its database is never opened, Stop cancels it, and nothing is indexed. Every session the agent names is checked against its own harness's record before it is shown. The view sits collapsed below Workspaces; set `agntree.sessionSearch.alwaysShowView` to `false` to show it only once you have searched.
+- **Go to Next Session That Needs You** — `Ctrl+Alt+N` (`Ctrl+Cmd+N` on macOS), also in the Agntree `…` menu, opens the open session that has waited longest since it finished a turn or asked you something while you were elsewhere. Visiting a session clears it, so pressing the key again walks through the rest. Finished turns are tracked for every agent; waiting-on-you for Claude Code.
+- **Keyboard shortcuts** — `Ctrl+Alt+Enter` starts a session with your default agent in the worktree you are in, `Ctrl+Alt+F` opens Find Session, and `Ctrl+Alt+A` shows the Agntree sidebar (`Ctrl+Cmd+…` on macOS). With the Workspaces tree focused, `F2` renames the selected session, `Delete` removes the selected sessions from the list, and `Ctrl+C` copies the resume command; with All Files focused, `F2`, `Delete`, and `Ctrl+C` / `Ctrl+X` / `Ctrl+V` rename, delete, copy, cut, and paste. **Agntree Keyboard Shortcuts…** in the Agntree `…` menu opens the Keyboard Shortcuts editor on Agntree's commands, where every one can be changed or removed. Session and file row commands now act on the selected row when run from a key, so you can bind your own.
+- **Act on several sessions at once** — Select session rows with `Shift` or `Ctrl`/`Cmd` click, then **Remove Session from List…**, **Close Session**, **Star Session**, or **Unstar Session** applies to all of them. The confirmation counts and names the sessions being removed.
+- **Copy Resume Command and Copy Session ID** — On a session's right-click menu: the command that resumes it from any terminal, or its native session ID.
+- **Default agent** — Choose **Set Default Agent…** (in the **New Session** menu or the Agntree `…` menu) and the `+` on a worktree or folder starts that agent in one click instead of opening a menu. Every agent and surface stays available from the row's right-click **New Session** menu. **Agntree: New Session** in the Command Palette does the same, and asks which agent when no default is set or the default is not installed. Stored as `agntree.defaultHarness`; empty asks every time.
+
+### Changed
+
+- **New icon** — Agntree has a new icon in the activity bar, the Extensions view, and the Marketplace: an upward prompt caret with a cursor block, which reads as the letter A.
+- **Settings you can find and read** — **Agntree Settings…** in the Agntree `…` menu opens the Settings editor on Agntree's settings, now grouped into Sessions, Notifications, Find Session, Window, and Agent Commands. Each one says what it does first, choices have plain names (**Terminal** / **Agent's VS Code panel**, **Claude Code** instead of `claude`), Find Session effort is a dropdown, and each agent's launch command is its own text box (`agntree.harnessCommands.claude`, …) instead of an object edited in `settings.json`. Existing settings keep working, including an `agntree.harnessCommands` object.
+- **New Session from the palette starts where you are** — **Agntree: New Session** uses the worktree the Changes and All Files panels show, and asks only when there is none.
+- **Session rows stay for 15 quiet days** — The default for `agntree.autoImport.retentionDays` is now 15 instead of 7. A value you set yourself is unchanged.
+- **Starred Sessions shortcut moved** — It is now `Ctrl+Alt+S` (`Ctrl+Cmd+S` on macOS); the old `Ctrl+Shift+S` / `Cmd+Shift+S` took over VS Code's Save As.
+- **Check Out Pull Request… is in the Agntree `…` menu** — It asks which repository when you have more than one, in addition to the repository's right-click menu.
+- **New documentation and website** — The README, the user documentation under `docs/`, and the website at [subhashkhileri.github.io/agntree](https://subhashkhileri.github.io/agntree/) are rewritten from scratch: a page for every feature and agent, guides for running agents in parallel and resuming a session, and reference pages for settings, commands, and keyboard shortcuts.
+- **Easier to find in the Marketplace** — The extension is now listed as **Agntree — Session & Git Worktree Manager for Claude Code, Codex, opencode, Pi**, under the AI, Chat, and SCM Providers categories.
+- **Clearer menus** — Right-click menus are grouped the same way on every row: start or open, then edit, then git, with anything that removes something last. Names now say what the action does: **Open in This Window** (was Activate Workspace), **Open Terminal Here**, **Check Out Pull Request…**, **Merge Branch into This Worktree…**, **Fork Session Here**, **Fork Session to New Worktree…**, **Remove Session from List…**, **Remove All Sessions from List…** (was Clear All Sessions), **Remove from Agntree…**, **Reveal in File Manager**, and **Find Session Settings…**. A session row shows **Star Session** or **Unstar Session** by its state instead of Toggle Star, and the `…` menu says **Turn On** / **Turn Off** for Auto-Switch Workspace Folder and Focus on Startup.
+- **A Command Palette that only lists what works there** — Every command is filed under **Agntree:**, and actions that need a row under the cursor (rename, fork, delete a worktree, stage a file, …) no longer appear in the palette, where they did nothing.
+- **Session details no longer show tokens or cost** — The session tooltip and the **Find Session** view keep the last exchange, message count, model, and agent, and drop token counts and cost.
+- **opencode previews load when you hover a row** — An opencode session's last exchange is fetched when you hover its row, instead of an export running for every opencode row on the first render. The preview now also refreshes as the conversation continues; previously the first preview stayed in the tooltip until the window reloaded.
+- **The Changes panel stays fast with many changed files** — Listing changes takes two `git` calls per section instead of one extra `git` process for every changed file.
+- **Cloning and fetching no longer freeze VS Code** — Clone Repository, Create Worktree from upstream, and Rebase fetch in the background while the progress notification runs; previously the whole extension host waited for the network.
+- **Opening or closing a session no longer re-reads every repository** — A session terminal opening or closing updates its row only, instead of listing every repository's worktrees and asking GitHub for every branch's PR again.
+- **One place for new worktrees** — Fork to New Worktree now suggests the same `<repo>-worktrees/<branch>` folder as Create Worktree and PR checkout.
+- **Removing a folder or deleting a worktree removes its session rows** — The rows (and any running terminals in a deleted worktree) go away with it; the agents keep the conversations. The confirmation says so.
+- **Rebase recommends `origin` when `upstream` has no `main` or `master`** — The recommended target is the first of `upstream/main`, `upstream/master`, `origin/main`, `origin/master` that exists, and the remotes are fetched once instead of twice.
+
+### Removed
+
+- **Search Sessions** — The repository-wide session picker is gone. **Import Existing Sessions** adds a worktree's sessions, and **Find Session** finds a session in any folder by what you did in it.
+
+### Fixed
+
+- **Claude session names and previews come only from your prompts** — Text Claude adds to a conversation as if you had typed it (a skill's instructions, a message from another session, the summary `/compact` leaves) no longer becomes a session's name, preview, or last prompt.
+- **Renamed and non-ASCII files in the Changes panel** — A staged rename is listed as the deletion and addition you can stage, unstage, or discard, and a file whose name has non-ASCII characters (`café.txt`) shows as modified instead of deleted.
+- **A deleted worktree forgets its pull request** — Deleting a worktree checked out from a PR clears its PR mark, so a new worktree later created at the same path no longer shows the old PR number and icon.
+- **Sessions of a re-added folder can be imported again** — Removing a folder used to leave its session rows hidden in storage, where they kept the same sessions from ever being imported once the folder was added back.
+- **Fork to New Worktree keeps your uncommitted work intact** — Copying changes into the new worktree now carries edits to binary files and untracked files whose names contain spaces, quotes, or non-ASCII characters; previously those were silently skipped. The fork also finds its new worktree when the path you entered goes through a symlink.
+- **Discard All lists unusual file names exactly** — The confirmation shows untracked names with spaces or quotes as they are, instead of git's quoted form.
+- **The All Files panel follows the session you open** — Opening or forking a session now points both the Changes and All Files panels (and their titles) at its worktree; previously only the Changes panel followed.
+- **Deleting a detached worktree never deletes a branch** — A worktree with no branch checked out offers only Delete Worktree; previously Delete Worktree & Branch force-deleted any local branch that happened to share the folder's name. Session terminals now close before the directory is removed.
+- **Untracked nested repositories are copied on Fork with Changes** — An untracked folder that is itself a git repository was skipped when copying uncommitted work into a new worktree.
+- **Your own session names are never replaced** — A name you chose that starts with "New Session" is no longer overwritten by the agent's summary.
+- **A staged new file opens with its staged content** — Opening a newly added file under Staged Changes shows what will be committed instead of the working copy.
+- **Rebase no longer offers the branch's own remote copy** — `origin/<branch>` is left out of the rebase targets for `<branch>`.
+- **Turn state recovers from a failed transcript read** — A one-off read error no longer leaves a session's working/done state stale until the agent writes again.
+- **Opening a change no longer rewrites your diff layout** — The Changes panel used to switch the global `diffEditor.renderSideBySide` setting to inline on every open, for every diff in VS Code and across Settings Sync. Diffs now open in the layout you chose.
+- **Sessions stay with the folder they belong to when roots nest** — With a folder such as `Documents` added alongside a repository inside it, the repository's sessions also appeared under `Documents`, from auto-import, Import Sessions, and new opencode/Codex sessions. Each session now goes only to the deepest added folder that contains it, and rows already listed under the outer folder move to their repository, keeping names and stars.
+
+## [3.0.0] - 2026-10-30
+
+### Added
+
+- **Open a Claude Code session in the Claude Code UI** — Right-click a linked Claude Code session and choose **Open in Claude Code UI**. Agntree closes the session's terminal after confirmation, then asks the Claude Code extension to open that exact session in its native chat surface in the active editor group, honoring `claudeCode.preferredLocation`. The active group is where the session's terminal or your files are, so the UI does not create and lock a new right-hand group. The matching row is selected and shown as active while its Claude UI tab is open, turn-state polling includes UI sessions, and switching back to a CLI terminal tab selects the CLI session again. It can open the session only when the session's worktree is the first folder open in VS Code, because the extension UI always runs in that folder; other worktrees get an offer to open in a new window. The action stays visible when the extension is missing and explains what to install. A session without a transcript still starts in the terminal until its first prompt; Agntree maps only the UI tabs it opened, not tabs opened directly in the extension.
+- **Open a Codex session in the Codex UI** — Right-click a linked Codex session and choose **Open in Codex UI**. Agntree closes the session's terminal after confirmation and opens the thread in the Codex extension's conversation panel in the active editor group. Codex panels carry their thread ID, so Agntree also maps panels restored after a reload or opened directly from the Codex extension, even though the sidebar view is not an editor tab. The same row selection, active mark, turn-state polling, and notification suppression apply. The Codex panel resumes the thread in its own worktree, so the first-folder rule that applies to the Claude UI does not apply here. The action stays visible when the extension is missing and explains what to install.
+- **An open session UI is focused, not duplicated** — Clicking a session row that is already open in the Claude Code or Codex extension reveals that panel instead of launching a second CLI for the same session. A live terminal still takes precedence when both are open.
+- **Choose where a session opens** — `agntree.defaultSessionSurface` decides whether clicking a session row prefers its terminal or the agent's VS Code UI, falling back to the terminal when the UI cannot open that session. **Open Session in Terminal** and the UI hover icon override the default, and switching an open UI session back to a terminal asks before closing its tab so two agent processes never run at once. The UI context-menu action stays visible when the extension is missing and explains what to install.
+- **Start a new session in the agent UI** — The New Session menu offers a UI entry for Claude Code and Codex alongside the terminal entry. Agntree creates the row immediately, opens a new conversation, and links the real session when the first prompt creates it; the row keeps the harness-assigned name. Claude starts the conversation in the first VS Code folder and Codex in a single-folder workspace, so other worktrees explain the limitation rather than running in the wrong directory.
+- **Sessions started outside Agntree appear automatically** — Agntree imports recent native sessions from each folder and worktree, including sessions started in a plain terminal, another window, or an agent's own UI. Chats use the agent's session name (Claude's `ai-title`, Codex's thread name, or opencode's title) with the first prompt only as a fallback. Every row — imported or started in Agntree — ages out after `agntree.autoImport.retentionDays` quiet days (7 by default); a star keeps one indefinitely, a chat open in a terminal or UI tab is never removed, and removing a session from the list keeps it out of future imports. `agntree.autoImport.enabled` turns the automatic import off without affecting linkage for sessions Agntree launches.
+- **Session names follow the agent** — Claude's `ai-title` entries now name the session, so a renamed Claude conversation appears under that name instead of its first prompt. Auto-imported chats follow a later harness title once, unless you renamed the chat yourself.
+
+### Changed
+
+- **Sessions keep a stable creation order** — Session rows sort by when they were created, newest first, instead of by recent activity with starred and open rows pulled to the top. Opening, resuming, or starring a chat no longer makes it jump position; the active mark and the star still show its state.
+- **Auto-import pauses while the sidebar is hidden** — Agntree no longer scans the agents' sessions every two minutes in the background of a window where the Agntree view is closed. It catches up as soon as the view is visible again. A session that is still being linked after a UI launch always keeps scanning.
+
+### Fixed
+
+- **A starred session obeys the same open rules** — Picking a session from **Show Starred Sessions** now focuses its open Claude Code or Codex panel and follows `agntree.defaultSessionSurface`, like clicking the row, instead of always launching a terminal beside the open panel.
+- **A failed UI start leaves no row behind** — If the agent's UI cannot open a new conversation, Agntree removes the placeholder row it created instead of keeping an unlinked row that held back auto-import for other sessions in that worktree.
+- **Search Sessions import clears a removal** — Importing a session from **Search Sessions** now undoes an earlier removal the same way **Import Existing Sessions** does, so the session can be imported again after retention later drops the row.
+- **A UI session links the right conversation after a reload** — The set of sessions that existed before a UI launch is saved with the session, so a window reload between the launch and the first prompt no longer lets the placeholder adopt an older conversation from the same worktree.
+- **A background link binds only a matching Claude tab** — Linking a session from a scan no longer claims whichever Claude tab happens to be active; it binds only a tab whose title matches the session's name.
+
+## [2.1.0] - 2026-10-25
+
+### Added
+
+- **Plain folders as workspace roots** — **Add Local Folder or Repository…** accepts any folder, not only git repositories. A plain folder gets a plain folder icon instead of the repository mark, sessions run directly under its row, and the Changes panel says there is no repository instead of claiming a clean tree. If the folder becomes a git repository — for example after you or an agent runs `git init` — Agntree upgrades the row automatically and keeps every session bound to the same main worktree, with no re-adding; deleting `.git` turns it back into a plain folder. Selecting a directory inside an existing repository still adds that repository's root, and a bare repository or `.git` directory is refused because it has no working tree. Git-only row actions (worktrees, merge, rebase, PR checkout) stay off a plain folder, and **Fork to New Worktree** explains that there is no branch to fork into until the folder becomes a repository.
+- **Reorder workspace rows** — Repository and folder rows have **Move Up** and **Move Down** in their context menu. The order is stored with your workspace list and survives reloads; the move stops at the first and last visible row and says so.
+
+## [2.0.1] - 2026-10-25
+
+### Changed
+
+- **VS Code 1.93+ is required** — Restoring a terminal's identity relies on shell-integration events.
+
+### Fixed
+
+- **Restored terminals are the same chats again** — After a window reload, Agntree reconnects every terminal to its chat by process ID instead of by name, so it never types into a running agent. After a quit and reopen, every restored tab resumes its own session in the background, instead of only the active tab.
+- **A resumed chat runs in its own worktree** — A revived tab starts in the workspace folder, so Agntree now changes into the chat's worktree before launching the harness. A session outside the open folder no longer edits or commits on the wrong branch.
+- **Terminal identity survives a workspace switch** — Terminal records now live outside the per-workspace state that VS Code replaces when `agntree.autoSwitchWorkspaceFolder` changes the folder, keyed by the folder they belong to. Switching worktrees no longer forgets the running terminals, so the next reload cannot start a second agent for a chat that is already open.
+- **Startup does not wait for a harness to answer** — Adoption of terminals that survived a reload still finishes before the sidebar and commands appear, but resuming revived tabs now asks the harness whether each session exists only after that. A slow or hung `codex app-server` can no longer leave the extension looking dead for up to 30 seconds.
+- **Restoring titles no longer moves the tree** — The background pass that re-applies Agntree titles to revived tabs is marked as manager-initiated, so it does not change the selected chat, the Changes and All Files worktree, or trigger auto-switch.
+- **No title wait when shell integration is off** — With `terminal.integrated.shellIntegration.enabled: false`, opening a chat no longer pauses for the two-second command-start timeout that can never fire.
+- **Restored tabs keep their Agntree title** — The title is re-applied after the harness starts, so the next quit restores the same chat identity instead of a tab named after the shell.
+- **One tab per chat resumes** — If two restored tabs carry the same Agntree title, only the first is resumed; the duplicate is left as a plain shell instead of starting a second agent on the same session.
+- **New chats still link their first session after a reload** — A restored Codex or opencode chat that had not prompted yet is registered with its watcher again, so the session created by its first message is linked instead of leaving the chat unstarted.
+- **Titles cannot swap between tabs** — Overlapping focus changes during a title update no longer rename the wrong terminal, so a later restore cannot resume a chat in another chat's tab.
+
+## [2.0.0] - 2026-10-24
+
+### Added
+
+- **Deterministic Claude Code linkage** — A new Claude chat chooses its session ID before launch (`claude --session-id`), so Agntree links the exact transcript that appears after the first prompt. Two chats in the same worktree can no longer claim each other’s sessions, and reopening a chat before its first prompt keeps the same ID.
+- **Native Claude Code forks** — Forks launch `claude --resume <source> --fork-session --session-id <new>` and write the fork transcript in the destination worktree. Agntree no longer copies project directories. Reopening a fork terminal before its first prompt repeats the fork with the same IDs instead of starting a fresh session.
+- **Automatic “needs input” alerts for Claude Code** — Agntree reads `claude agents --json` to detect permission prompts and questions, so needs-you notifications no longer require hooks.
+
+### Changed
+
+- **Claude Code 2.1.310+ is required** — Older versions are unsupported; there is no version detection, capability probe, or compatibility path.
+- **Leaner Claude metadata** — Session tooltips and import rows now show the summary, last exchange, and last activity. Recap, model/token usage, git branch, and message count are no longer extracted; other agents are unchanged.
+- **Cheaper attention polling for Claude** — The 4-second poll reads only the end of the transcript and expands in steps only when needed, instead of re-parsing the whole file.
+- **An unused fork does not linger** — Closing a Claude fork's terminal before its first prompt removes the chat. Claude writes no transcript until that prompt, so the row could only ever fork from the source's newer state, not the state you forked from.
+- **Claude discovery handles more paths** — Project directories now encode every non-alphanumeric character as `-`, matching Claude. Directories longer than 200 characters match by Claude’s truncated prefix, `CLAUDE_CONFIG_DIR` selects a custom profile, and `CLAUDE_CODE_PROJECT_DIR_NAME` is honored when a config directory is explicit.
+
+### Fixed
+
+- **Symlinked worktrees discover their Claude sessions** — Project directories now encode the physical path Claude writes, so opening a worktree through a symlink no longer hides its sessions. Duplicate transcripts resolve to the newest copy, and a `relocated` session tracks its new directory.
+- **Forking a missing Claude session fails cleanly** — If the source transcript is gone, Agntree says so before asking for a branch or creating a worktree.
+- **No notification replay after a window reload** — A session that was already waiting when the extension host restarted no longer re-alerts on the first attention tick.
+- **A finished terminal no longer looks like a running session** — When a terminal's process exits but VS Code keeps its tab, the row now shows closed instead of the finished-turn mark, and opening the session launches a fresh terminal instead of focusing the dead tab.
+
+### Removed
+
+- **Claude Code notification hooks** — The install and remove hook commands, the `agntree.attentionHooks` context key, and all reads and writes of `~/.claude/settings.json` are gone. Old Agntree hook entries are inert and can be deleted by hand.
+
+## [1.4.0] - 2026-10-24
+
+### Added
+
+- **Codex harness** — Codex is now a first-class harness. Create, resume, import, search, fork (same worktree and to a new worktree), auto-name, and inspect Codex threads from the sidebar. Discovery, metadata, previews, and forks go through `codex app-server`, the same experimental JSON-RPC surface used by the official IDE integrations; a private app-server starts on demand and stops after an idle period. New chats still launch `codex` in a terminal and link after the first prompt, because a thread is not materialized before then. Live turn state and token usage come from the latest rollout, which is the only live signal for a thread owned by a separate TUI process.
+- **New Codex Session** — Added to both **New Session** submenus, gated on the Codex CLI being installed, and `agntree.harnessCommands.codex` overrides its launch command.
+- **Codex tree mark** — The OpenAI mark, generated in the same working/done/closed/new variants as the other harness marks and colored for light and dark themes.
+
+### Fixed
+
+- **Fork to a new worktree with a terminal-kind harness** — The new chat no longer records the source session ID when the harness forks in the terminal (`ForkResult.kind === 'terminal'`); it stays unlinked and the watcher captures the native fork ID.
+- **Codex forks open immediately** — The private app-server now unloads a forked thread and releases its writer lock before the terminal opens it, so Codex no longer reports the new fork as already open in another app.
+
+## [1.3.0] - 2026-10-24
+
+### Added
+
+- **Animated "working" mark** — a session mid-turn now shows its harness mark beating like a heartbeat instead of a green dot. The whole mark contracts to 78% and dims to 72% every 1.4s, so it stands out at 16px where a tiny status glyph would not; `prefers-reduced-motion` shows it at rest. The green dot now means the turn has finished.
+- **Session notifications** — Agntree now tells you when a session stops working. A finished turn is detected for every harness (Claude's transcript `stop_reason`, opencode's `time.idle`) and shown as a VS Code notification with an **Open** button; on macOS a system banner also appears while VS Code is not focused. Sessions whose terminal is already in front of you are skipped, and each turn notifies once.
+- **Opt-in "needs you" alerts** — **Agntree: Enable 'Needs Input' Notifications** adds `Stop` and `Notification` hooks to `~/.claude/settings.json` (preserving your existing hooks, with a one-time backup) that append permission prompts and idle questions to `~/.agntree/attention.jsonl`. A matching remove command strips only Agntree's entries. opencode reports finished turns only; its CLI exposes no pending-permission state.
+- **`agntree.notifications.*` settings** — `enabled`, `onTurnEnd`, `onNeedsInput`, and `nativeBanner` control delivery.
+- **opencode v2 harness** — opencode is now a first-class harness alongside Claude Code. Create, resume, import, search, fork (same worktree and to a new worktree), auto-name, and inspect opencode sessions from the sidebar. Sessions are discovered and manipulated through the `opencode` CLI/API (`session.list`, `session.get`, `session.fork`, `session.move`, `session export`), never by reading its SQLite database.
+- **Harness submenu** — Worktree `+` action and context menu now open a **New Session** submenu with **New Claude Code Session** and **New opencode Session**. Entries are hidden when the corresponding CLI is not installed.
+- **`agntree.harnessCommands`** — Override the CLI command per harness (wrappers, custom installs, or a CLI not on `PATH`).
+- **Harness logos and state badges** — Chat rows now use custom SVG marks for Claude Code and opencode. Generated variants add a green running badge, a grey mark for closed sessions, and a hollow ring for sessions that have not started yet. Harnesses without custom art fall back to a text label when more than one is installed.
+- **Quiet tree layout** — Session rows show only what changes: a short relative time (`16m`, `2h`, `3d`) or `new`, a star when set, and the harness mark. Repository rows are neutral; worktree color is reserved for state — amber for the open workspace, blue for a PR checkout, green for the main worktree, neutral otherwise — and worktrees show `↑n`/`↓n` when they are ahead of or behind their upstream.
+- **Session brief tooltip** — Hovering a session now shows what the row cannot: the latest recap (with its age) or the last exchange, followed by message count, model, agent, tokens, and cost. Redundant harness/status/star lines are gone.
+- **Numbered fork names** — Forking `Fix icons` creates `Fix icons (1)`; forking that session creates `Fix icons (1) (1)`. Sibling forks increment to `(2)`, `(3)`, … so names stay unique in the target worktree.
+- **Operation log** — Destructive file and worktree actions (delete, rename, paste, discard, worktree removal, orphan fork cleanup) are recorded with a timestamp in the **Agntree Operations** output channel, along with any refusal or failure.
+
+### Changed
+
+- **Less destructive toolbar and context menus** — Only the primary action stays inline: Add Repository in the view title, New Session and Open Terminal on worktrees, and star/rename on sessions. Clone, search, starred sessions, settings, refresh, remove, delete, and fork-to-worktree moved into the `…` and context menus, and commands that open dialogs now end in `…`.
+- **Quiet Search Sessions picker** — Rows are now one line: harness mark, title, relative time, and message count, grouped by worktree with the main worktree first. Five-prompt previews under every row are gone; the highlighted row expands with a brief (recap or last exchange, then message count, model, agent, tokens, cost). Imported sessions show a check instead of the word "imported", and harness/branch text is no longer repeated.
+- **Changes panel polish** — Section headers read `3 files · +12 -4` (with a green check for staged and a yellow edit icon for unstaged), nested files show their directory to disambiguate same-named files, rows sort by status then path, tooltips show the full path and a readable status, and a clean tree shows a green "No uncommitted changes".
+- **All Files panel polish** — Names sort naturally (`file2` before `file10`), rows tooltip their worktree-relative path, and an unselected panel shows "Select a worktree or chat" instead of an empty list.
+- **Panels keep their expansion state** — Changes sections and All Files folders have stable row ids, so auto-refresh on file writes no longer collapses what you had open.
+- **Session storage model** — Chats now store `harness` and `harnessSessionId` instead of `claudeSessionId`. Existing chats are migrated to Claude on first read, so upgrades are seamless.
+- **Generic session wording** — Import, search, remove, and clear dialogs now refer to the native harness session rather than `~/.claude/`.
+- **Adapter architecture** — Added `HarnessAdapter`, `HarnessRegistry`, `ClaudeHarness`, and `OpencodeHarness`, plus a harness-aware watcher registry, leaving a seam for Codex and other agents.
+
+### Removed
+
+- **Quick Actions** — The Quick Actions panel, its commands, and the `agntree.quickActions` and `agntree.defaultHarness` settings are gone. The panel duplicated what a session terminal already does, and its separate process-tracking and headless-command paths were no longer worth maintaining.
+
+### Security
+
+- **Guards against destructive mistakes** — Deleting in All Files requires the path to be inside the active worktree and sends files and folders to the Trash. Creating a file refuses to overwrite one that already exists. Rename and create reject names containing path separators. Pasting refuses to copy a folder into itself or a descendant, and cut-paste into the same folder is a no-op instead of a "copy" rename.
+- **Worktree removal checks the path** — The one directory delete done by Node (recovering a corrupted worktree) now refuses the filesystem root, the repository, the user's home, any ancestor of those, and any directory `git worktree list` does not report for that repository.
+- **Discard says exactly what it deletes** — Discarding a single untracked file asks to move it to the Trash; discarding all changes names the worktree and spells out how many tracked changes and untracked files `git clean` will permanently remove.
+- **No shell interpolation** — Git operations run through argument arrays (`execFileSync`), so branch names, remote URLs and file paths are never interpreted by a shell. The last interpolated command (`git cat-file`) was replaced with an API call.
+- **Session copy never overwrites** — Forking a Claude session into a worktree copies with `errorOnExist`, so a name collision fails instead of clobbering an existing transcript. opencode orphan-fork cleanup accepts only `ses_…` IDs.
+
+### Fixed
+
+- Sessions with a running background agent no longer report a finished turn. Claude can end
+  its parent turn while a launched subagent keeps working; those sessions now stay on the
+  animated working mark (and skip the finished notification) until Claude's turn-end
+  `turn_duration` count drops to zero, or — on older transcripts — until a task notification
+  or the agent's hand-back arrives.
+- Session resume/fork now checks with the harness adapter (and the worktree directory) before launching, so a missing opencode session produces the same cleanup prompt as a missing Claude session.
+- Sessions that are not open now render with the grey closed icon. Previously only sessions whose terminal close was observed live were dimmed; sessions left idle by a window restart or by import kept the full-color mark.
+
+## [1.2.1] - 2026-05-17
+
+### Added
+
+- **Search in Files** — New search button in the All Files panel toolbar. Opens VS Code's native Search panel pre-scoped to the active worktree directory, so results are limited to that branch's files.
+- **Focus on Startup** — New `agntree.focusOnStartup` setting (default `false`). When enabled, Agntree automatically focuses its sidebar panel when VS Code starts instead of the File Explorer. Toggle directly from the Workspaces panel toolbar via the eye icon.
+- **Panel size defaults** — Initial panel proportions are now set so Workspaces gets the most space (4), All Files next (3), Changes after that (2), and Quick Actions the least (1).
+- **Quick Actions collapsed by default** — The Quick Actions panel now starts collapsed on first install for a cleaner initial layout.
+
+## [1.2.0] - 2026-05-16
+
+### Added
+
+- **Star Sessions** — Mark important sessions with a star for quick access and visual distinction in the sidebar.
+- **Discard All Changes** — One-click discard of all unstaged changes from the Changes panel, with confirmation dialog.
+- **Rebase onto Upstream** — Rebase the current branch onto upstream (or origin) with a pre-flight conflict check that warns before proceeding.
+
+### Fixed
+
+- **Discard destroying staged changes** — Discard file and discard all used `git checkout HEAD --` which reset to HEAD, wiping staged changes. Now uses `git checkout --` to restore from the index, preserving staged changes.
+- **Staged new files shown as Modified** — Newly staged files (not yet committed) incorrectly showed status `M` instead of `A` because `git ls-files` considers staged files as tracked. Now checks against `HEAD` with `git cat-file` for staged changes.
+- **Session auto-rename race condition** — `fs.watch` could miss the initial session file write, causing auto-rename to fail silently. Added a fallback directory scan to reliably detect new sessions.
+- **Memory leaks and excessive refreshes** — Fixed leaked file watchers, added refresh coalescing to batch rapid tree updates, and ensured child processes are cleaned up on extension deactivation.
+- **Auto-rename polling reliability** — Improved polling logic for session auto-rename to handle edge cases where the session file is not immediately available.
+
+## [1.1.0] - 2026-02-24
+
+### Added
+
+- **Search Sessions** — Repository-level command to find and import all Claude Code sessions across all worktrees. Sessions are grouped by worktree with previews of recent prompts, message counts, and relative timestamps. Already-imported sessions are marked and excluded from re-import.
+- **PR Checkout** — Check out any GitHub pull request into a new worktree. Uses `gh` CLI for remote resolution, supporting PRs from both same-repo branches and forks. Local branches are named `pr-<number>` to avoid collisions.
+
+### Fixed
+
+- **PR checkout failing with "invalid reference"** — Previously used `git fetch origin <branchName>` which failed for PRs from forks or when the branch didn't exist on `origin`. Now uses `gh pr checkout` which handles remote resolution automatically.
+- **PR checkout ignoring fetch failures** — The return value of `fetchBranch()` was not checked, causing `createWorktree()` to proceed with a non-existent branch reference. Now aborts early with a clear error message on fetch failure.
+
+## [1.0.0] - 2026-02-16
+
+### Added
+
+- **GitHub Pages landing site** — `docs/index.html` with SEO meta tags, Open Graph, Twitter Card, and JSON-LD structured data (SoftwareApplication + FAQPage)
+- **Sitemap and robots.txt** — For Google Search Console indexing
+- **CONTRIBUTING.md** — Full contribution guide with "Adding Support for New AI Coding Agents" section
+- **CHANGELOG.md** — Version history in Keep a Changelog format
+- **SECURITY.md** — Data privacy notes and vulnerability reporting policy
+- **CODE_OF_CONDUCT.md** — Contributor Covenant v2.1
+- **GitHub issue templates** — Bug report, feature request, and new agent support request (YAML forms with agent/IDE dropdowns)
+- **Pull request template** — Checklist for code quality and testing
+- **Release workflow update** — Keyword-rich release body with Marketplace install link
+
+## [0.1.0] - 2025-01-01
+
+### Added
+
+- **AI Agent Session Management** — Create, resume, rename, and remove Claude Code sessions from the sidebar
+- **Git Worktree Integration** — Automatically detect and manage git worktrees for each repository
+- **Session Forking** — Fork sessions within the same worktree or to a new worktree with uncommitted changes
+- **Session Import** — Import existing Claude Code sessions from `~/.claude/projects/` with multi-select support
+- **Changes Panel** — View staged/unstaged changes with inline diffs, stage/unstage/discard actions
+- **Quick Actions** — Run Claude prompts or shell commands with one click (configurable)
+- **Multi-Repository Management** — Add and organize multiple git repositories in one sidebar
+- **Clone from GitHub** — Clone repositories directly from GitHub URLs or shorthand notation
+- **Auto-Naming** — Sessions are automatically named based on their first prompt or summary
+- **Workspace Switching** — Optionally switch VS Code workspace folder when selecting a worktree
+- **State Persistence** — Active worktree and session selection persists across VS Code restarts
+- **Session Previews** — Hover over sessions to see the last 3 messages in a tooltip
+- **Terminal Sync** — Switching between terminal tabs auto-selects the corresponding session
+- **Worktree Merge** — Merge branches between worktrees directly from the extension
+- **Dynamic View Titles** — Changes and Quick Actions panels show active worktree and repository name
+- **Open PR in Browser** — Open the pull request for a worktree's branch directly in the browser
