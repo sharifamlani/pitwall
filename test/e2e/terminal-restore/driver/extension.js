@@ -144,8 +144,51 @@ async function isRestored(terminals, expectedRuns, activeName) {
   return (
     everyTab &&
     readRuns().length >= expectedRuns &&
-    vscode.window.activeTerminal?.name === activeName
+    (activeName === undefined || vscode.window.activeTerminal?.name === activeName)
   );
+}
+
+/** The label of the tab in front of the active editor group. */
+function activeTabLabel() {
+  const group = vscode.window.tabGroups.activeTabGroup;
+  return group && group.activeTab ? group.activeTab.label : undefined;
+}
+
+/**
+ * R44: which tab is in front, from the driver's activation on. Every change
+ * of the active terminal and of the active editor tab is logged as an
+ * observation, and `check` asserts that the tab in front at quit is in front
+ * again, both as the active editor tab and as the active terminal.
+ */
+function watchFront(t0) {
+  const since = () => Date.now() - t0;
+  const events = [`at activation: tab ${JSON.stringify(activeTabLabel())}, terminal ${JSON.stringify(vscode.window.activeTerminal?.name)}`];
+  let lastTab = activeTabLabel();
+  const subscriptions = [
+    vscode.window.onDidChangeActiveTerminal((terminal) =>
+      events.push(`${since()} ms: active terminal ${JSON.stringify(terminal?.name)}`)
+    ),
+    vscode.window.tabGroups.onDidChangeTabs(() => {
+      const label = activeTabLabel();
+      if (label !== lastTab) {
+        lastTab = label;
+        events.push(`${since()} ms: active tab ${JSON.stringify(label)}`);
+      }
+    }),
+  ];
+  return {
+    check(stageIndex, activeName, moment = 'quit', after = 'the restore') {
+      subscriptions.forEach((subscription) => subscription.dispose());
+      for (const event of events) observe('front', event);
+      const tab = activeTabLabel();
+      const terminal = vscode.window.activeTerminal?.name;
+      check(
+        `stage ${stageIndex}: the tab in front at ${moment} is in front 3 s after ${after} (R44)`,
+        tab === activeName && terminal === activeName,
+        `tab ${JSON.stringify(tab)}, terminal ${JSON.stringify(terminal)}, expected ${JSON.stringify(activeName)}`
+      );
+    },
+  };
 }
 
 async function openChat(chat) {
@@ -437,6 +480,15 @@ exports.activate = async function activate() {
       checkRestored(0, terminals, target);
       await renameProbe();
 
+      // R44: quit with the FIRST chat in front, not the last one opened, so a
+      // restore that leaves a later revived tab in front is caught (UJ run 11:
+      // "Lab ready" in front at quit, "New Session" in front after it).
+      const firstTab = vscode.window.terminals.find((terminal) => terminal.name === expectedName(CHATS[0]));
+      if (firstTab) {
+        firstTab.show(true);
+        await waitFor(() => vscode.window.activeTerminal === firstTab, 'the first chat tab to be in front');
+      }
+
       writeState({
         stage: 1,
         activeName: vscode.window.activeTerminal?.name,
@@ -448,10 +500,15 @@ exports.activate = async function activate() {
     if (stage === '1r') {
       // After Developer: Reload Window every pty survives; Pitwall adopts each
       // tab by PID, keeps every title, and types into none of them.
+      const front = watchFront(Date.now());
       const settled = await waitFor(async () => {
         const names = (await readTerminals()).map((terminal) => terminal.name).sort();
         return JSON.stringify(names) === JSON.stringify(state.reload.names);
       }, 'the reloaded tabs to keep their titles', 30000);
+      // Adopted background tabs are renamed in the background; the tab in
+      // front must be in front again once that is done (R44).
+      await sleep(3000);
+      front.check('1r', state.activeName, 'the reload', 'the tabs settle');
       const terminals = await snapshot();
       check('stage 1r: the tab count is unchanged after a reload', terminals.length === state.reload.names.length, String(terminals.length));
       check('stage 1r: every title is unchanged after a reload', settled, JSON.stringify(terminals.map((terminal) => terminal.name)));
@@ -472,20 +529,27 @@ exports.activate = async function activate() {
     }
 
     if (stage === 1 || stage === 2) {
+      // R44 (L1): the Pitwall sidebar is open while the restore runs, as in
+      // the live test profile (pitwall.focusOnStartup), so its rows render and
+      // reveal during the restore. The window keeps it open across the reload.
+      void vscode.commands.executeCommand('workbench.view.extension.pitwall');
       const t0 = Date.now();
       const timing = watchTiming(t0);
+      const front = watchFront(t0);
       const pitwall = EXTENSION_ID ? vscode.extensions.getExtension(EXTENSION_ID) : undefined;
       const pitwallActive = pitwall
         ? Promise.resolve(pitwall.activate()).then(() => Date.now(), () => Date.now())
         : Promise.resolve(t0);
       if (EXPECT_TITLES) {
         const expectedRuns = 3 + stage * EXPECT_RESUMES;
+        // Settled = every title and every resume; which tab is in front is
+        // checked separately, 3 s later, once the retitle pass has put it back.
         const settled = await waitFor(
-          async () =>
-            isRestored(await readTerminals(), expectedRuns, state.activeName),
+          async () => isRestored(await readTerminals(), expectedRuns),
           'the restored tabs to resume',
           30000
         );
+        await sleep(3000);
         const terminals = await snapshot();
         check(
           `stage ${stage}: restored tabs settled`,
@@ -493,6 +557,7 @@ exports.activate = async function activate() {
           String(terminals.length)
         );
         checkRestored(stage, terminals, state);
+        front.check(stage, state.activeName);
         timing.report(await pitwallActive);
         timing.checkLines(stage);
       } else {

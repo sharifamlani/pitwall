@@ -426,6 +426,29 @@ module.exports = {
     createTreeView: (id, options) => {
       const visibility = new EventEmitter();
       const selection = new EventEmitter();
+      const provider = options?.treeDataProvider;
+      /**
+       * The rows the extension host still knows, by id. As in the editor's
+       * `ExtHostTreeView`, a full refresh (`onDidChangeTreeData` with no
+       * element) clears them all, and the workbench asking for a row's
+       * children after that logs "No tree item with id '1/<id>' found."
+       */
+      const known = new Set();
+      const register = (items) => {
+        for (const item of items ?? []) {
+          if (item && item.id) known.add(item.id);
+        }
+      };
+      const render = () =>
+        Promise.resolve(provider?.getChildren?.())
+          .then(register)
+          .catch(() => undefined);
+      provider?.onDidChangeTreeData?.((element) => {
+        if (element) return;
+        known.clear();
+        // The workbench re-renders the rows once the refresh reaches it.
+        if (view.visible) setTimeout(() => void render(), view.__renderDelayMs);
+      });
       const view = {
         id,
         options,
@@ -433,8 +456,43 @@ module.exports = {
         title: '',
         selection: [],
         reveals: [],
+        /** Lines the extension host would log for a row it no longer knows. */
+        treeErrors: [],
+        /**
+         * How long the workbench takes, after the extension host resolved a
+         * reveal's parent rows, to ask for their children (it expands each
+         * one). A busy window at startup takes hundreds of ms.
+         */
+        __revealRoundTripMs: 0,
+        /** How long a refresh takes to reach the workbench, which then re-renders the rows. */
+        __renderDelayMs: 0,
+        /** Reveals the workbench has finished (or given up on). */
+        revealsDone: 0,
         reveal: async (item, revealOptions) => {
           view.reveals.push({ item, options: revealOptions });
+          if (!provider?.getParent) {
+            view.revealsDone += 1;
+            return;
+          }
+          try {
+            const chain = [];
+            for (let parent = provider.getParent(item); parent; parent = provider.getParent(parent)) chain.unshift(parent);
+            // The extension host resolves and registers the parent chain...
+            register(chain);
+            // ...and the workbench then expands each parent, asking for its children.
+            await new Promise((resolve) => setTimeout(resolve, view.__revealRoundTripMs));
+            for (const parent of chain) {
+              if (!known.has(parent.id)) {
+                view.treeErrors.push(`No tree item with id '1/${parent.id}' found.`);
+                return;
+              }
+              register(await provider.getChildren(parent));
+            }
+          } catch {
+            // A provider that cannot answer is not what this models.
+          } finally {
+            view.revealsDone += 1;
+          }
         },
         onDidChangeVisibility: visibility.event,
         onDidChangeSelection: selection.event,
@@ -443,11 +501,12 @@ module.exports = {
           view.visible = visible;
           visibility.fire({ visible });
           if (visible) {
-            void Promise.resolve(options?.treeDataProvider?.getChildren?.()).catch(() => undefined);
+            void render();
           }
         },
         dispose: () => undefined,
       };
+      if (view.visible) void render();
       treeViews.push(view);
       return view;
     },

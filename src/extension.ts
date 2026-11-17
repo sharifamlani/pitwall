@@ -216,14 +216,19 @@ export async function activate(context: vscode.ExtensionContext) {
       showWorktree(worktree);
     }
     if (options.revealIfHidden || workspacesTreeView.visible) {
+      // Only the latest chat is revealed: a burst of focus changes would
+      // otherwise queue one reveal each.
+      const ticket = ++latestReveal;
       const reveal = () =>
-        workspacesTreeView
-          .reveal(workspacesProvider.getChatTreeItem(chat), { select: true, focus: false, expand: true })
-          .then(undefined, () => undefined);
+        workspacesProvider.revealWhenSettled(() =>
+          ticket === latestReveal
+            ? workspacesTreeView.reveal(workspacesProvider.getChatTreeItem(chat), { select: true, focus: false, expand: true })
+            : Promise.resolve()
+        );
       deferredReveal?.dispose();
       deferredReveal = undefined;
       if (workspacesTreeView.visible) {
-        void workspacesProvider.whenSettled().then(reveal);
+        void reveal();
       } else {
         // A hidden view has no rows yet, so revealing one now names a row that
         // does not exist. Reveal the latest chat once the view shows and its
@@ -232,12 +237,14 @@ export async function activate(context: vscode.ExtensionContext) {
           if (event.visible) {
             deferredReveal?.dispose();
             deferredReveal = undefined;
-            void workspacesProvider.whenSettled().then(reveal);
+            void reveal();
           }
         });
       }
     }
   };
+  /** The newest chat reveal; an older one still waiting is dropped. */
+  let latestReveal = 0;
   /** The one reveal waiting for the hidden Workspaces view to show. */
   let deferredReveal: vscode.Disposable | undefined;
   context.subscriptions.push({ dispose: () => deferredReveal?.dispose() });
@@ -378,6 +385,10 @@ export async function activate(context: vscode.ExtensionContext) {
     } else {
       chatId = activeNativeUiChatId();
     }
+    // A tab Pitwall put in front to rename it is not the user visiting it (R44).
+    if (chatId && terminalManager.isPitwallActivation(chatId)) {
+      return;
+    }
     const chat = chatId ? storageService.getChat(chatId) : undefined;
     if (chat) {
       activateChat(chat);
@@ -393,6 +404,9 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
       const chatId = terminalManager.getChatIdForTerminal(terminal);
+      if (chatId && terminalManager.isPitwallActivation(chatId)) {
+        return;
+      }
       const chat = chatId ? storageService.getChat(chatId) : undefined;
       if (chat) {
         activateChat(chat);
@@ -447,10 +461,12 @@ export async function activate(context: vscode.ExtensionContext) {
     showWorktree(startWorktree);
     const reveal = () =>
       setTimeout(() => {
-        void workspacesProvider.whenSettled().then(() =>
-          workspacesTreeView
-            .reveal(workspacesProvider.getTreeItemForWorktree(startWorktree), { select: true, focus: false, expand: true })
-            .then(undefined, () => undefined)
+        void workspacesProvider.revealWhenSettled(() =>
+          workspacesTreeView.reveal(workspacesProvider.getTreeItemForWorktree(startWorktree), {
+            select: true,
+            focus: false,
+            expand: true,
+          })
         );
       }, 100);
     if (workspacesTreeView.visible) {
