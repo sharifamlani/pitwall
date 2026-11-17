@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.35 · 2026-11-17
+> v0.36 · 2026-11-17
 
 ---
 
@@ -185,7 +185,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 3.7 | Hotkeys Ctrl+Alt+1–9 / 0 / R / F / O / Shift+1–9, latent (hover); confirm Ctrl+Alt+F beats Cursor's `list.find` | ⏸ | ⏸ | — | D12, D15, T13 |
 | 3.8 | List keyboard: ↓/↑ highlight, Ctrl+↓/↑ open, Enter | ⏸ | ⏸ | — | D37 |
 | 3.9 | Search box (Ctrl+Alt+R): repos, chats, Find Session | ⏸ | ⏸ | — | D24 |
-| 3.10 | Brand: status-row activity icon, D17 colors; no sideways scroll, resizable | ⏸ | ⏸ | — | D17, D33 |
+| 3.10 | Brand: status-row activity icon, D17 colors; no sideways scroll, resizable | ~ (icons ✅; scroll/resize checked by E17 at close) | ✅ | 2026-11-17 · PR #27 `3ded3ef` → merge `c0814b0` (QA APPROVE; main CI green; circles only, no Claude mark, P24) | D17, D33 |
 
 ### Phase 4 — Windows and tabs (one window per folder)
 **Goal:** Clicking anything in Pitwall lands you in the right Cursor window with the chat open in Claude's panel; files and tabs behave like Cursor.
@@ -326,3 +326,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.33 · 2026-11-17.** Sharif resumed development. Phase 3 (Sidebar v1) planning started; plan `docs/superpowers/plans/2026-11-17-phase3-sidebar-v1.md`.
 - **v0.34 · 2026-11-17.** Phase 3 plan passed QA pre-flight after one revision round (7 blocking findings fixed: wait-drop, first-run "finished", duplicate repos, wave conflicts). Rulings P1–P20, criteria E1–E18. Waiting on Sharif's go.
 - **v0.35 · 2026-11-17.** Row 3.6 ✅ (PR #26 → `16a2d12`): Changes view, worktree create/delete/merge/rebase, PR badges and fork-with-changes hidden; FILES collapsed; docs marked "hidden in v1". S1: F3 not reproduced live on non-PID keys (overlay generalised anyway); new finding P23 (other window's list doesn't redraw) → Task 5.
+- **v0.36 · 2026-11-17.** Row 3.10 icons merged (PR #27 → `c0814b0`): D17 status dots (circles only), "new" is a dashed grey ring (P24, brand book), four-dot activity icon. PR #28 (T1) reworked to write stamps (P25) after QA caught a lost-write race.
