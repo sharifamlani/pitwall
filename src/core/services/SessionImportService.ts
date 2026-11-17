@@ -19,7 +19,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const HOT_WINDOW_MS = 5 * 60 * 1000;
 /** A placeholder that never gets a session stops being polled after this. */
 const PENDING_LINK_WINDOW_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_SCAN_INTERVAL_MS = 2 * 60 * 1000;
+/** The 60 s discovery scan: it also refreshes closed chats' row status (QA S5). */
+const DEFAULT_SCAN_INTERVAL_MS = 60 * 1000;
 const DEFAULT_HOT_SCAN_INTERVAL_MS = 3_000;
 const MAX_IMPORTS_PER_SCAN = 50;
 /**
@@ -54,6 +55,11 @@ export interface SessionImportServiceOptions {
    */
   isVisible?: () => boolean;
   onChatsChanged?: (event: SessionImportEvent) => void;
+  /**
+   * Every session a full scan listed, with its turn state. Rows of chats the
+   * attention tick does not poll take their status from this (QA S5).
+   */
+  onSessionsListed?: (sessions: HarnessSession[]) => void;
   /** Settings are read per scan so a change applies without a reload. */
   readSettings?: () => SessionImportSettings;
 }
@@ -91,6 +97,7 @@ export class SessionImportService implements vscode.Disposable {
   private readonly isChatOpen: (chat: ChatSession) => boolean;
   private readonly isVisible: () => boolean;
   private readonly onChatsChanged: (event: SessionImportEvent) => void;
+  private readonly onSessionsListed: (sessions: HarnessSession[]) => void;
   private readonly readSettings: () => SessionImportSettings;
 
   private readonly expectations = new Map<string, PendingUiExpectation>();
@@ -114,6 +121,7 @@ export class SessionImportService implements vscode.Disposable {
     this.isChatOpen = options.isChatOpen ?? (() => false);
     this.isVisible = options.isVisible ?? (() => true);
     this.onChatsChanged = options.onChatsChanged ?? (() => undefined);
+    this.onSessionsListed = options.onSessionsListed ?? (() => undefined);
     this.readSettings =
       options.readSettings ??
       (() => {
@@ -292,6 +300,7 @@ export class SessionImportService implements vscode.Disposable {
       const retentionMs = settings.retentionDays * DAY_MS;
       const starred = this.storageService.getStarredChatIds();
       const listings = await this.listRepositorySessions(scopes, adapters);
+      this.onSessionsListed(listings.flatMap((listing) => listing.sessions));
       // Roots can nest, and a listing for the outer root includes the inner
       // root's sessions; each goes to the deepest worktree across all roots.
       const allWorktrees = scopes.flatMap((scope) => scope.worktrees);
