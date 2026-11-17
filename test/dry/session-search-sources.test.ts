@@ -71,7 +71,7 @@ test('one search reads Claude, Codex, opencode, and Pi records and keeps only wh
     },
   });
 
-  const codexHome = tempDir(t, 'agntree-codex-home-');
+  const codexHome = tempDir(t, 'pitwall-codex-home-');
   fs.mkdirSync(path.join(codexHome, 'sessions'), { recursive: true });
   setEnv(t, { CODEX_HOME: codexHome, FAKE_CODEX_CWD: process.cwd() });
   const appServer = new CodexAppServer({
@@ -82,7 +82,7 @@ test('one search reads Claude, Codex, opencode, and Pi records and keeps only wh
   });
   t.after(() => appServer.dispose());
 
-  const dir = tempDir(t, 'agntree-cross-');
+  const dir = tempDir(t, 'pitwall-cross-');
   const scenarioFile = path.join(dir, 'scenario.json');
   const answer = {
     answer: 'I found the Codex, opencode, and Pi sessions.',
@@ -179,7 +179,7 @@ test('stopping an opencode snapshot ends the session listing and unblocks prepar
   const source = new OpencodeSessionSearch(new OpencodeSessionService());
   const controller = new AbortController();
   t.after(() => controller.abort());
-  const cwd = tempDir(t, 'agntree-opencode-abort-');
+  const cwd = tempDir(t, 'pitwall-opencode-abort-');
 
   const pending = source.prepare({ cwd, signal: controller.signal });
   await waitFor(
@@ -208,7 +208,7 @@ test('the opencode preparation budget covers the session listing', posixOnly, as
   });
   stub.__setConfiguration('harnessCommands', { opencode: opencode.cli });
   const source = new OpencodeSessionSearch(new OpencodeSessionService(), { budgetMs: 30 });
-  const cwd = tempDir(t, 'agntree-opencode-budget-');
+  const cwd = tempDir(t, 'pitwall-opencode-budget-');
 
   const preparation = await source.prepare({ cwd, signal: new AbortController().signal });
   const calls = opencode.read().calls;
@@ -241,7 +241,7 @@ test('the opencode snapshot stops at its byte budget and says so', posixOnly, as
   });
   stub.__setConfiguration('harnessCommands', { opencode: opencode.cli });
   const source = new OpencodeSessionSearch(new OpencodeSessionService(), { maxBytes: 500 });
-  const cwd = tempDir(t, 'agntree-opencode-bytes-');
+  const cwd = tempDir(t, 'pitwall-opencode-bytes-');
 
   const preparation = await source.prepare({ cwd, signal: new AbortController().signal });
   const dir = path.join(cwd, 'opencode-sessions');
@@ -258,7 +258,7 @@ test('a Claude profile without its CLI is not an installed search runner', async
   const profile = claudeProfile(t);
   fs.mkdirSync(profile.projects, { recursive: true });
   stub.__setConfiguration('harnessCommands', {
-    claude: path.join(tempDir(t, 'agntree-missing-'), 'claude'),
+    claude: path.join(tempDir(t, 'pitwall-missing-'), 'claude'),
   });
 
   const harness = new ClaudeHarness({ sessionService: new ClaudeSessionService() });
@@ -280,7 +280,7 @@ test('a search skips a runner whose CLI is missing even if its harness looks ins
   const finder = new SessionSearchService(
     makeStorage(),
     registry,
-    path.join(tempDir(t, 'agntree-available-'), 'scratch')
+    path.join(tempDir(t, 'pitwall-available-'), 'scratch')
   );
   t.after(() => finder.dispose());
 
@@ -300,10 +300,10 @@ test('changing the harness clears a model and effort chosen for the previous one
   const finder = new SessionSearchService(
     makeStorage(),
     registry,
-    path.join(tempDir(t, 'agntree-engine-'), 'scratch')
+    path.join(tempDir(t, 'pitwall-engine-'), 'scratch')
   );
   t.after(() => finder.dispose());
-  const config = vscode.workspace.getConfiguration('agntree');
+  const config = vscode.workspace.getConfiguration('pitwall');
 
   stub.__setConfiguration('sessionSearch.harness', 'claude');
   stub.__setConfiguration('sessionSearch.model', 'haiku');
@@ -354,7 +354,7 @@ test('a source that cannot prepare is dropped with a step, and the remaining sou
   const finder = new SessionSearchService(
     storage,
     registry,
-    path.join(tempDir(t, 'agntree-prepare-'), 'scratch')
+    path.join(tempDir(t, 'pitwall-prepare-'), 'scratch')
   );
   t.after(() => finder.dispose());
 

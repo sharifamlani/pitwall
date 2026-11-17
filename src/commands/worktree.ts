@@ -55,7 +55,7 @@ export function registerWorktreeCommands(context: vscode.ExtensionContext, deps:
     return terminal;
   };
 
-  register('agntree.addWorktree', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.addWorktree', async (item?: WorkspaceTreeItem) => {
     const repo = await resolveGitRepository(item, 'Select repository for new worktree');
     if (!repo) {
       return;
@@ -132,7 +132,7 @@ export function registerWorktreeCommands(context: vscode.ExtensionContext, deps:
     }
   });
 
-  register('agntree.openInNewWindow', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.openInNewWindow', async (item?: WorkspaceTreeItem) => {
     const worktree = workspacesProvider.getWorktreeForItem(item);
     if (worktree) {
       await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(worktree.path), {
@@ -141,7 +141,7 @@ export function registerWorktreeCommands(context: vscode.ExtensionContext, deps:
     }
   });
 
-  register('agntree.copyWorktreePath', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.copyWorktreePath', async (item?: WorkspaceTreeItem) => {
     const worktree = workspacesProvider.getWorktreeForItem(item);
     if (worktree) {
       await vscode.env.clipboard.writeText(worktree.path);
@@ -149,21 +149,21 @@ export function registerWorktreeCommands(context: vscode.ExtensionContext, deps:
     }
   });
 
-  register('agntree.openTerminalAtWorktree', (item?: WorkspaceTreeItem) => {
+  register('pitwall.openTerminalAtWorktree', (item?: WorkspaceTreeItem) => {
     const worktree = workspacesProvider.getWorktreeForItem(item);
     if (worktree) {
       openTerminal(`Terminal: ${worktree.name}`, worktree.path);
     }
   });
 
-  register('agntree.switchToWorkspace', (item?: WorkspaceTreeItem) => {
+  register('pitwall.switchToWorkspace', (item?: WorkspaceTreeItem) => {
     const worktree = workspacesProvider.getWorktreeForItem(item);
     if (worktree) {
       deps.switchWorkspaceFolder(worktree.path);
     }
   });
 
-  register('agntree.deleteWorktree', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.deleteWorktree', async (item?: WorkspaceTreeItem) => {
     const worktree = worktreeRow(item);
     if (!worktree) {
       return;
@@ -235,7 +235,7 @@ export function registerWorktreeCommands(context: vscode.ExtensionContext, deps:
     refreshTree();
   });
 
-  register('agntree.mergeWorktree', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.mergeWorktree', async (item?: WorkspaceTreeItem) => {
     const target = worktreeRow(item);
     const repo = target && storageService.getRepository(target.repoId);
     if (!target || !repo) {
@@ -287,7 +287,7 @@ export function registerWorktreeCommands(context: vscode.ExtensionContext, deps:
     }
   });
 
-  register('agntree.rebaseWorktree', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.rebaseWorktree', async (item?: WorkspaceTreeItem) => {
     const worktree = worktreeRow(item);
     if (!worktree) {
       return;
@@ -296,9 +296,9 @@ export function registerWorktreeCommands(context: vscode.ExtensionContext, deps:
     if (gitService.isRebaseInProgress(worktree.path)) {
       const choice = await vscode.window.showQuickPick(
         [
-          { label: '$(check) Continue', command: 'agntree.rebaseContinue' },
-          { label: '$(close) Abort', command: 'agntree.rebaseAbort' },
-          { label: '$(debug-step-over) Skip', command: 'agntree.rebaseSkip' },
+          { label: '$(check) Continue', command: 'pitwall.rebaseContinue' },
+          { label: '$(close) Abort', command: 'pitwall.rebaseAbort' },
+          { label: '$(debug-step-over) Skip', command: 'pitwall.rebaseSkip' },
         ],
         { placeHolder: 'A rebase is already in progress' }
       );
@@ -395,10 +395,10 @@ export function registerWorktreeCommands(context: vscode.ExtensionContext, deps:
     } else {
       vscode.window.showErrorMessage(`Rebase failed: ${result.error || 'Unknown error'}`);
     }
-    void vscode.commands.executeCommand('agntree.refreshChanges');
+    void vscode.commands.executeCommand('pitwall.refreshChanges');
   });
 
-  register('agntree.openPRInBrowser', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.openPRInBrowser', async (item?: WorkspaceTreeItem) => {
     const worktree = worktreeRow(item);
     if (!worktree) {
       return;
@@ -411,7 +411,7 @@ export function registerWorktreeCommands(context: vscode.ExtensionContext, deps:
     }
   });
 
-  register('agntree.checkoutPR', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.checkoutPR', async (item?: WorkspaceTreeItem) => {
     const repo = await resolveGitRepository(item, 'Select repository to checkout PR from');
     if (!repo) {
       return;

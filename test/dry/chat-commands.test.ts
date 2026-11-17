@@ -135,7 +135,7 @@ function setup(t: { after(fn: () => void): void }, options: { notInstalled?: Har
     refreshTree: () => undefined,
   });
   registerSessionImportCommands(context, storage, git as never, catalog, workspaces as never, registry, () => undefined);
-  vscode.commands.registerCommand('agntree.refreshWorkspaces', () => undefined);
+  vscode.commands.registerCommand('pitwall.refreshWorkspaces', () => undefined);
 
   return {
     storage, main, feature, folder, folderRepo, worktrees, missing, sessions, adapters, terminals,
@@ -153,7 +153,7 @@ function setup(t: { after(fn: () => void): void }, options: { notInstalled?: Har
 
 test('New Session launches in the worktree, with an ID chosen up front when the harness accepts one', async (t) => {
   const f = setup(t);
-  await runCommand('agntree.newClaudeChat', f.worktreeRow(f.main));
+  await runCommand('pitwall.newClaudeChat', f.worktreeRow(f.main));
   const [claude] = f.chatsIn(f.main);
   assert.equal(claude.name, 'New Session');
   assert.match(claude.pendingHarnessSessionId ?? '', UUID);
@@ -161,13 +161,13 @@ test('New Session launches in the worktree, with an ID chosen up front when the 
   assert.equal(f.lastTerminal().options.cwd, f.main.path);
   assert.deepEqual([f.registrations, f.shown], [[claude.id], [f.main.id]]);
 
-  await runCommand('agntree.newCodexChat', f.worktreeRow(f.main));
+  await runCommand('pitwall.newCodexChat', f.worktreeRow(f.main));
   const codex = f.chatsIn(f.main).find((chat) => chat.harness === 'codex')!;
   assert.equal(codex.pendingHarnessSessionId, undefined, 'Codex assigns its own ID');
   assert.equal(f.lastTerminal().sent[0], 'codex');
   assert.ok(f.registrations.includes(codex.id), 'its watcher links the thread later');
 
-  await runCommand('agntree.newChat', new WorkspaceTreeItem('scratch', 1, 'repository', f.folderRepo, 'folderRepository'));
+  await runCommand('pitwall.newChat', new WorkspaceTreeItem('scratch', 1, 'repository', f.folderRepo, 'folderRepository'));
   assert.equal(f.chatsIn(f.folder)[0]?.harness, 'claude', 'the legacy alias works from a plain folder row');
   assert.equal(f.lastTerminal().options.cwd, f.folder.path);
 });
@@ -176,7 +176,7 @@ test('New Session starts the default agent in one click, and asks which agent wh
   const f = setup(t);
   stub.__setConfiguration('defaultHarness', 'codex');
   t.after(() => stub.__setConfiguration('defaultHarness', undefined));
-  await runCommand('agntree.newDefaultSession', f.worktreeRow(f.main));
+  await runCommand('pitwall.newDefaultSession', f.worktreeRow(f.main));
   assert.deepEqual(f.chatsIn(f.main).map((chat) => chat.harness), ['codex'], 'no question asked');
   assert.equal(f.lastTerminal().sent[0], 'codex');
 
@@ -184,7 +184,7 @@ test('New Session starts the default agent in one click, and asks which agent wh
   stub.__setConfiguration('defaultHarness', '');
   stub.__setQuickPickHandler((items: { label: string }[]) => items.find((item) => item.label === f.adapters.opencode.displayName));
   t.after(() => stub.__setQuickPickHandler(null));
-  await runCommand('agntree.newDefaultSession', f.worktreeRow(f.main));
+  await runCommand('pitwall.newDefaultSession', f.worktreeRow(f.main));
   assert.deepEqual(f.chatsIn(f.main).map((chat) => chat.harness), ['codex', 'opencode']);
 });
 
@@ -201,7 +201,7 @@ test('a default agent that is not installed is not launched: New Session offers 
     stub.__setQuickPickHandler(null);
     stub.__setConfiguration('defaultHarness', undefined);
   });
-  await runCommand('agntree.newDefaultSession', f.worktreeRow(f.main));
+  await runCommand('pitwall.newDefaultSession', f.worktreeRow(f.main));
   assert.deepEqual(offered, [f.adapters.opencode.displayName, f.adapters.codex.displayName]);
   assert.equal(f.chatsIn(f.main).length, 0, 'dismissing the question starts nothing');
 });
@@ -212,45 +212,45 @@ test('Set Default Agent stores the chosen agent, and Ask Every Time clears it', 
     stub.__setQuickPickHandler(null);
     stub.__setConfiguration('defaultHarness', undefined);
   });
-  const config = () => vscode.workspace.getConfiguration('agntree').get('defaultHarness');
+  const config = () => vscode.workspace.getConfiguration('pitwall').get('defaultHarness');
   stub.__setQuickPickHandler((items: { label: string }[]) => items.find((item) => item.label === f.adapters.codex.displayName));
-  await runCommand('agntree.setDefaultHarness');
+  await runCommand('pitwall.setDefaultHarness');
   assert.equal(config(), 'codex');
 
   stub.__setQuickPickHandler((items: { label: string; description?: string }[]) => {
     assert.equal(items.find((item) => item.description?.includes('current'))?.label, f.adapters.codex.displayName);
     return items[0];
   });
-  await runCommand('agntree.setDefaultHarness');
+  await runCommand('pitwall.setDefaultHarness');
   assert.equal(config(), '');
 });
 
 test('opening a chat from before chosen IDs gives it one; opening an open chat only focuses it', async (t) => {
   const f = setup(t);
   const legacy = f.chat('claude', 'Legacy');
-  await runCommand('agntree.openChat', f.row(legacy));
+  await runCommand('pitwall.openChat', f.row(legacy));
   const pending = f.storage.getChat(legacy.id)!.pendingHarnessSessionId;
   assert.match(pending ?? '', UUID);
   assert.equal(f.lastTerminal().sent[0], `claude --session-id ${pending}`);
 
   const registered = f.registrations.length;
-  await runCommand('agntree.openChat', f.row(legacy));
+  await runCommand('pitwall.openChat', f.row(legacy));
   assert.deepEqual([stub.window.terminals.length, f.lastTerminal().shown, f.registrations.length], [1, 2, registered]);
 });
 
 test('Open in UI stops a running terminal only after confirmation, then hands over the session', async (t) => {
   const f = setup(t);
   const chat = f.chat('claude', 'Running', 'claude-1');
-  await runCommand('agntree.openChat', f.row(chat));
+  await runCommand('pitwall.openChat', f.row(chat));
   const terminal = f.lastTerminal();
 
   stub.__warningResponses.push(undefined);
-  await runCommand('agntree.openClaudeUi', f.row(chat));
+  await runCommand('pitwall.openClaudeUi', f.row(chat));
   assert.ok(shown('Close the terminal for "Running"?'));
   assert.deepEqual([terminal.disposed, f.claudeUi.opened.length], [false, 0], 'declining keeps the terminal');
 
   stub.__warningResponses.push('Close and Open');
-  const handoff = runCommand('agntree.openClaudeUi', f.row(chat));
+  const handoff = runCommand('pitwall.openClaudeUi', f.row(chat));
   await waitFor(() => terminal.disposed, 'the terminal to close');
   stub.window.__fireDidCloseTerminal(terminal);
   await handoff;
@@ -266,7 +266,7 @@ test('Open in UI explains a refusal before touching anything', async (t) => {
   const mismatch = f.chat('claude', 'Mismatch', 'claude-2');
   const codex = f.chat('codex', 'Codex', 'codex-1');
   f.missing.add('gone');
-  await runCommand('agntree.openChat', f.row(mismatch));
+  await runCommand('pitwall.openChat', f.row(mismatch));
   f.claudeUi.nativeUi.checkAvailability = () => ({ kind: 'workspace-mismatch', uiCwd: '/elsewhere' });
 
   const cases: [ChatSession, string][] = [
@@ -276,14 +276,14 @@ test('Open in UI explains a refusal before touching anything', async (t) => {
     [codex, 'This is not a Claude Code session'],
   ];
   for (const [chat, message] of cases) {
-    await runCommand('agntree.openClaudeUi', f.row(chat));
+    await runCommand('pitwall.openClaudeUi', f.row(chat));
     assert.ok(shown(message), message);
   }
   assert.equal(f.claudeUi.opened.length, 0);
   assert.ok(f.terminals.isActive(mismatch.id), 'a folder mismatch never costs the running terminal');
 
   f.claudeUi.nativeUi.isInstalled = () => false;
-  await runCommand('agntree.openClaudeUi', f.row(gone));
+  await runCommand('pitwall.openClaudeUi', f.row(gone));
   assert.ok(shown('The Claude Code UI extension is not installed'));
 });
 
@@ -293,17 +293,17 @@ test('a click reveals a session already open in its UI, from the tree or the sta
   f.storage.toggleStar(chat.id);
   f.codexUi.surfaces.open.add('codex-1');
 
-  await runCommand('agntree.openChat', f.row(chat));
+  await runCommand('pitwall.openChat', f.row(chat));
   stub.__setQuickPickHandler((items) => items.find((item: { chatId?: string }) => item.chatId === chat.id));
-  await runCommand('agntree.showStarredSessions');
+  await runCommand('pitwall.showStarredSessions');
   assert.equal(f.codexUi.opened.length, 2);
   assert.equal(stub.window.terminals.length, 0, 'no second agent beside the open panel');
 
   f.codexUi.surfaces.open.delete('codex-1');
-  await runCommand('agntree.openChat', f.row(chat));
+  await runCommand('pitwall.openChat', f.row(chat));
   const terminal = f.lastTerminal();
   f.codexUi.surfaces.open.add('codex-1');
-  await runCommand('agntree.openChat', f.row(chat));
+  await runCommand('pitwall.openChat', f.row(chat));
   assert.deepEqual([f.codexUi.opened.length, terminal.shown], [2, 2], 'the live terminal is focused instead');
 });
 
@@ -314,12 +314,12 @@ test('with the UI as default, a click uses the UI when it can and the terminal o
   const fallback = f.chat('claude', 'Fallback', 'claude-fallback');
   const explicit = f.chat('claude', 'Explicit', 'claude-explicit');
 
-  await runCommand('agntree.openChat', f.row(inUi));
+  await runCommand('pitwall.openChat', f.row(inUi));
   assert.deepEqual(f.claudeUi.opened.map((open) => open.sessionId), ['claude-ui']);
   f.claudeUi.nativeUi.checkAvailability = () => ({ kind: 'workspace-mismatch', uiCwd: '/elsewhere' });
-  await runCommand('agntree.openChat', f.row(fallback));
+  await runCommand('pitwall.openChat', f.row(fallback));
   f.claudeUi.nativeUi.checkAvailability = () => ({ kind: 'available' });
-  await runCommand('agntree.openChatInTerminal', f.row(explicit));
+  await runCommand('pitwall.openChatInTerminal', f.row(explicit));
   assert.deepEqual(stub.window.terminals.map((terminal) => terminal.sent[0]), [
     'claude --resume claude-fallback',
     'claude --resume claude-explicit',
@@ -328,14 +328,14 @@ test('with the UI as default, a click uses the UI when it can and the terminal o
   // Open in Terminal on a session open in the UI closes that tab first.
   f.claudeUi.surfaces.open.add('claude-ui');
   stub.__warningResponses.push('Close and Open');
-  await runCommand('agntree.openChatInTerminal', f.row(inUi));
+  await runCommand('pitwall.openChatInTerminal', f.row(inUi));
   assert.ok(f.claudeUi.surfaces.calls.includes('close:claude-ui'));
   assert.equal(f.lastTerminal().sent[0], 'claude --resume claude-ui');
 });
 
 test('a new UI session is a placeholder the importer links; a failed open leaves no row behind', async (t) => {
   const f = setup(t);
-  await runCommand('agntree.newClaudeChatInUi', f.worktreeRow(f.main));
+  await runCommand('pitwall.newClaudeChatInUi', f.worktreeRow(f.main));
   const [placeholder] = f.chatsIn(f.main);
   assert.deepEqual([placeholder.pendingUiLaunch, placeholder.harnessSessionId, stub.window.terminals.length], [true, null, 0]);
   assert.deepEqual(f.claudeUi.opened, [{ cwd: f.main.path }]);
@@ -346,7 +346,7 @@ test('a new UI session is a placeholder the importer links; a failed open leaves
   assert.deepEqual([linked.name, linked.pendingUiLaunch], ['UI Created', false]);
 
   f.claudeUi.nativeUi.openNewSession = async (): Promise<NativeUiOpenResult> => ({ kind: 'failed', message: 'extension host gone' });
-  await runCommand('agntree.newClaudeChatInUi', f.worktreeRow(f.main));
+  await runCommand('pitwall.newClaudeChatInUi', f.worktreeRow(f.main));
   assert.equal(f.chatsIn(f.main).length, 1);
   assert.ok(shown('extension host gone'));
 });
@@ -356,7 +356,7 @@ test('Fork Session numbers the fork; a linked fork resumes its new ID, a termina
   const claude = f.chat('claude', 'Fix icons', 'claude-1');
   const codex = f.chat('codex', 'Fix icons (1)', 'codex-1');
 
-  await runCommand('agntree.forkChat', f.row(claude));
+  await runCommand('pitwall.forkChat', f.row(claude));
   const claudeFork = f.chatsIn(f.main).find((chat) => chat.name === 'Fix icons (2)')!;
   assert.deepEqual(
     [claudeFork.harnessSessionId, claudeFork.pendingHarnessSessionId, claudeFork.forkedFromSessionId],
@@ -365,13 +365,13 @@ test('Fork Session numbers the fork; a linked fork resumes its new ID, a termina
   assert.equal(f.lastTerminal().sent[0], 'claude --fork claude-1 --session-id pending-fork-1');
   assert.ok(f.registrations.includes(claudeFork.id));
 
-  await runCommand('agntree.forkChat', f.row(codex));
+  await runCommand('pitwall.forkChat', f.row(codex));
   const codexFork = f.chatsIn(f.main).find((chat) => chat.name === 'Fix icons (1) (1)')!;
   assert.equal(codexFork.harnessSessionId, 'codex-fork');
   assert.equal(f.lastTerminal().sent[0], 'codex --resume codex-fork');
   assert.ok(!f.registrations.includes(codexFork.id), 'nothing left for a watcher to link');
 
-  await runCommand('agntree.forkChat', f.row(f.chat('claude', 'Unstarted')));
+  await runCommand('pitwall.forkChat', f.row(f.chat('claude', 'Unstarted')));
   assert.ok(shown('Cannot fork a session that has not been started yet'));
 });
 
@@ -379,7 +379,7 @@ test('Fork to New Worktree forks into a new branch worktree; a failed fork or a 
   const f = setup(t);
   const opencode = f.chat('opencode', 'Plan', 'ses_1');
   stub.__inputResponses.push('feature-fork', '/work/demo-feature-fork');
-  await runCommand('agntree.forkChatWithChanges', f.row(opencode));
+  await runCommand('pitwall.forkChatWithChanges', f.row(opencode));
   const created = f.worktrees.find((worktree) => worktree.name === 'feature-fork')!;
   assert.deepEqual(f.chatsIn(created).map((chat) => [chat.name, chat.harnessSessionId]), [['Plan (1)', 'ses_fork']]);
   assert.equal(f.lastTerminal().sent[0], 'opencode --resume ses_fork');
@@ -388,12 +388,12 @@ test('Fork to New Worktree forks into a new branch worktree; a failed fork or a 
     throw new Error('move failed');
   };
   stub.__inputResponses.push('feature-broken', '/work/demo-broken');
-  await runCommand('agntree.forkChatWithChanges', f.row(opencode));
+  await runCommand('pitwall.forkChatWithChanges', f.row(opencode));
   assert.ok(shown('Failed to fork the opencode session into the new worktree: move failed'));
   assert.deepEqual(f.chatsIn(f.worktrees.find((worktree) => worktree.name === 'feature-broken')!), []);
 
   const inFolder = f.chat('claude', 'Folder', 'claude-folder', f.folder);
-  await runCommand('agntree.forkChatWithChanges', f.row(inFolder));
+  await runCommand('pitwall.forkChatWithChanges', f.row(inFolder));
   assert.ok(shown('plain folder'));
 });
 
@@ -414,7 +414,7 @@ test('Import offers only sessions not yet imported, keyed by harness and session
     offered = items.map((item: { harness: string; session: HarnessSession }) => `${item.harness}:${item.session.sessionId}`);
     return items.filter((item: { harness: string }) => item.harness === 'opencode');
   });
-  await runCommand('agntree.importSessions', f.worktreeRow(f.main));
+  await runCommand('pitwall.importSessions', f.worktreeRow(f.main));
   assert.deepEqual(offered, ['claude:shared-id', 'opencode:ses_new']);
   assert.equal(f.chatsIn(f.main).find((chat) => chat.harnessSessionId === 'ses_new')?.name, 'New');
   assert.equal(f.storage.getRemovedSessionKeys().size, 0, 'a manual import undoes an earlier removal');
@@ -424,12 +424,12 @@ test('Go to Next Session That Needs You opens the longest-waiting one, skips a r
   const f = setup(t);
   const waiting = f.chat('claude', 'Waiting', 'claude-1');
   f.needingYou.push('removed-chat', waiting.id);
-  await runCommand('agntree.openNextSessionNeedingYou');
+  await runCommand('pitwall.openNextSessionNeedingYou');
   assert.equal(f.lastTerminal().sent[0], 'claude --resume claude-1');
   assert.deepEqual(f.activated, [waiting.id], 'its row is selected, which clears the flag');
 
   f.needingYou.length = 0;
-  await runCommand('agntree.openNextSessionNeedingYou');
+  await runCommand('pitwall.openNextSessionNeedingYou');
   assert.ok(shown('No session is waiting for you.'));
 });
 
@@ -439,37 +439,37 @@ test('with several session rows selected, Remove, Close, Star and Unstar apply t
   const rows = [f.row(a), f.row(b)];
 
   f.storage.toggleStar(a.id);
-  await runCommand('agntree.starChat', rows[1], rows);
+  await runCommand('pitwall.starChat', rows[1], rows);
   assert.deepEqual([...f.storage.getStarredChatIds()].sort(), [a.id, b.id].sort(), 'an already-starred row stays starred');
-  await runCommand('agntree.unstarChat', rows[0], rows);
+  await runCommand('pitwall.unstarChat', rows[0], rows);
   assert.equal(f.storage.getStarredChatIds().size, 0);
 
-  await runCommand('agntree.openChatInTerminal', rows[0]);
-  await runCommand('agntree.openChatInTerminal', rows[1]);
-  await runCommand('agntree.closeChat', rows[0], rows);
+  await runCommand('pitwall.openChatInTerminal', rows[0]);
+  await runCommand('pitwall.openChatInTerminal', rows[1]);
+  await runCommand('pitwall.closeChat', rows[0], rows);
   assert.deepEqual([a, b].map((chat) => f.terminals.isActive(chat.id)), [false, false]);
 
   stub.__warningResponses.push('Remove');
-  await runCommand('agntree.deleteChat', rows[0], rows);
+  await runCommand('pitwall.deleteChat', rows[0], rows);
   assert.ok(shown('Remove 2 sessions from the list?'), 'the confirmation counts and names them');
   assert.ok(shown('• One') && shown('• Two'));
   assert.deepEqual(f.chatsIn(f.main).map((chat) => chat.id), [other.id]);
 
   // A click on a row outside the selection acts on that row alone.
   const [c, d] = [f.chat('claude', 'Three', 'claude-3'), f.chat('claude', 'Four', 'claude-4')];
-  await runCommand('agntree.starChat', f.row(other), [f.row(c), f.row(d)]);
+  await runCommand('pitwall.starChat', f.row(other), [f.row(c), f.row(d)]);
   assert.deepEqual([...f.storage.getStarredChatIds()], [other.id]);
 });
 
 test('Copy Resume Command and Copy Session ID copy a linked session; an unstarted one is explained', async (t) => {
   const f = setup(t);
   const linked = f.chat('claude', 'Linked', 'claude-1');
-  await runCommand('agntree.copyResumeCommand', f.row(linked));
+  await runCommand('pitwall.copyResumeCommand', f.row(linked));
   assert.equal(await vscode.env.clipboard.readText(), `cd ${f.main.path} && claude --resume claude-1`);
-  await runCommand('agntree.copySessionId', f.row(linked));
+  await runCommand('pitwall.copySessionId', f.row(linked));
   assert.equal(await vscode.env.clipboard.readText(), 'claude-1');
 
-  await runCommand('agntree.copySessionId', f.row(f.chat('claude', 'Unstarted')));
+  await runCommand('pitwall.copySessionId', f.row(f.chat('claude', 'Unstarted')));
   assert.equal(await vscode.env.clipboard.readText(), 'claude-1', 'nothing is copied');
   assert.ok(shown('This session has no ID yet.'));
 });
@@ -483,22 +483,22 @@ test('run from the keyboard, a row command acts on the selected rows and New Ses
   // One selected row: Rename and Copy Resume Command act on it.
   f.selectedRows.push(f.row(a));
   stub.__inputResponses.push('Renamed');
-  await runCommand('agntree.renameChat');
+  await runCommand('pitwall.renameChat');
   assert.equal(f.storage.getChat(a.id)?.name, 'Renamed');
-  await runCommand('agntree.copyResumeCommand');
+  await runCommand('pitwall.copyResumeCommand');
   assert.equal(await vscode.env.clipboard.readText(), `cd ${f.main.path} && claude --resume claude-1`);
 
   // Several selected rows: Rename does nothing, Remove takes them all; a worktree row in the selection is ignored.
   f.selectedRows.push(f.row(b), f.worktreeRow(f.main));
-  await runCommand('agntree.renameChat');
+  await runCommand('pitwall.renameChat');
   assert.equal(f.storage.getChat(a.id)?.name, 'Renamed');
   stub.__warningResponses.push('Remove');
-  await runCommand('agntree.deleteChat');
+  await runCommand('pitwall.deleteChat');
   assert.deepEqual(f.chatsIn(f.main), []);
 
   // No row: the default agent starts in the worktree the panels show, without asking.
   f.active.worktree = f.feature;
-  await runCommand('agntree.newDefaultSession');
+  await runCommand('pitwall.newDefaultSession');
   assert.deepEqual(f.chatsIn(f.feature).map((chat) => chat.harness), ['codex']);
   assert.equal(f.lastTerminal().options.cwd, f.feature.path);
 });
@@ -510,14 +510,14 @@ test('Remove and Clear All drop chats only after confirmation, and removed sessi
   f.chat('codex', 'Feature two', 'codex-2', f.feature);
 
   stub.__warningResponses.push(undefined);
-  await runCommand('agntree.deleteChat', f.row(removed));
+  await runCommand('pitwall.deleteChat', f.row(removed));
   assert.ok(f.storage.getChat(removed.id), 'cancel keeps the chat');
   stub.__warningResponses.push('Remove');
-  await runCommand('agntree.deleteChat', f.row(removed));
+  await runCommand('pitwall.deleteChat', f.row(removed));
   assert.equal(f.storage.getChat(removed.id), undefined);
 
   stub.__warningResponses.push('Clear All');
-  await runCommand('agntree.clearWorktreeSessions', f.worktreeRow(f.feature));
+  await runCommand('pitwall.clearWorktreeSessions', f.worktreeRow(f.feature));
   assert.ok(shown('Clear all 2 session(s) from "feature-x"?'));
   assert.deepEqual(f.chatsIn(f.feature), []);
   assert.deepEqual([...f.storage.getRemovedSessionKeys()].sort(), ['claude:claude-1', 'codex:codex-1', 'codex:codex-2']);

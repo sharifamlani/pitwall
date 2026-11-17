@@ -16,7 +16,7 @@ function setup(
   t: { after(fn: () => void): void },
   options: { verifyFirstLine?: boolean } = {}
 ) {
-  const file = path.join(tempDir(t, 'agntree-append-'), 'record.jsonl');
+  const file = path.join(tempDir(t, 'pitwall-append-'), 'record.jsonl');
   let folds = 0;
   const reader = new JsonlAppendReader<{ values: unknown[] }, unknown[]>(
     {

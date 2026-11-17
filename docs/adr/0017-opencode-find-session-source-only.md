@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0017 — opencode stays a Find Session source, not a runner
 
 - **Status:** Proposed
@@ -32,7 +34,7 @@ does not expose one directly:
 
 ## Decision
 
-- **opencode remains a search source only.** `agntree.sessionSearch.harness` offers
+- **opencode remains a search source only.** `pitwall.sessionSearch.harness` offers
   `claude`, `codex`, and `pi`; opencode sessions are still searched by whichever of those
   runs a search, through `OpencodeSessionSearch`.
 - **No opencode runner until both gaps close.** Revisit when opencode documents a
@@ -57,7 +59,7 @@ does not expose one directly:
   broad default access, and persists a session. A Find Session prompt reads untrusted
   transcripts, so this is the exact failure the read-only runners avoid.
 - **Delete the search session afterwards.** `opencode session delete <id>` exists and
-  would be narrow (only the ID Agntree created), but it makes a read-only search perform a
+  would be narrow (only the ID Pitwall created), but it makes a read-only search perform a
   destructive operation and depends on the ID being captured reliably. Not chosen while
   there is no no-persist mode.
 - **Wait for the opencode ephemeral-session request.** That request alone would not make
@@ -98,9 +100,9 @@ Checked on 2026-11-11 with opencode v2.1.2 and the V2 documentation:
   installed. opencode sessions are included whenever one of them runs it.
 - opencode's recent-history coverage limits (newest 200 sessions, a 45-second preparation
   budget, a 4 MB snapshot cap, user messages only) are unchanged and remain recorded in
-  [ROADMAP.md](../../ROADMAP.md).
+  [upstream ROADMAP.md](https://github.com/sharifamlani/pitwall/blob/47124cd/ROADMAP.md).
 - Adding a runner later means implementing `SessionSearchRunner` for opencode, adding the
-  id to the `agntree.sessionSearch.harness` enum, and stating the minimum supported
+  id to the `pitwall.sessionSearch.harness` enum, and stating the minimum supported
   opencode version. The search contract does not change: one headless conversation,
   enforced read-only tools, and no session left behind.
 - The decision is deliberately provisional. It is about the native surface opencode

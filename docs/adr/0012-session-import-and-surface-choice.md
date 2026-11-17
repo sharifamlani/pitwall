@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0012 — Import native sessions, name them from the harness, and let the user choose the surface
 
 - **Status:** Accepted
@@ -5,14 +7,14 @@
 
 ## Context
 
-The Claude Code and Codex extensions both offer a chat UI beside their CLIs. Agntree
+The Claude Code and Codex extensions both offer a chat UI beside their CLIs. Pitwall
 already had an explicit handoff for an **existing** session (ADR 0010 and ADR 0011), but
 three requests remained:
 
 1. Start a **new** session in the UI from a worktree row.
 2. Let a user choose the default surface for row clicks and new sessions, with explicit
    overrides on the row.
-3. Show sessions started outside Agntree in the tree, named the way the agent names them,
+3. Show sessions started outside Pitwall in the tree, named the way the agent names them,
    without keeping an ever-growing list.
 
 The first request is constrained by what the extensions expose:
@@ -31,12 +33,12 @@ The first request is constrained by what the extensions expose:
   omits the thread until the first message, and there is no session to resume. The
   extension writes the thread name that `/status` calls **Thread name**.
 
-Neither extension can adopt an Agntree-chosen session ID for a new conversation. Anything
+Neither extension can adopt a Pitwall-chosen session ID for a new conversation. Anything
 that offers "new session in the UI" must therefore create the row first and discover the
 real native session after the first prompt. That is a deliberate trade: the row exists
 immediately, but its native identity is claimed later.
 
-The existing watchers remain the right mechanism for a session Agntree launches. Claude
+The existing watchers remain the right mechanism for a session Pitwall launches. Claude
 knows the chosen ID up front, and Codex/opencode can claim the oldest new session in the
 worktree because the terminal launch is the only thing that just happened there.
 
@@ -50,15 +52,15 @@ surface a capability with an explicit default.
     command snapshots the worktree's sessions **before** opening the conversation; the
     importer links the first session that appears afterwards. The snapshot is what
     prevents an older session in the same worktree from being claimed.
-  - Recent native sessions with no Agntree chat are imported as `autoImported` chats.
+  - Recent native sessions with no Pitwall chat are imported as `autoImported` chats.
   - A session an unlinked CLI placeholder is about to claim is reserved for that
     placeholder's watcher, so the importer cannot create a duplicate first.
   - Linked chats whose name is still automatic follow `HarnessSession.summary`
     (`ai-title` for Claude, thread name for Codex, title for opencode). Claude's
     `ClaudeSessionService` now parses `ai-title`; the first prompt remains a fallback.
     The user's rename sets `customName`, which stops automatic renames.
-- **Retention is policy, not deletion.** Every row, whether Agntree started it or the
-  importer created it, is removed from the tree after `agntree.autoImport.retentionDays`
+- **Retention is policy, not deletion.** Every row, whether Pitwall started it or the
+  importer created it, is removed from the tree after `pitwall.autoImport.retentionDays`
   (default 7) quiet days, based on the later of the native session's last activity and the
   chat's `lastAccessedAt`. A star is the only user-controlled exemption; an open terminal
   or native-UI tab is also kept. The native session is never touched, and retention is not
@@ -69,7 +71,7 @@ surface a capability with an explicit default.
   `checkNewSessionAvailability()`, and `openNewSession()`. Availability is stricter for a
   new session than for an existing one: Claude uses its first folder, while Codex requires
   the worktree to be the only workspace folder.
-- **The default is a preference with a safe fallback.** `agntree.defaultSessionSurface`
+- **The default is a preference with a safe fallback.** `pitwall.defaultSessionSurface`
   (`terminal` or `ui`, default `terminal`) decides what a row click and the default New
   Session command prefer. If the UI cannot open that session or worktree, the row click
   and the default command fall back to the terminal. The explicit UI commands explain the
@@ -83,13 +85,13 @@ surface a capability with an explicit default.
 ## Alternatives considered
 
 - **Pass a chosen ID to a new UI conversation.** Rejected: Claude ignores an unknown ID
-  and creates its own; Codex has no equivalent. A transcript cannot be written by Agntree
+  and creates its own; Codex has no equivalent. A transcript cannot be written by Pitwall
   without reading or faking the agent's private storage.
 - **Pre-create a Codex thread with `thread/start` and open it in the panel.** Rejected:
   the empty thread is not resumable after the creating app-server exits; the panel would
   have no rollout.
 - **Replace every watcher with the importer.** Rejected for this change: exact-ID
-  linkage is cheaper and more precise for a session Agntree launches, and removing the
+  linkage is cheaper and more precise for a session Pitwall launches, and removing the
   watcher subsystem would also touch terminal restore, attention, and their tests. The
   importer is deliberately additive; the watchers can be folded in later if the importer
   proves sufficient.

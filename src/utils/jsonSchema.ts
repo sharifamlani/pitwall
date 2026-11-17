@@ -1,5 +1,5 @@
 /**
- * The JSON Schema keywords Agntree writes. `validateJson()` checks every one
+ * The JSON Schema keywords Pitwall writes. `validateJson()` checks every one
  * of them, so a schema typed with this interface cannot ask for a rule that
  * goes unchecked.
  */

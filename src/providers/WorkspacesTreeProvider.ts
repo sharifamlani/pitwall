@@ -363,7 +363,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       if (!needsPreview) {
         item.tooltip = chatTooltip(chat, adapter.displayName, meta);
       }
-      item.command = { command: 'agntree.openChat', title: 'Open Chat', arguments: [item] };
+      item.command = { command: 'pitwall.openChat', title: 'Open Chat', arguments: [item] };
       return item;
     });
   }

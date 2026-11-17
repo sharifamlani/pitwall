@@ -41,7 +41,7 @@ export const entry = {
 };
 
 export function claudeProfile(t: Hooks, options: { viaHome?: boolean } = {}) {
-  const root = tempDir(t, 'agntree-claude-');
+  const root = tempDir(t, 'pitwall-claude-');
   const home = path.join(root, 'home');
   const configDir = options.viaHome ? path.join(home, '.claude') : path.join(root, 'config');
   setEnv(t, {

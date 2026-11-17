@@ -74,11 +74,11 @@ interface ChatIndex {
 }
 
 /**
- * Reconciles Agntree chats with the native sessions on disk.
+ * Reconciles Pitwall chats with the native sessions on disk.
  *
- * Agntree-started sessions are linked by their harness watcher, but two cases
+ * Pitwall-started sessions are linked by their harness watcher, but two cases
  * have no chosen ID: a session started in the agent's VS Code UI, and a
- * session started outside Agntree entirely. This service covers both.
+ * session started outside Pitwall entirely. This service covers both.
  *
  * It also imports recent native sessions automatically and ages out quiet rows
  * on the retention setting, keeping starred and open chats.
@@ -117,7 +117,7 @@ export class SessionImportService implements vscode.Disposable {
     this.readSettings =
       options.readSettings ??
       (() => {
-        const config = vscode.workspace.getConfiguration('agntree');
+        const config = vscode.workspace.getConfiguration('pitwall');
         const days = Number(config.get<number>('autoImport.retentionDays', 15));
         return {
           enabled: config.get<boolean>('autoImport.enabled', true),
@@ -128,7 +128,7 @@ export class SessionImportService implements vscode.Disposable {
 
     this.configListener = vscode.workspace.onDidChangeConfiguration(
       (event) => {
-        if (event.affectsConfiguration('agntree.autoImport')) {
+        if (event.affectsConfiguration('pitwall.autoImport')) {
           this.schedule();
           this.wake();
         }
@@ -765,7 +765,7 @@ export class SessionImportService implements vscode.Disposable {
 
   /**
    * Remove rows that have been quiet longer than the retention window, whether
-   * Agntree created them or they were imported. A star is the only exemption
+   * Pitwall created them or they were imported. A star is the only exemption
    * the user controls; an open terminal or native-UI tab is kept so retention
    * never pulls a row out from under a live session.
    */

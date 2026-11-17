@@ -56,7 +56,7 @@ export interface CodexItemEntry {
 }
 
 /**
- * Thread items are a large tagged union upstream. Agntree only reads user and
+ * Thread items are a large tagged union upstream. Pitwall only reads user and
  * agent messages, so keep one permissive shape and check `type` at the call
  * site instead of modeling every tool item.
  */
@@ -308,8 +308,8 @@ export class CodexAppServer {
         'initialize',
         {
           clientInfo: {
-            name: 'agntree',
-            title: 'Agntree',
+            name: 'pitwall',
+            title: 'Pitwall',
             version: this.clientVersion,
           },
         },

@@ -2,12 +2,12 @@ const fs = require('fs');
 const path = require('path');
 const vscode = require('vscode');
 
-const OUT = process.env.AGNTREE_E2E_OUT;
-const STATE = process.env.AGNTREE_E2E_STATE;
-const RUNS = process.env.AGNTREE_E2E_RUNS;
-const CHATS = JSON.parse(process.env.AGNTREE_E2E_CHATS);
-const EXPECT_RESUMES = Number(process.env.AGNTREE_E2E_EXPECT_RESUMES || 3);
-const EXPECT_TITLES = process.env.AGNTREE_E2E_EXPECT_TITLES !== '0';
+const OUT = process.env.PITWALL_E2E_OUT;
+const STATE = process.env.PITWALL_E2E_STATE;
+const RUNS = process.env.PITWALL_E2E_RUNS;
+const CHATS = JSON.parse(process.env.PITWALL_E2E_CHATS);
+const EXPECT_RESUMES = Number(process.env.PITWALL_E2E_EXPECT_RESUMES || 3);
+const EXPECT_TITLES = process.env.PITWALL_E2E_EXPECT_TITLES !== '0';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -65,7 +65,7 @@ function parseShortId(name) {
 }
 
 function expectedName(chat) {
-  return `Agntree: ${chat.name} [${chat.id.substring(0, 6)}]`;
+  return `Pitwall: ${chat.name} [${chat.id.substring(0, 6)}]`;
 }
 
 async function pidOf(terminal) {
@@ -154,7 +154,7 @@ async function openChat(chat) {
     collapsibleState: 0,
     data: chat,
   };
-  await vscode.commands.executeCommand('agntree.openChat', item);
+  await vscode.commands.executeCommand('pitwall.openChat', item);
 }
 
 function shortIdsIn(runs) {
@@ -180,7 +180,7 @@ function checkRestored(stageIndex, terminals, state) {
     const shortId = parseShortId(terminal.name);
     const chat = shortId ? chatsByShortId.get(shortId) : undefined;
     check(
-      `stage ${stageIndex}: tab ${shortId ?? '?'} carries its Agntree title`,
+      `stage ${stageIndex}: tab ${shortId ?? '?'} carries its Pitwall title`,
       Boolean(chat) && terminal.name === expectedName(chat),
       terminal.name
     );
@@ -249,11 +249,11 @@ function checkNoRestore(stageIndex, terminals) {
     `${runs.length} launches`
   );
 
-  const agntreeNamed = terminals.filter((terminal) => parseShortId(terminal.name));
+  const pitwallNamed = terminals.filter((terminal) => parseShortId(terminal.name));
   check(
-    `stage ${stageIndex}: no tab claims an Agntree identity`,
-    agntreeNamed.length === 0,
-    agntreeNamed.map((terminal) => terminal.name).join(', ')
+    `stage ${stageIndex}: no tab claims a Pitwall identity`,
+    pitwallNamed.length === 0,
+    pitwallNamed.map((terminal) => terminal.name).join(', ')
   );
 }
 
@@ -273,8 +273,8 @@ exports.activate = async function activate() {
 
   try {
     if (stage === 0) {
-      const ready = await waitForCommand('agntree.openChat');
-      check('stage 0: agntree.openChat is available', ready);
+      const ready = await waitForCommand('pitwall.openChat');
+      check('stage 0: pitwall.openChat is available', ready);
       if (!ready) {
         await quit();
         return;

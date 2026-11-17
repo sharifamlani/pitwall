@@ -59,7 +59,7 @@ export interface ClaudeSearchRunnerOptions {
 
 const MAX_PROJECT_NAME = 200;
 /** An empty MCP config Claude loads for the run; a file keeps its JSON out of quoting. */
-const MCP_CONFIG_FILE = '.agntree-empty-mcp.json';
+const MCP_CONFIG_FILE = '.pitwall-empty-mcp.json';
 
 /**
  * Runs the session finder as `claude --print` with only Read, Grep and Glob.

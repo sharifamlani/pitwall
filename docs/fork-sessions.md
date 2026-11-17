@@ -1,8 +1,10 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Fork a session
 
 Forking copies a conversation into a new session that starts with the full history of the original. Use it to try a second approach, to split one long session into two lines of work, or to experiment without risking a session that is going well. The original is left exactly as it was.
 
-Agntree can fork Claude Code, Codex, opencode, and Pi sessions, either beside the original or into a new git worktree.
+Pitwall can fork Claude Code, Codex, opencode, and Pi sessions, either beside the original or into a new git worktree.
 
 ## Fork in the same worktree
 
@@ -12,7 +14,7 @@ A new session appears under the same worktree and opens in a terminal. It is nam
 
 ## Fork into a new worktree
 
-Right-click a session and choose **Fork Session to New Worktree…**. Agntree asks for a branch name and a directory, then:
+Right-click a session and choose **Fork Session to New Worktree…**. Pitwall asks for a branch name and a directory, then:
 
 1. creates a new branch and worktree from the commit the source worktree is on,
 2. copies the source worktree's **uncommitted changes** into it, including untracked files,
@@ -27,16 +29,16 @@ The suggested directory is the same `<repo>-worktrees/<branch>` folder that [Cre
 
 ## How each agent forks
 
-Agntree uses the agent's own fork, so the result is a real session that you can also resume from the command line.
+Pitwall uses the agent's own fork, so the result is a real session that you can also resume from the command line.
 
-| Agent | What Agntree runs | The fork exists |
+| Agent | What Pitwall runs | The fork exists |
 | --- | --- | --- |
 | Claude Code | `claude --resume <source> --fork-session --session-id <new>` | After your first prompt in the fork |
 | Codex | The Codex app-server's `thread/fork`, into the destination directory | Immediately |
 | opencode | opencode's `session.fork` API, then `session.move` for a new worktree | Immediately |
 | Pi | `pi --fork <source> --session-id <new>` | Immediately |
 
-Claude Code writes nothing until the first prompt. If you close a Claude Code fork's terminal before sending one, Agntree removes the row: reopening it later would fork from wherever the original has moved on to, not from the point you chose.
+Claude Code writes nothing until the first prompt. If you close a Claude Code fork's terminal before sending one, Pitwall removes the row: reopening it later would fork from wherever the original has moved on to, not from the point you chose.
 
 ## When to fork and when to start fresh
 

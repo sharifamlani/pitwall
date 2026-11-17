@@ -110,7 +110,7 @@ export const piEntry = {
 };
 
 export function piProfile(t: Hooks) {
-  const root = tempDir(t, 'agntree-pi-');
+  const root = tempDir(t, 'pitwall-pi-');
   const home = path.join(root, 'home');
   const agentDir = path.join(root, 'agent');
   setEnv(t, {

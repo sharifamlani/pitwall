@@ -1,6 +1,8 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Notifications
 
-Agntree tells you when a coding agent finishes a turn and, for Claude Code, when it is waiting on a permission prompt or a question. With several agents running, you can stay in one session and let the others call you back.
+Pitwall tells you when a coding agent finishes a turn and, for Claude Code, when it is waiting on a permission prompt or a question. With several agents running, you can stay in one session and let the others call you back.
 
 There are three signals: the mark on each session row, a notification, and a shortcut that takes you to the agent that has waited longest.
 
@@ -36,30 +38,30 @@ Notifications are deliberately quiet:
 - A finished turn notifies once. The next prompt re-arms it.
 - After a window reload, sessions that were already waiting do not notify again.
 
-On macOS, Agntree can also show a system banner while VS Code is in the background. The banner is not clickable; the notification inside VS Code has the **Open** button.
+On macOS, Pitwall can also show a system banner while VS Code is in the background. The banner is not clickable; the notification inside VS Code has the **Open** button.
 
 ## Go to the next session that needs you
 
-Press `Ctrl+Alt+N` (`Ctrl+Cmd+N` on macOS), or choose **Go to Next Session That Needs You** in the Agntree `…` menu.
+Press `Ctrl+Alt+N` (`Ctrl+Cmd+N` on macOS), or choose **Go to Next Session That Needs You** in the Pitwall `…` menu.
 
-Agntree opens the session that has waited longest since it finished a turn or asked you something while you were elsewhere. Visiting a session clears it from the queue, so pressing the shortcut again walks through the rest. When nothing is waiting, it says so.
+Pitwall opens the session that has waited longest since it finished a turn or asked you something while you were elsewhere. Visiting a session clears it from the queue, so pressing the shortcut again walks through the rest. When nothing is waiting, it says so.
 
-The shortcut works with notifications turned off, which makes it a good replacement if you find them distracting. One exception: Agntree checks whether Claude Code is waiting on you only while `agntree.notifications.onNeedsInput` is on.
+The shortcut works with notifications turned off, which makes it a good replacement if you find them distracting. One exception: Pitwall checks whether Claude Code is waiting on you only while `pitwall.notifications.onNeedsInput` is on.
 
 ## Turn notifications on or off
 
-Open **Agntree Settings…** from the Agntree `…` menu. Under **Notifications**:
+Open **Pitwall Settings…** from the Pitwall `…` menu. Under **Notifications**:
 
 | Setting | Default | Controls |
 | --- | --- | --- |
-| [`agntree.notifications.enabled`](reference/settings.md#notifications) | On | Every notification. Turn it off and the three below have no effect |
-| `agntree.notifications.onTurnEnd` | On | "Finished" notifications |
-| `agntree.notifications.onNeedsInput` | On | "Needs your input" notifications for Claude Code |
-| `agntree.notifications.nativeBanner` | On | The macOS system banner |
+| [`pitwall.notifications.enabled`](reference/settings.md#notifications) | On | Every notification. Turn it off and the three below have no effect |
+| `pitwall.notifications.onTurnEnd` | On | "Finished" notifications |
+| `pitwall.notifications.onNeedsInput` | On | "Needs your input" notifications for Claude Code |
+| `pitwall.notifications.nativeBanner` | On | The macOS system banner |
 
-## How Agntree knows
+## How Pitwall knows
 
-Agntree installs no hooks and does not edit any agent's configuration.
+Pitwall installs no hooks and does not edit any agent's configuration.
 
 - **Claude Code:** the end of the session transcript shows whether a turn is running, and `claude agents --json` reports a session that is waiting on you. A background subagent that is still running keeps the session marked as working.
 - **Codex:** the session's rollout file records when a task starts, completes, or is aborted.

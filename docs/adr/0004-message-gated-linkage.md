@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0004 — Link on messages, keep pending state bounded
 
 - **Status:** Accepted

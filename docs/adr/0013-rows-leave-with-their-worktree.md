@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0013 — Session rows leave with their worktree
 
 - **Status:** Accepted
@@ -46,7 +48,7 @@ worktree commands call it.
 
 - A re-added folder's sessions come back as new rows: custom names and stars are lost,
   and sessions older than the auto-import retention need a manual import.
-- A worktree removed outside Agntree (for example `git worktree remove`) still leaves its
+- A worktree removed outside Pitwall (for example `git worktree remove`) still leaves its
   rows, and removing the root does not reach them, because git no longer lists that
   worktree.
 - `workspace-roots.test.ts` covers that Remove forgets every worktree of the root.

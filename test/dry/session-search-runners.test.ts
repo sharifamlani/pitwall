@@ -27,10 +27,10 @@ interface CodexState {
 }
 
 test('the Codex runner keeps the user config, disables MCP servers, and re-runs for a correction', posixOnly, async (t) => {
-  const dir = tempDir(t, 'agntree-codex-run-');
+  const dir = tempDir(t, 'pitwall-codex-run-');
   const cwd = path.join(dir, 'search');
   fs.mkdirSync(cwd);
-  const sourceHome = tempDir(t, 'agntree-codex-source-');
+  const sourceHome = tempDir(t, 'pitwall-codex-source-');
   fs.writeFileSync(
     path.join(sourceHome, 'config.toml'),
     [
@@ -107,7 +107,7 @@ test('the Codex runner keeps the user config, disables MCP servers, and re-runs 
 });
 
 test('the Pi runner uses only read-only tools, keeps its session under the search cwd, and resumes it for a correction', posixOnly, async (t) => {
-  const dir = tempDir(t, 'agntree-pi-run-');
+  const dir = tempDir(t, 'pitwall-pi-run-');
   const cwd = path.join(dir, 'search');
   fs.mkdirSync(cwd);
   const stateFile = path.join(dir, 'state.json');

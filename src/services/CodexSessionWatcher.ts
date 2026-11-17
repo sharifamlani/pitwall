@@ -7,7 +7,7 @@ import {
 } from './PendingSessionWatcher';
 
 /**
- * Links newly launched Codex threads to their Agntree chat.
+ * Links newly launched Codex threads to their Pitwall chat.
  *
  * A brand-new thread has no rollout and no `thread/list` row until the first
  * user message, so `thread/start` cannot be used to create a resumable chat.

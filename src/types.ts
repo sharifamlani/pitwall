@@ -39,7 +39,7 @@ export interface RepositoryWorktrees {
 export const HARNESS_IDS = ['claude', 'opencode', 'codex', 'pi'] as const;
 export type HarnessId = (typeof HARNESS_IDS)[number];
 
-/** A session row Agntree stores. The native session lives in the harness. */
+/** A session row Pitwall stores. The native session lives in the harness. */
 export interface ChatSession {
   id: string;
   worktreeId: string;
@@ -102,29 +102,29 @@ export type TreeItemType = 'repository' | 'worktree' | 'chat';
 
 /** Keys in VS Code `globalState`. Renaming one orphans users' stored data. */
 export const STORAGE_KEYS = {
-  REPOSITORIES: 'agntree.repositories',
-  CHATS: 'agntree.chats',
-  ACTIVE_CHAT: 'agntree.activeChat',
-  PR_WORKTREES: 'agntree.prWorktrees',
-  STARRED_CHATS: 'agntree.starredChats',
+  REPOSITORIES: 'pitwall.repositories',
+  CHATS: 'pitwall.chats',
+  ACTIVE_CHAT: 'pitwall.activeChat',
+  PR_WORKTREES: 'pitwall.prWorktrees',
+  STARRED_CHATS: 'pitwall.starredChats',
   /**
    * Sessions the user removed from the tree. Auto-import must not resurrect
    * them while they are still inside the retention window.
    */
-  REMOVED_SESSIONS: 'agntree.removedSessions',
+  REMOVED_SESSIONS: 'pitwall.removedSessions',
   /**
    * The pty PID each workspace last saw for a chat it launched. A matching
    * PID is the live agent after a reload; a different PID means VS Code
    * revived the tab as a new shell that needs resuming.
    */
-  TERMINAL_PIDS: 'agntree.terminalPids',
+  TERMINAL_PIDS: 'pitwall.terminalPids',
   /** Finished session searches, newest first and bounded. */
-  SESSION_SEARCHES: 'agntree.sessionSearches',
+  SESSION_SEARCHES: 'pitwall.sessionSearches',
   /**
    * The model and effort the Find Session settings last described, with the
    * harness they belong to. Used to drop a choice when the harness changes.
    */
-  SESSION_SEARCH_ENGINE_CHOICE: 'agntree.sessionSearchEngineChoice',
+  SESSION_SEARCH_ENGINE_CHOICE: 'pitwall.sessionSearchEngineChoice',
 } as const;
 
 /** The harness, model, and effort that run a session search. */
@@ -172,7 +172,7 @@ export interface SessionSearchRecord {
 }
 
 /**
- * A random UUID v4. Chat IDs and the session IDs Agntree chooses
+ * A random UUID v4. Chat IDs and the session IDs Pitwall chooses
  * (`--session-id`) both use it, so it must come from a secure source.
  */
 export function generateId(): string {

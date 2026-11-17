@@ -12,7 +12,7 @@ import {
 const PROMPT_FALLBACK_DELAY_MS = 30_000;
 
 /**
- * Links newly launched opencode sessions to their Agntree chat.
+ * Links newly launched opencode sessions to their Pitwall chat.
  *
  * opencode owns its session IDs, so unlike Claude we cannot predict them.
  * `PendingSessionWatcher` polls the session list and claims the first new

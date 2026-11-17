@@ -47,7 +47,7 @@ export function registerSessionImportCommands(
     return adapters;
   };
 
-  register('agntree.importSessions', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.importSessions', async (item?: WorkspaceTreeItem) => {
     const worktree =
       workspacesProvider.getWorktreeForItem(item) ??
       (await pickWorktree(storageService, gitService, 'Select worktree to import sessions for'));

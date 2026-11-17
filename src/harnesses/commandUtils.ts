@@ -8,13 +8,13 @@ import { parseJsonLine } from '../utils/jsonlTail';
 import { SessionSearchRunRequest } from './types';
 
 /**
- * Resolve a harness CLI command from its `agntree.harnessCommands.<harness>`
+ * Resolve a harness CLI command from its `pitwall.harnessCommands.<harness>`
  * setting. VS Code merges the per-harness settings into one object, so an
- * `agntree.harnessCommands` object saved by an earlier version still applies.
+ * `pitwall.harnessCommands` object saved by an earlier version still applies.
  */
 export function getHarnessCommand(harness: HarnessId, fallback: string): string {
   const configured = vscode.workspace
-    .getConfiguration('agntree')
+    .getConfiguration('pitwall')
     .get<Record<string, string>>('harnessCommands', {});
   const value = configured?.[harness];
   return value && value.trim() ? value.trim() : fallback;
@@ -25,7 +25,7 @@ export function getHarnessCommand(harness: HarnessId, fallback: string): string 
  *
  * This is used for both the executable and values such as Codex's `--cd`
  * path. Terminal launches on Windows need a different quoting strategy; keep
- * that limitation in `ROADMAP.md`. A CLI Agntree runs itself goes through
+ * that limitation in `ROADMAP.md`. A CLI Pitwall runs itself goes through
  * `harnessInvocation()` instead.
  */
 export function quoteShellArgument(value: string): string {
@@ -80,7 +80,7 @@ export function harnessInvocation(command: string, args: string[]): { command: s
  */
 export function quoteForCmd(value: string): string {
   if (/["%\r\n]/.test(value)) {
-    throw new Error(`Agntree cannot pass this to a command on Windows: ${value}`);
+    throw new Error(`Pitwall cannot pass this to a command on Windows: ${value}`);
   }
   return /^[\w@+=:,.\/\\[\]-]+$/.test(value) ? value : `"${value}"`;
 }

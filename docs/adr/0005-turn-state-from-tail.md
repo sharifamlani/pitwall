@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0005 — Turn state comes from a progressive transcript tail
 
 - **Status:** Accepted

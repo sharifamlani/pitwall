@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0008 — A row exists only while its session does
 
 - **Status:** Accepted
@@ -5,7 +7,7 @@
 
 ## Context
 
-Three symptoms had one cause: Agntree trusted a label instead of the state behind it.
+Three symptoms had one cause: Pitwall trusted a label instead of the state behind it.
 
 1. VS Code keeps a terminal whose process exited in `window.terminals`, so a chat looked open and
    clicking it focused a dead tab. The row kept the finished-turn mark until the window reloaded.

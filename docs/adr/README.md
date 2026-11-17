@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Architecture decision records
 
 An ADR records a decision that is expensive to reverse, what it replaced, and the evidence

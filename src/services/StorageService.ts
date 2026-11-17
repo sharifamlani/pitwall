@@ -35,7 +35,7 @@ export type NewChatFields = Partial<
 >;
 
 /**
- * Agntree's persisted state in VS Code `globalState`. Stored shapes are a
+ * Pitwall's persisted state in VS Code `globalState`. Stored shapes are a
  * compatibility surface: old shapes are read, migrated, and written back here,
  * never in callers.
  */
@@ -366,7 +366,7 @@ export class StorageService {
   // Restored terminals (ADR 0009)
 
   /**
-   * The workspace folder whose terminals this window owns. Agntree keeps one
+   * The workspace folder whose terminals this window owns. Pitwall keeps one
    * workspace folder per window (`autoSwitchWorkspaceFolder` replaces the
    * folder list), so the first folder identifies the workspace.
    */
@@ -377,7 +377,7 @@ export class StorageService {
   /**
    * Recorded terminal PIDs by workspace folder. Kept in `globalState`, not
    * `workspaceState`: switching the workspace folder gives VS Code a fresh
-   * workspace store, which would erase the identity of the terminals Agntree
+   * workspace store, which would erase the identity of the terminals Pitwall
    * left running.
    */
   private getTerminalPidRecords(): Record<string, Record<string, number>> {

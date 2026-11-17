@@ -37,7 +37,7 @@ export class NotificationService {
   ) {}
 
   notify(kind: AttentionKind, target: NotificationTarget): void {
-    const config = vscode.workspace.getConfiguration('agntree');
+    const config = vscode.workspace.getConfiguration('pitwall');
     if (!config.get<boolean>('notifications.enabled', true)) {
       return;
     }
@@ -91,13 +91,13 @@ export class NotificationService {
     const subtitle = target.context;
     const script =
       `display notification "${escapeAppleScript(body)}" ` +
-      `with title "Agntree"` +
+      `with title "Pitwall"` +
       (subtitle ? ` subtitle "${escapeAppleScript(subtitle)}"` : '') +
       ` sound name "Glass"`;
 
     execFile('/usr/bin/osascript', ['-e', script], (error) => {
       if (error) {
-        console.error('[Agntree] Native notification failed:', error.message);
+        console.error('[Pitwall] Native notification failed:', error.message);
       }
     });
   }

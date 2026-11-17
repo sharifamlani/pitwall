@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
   <!--
-    The Agntree icon: an upward prompt caret with a cursor block for its
+    The Pitwall icon: an upward prompt caret with a cursor block for its
     crossbar, which reads as the letter A. This file is the source. After
-    editing it, run `npm run build:icon` to redraw agntree.png (the Marketplace
-    icon), and keep agntree-activitybar.svg (the same mark in one color) in step.
+    editing it, run `npm run build:icon` to redraw pitwall.png (the Marketplace
+    icon), and keep pitwall-activitybar.svg (the same mark in one color) in step.
   -->
   <defs>
     <linearGradient id="tile" x1="0" y1="0" x2="0.4" y2="1">

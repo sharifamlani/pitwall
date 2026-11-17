@@ -47,15 +47,15 @@ export function registerChangesCommands(
       }
     };
 
-  register('agntree.refreshChanges', () => changesProvider.refresh());
-  register('agntree.stageFile', fileAction((w, f) => gitService.stageFile(w, f), 'stage'));
-  register('agntree.unstageFile', fileAction((w, f) => gitService.unstageFile(w, f), 'unstage'));
-  register('agntree.stageAll', worktreeAction((w) => gitService.stageAll(w), 'Failed to stage all changes'));
-  register('agntree.unstageAll', worktreeAction((w) => gitService.unstageAll(w), 'Failed to unstage all changes'));
+  register('pitwall.refreshChanges', () => changesProvider.refresh());
+  register('pitwall.stageFile', fileAction((w, f) => gitService.stageFile(w, f), 'stage'));
+  register('pitwall.unstageFile', fileAction((w, f) => gitService.unstageFile(w, f), 'unstage'));
+  register('pitwall.stageAll', worktreeAction((w) => gitService.stageAll(w), 'Failed to stage all changes'));
+  register('pitwall.unstageAll', worktreeAction((w) => gitService.unstageAll(w), 'Failed to unstage all changes'));
 
   registerDiffCommand(register, gitService);
 
-  register('agntree.discardFile', async (item?: ChangeTreeItem) => {
+  register('pitwall.discardFile', async (item?: ChangeTreeItem) => {
     if (!(item instanceof ChangeTreeItem)) {
       return;
     }
@@ -106,7 +106,7 @@ export function registerChangesCommands(
     }
   });
 
-  register('agntree.discardAll', async () => {
+  register('pitwall.discardAll', async () => {
     const worktree = changesProvider.getActiveWorktree();
     if (!worktree) {
       return;
@@ -185,7 +185,7 @@ export function registerChangesCommands(
     };
 
   register(
-    'agntree.rebaseContinue',
+    'pitwall.rebaseContinue',
     rebaseStep((w) => gitService.rebaseContinue(w), {
       stillRunning: 'Rebase continued but more conflicts were encountered. Resolve and continue.',
       finished: 'Rebase completed successfully.',
@@ -193,7 +193,7 @@ export function registerChangesCommands(
     })
   );
   register(
-    'agntree.rebaseSkip',
+    'pitwall.rebaseSkip',
     rebaseStep((w) => gitService.rebaseSkip(w), {
       stillRunning: 'Commit skipped but rebase is still in progress.',
       finished: 'Rebase completed after skipping.',
@@ -201,7 +201,7 @@ export function registerChangesCommands(
     })
   );
 
-  register('agntree.rebaseAbort', async () => {
+  register('pitwall.rebaseAbort', async () => {
     const worktree = rebasingWorktree();
     if (!worktree) {
       return;
@@ -271,7 +271,7 @@ function registerDiffCommand(register: RegisterCommand, gitService: GitService):
     });
   };
 
-  register('agntree.openDiff', async (item?: ChangeTreeItem) => {
+  register('pitwall.openDiff', async (item?: ChangeTreeItem) => {
     if (!(item instanceof ChangeTreeItem)) {
       return;
     }

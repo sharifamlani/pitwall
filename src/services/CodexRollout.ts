@@ -5,7 +5,7 @@ import { JsonlFold, JsonlAppendReader } from '../utils/jsonlAppendReader';
  * Minimal rollout reader for live turn state.
  *
  * The app-server is not the executor for `codex` processes started by
- * Agntree, so `thread/list` always reports `notLoaded` for them. The rollout
+ * Pitwall, so `thread/list` always reports `notLoaded` for them. The rollout
  * file is the only live signal: `task_started` / `task_complete` /
  * `turn_aborted` bracket a turn.
  *

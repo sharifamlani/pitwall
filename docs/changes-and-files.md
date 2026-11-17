@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Changes and files
 
 The **Changes** and **All Files** panels show what is in the worktree you are working on. Select a worktree or a session in the Workspaces view and both panels follow it, so you can see what an agent changed in any branch without opening that branch in VS Code.
@@ -61,7 +63,7 @@ File operations in these panels are narrow by design:
 - They only act **inside the worktree** the panel shows. A path outside it is refused.
 - **Delete moves to the Trash** and asks first.
 - **Creating and pasting never overwrite** an existing file.
-- Every delete, discard, and refusal is recorded in the **Agntree Operations** output channel (**View → Output**, then pick it from the list).
+- Every delete, discard, and refusal is recorded in the **Pitwall Operations** output channel (**View → Output**, then pick it from the list).
 
 ## Related
 

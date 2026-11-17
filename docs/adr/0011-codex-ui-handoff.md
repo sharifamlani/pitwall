@@ -1,3 +1,5 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # 0011 — Hand an existing Codex thread to the Codex extension UI
 
 - **Status:** Accepted
@@ -6,9 +8,9 @@
 
 ## Context
 
-Agntree opens Codex chats in an editor terminal. The Codex VS Code extension
+Pitwall opens Codex chats in an editor terminal. The Codex VS Code extension
 (`openai.chatgpt`) also ships a conversation UI, and the request was to offer the
-same explicit handoff Agntree already has for Claude Code.
+same explicit handoff Pitwall already has for Claude Code.
 
 The installed extension has two surfaces:
 
@@ -66,13 +68,13 @@ session IDs.
   `chatgpt.conversationEditor`, `viewColumn: ViewColumn.Active`,
   `preserveFocus: false`, and `preview: false`. A failure is reported; there is
   no fallback that could start a new conversation.
-- Contribute `agntree.openCodexUi` (**Open in Codex UI**) for Codex chat rows.
+- Contribute `pitwall.openCodexUi` (**Open in Codex UI**) for Codex chat rows.
   The menu is gated on the row's `CodexUi` context token and on
-  `agntree.codexUiInstalled`, which activation sets from
+  `pitwall.codexUiInstalled`, which activation sets from
   `vscode.extensions.getExtension('openai.chatgpt')` and refreshes on
   `extensions.onDidChange`.
-- Keep one command flow for both handoffs. `agntree.openClaudeUi` and
-  `agntree.openCodexUi` call the same `openNativeUi()` implementation with the
+- Keep one command flow for both handoffs. `pitwall.openClaudeUi` and
+  `pitwall.openCodexUi` call the same `openNativeUi()` implementation with the
   expected harness; a command invoked on another harness's row explains the
   mismatch. The running terminal is closed after the same confirmation and the
   command waits for its close event before opening the panel.
@@ -120,8 +122,8 @@ session IDs.
   scheme, or path shape. The command reports an open failure instead of guessing,
   and the CLI terminal remains the fallback launch path.
 - Codex panels are mapped by exact thread ID, so panels restored after a reload
-  or opened from the Codex extension also select their Agntree row when the
-  thread is imported. A thread with no Agntree chat is ignored.
+  or opened from the Codex extension also select their Pitwall row when the
+  thread is imported. A thread with no Pitwall chat is ignored.
 - The Codex sidebar view is not tracked. Opening a thread there does not mark
   the row active.
 - Closing the terminal stops an in-flight turn. The confirmation says so, and the
@@ -134,7 +136,7 @@ session IDs.
   panel cannot find; the handoff does not switch Codex profiles.
 - The tracker refactor changes an internal interface only. Stored chats and
   existing Claude behavior are unchanged; Claude still maps only the webview tabs
-  Agntree opened because those tabs carry no session ID.
+  Pitwall opened because those tabs carry no session ID.
 
 ## Evidence
 

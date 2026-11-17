@@ -12,7 +12,7 @@ import { ChatSession, SessionSearchEngine, SessionSearchMatch } from '../types';
 import { errorMessage } from '../utils/text';
 import { commandRegistrar, importNativeSession } from './common';
 
-export const SESSION_SEARCH_VIEW = 'agntree.sessionSearchView';
+export const SESSION_SEARCH_VIEW = 'pitwall.sessionSearchView';
 /** The label for an empty model or effort: the harness's own configured value. */
 const CLI_DEFAULT = 'CLI default';
 
@@ -31,20 +31,20 @@ export interface SessionSearchCommandDeps {
 
 /**
  * The session finder's commands: ask, tune the engine, and act on what it
- * found. A found session resumes in its Agntree row when a workspace root
+ * found. A found session resumes in its Pitwall row when a workspace root
  * owns its folder, and in a plain terminal at that folder otherwise.
  */
 export function registerSessionSearchCommands(context: vscode.ExtensionContext, deps: SessionSearchCommandDeps): void {
   const { sessionSearch, storageService, harnessRegistry, worktreeCatalog, workspacesProvider } = deps;
   const register = commandRegistrar(context);
 
-  // With agntree.sessionSearch.alwaysShowView off, the view appears once there is a search.
+  // With pitwall.sessionSearch.alwaysShowView off, the view appears once there is a search.
   let shown: boolean | undefined;
   // Sent only when it changes: a running search reports every tool call.
   const showView = async (visible: boolean): Promise<void> => {
     if (visible !== shown) {
       shown = visible;
-      await vscode.commands.executeCommand('setContext', 'agntree.hasSessionSearches', visible);
+      await vscode.commands.executeCommand('setContext', 'pitwall.hasSessionSearches', visible);
     }
   };
   const updateView = () => void showView(sessionSearch.searches().length > 0);
@@ -135,7 +135,7 @@ export function registerSessionSearchCommands(context: vscode.ExtensionContext, 
     if (!engine) {
       return;
     }
-    const config = vscode.workspace.getConfiguration('agntree');
+    const config = vscode.workspace.getConfiguration('pitwall');
     const save = (key: string, value: string | undefined) =>
       config.update(`sessionSearch.${key}`, value, vscode.ConfigurationTarget.Global);
     const adapter = harnessRegistry.get(engine.harness);
@@ -243,16 +243,16 @@ export function registerSessionSearchCommands(context: vscode.ExtensionContext, 
   const resumeCommand = (match: SessionSearchMatch): string =>
     harnessRegistry.get(match.harness).buildLaunchCommand({ worktreePath: match.cwd, sessionId: match.sessionId });
 
-  register('agntree.findSession', () => find());
-  register('agntree.askSessionSearchAgain', (node?: SessionSearchNode) => find(node?.search.query));
-  register('agntree.configureSessionSearch', () => configure());
-  register('agntree.cancelSessionSearch', () => sessionSearch.cancel());
-  register('agntree.removeSessionSearch', (node?: SessionSearchNode) => {
+  register('pitwall.findSession', () => find());
+  register('pitwall.askSessionSearchAgain', (node?: SessionSearchNode) => find(node?.search.query));
+  register('pitwall.configureSessionSearch', () => configure());
+  register('pitwall.cancelSessionSearch', () => sessionSearch.cancel());
+  register('pitwall.removeSessionSearch', (node?: SessionSearchNode) => {
     if (node) {
       return sessionSearch.remove([node.search.id]);
     }
   });
-  register('agntree.clearSessionSearches', async () => {
+  register('pitwall.clearSessionSearches', async () => {
     const finished = sessionSearch.searches().filter((search) => search.state !== 'running');
     if (finished.length === 0) {
       return;
@@ -267,14 +267,14 @@ export function registerSessionSearchCommands(context: vscode.ExtensionContext, 
     }
   });
 
-  register('agntree.resumeSearchMatch', async (node?: SessionSearchNode) => {
+  register('pitwall.resumeSearchMatch', async (node?: SessionSearchNode) => {
     const match = node?.kind === 'match' ? node.match : undefined;
     if (!match) {
       return;
     }
     const chat = chatFor(match);
     if (chat) {
-      await vscode.commands.executeCommand('agntree.openChat', workspacesProvider.getChatTreeItem(chat));
+      await vscode.commands.executeCommand('pitwall.openChat', workspacesProvider.getChatTreeItem(chat));
       return;
     }
     // No workspace root owns the folder: resume where the session ran.
@@ -296,7 +296,7 @@ export function registerSessionSearchCommands(context: vscode.ExtensionContext, 
     terminal.show();
   });
 
-  register('agntree.revealSearchMatch', async (node?: SessionSearchNode) => {
+  register('pitwall.revealSearchMatch', async (node?: SessionSearchNode) => {
     const match = node?.kind === 'match' ? node.match : undefined;
     if (!match) {
       return;
@@ -307,15 +307,15 @@ export function registerSessionSearchCommands(context: vscode.ExtensionContext, 
       return;
     }
     const choice = await vscode.window.showInformationMessage(
-      `${displayPath(match.cwd)} is not in Agntree. Add the folder to see this session in the tree.`,
+      `${displayPath(match.cwd)} is not in Pitwall. Add the folder to see this session in the tree.`,
       'Add Folder…'
     );
     if (choice) {
-      await vscode.commands.executeCommand('agntree.addRepository');
+      await vscode.commands.executeCommand('pitwall.addRepository');
     }
   });
 
-  register('agntree.copySearchMatchCommand', async (node?: SessionSearchNode) => {
+  register('pitwall.copySearchMatchCommand', async (node?: SessionSearchNode) => {
     const match = node?.kind === 'match' ? node.match : undefined;
     if (match) {
       const command = `cd ${quoteShellArgument(match.cwd)} && ${resumeCommand(match)}`;

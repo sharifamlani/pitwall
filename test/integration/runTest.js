@@ -12,7 +12,7 @@
  * Environment:
  *   VSCODE_EXECUTABLE  path to the VS Code executable (optional; defaults are
  *                      probed per platform below)
- *   AGNTREE_TEST_KEEP  set to 1 to keep the temp user-data/extensions dirs
+ *   PITWALL_TEST_KEEP  set to 1 to keep the temp user-data/extensions dirs
  */
 const fs = require('fs');
 const os = require('os');
@@ -21,7 +21,7 @@ const { runTests } = require('@vscode/test-electron');
 const { resolveVSCodeExecutable } = require('../vscodeExecutable');
 
 async function main() {
-  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agntree-vscode-test-'));
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pitwall-vscode-test-'));
   const userDataDir = path.join(profileRoot, 'user-data');
   const extensionsDir = path.join(profileRoot, 'extensions');
 
@@ -30,7 +30,7 @@ async function main() {
   fs.mkdirSync(path.join(userDataDir, 'User'), { recursive: true });
   fs.writeFileSync(
     path.join(userDataDir, 'User', 'settings.json'),
-    JSON.stringify({ 'agntree.harnessCommands': { pi: 'pi-legacy' } })
+    JSON.stringify({ 'pitwall.harnessCommands': { pi: 'pi-legacy' } })
   );
 
   console.log(`VS Code:      ${resolveVSCodeExecutable()}`);
@@ -52,7 +52,7 @@ async function main() {
     });
     console.log('INTEGRATION RUN COMPLETE');
   } finally {
-    if (process.env.AGNTREE_TEST_KEEP === '1') {
+    if (process.env.PITWALL_TEST_KEEP === '1') {
       console.log(`Kept profile at ${profileRoot}`);
     } else {
       fs.rmSync(profileRoot, { recursive: true, force: true });

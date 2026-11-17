@@ -12,12 +12,12 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 function makeRepo(t: { after(fn: () => void): void }): { scratch: string; root: string } {
-  const scratch = tempDir(t, 'agntree-git-');
+  const scratch = tempDir(t, 'pitwall-git-');
   const root = path.join(scratch, 'repo');
   fs.mkdirSync(root);
   git(root, 'init', '-q');
   git(root, 'config', 'user.email', 'test@example.com');
-  git(root, 'config', 'user.name', 'Agntree Test');
+  git(root, 'config', 'user.name', 'Pitwall Test');
   fs.writeFileSync(path.join(root, 'tracked.txt'), 'original\n');
   git(root, 'add', '.');
   git(root, 'commit', '-qm', 'init');
@@ -29,7 +29,7 @@ const describeChanges = (changes: { status: string; path: string; additions: num
   changes.map((c) => `${c.status} ${c.path} +${c.additions}-${c.deletions}`).sort();
 
 test('a plain folder is its own worktree and keeps its id through git init', (t) => {
-  const scratch = tempDir(t, 'agntree-roots-');
+  const scratch = tempDir(t, 'pitwall-roots-');
   const folder = path.join(scratch, 'notes');
   fs.mkdirSync(folder);
 

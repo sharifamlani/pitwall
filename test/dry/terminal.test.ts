@@ -36,7 +36,7 @@ function setup(
   } as never);
   t.after(() => manager.dispose());
 
-  vscode.commands.registerCommand('agntree.refreshWorkspaces', () => undefined);
+  vscode.commands.registerCommand('pitwall.refreshWorkspaces', () => undefined);
   // The rename command targets whichever terminal is active, like the workbench.
   vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
     if (stub.window.activeTerminal) stub.window.activeTerminal.name = arg.name;
@@ -78,7 +78,7 @@ test('a launch resumes, starts, or repeats a fork depending on what the harness 
 
   const terminal = f.manager.getTerminal('chat-5') as unknown as FakeTerminal;
   assert.deepEqual([terminal.options.cwd, terminal.options.iconPath?.id], [WORKTREE.path, 'sparkle']);
-  assert.equal(terminal.name, 'Agntree: Chat 5 [chat-5]', 'the title is applied once the command runs');
+  assert.equal(terminal.name, 'Pitwall: Chat 5 [chat-5]', 'the title is applied once the command runs');
   assert.equal(f.chat('chat-5').status, 'active');
   assert.equal(f.storage.getTerminalPids()['chat-5'], terminal.__pid, 'the pty is recorded for a reload');
   assert.equal(f.manager.getChatIdForTerminalName(terminal.name), 'chat-5');
@@ -159,8 +159,8 @@ test('after a reload, a tab whose pty has the recorded PID is adopted and never 
   const pids: Record<string, number> = { 'abcdef00-live': 7001, 'ab12cd00-unlinked': 7002, 'ccddee00-exited': 7003, 'eeff0000-late': 7004 };
   for (const [id, pid] of Object.entries(pids)) await f.storage.rememberTerminalPid(id, pid);
   const live = f.restoredTab('a title the user typed', 7001);
-  const unlinked = f.restoredTab('Agntree: Unlinked [ab12cd]', 7002);
-  f.restoredTab('Agntree: Exited [ccddee]', 7003, true);
+  const unlinked = f.restoredTab('Pitwall: Unlinked [ab12cd]', 7002);
+  f.restoredTab('Pitwall: Exited [ccddee]', 7003, true);
   stub.window.__setActiveTerminal(live);
 
   const restore = f.manager.beginRestoreSync(() => WORKTREE);
@@ -173,7 +173,7 @@ test('after a reload, a tab whose pty has the recorded PID is adopted and never 
   assert.ok(!f.manager.isActive('ccddee00-exited'));
   assert.equal(f.chat('ccddee00-exited').status, 'idle');
 
-  const late = f.restoredTab('Agntree: Late [eeff00]', 7004);
+  const late = f.restoredTab('Pitwall: Late [eeff00]', 7004);
   stub.window.__fireDidOpenTerminal(late);
   await waitFor(() => f.manager.isActive('eeff0000-late'), 'a tab restored after activation');
   assert.deepEqual([live, unlinked, late].map((tab) => tab.sent.length), [0, 0, 0], 'a live agent is never typed into');
@@ -198,13 +198,13 @@ test('after a quit, each revived tab resumes its own chat in its worktree, quiet
     ['ddeeff00-same-pty', 7004], ['11223300-fork', 7005], ['44556600-gone', 7006], ['99aabb00-stale', 7007],
   ];
   for (const [id, pid] of recorded) await f.storage.rememberTerminalPid(id, pid);
-  const revived = f.restoredTab('Agntree: Revived [aabbcc]', 8001);
-  const unlinked = f.restoredTab('Agntree: Unlinked [cd34ef]', 8002);
-  const duplicateFirst = f.restoredTab('Agntree: Duplicate [ffeedd]', 8003);
-  const duplicateSecond = f.restoredTab('Agntree: Duplicate [ffeedd]', 8004);
-  const samePty = f.restoredTab('Agntree: Same [ddeeff]', 7004);
-  const fork = f.restoredTab('Agntree: Fork [112233]', 8005);
-  const gone = f.restoredTab('Agntree: Gone [445566]', 8006);
+  const revived = f.restoredTab('Pitwall: Revived [aabbcc]', 8001);
+  const unlinked = f.restoredTab('Pitwall: Unlinked [cd34ef]', 8002);
+  const duplicateFirst = f.restoredTab('Pitwall: Duplicate [ffeedd]', 8003);
+  const duplicateSecond = f.restoredTab('Pitwall: Duplicate [ffeedd]', 8004);
+  const samePty = f.restoredTab('Pitwall: Same [ddeeff]', 7004);
+  const fork = f.restoredTab('Pitwall: Fork [112233]', 8005);
+  const gone = f.restoredTab('Pitwall: Gone [445566]', 8006);
   const previous = f.restoredTab('an unrelated shell', 9000);
   stub.window.__setActiveTerminal(previous);
 
@@ -278,7 +278,7 @@ test('adoption does not wait for a slow harness check, and a click meanwhile foc
     adapter: { isSessionResumable: () => new Promise<boolean>((resolve) => (release = resolve)) },
   });
   await f.storage.rememberTerminalPid('5a5a5a00-slow', 7201);
-  const tab = f.restoredTab('Agntree: Slow [5a5a5a]', 7202);
+  const tab = f.restoredTab('Pitwall: Slow [5a5a5a]', 7202);
 
   const restore = f.manager.beginRestoreSync(() => WORKTREE);
   await restore.adopted;
@@ -313,7 +313,7 @@ test('a storage failure while adopting a late tab stays contained', async (t) =>
     console.error = error;
   });
 
-  stub.window.__fireDidOpenTerminal(f.restoredTab('Agntree: Late [6b6b6b]', 7301));
+  stub.window.__fireDidOpenTerminal(f.restoredTab('Pitwall: Late [6b6b6b]', 7301));
   await flush();
   await flush();
   assert.deepEqual(unhandled, []);

@@ -28,7 +28,7 @@ export function chatTooltip(
   }
   if (!meta) {
     paragraph('**Session unavailable**');
-    paragraph('Agntree could not read the native session. It may have been removed or moved.');
+    paragraph('Pitwall could not read the native session. It may have been removed or moved.');
     return md;
   }
 

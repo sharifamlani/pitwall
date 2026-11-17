@@ -1,6 +1,8 @@
+> Inherited from Agntree (MIT) at 47124cd; ids renamed to pitwall. <!-- credit-allow -->
+
 # Run multiple agents in parallel with git worktrees
 
-To run several coding agents at once without them overwriting each other, give each agent its own git worktree: a separate directory, on a separate branch, of the same repository. One task, one worktree, one agent. This guide shows the workflow by hand and then with Agntree in VS Code, for Claude Code, Codex, opencode, and Pi.
+To run several coding agents at once without them overwriting each other, give each agent its own git worktree: a separate directory, on a separate branch, of the same repository. One task, one worktree, one agent. This guide shows the workflow by hand and then with Pitwall in VS Code, for Claude Code, Codex, opencode, and Pi.
 
 ## Why agents need separate directories
 
@@ -32,17 +34,17 @@ git worktree remove ../storefront-worktrees/feature-search
 
 This works with any agent. What it leaves to you is the bookkeeping: which terminal belongs to which branch, which agent has finished, which session to resume tomorrow, and which worktrees are safe to delete.
 
-## The workflow with Agntree
+## The workflow with Pitwall
 
-Agntree keeps the same git worktrees and adds the bookkeeping. Everything below happens in one VS Code window.
+Pitwall keeps the same git worktrees and adds the bookkeeping. Everything below happens in one VS Code window.
 
 ### 1. Add your repository
 
-Open the Agntree sidebar and choose **Add Local Folder or Repository…**. The repository appears with its current worktree.
+Open the Pitwall sidebar and choose **Add Local Folder or Repository…**. The repository appears with its current worktree.
 
 ### 2. Create a worktree for each task
 
-Hover the repository and select **Create Worktree…** (**+**). Choose **New branch**, pick the base branch, and name the branch after the task. Agntree puts the worktree in a `<repo>-worktrees` folder beside the repository.
+Hover the repository and select **Create Worktree…** (**+**). Choose **New branch**, pick the base branch, and name the branch after the task. Pitwall puts the worktree in a `<repo>-worktrees` folder beside the repository.
 
 Do this once per task. Three tasks give you three rows under the repository.
 
@@ -74,11 +76,11 @@ Parallel work is not only for separate tasks. To explore two solutions to one pr
 1. Get a session to the point where the agent understands the problem.
 2. Right-click it and choose **Fork Session to New Worktree…**.
 
-Agntree creates a new branch and worktree from the same commit, copies your uncommitted changes, and forks the conversation into it. Both agents now continue from the same starting point in separate directories. Keep the better branch and delete the other. See [Fork a session](../fork-sessions.md).
+Pitwall creates a new branch and worktree from the same commit, copies your uncommitted changes, and forks the conversation into it. Both agents now continue from the same starting point in separate directories. Keep the better branch and delete the other. See [Fork a session](../fork-sessions.md).
 
 ## Review a pull request in its own worktree
 
-Right-click the repository and choose **Check Out Pull Request…**. Agntree checks the pull request out into a new worktree without touching your current branch. Start a session there and ask the agent to review or test the change while your own work carries on in another worktree.
+Right-click the repository and choose **Check Out Pull Request…**. Pitwall checks the pull request out into a new worktree without touching your current branch. Start a session there and ask the agent to review or test the change while your own work carries on in another worktree.
 
 ## Tips
 

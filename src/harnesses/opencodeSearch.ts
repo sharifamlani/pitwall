@@ -47,7 +47,7 @@ export class OpencodeSessionSearch implements SessionSearchSource {
 
   instructions(): string {
     return [
-      '- opencode keeps sessions in its own database, which Agntree may not read directly. For this search Agntree used opencode\'s documented CLI/API to write a read-only snapshot; the prepared instructions below say where it is and what it contains.',
+      '- opencode keeps sessions in its own database, which Pitwall may not read directly. For this search Pitwall used opencode\'s documented CLI/API to write a read-only snapshot; the prepared instructions below say where it is and what it contains.',
     ].join('\n');
   }
 
