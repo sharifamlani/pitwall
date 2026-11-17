@@ -11,7 +11,7 @@
 ## §0 You are here
 
 - **Current phase:** Phase 1 — Import Agntree (harness-modular, Claude-only)
-- **Current step:** 1.5 Claude-only switch + manifest fragments + registry safety (1.1–1.4 merged)
+- **Current step:** 1.6 CI, package, install, evaluator, tag v0.2.0 (1.1–1.5 merged)
 - **Last update:** 2026-11-16
 - **Next action:** Autonomous build running (Sharif go, 2026-11-16): Phase 1 Task 1, the import, via subagent-driven development; QA → merge → testing flywheel per D39.
 
@@ -139,7 +139,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 1.2 | Triage every Windows-failing/skipped upstream test into `docs/windows-test-triage.md` (no fixes) | ✅ | — | 2026-11-16 · PR #2 `6911dd3` → merge `efa93e6` (29 rows = 12 fail + 17 skip; 5 suspected product bugs incl. Windows worktree paths) | tests doc T16 |
 | 1.3 | Scripted rename `agntree` → `pitwall` (ids, package, docs); `version` → `0.2.0` | ✅ | — | 2026-11-16 · PR #3 `ee6e36a` → merge `f94f66f` (1612 replacements, idempotent; behaviour-neutral proven by reverse-map) | D5, D8 |
 | 1.4 | Reorganize into `src/core/` + `src/harnesses/<id>/` behind `HarnessModule` (moves only); architecture test | ✅ | — | 2026-11-16 · PR #4 `88ea364` → merge `85d14d7` (182 → 184 tests, 0 dropped by name; architecture test proven to catch violations) | D9 |
-| 1.5 | One switch `enabled.json = ["claude"]`; manifest fragments; disabled-agent records can't crash the tree | ⏸ | ✅ | plan Task 5 | D9 |
+| 1.5 | One switch `enabled.json = ["claude"]`; manifest fragments; disabled-agent records can't crash the tree | ✅ | — | 2026-11-16 · PR #5 `3b3d316` → merge `5caa2cb` (192 tests; 77 commands, 0 non-Claude; manifest split proven lossless; integration suite passes) | D9 |
 | 1.6 | CI (ubuntu + windows), package, install in Cursor, evaluator E1–E12, tag `v0.2.0` | ⏸ | ✅ | plan Task 6 | D8 |
 
 ### Phase 2 — Windows parity
@@ -155,6 +155,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 2.2 | Make POSIX-assumption tests portable; mark env-limit tests (e.g. symlink EPERM) as skips with a reason | ⏸ | ⏸ | — | Phase 1 triage |
 | 2.3 | Windows CI job runs `npm test` | ⏸ | ⏸ | — | D8 |
 | 2.4 | Script launches of Cursor clear `ELECTRON_RUN_AS_NODE` (inherited from the extension host) | ⏸ | ⏸ | — | tests doc side notes |
+| 2.5 | Find Session with an off-enum stored setting (e.g. `pitwall.sessionSearch.harness: "codex"`) falls back to the first enabled harness instead of throwing (QA PR #5 note) | ⏸ | ⏸ | — | D9 |
 
 ### Phase 3 — Sidebar v1: repos and sessions
 **Goal:** The Pitwall list as designed on the canvas: every repo and chat from one window, sorted by who needs you.
