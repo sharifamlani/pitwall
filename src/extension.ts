@@ -112,12 +112,11 @@ export async function activate(context: vscode.ExtensionContext) {
   );
   workspacesProvider.setChatOpenProvider(isChatOpen);
 
-  // Reconcile terminals that survived a reload or a quit (ADR 0009). Adoption
-  // must finish before a click can open a chat; resuming revived tabs asks
-  // the harness whether each session still exists, so it continues after the
-  // views and commands exist.
+  // Reconcile terminals that survived a reload or a quit (ADR 0009), in the
+  // background: activation never waits for a PID. A click on a chat whose
+  // surviving tab is still waiting for its PID waits for that adoption in
+  // openChat instead, so it cannot start a second agent.
   const restore = terminalManager.beginRestoreSync((id) => workspacesProvider.getWorktreeById(id));
-  await restore.adopted;
   void restore.complete.catch((error) => console.error('Pitwall: restoring terminals failed', error));
 
   const changesProvider = new ChangesTreeProvider(gitService, (worktree) => workspacesProvider.isGitWorktree(worktree));
@@ -220,10 +219,27 @@ export async function activate(context: vscode.ExtensionContext) {
         workspacesTreeView
           .reveal(workspacesProvider.getChatTreeItem(chat), { select: true, focus: false, expand: true })
           .then(undefined, () => undefined);
-      // A hidden view renders only once revealed, so waiting would never end.
-      void (workspacesTreeView.visible ? workspacesProvider.whenSettled().then(reveal) : reveal());
+      deferredReveal?.dispose();
+      deferredReveal = undefined;
+      if (workspacesTreeView.visible) {
+        void workspacesProvider.whenSettled().then(reveal);
+      } else {
+        // A hidden view has no rows yet, so revealing one now names a row that
+        // does not exist. Reveal the latest chat once the view shows and its
+        // rows have rendered, like the start worktree below.
+        deferredReveal = workspacesTreeView.onDidChangeVisibility((event) => {
+          if (event.visible) {
+            deferredReveal?.dispose();
+            deferredReveal = undefined;
+            void workspacesProvider.whenSettled().then(reveal);
+          }
+        });
+      }
     }
   };
+  /** The one reveal waiting for the hidden Workspaces view to show. */
+  let deferredReveal: vscode.Disposable | undefined;
+  context.subscriptions.push({ dispose: () => deferredReveal?.dispose() });
 
   // Native sessions started outside an exact-ID launch: a UI launch, or a
   // session started outside Pitwall. Also ages out quiet auto-imports.

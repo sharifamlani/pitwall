@@ -421,9 +421,13 @@ module.exports = {
         },
         onDidChangeVisibility: visibility.event,
         onDidChangeSelection: selection.event,
+        /** The view shows (or hides); a shown view renders its root rows, like the workbench. */
         __setVisible: (visible) => {
           view.visible = visible;
           visibility.fire({ visible });
+          if (visible) {
+            void Promise.resolve(options?.treeDataProvider?.getChildren?.()).catch(() => undefined);
+          }
         },
         dispose: () => undefined,
       };
