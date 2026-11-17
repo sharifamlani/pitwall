@@ -273,13 +273,14 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   });
   context.subscriptions.push(sessionImporter);
-  sessionImporter.start();
+  // The first scan starts after the list's first render (E16).
+  sessionImporter.start(workspacesProvider.whenSettled());
 
   // Repos found from the agents' sessions (ADR 0019), after the list first
   // renders; activation never waits for a pass.
   const repoDiscovery = new RepoDiscoveryService(storageService, gitService, () => harnessRegistry.all(), {
     onAdded: () => {
-      worktreeCatalog.scopes(true);
+      worktreeCatalog.invalidate();
       refreshTree();
       sessionImporter.wake();
     },

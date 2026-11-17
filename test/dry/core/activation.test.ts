@@ -214,7 +214,17 @@ test("clicking a repo row points FILES at its main worktree; opening a chat poin
   });
   const f = await seededActivation(
     t,
-    [{ id: 'f1u00000-chat', name: 'Worktree chat', harnessSessionId: 'fiu', worktreeId: worktreeId(repository.id, linkedPath) }],
+    [
+      {
+        id: 'f1u00000-chat',
+        name: 'Worktree chat',
+        harnessSessionId: 'fiu',
+        worktreeId: worktreeId(repository.id, linkedPath),
+        // Recent, so the session scan's retention keeps it.
+        createdAt: Date.now(),
+        lastAccessedAt: Date.now(),
+      },
+    ],
     {},
     [repository]
   );

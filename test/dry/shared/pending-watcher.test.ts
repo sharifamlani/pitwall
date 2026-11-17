@@ -22,6 +22,10 @@ function setup(harness: HarnessId, t: { after(fn: () => void): void }, prompt = 
       isGit: true,
       worktrees: [worktreeRecord({ id: `wt-${repoId}`, repoId, path: rootPath })],
     }),
+    listRepositoryWorktreesAsync: async (rootPath: string, repoId: string) => ({
+      isGit: true,
+      worktrees: [worktreeRecord({ id: `wt-${repoId}`, repoId, path: rootPath })],
+    }),
   };
   const catalog = new WorktreeCatalog(storage, git as never);
   const sessions: HarnessSession[] = [];

@@ -75,6 +75,8 @@ function setup(t: { after(fn: () => void): void }, options: { notInstalled?: Har
     getCurrentCommit: () => 'deadbeef',
     listRepositoryWorktrees: (_root: string, repoId: string) =>
       repoId === folderRepo.id ? { isGit: false, worktrees: [folder] } : { isGit: true, worktrees },
+    listRepositoryWorktreesAsync: async (_root: string, repoId: string) =>
+      repoId === folderRepo.id ? { isGit: false, worktrees: [folder] } : { isGit: true, worktrees },
     listWorktrees: () => worktrees,
     getBranches: () => [] as string[],
     createWorktreeWithNewBranch: (_root: string, branch: string, path: string) => {

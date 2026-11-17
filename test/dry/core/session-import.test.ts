@@ -22,6 +22,7 @@ function setup(t: { after(fn: () => void): void }) {
   const worktreesByRoot = new Map<string, Worktree[]>([[repo.rootPath, [worktree]]]);
   const git = {
     listRepositoryWorktrees: (rootPath: string) => ({ isGit: true, worktrees: worktreesByRoot.get(rootPath) ?? [] }),
+    listRepositoryWorktreesAsync: async (rootPath: string) => ({ isGit: true, worktrees: worktreesByRoot.get(rootPath) ?? [] }),
   };
   const sessions: HarnessSession[] = [];
   const settings: SessionImportSettings = { enabled: true, retentionDays: 7 };

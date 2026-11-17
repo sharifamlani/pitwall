@@ -146,19 +146,36 @@ export class SessionImportService implements vscode.Disposable {
     );
   }
 
-  start(): void {
+  /**
+   * Start scanning. The first scan waits for `firstRender` (the list's first
+   * render), so neither activation nor that render waits on it (E16).
+   */
+  start(firstRender: PromiseLike<unknown> = Promise.resolve()): void {
     if (this.started || this.disposed) {
       return;
     }
     this.started = true;
-    // Restoring a launch needs the worktrees, which costs one synchronous git
-    // call per repository; skip it when no chat is waiting for a UI session.
-    const chats = this.storageService.getChats();
-    if (chats.some((chat) => chat.pendingUiLaunch && !chat.harnessSessionId)) {
-      this.restorePendingUiExpectations(this.catalog.scopes(true), chats);
+    // Restoring a launch needs the worktrees, one git call per repository,
+    // listed without blocking; skip it when no chat is waiting for a UI
+    // session.
+    if (this.storageService.getChats().some((chat) => chat.pendingUiLaunch && !chat.harnessSessionId)) {
+      void this.catalog.scopesAsync(true).then(
+        (scopes) => {
+          if (this.disposed) {
+            return;
+          }
+          this.restorePendingUiExpectations(scopes, this.storageService.getChats());
+          this.schedule();
+          this.wake();
+        },
+        (error) => console.error('[SessionImportService] Could not restore UI launches:', error)
+      );
     }
     this.schedule();
-    this.wake();
+    void Promise.resolve(firstRender).then(
+      () => this.wake(),
+      (error) => console.error('[SessionImportService] Scanning did not start:', error)
+    );
   }
 
   /**
@@ -290,7 +307,7 @@ export class SessionImportService implements vscode.Disposable {
       if (adapters.length === 0) {
         return;
       }
-      const scopes = this.catalog.scopes();
+      const scopes = await this.catalog.scopesAsync();
       const chats = this.storageService.getChats();
       this.restorePendingUiExpectations(scopes, chats);
 
