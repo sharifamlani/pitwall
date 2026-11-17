@@ -137,3 +137,133 @@ test('--check fails with a diff when the manifest is out of date', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---- Duplicates across fragments are refused (Phase 2, Task 7) ----
+
+type Json = Record<string, any>;
+
+const readRepoJson = (...parts: string[]): Json => JSON.parse(fs.readFileSync(path.join(ROOT, ...parts), 'utf8'));
+
+/**
+ * Write a temp `--root` tree: the real core fragment (optionally edited by `editCore`),
+ * a repo-shaped package.json, and a `dup` harness fragment. Returns the root.
+ */
+function fixtureRoot(dupFragment: Json, editCore?: (core: Json) => void): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pitwall-manifest-root-'));
+  const core = readRepoJson('manifest', 'core.contributes.json');
+  editCore?.(core);
+  fs.mkdirSync(path.join(root, 'manifest'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'src', 'harnesses', 'dup'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'manifest', 'core.contributes.json'), JSON.stringify(core, null, 2));
+  fs.writeFileSync(path.join(root, 'src', 'harnesses', 'dup', 'contributes.json'), JSON.stringify(dupFragment, null, 2));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'fixture', version: '0.0.0' }));
+  return root;
+}
+
+/** Build the fixture with the `dup` harness enabled; the temp tree is removed afterwards. */
+function buildFixture(
+  dupFragment: Json,
+  options: { editCore?: (core: Json) => void; enabled?: string } = {}
+): { status: number | null; output: string; contributes?: Json } {
+  const root = fixtureRoot(dupFragment, options.editCore);
+  try {
+    const out = path.join(root, 'out.json');
+    const result = spawnSync(
+      process.execPath,
+      [BUILDER, '--root', root, '--enabled', options.enabled ?? 'dup', '--out', out],
+      { cwd: ROOT, encoding: 'utf8' }
+    );
+    const contributes = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, 'utf8')).contributes : undefined;
+    return { status: result.status, output: `${result.stdout}${result.stderr}`, contributes };
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+const DUP = 'src/harnesses/dup/contributes.json';
+
+test('a fragment that re-declares a core command is refused', () => {
+  const result = buildFixture({ commands: [{ command: 'pitwall.refreshWorkspaces', title: 'Again' }] });
+  assert.equal(result.status, 2, result.output);
+  assert.ok(
+    result.output.includes(
+      `duplicate command "pitwall.refreshWorkspaces" in ${DUP} (already declared by manifest/core.contributes.json)`
+    ),
+    result.output
+  );
+});
+
+test('a setting re-declared under a differently titled section is refused', () => {
+  const result = buildFixture({
+    configuration: [{ title: 'Dup', properties: { 'pitwall.autoImport.enabled': { type: 'boolean', default: true } } }],
+  });
+  assert.equal(result.status, 2, result.output);
+  assert.ok(result.output.includes(`duplicate setting "pitwall.autoImport.enabled" in ${DUP}`), result.output);
+});
+
+test('a keybinding on a key core already binds with the same when is refused', () => {
+  const result = buildFixture({ keybindings: [{ command: 'pitwall.dupOnly', key: 'ctrl+alt+n', mac: 'ctrl+cmd+n' }] });
+  assert.equal(result.status, 2, result.output);
+  assert.ok(result.output.includes(`duplicate keybinding "ctrl+alt+n|ctrl+cmd+n|" in ${DUP}`), result.output);
+
+  const otherWhen = buildFixture({
+    keybindings: [{ command: 'pitwall.dupOnly', key: 'ctrl+alt+n', mac: 'ctrl+cmd+n', when: 'editorFocus' }],
+  });
+  assert.equal(otherWhen.status, 0, 'the same key under a different when is not a duplicate');
+});
+
+test('duplicate submenu, view and viewsContainer ids are refused', () => {
+  const submenu = buildFixture({ submenus: [{ id: 'pitwall.newSession', label: 'Again' }] });
+  assert.equal(submenu.status, 2, submenu.output);
+  assert.ok(submenu.output.includes(`duplicate submenu "pitwall.newSession" in ${DUP}`), submenu.output);
+
+  const view = buildFixture({ views: { pitwall: [{ id: 'pitwall.filesView', name: 'Again' }] } });
+  assert.equal(view.status, 2, view.output);
+  assert.ok(view.output.includes(`duplicate view "pitwall.filesView" in ${DUP}`), view.output);
+
+  const container = buildFixture({ viewsContainers: { activitybar: [{ id: 'pitwall', title: 'Again', icon: 'x.svg' }] } });
+  assert.equal(container.status, 2, container.output);
+  assert.ok(container.output.includes(`duplicate viewsContainer "pitwall" in ${DUP}`), container.output);
+});
+
+test('untitled configuration sections are matched by identity, not undefined === undefined', () => {
+  // Core and the fragment each own an untitled section with a different setting: both survive as separate sections.
+  const separate = buildFixture(
+    { configuration: [{ properties: { 'pitwall.dupOnly': { type: 'boolean', default: false } } }] },
+    { editCore: (core) => core.configuration.push({ properties: { 'pitwall.coreUntitled': { type: 'boolean', default: false } } }) }
+  );
+  assert.equal(separate.status, 0, separate.output);
+  const untitled = (separate.contributes!.configuration as Json[]).filter((section) => section.title === undefined);
+  assert.equal(untitled.length, 2, 'two untitled sections stay two');
+  assert.deepEqual(untitled.map((section) => Object.keys(section.properties)), [['pitwall.coreUntitled'], ['pitwall.dupOnly']]);
+
+  // The same setting key in both untitled sections is still a duplicate.
+  const clash = buildFixture(
+    { configuration: [{ properties: { 'pitwall.coreUntitled': { type: 'boolean', default: false } } }] },
+    { editCore: (core) => core.configuration.push({ properties: { 'pitwall.coreUntitled': { type: 'boolean', default: false } } }) }
+  );
+  assert.equal(clash.status, 2, clash.output);
+  assert.ok(clash.output.includes(`duplicate setting "pitwall.coreUntitled" in ${DUP}`), clash.output);
+});
+
+test('a filled x-harness-enum whose default is not in its enum is refused', () => {
+  const result = buildFixture({
+    'x-harness-enum': { 'pitwall.sessionSearch.harness': { label: 'Dup', description: 'Only dup' } },
+  });
+  assert.equal(result.status, 2, result.output);
+  assert.ok(result.output.includes('pitwall.sessionSearch.harness'), result.output);
+  assert.ok(result.output.includes('default "claude" is not in the enum'), result.output);
+});
+
+test('core enum, enumItemLabels and enumDescriptions of unequal length are refused', () => {
+  const result = buildFixture(
+    { 'x-harness-enum': { 'pitwall.sessionSearch.harness': { label: 'Dup', description: 'Dup' } } },
+    { editCore: (core) => {
+        const section = core.configuration.find((entry: Json) => entry.properties['pitwall.defaultHarness']);
+        section.properties['pitwall.defaultHarness'].enumItemLabels.push('Extra label');
+      } }
+  );
+  assert.equal(result.status, 2, result.output);
+  assert.ok(result.output.includes('pitwall.defaultHarness'), result.output);
+  assert.match(result.output, /unequal length|same length/);
+});
