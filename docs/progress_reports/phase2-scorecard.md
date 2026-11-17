@@ -5,14 +5,15 @@
 - **Evaluator:** independent sub-agent. It did none of the build work, and every result below is its own measurement.
 - **Spec:** `docs/superpowers/plans/2026-11-16-phase2-windows-parity.md` §5 (E1–E13, E15; E14 graded after release), §4 smokes, Global Constraints, rulings R31, R46, R48 and (round 2) R49.
 - **Round 1 tally: 11 PASS, 3 FAIL (E6, E7, E9).**
+- **Round 3 (2026-11-17, release `v0.3.0` → `897714f`): E14 PASS, and the plan's ground-truth probes all hold. Final: 15/15 PASS (E1–E15).**
 - **Round 2 (2026-11-17, main `97a798a`, re-grading only E6, E7 and E9): 14 PASS, 0 FAIL.** See "Round 2" below. `97a798a` changes no code against `50982fc`: `git diff --stat 50982fc 97a798a` touches only `ROADMAP.md`, `SHARIF_ACTION_ITEMS.md`, this scorecard and the plan.
 
 ```
 PITWALL — phase plan
 ─────────────────────────────────
 Phase 1 : Import Agntree            [████████████████████] ✅ v0.2.0
-Phase 2 : Windows parity            [███████████████████.] ⏳ evaluator round 2: 14/14 PASS; E14 (release) next
-Phase 3 : Sidebar v1
+Phase 2 : Windows parity            [████████████████████] ✅ v0.3.0 (evaluator: E1–E15 PASS)
+Phase 3 : Sidebar v1                [⏸...................] waiting on you (development paused by Sharif)
 Phase 4 : Windows and tabs
 Phase 5 : Status + pop-ups
 Phase 6 : Package + launch (v1.0.0)
@@ -36,6 +37,7 @@ Phase 7 : After v1
 | E11 Electron-safe launches (2.4) | `electron-env` tests pass; `ELECTRON_RUN_AS_NODE=1 cursor-cli.sh --version` first line `^3\.\d+\.\d+$`; integration from that shell `INTEGRATION RUN COMPLETE` | `3.14.27`; `INTEGRATION RUN COMPLETE` (exit 0); `✔ scrubElectronEnv removes every variable…`, `✔ every script that launches an editor scrubs its environment first`, `ℹ fail 0` | Smoke 11 commands from the fresh clone | PASS |
 | E12 Minors and 2.5 closed | Task 9 Steps 1–5 and Task 10 tests pass; L1 = 0; both Phase 1 plan greps → 0 | All `✔` on Windows (E1 log) and Linux (E2 log): `Find Session with an off-enum stored harness falls back…`, `enabled.json validation rejects unknown, inherited, duplicate and empty ids`, `harness folders with a contributes.json, ALL_HARNESSES keys and module ids agree`, `saving a search keeps stored searches of a disabled harness`, `core reaches no harness folder, directly or transitively…`, `src/ holds only core, harnesses and extension.ts`, `…which is SHIPPED_HARNESSES`, `whenSettled waits for the render that follows a refresh`. **L1:** `grep -cE "No tree item with id\|TypeError\|\[error\].*pitwall"` = `0` in each of the 10 run-12 exthost logs. Greps: `grep -c "docs/upstream/" …phase1…md` → `0`; the §1 `upstream/ ` grep → `0`; the Phase 1 E8 evidence cell names `docs/progress_reports/phase1-scorecard.md` | `npm test`; exthost logs `20261117T085259 … 092458`; the E12 grep commands | PASS |
 | E13 Verify + CI green on the close commit | `bash scripts/verify.sh` exit 0; ubuntu, windows, privacy `success` for the close sha | `verify.sh` exit 0: `PASS eol`, `PASS poetry`, `PASS ignore`, `PASS env`, `PASS docker`, `PASS npm`, `PASS vsix` (it prints `OK: 49 …`), `PASS linux-tests` (`ℹ tests 292 / fail 0 / skipped 0`). CI run 44113020661 (`cfa1b84`, the same code as graded): `windows success`, `ubuntu success`, `privacy success` | `unset VIRTUAL_ENV; bash scripts/verify.sh` on the fresh clone; `gh run view 44113020661 --json jobs` | PASS |
+| E14 ROADMAP + release (round 3) | Rows 2.1–2.14 ✅ each with PR + merge sha; §0 → Phase 3 (Sidebar v1); §6 entry and stamp at the next ROADMAP version ≥ v0.18; `package.json` 0.3.0; `CHANGELOG.md` 0.3.0; annotated tag `v0.3.0` on origin peels to the close commit; triage doc has 29 rows each with a "Phase 2 resolution" | **Tag:** `git ls-remote --tags origin v0.3.0 'v0.3.0^{}'` → `0df9f004ee64… refs/tags/v0.3.0` and `897714f33e0f… refs/tags/v0.3.0^{}`. After `git fetch --tags`, `git cat-file -t v0.3.0` → `tag` (annotated, tagger sharifamlani, message `Phase 2: Windows parity`), and `git rev-parse v0.3.0^{commit}` → `897714f`, the close commit `roadmap v0.31: Phase 2 closed …` = origin/main. **Versions:** `node -p "require('./package.json').version"` → `0.3.0`; `CHANGELOG.md` has `## [0.3.0] - 2026-11-17` (Windows parity: Fixed ×3, Added ×2); `node scripts/build-manifest.mjs --check` → up to date. **ROADMAP rows:** a scripted parse of rows 2.1–2.14 shows all 14 Status cells start with ✅, and each row names its PRs with merge shas. 2.2 is written `PR #11 … → 23623d2 · PR #15 … → b4c85bb`; 2.12 has its PRs (#13, #9, #7, #12) in the Status cell and `merges 1830558, 0d520bb, 131a2d5, 0095508` in the Date cell. Every merge sha cited (704948f, 8a1085f, 23623d2, b4c85bb, f8ea023, 0095508, 0d520bb, 1914f21, dd0e1ea, 1830558, 131a2d5, 68ad3d2, a82f0f5, 3d0bd98) exists, is that PR's `Merge pull request #N` commit, and is an ancestor of `v0.3.0`. **§0:** `Current phase: Phase 3 — Sidebar v1 (not started). Development PAUSED by Sharif on 2026-11-17 after v0.3.0.` I read this as meeting "§0 → Phase 3". The banner's current phase is Phase 3 Sidebar v1 and its next action is the Phase 3 plan (row 3.0). The pause is Sharif's scheduling decision, recorded alongside, and does not point §0 anywhere other than Phase 3. **§6 / stamp:** the header stamp is `> v0.31 · 2026-11-17` (≥ v0.18), and §6 has `v0.31 · 2026-11-17 · Phase 2 closed, tag v0.3.0.`; the Phase 2 block says `✅ done · tag v0.3.0`. **Triage:** all 29 rows have a "Phase 2 resolution" cell: 21 in the exact Task 11 forms (`fixed (product\|test, Task N, PR #x)` ×13, `skip (reason: "…")` ×9), and rows 17, 18, 23–25, 27–29 read `runs on Windows (Task 4, PR #15)`, which is Task 11's form plus the PR number. | `git fetch -q --tags origin`; the commands quoted; `scratchpad/rows14.py` (row parse + `git merge-base --is-ancestor <sha> v0.3.0`); `grep -E "^\| [0-9]+ \|" docs/windows-test-triage.md` | PASS |
 | E15 Claude agents poll runs on Windows (2.14, F2) | Task 12 tests pass on Windows (R31 regression guards, `✖` with `harnessInvocation` removed); S1 PASS (needs-you within 15 s, 0 spawn ENOENT/EINVAL lines) | `PITWALL_TEST_NAME_PATTERN="real claude CLI" npm test -- claude-agents` → `✔ …by full path`, `✔ …by bare name on PATH`, `ℹ fail 0`; the full `claude-agents` file → `ℹ tests 8 / fail 0`. **My own R31 mutation** (scratch worktree; line 185 `harnessInvocation(...)` replaced by `{ command, args, shell: false }`) → `ℹ fail 2`: `✖ …by full path`, `✖ …by bare name on PATH`, matching PR #16's claim. **S1 (S1-b per R46):** sent at 13:57:24Z, switched to README at 13:57:31.7Z (before the prompt). `w12-s1b-agents.log` shows `busy` at 08:57:31 and `waiting/permission prompt` first at 08:57:33 (local = Z−5 h). The row shows `needs` at 13:57:44.9Z and the toast `Lab ready needs your input … permission prompt` appears at 13:57:44.6Z, so ≤ 13.9 s after the prompt (< 15 s). Capture `uj-p2-w12-s1b-b-mark.png` shows the orange needs mark on `Lab re…`. `grep -ciE "spawn .*claude.*(ENOENT\|EINVAL)"` = `0` in all 10 run-12 exthost logs | Commands above; `captures\w12-s1b-agents.log`, `walk12-focus.log`, `uj-p2-w12-s1b-b-mark.png` | PASS |
 
 ## Recommendations (one per FAIL)
@@ -79,3 +81,23 @@ Scope: re-grade **only E6, E7 and E9**, as the coordinator asked. The other 11 r
 **Tally after round 2: 14 PASS, 0 FAIL** (E1–E13, E15). E14 (release and tags) is graded after the release.
 
 Round 2 side effects: `git pull --ff-only` in the main checkout (`cfa1b84` → `97a798a`) and this file edit, not committed. Nothing in the private folders was read.
+
+## Round 3 (2026-11-17): E14 and the ground truth after Smoke 12
+
+Scope: E14 and the plan §4 "Ground truth after Smoke 12" probes, all measured by the evaluator. The release commits since `97a798a` (`b5c2452`, `bed735b`, `897714f`) change only `package.json`/`package-lock.json` `version`, `README.md`, `CHANGELOG.md`, `ROADMAP.md`, the plan and the progress reports. No source changed, so the tagged code is the code graded in rounds 1–2 (`git diff --stat 97a798a 897714f`).
+
+**E14: PASS** (row in the scorecard above).
+
+**Ground truth after Smoke 12** (system-says-pass ≠ correct):
+
+| Probe | Expected | Measured | Holds |
+|---|---|---|---|
+| `git ls-remote --tags origin v0.3.0 'v0.3.0^{}'` | annotated tag peeling to the close commit | `0df9f004ee6429102cd1d1dacbbba5c5e6d60cf0 refs/tags/v0.3.0` and `897714f33e0fea5c24f0d50ab0101cfdd970926f refs/tags/v0.3.0^{}` (two lines, so annotated); `897714f` = origin/main `roadmap v0.31: Phase 2 closed …` | yes |
+| `git cat-file -t v0.3.0` (after `git fetch --tags`) | `tag` | `tag` | yes |
+| `gh run list -R sharifamlani/pitwall --branch main --limit 1 --json headSha,conclusion` | close sha, `success` | `44120966992  897714f  success` | yes |
+| `gh run view 44120966992 --json jobs` | `ubuntu success`, `windows success`, `privacy success` | `windows success`, `ubuntu success`, `privacy success` | yes |
+| windows job log (`gh run view 44120966992 --log --job 134171870853`) | `ℹ fail 0` | `ℹ tests 292`, `ℹ pass 283`, `ℹ fail 0`, `ℹ skipped 9` (same as E1 and E3) | yes |
+
+**Final tally: 15 PASS, 0 FAIL (E1–E15).** Phase 2 meets every evaluation criterion.
+
+Note (not graded): the triage doc's appended "final Windows run" summary reads `ℹ tests 234 / fail 0 / skipped 9`. It was recorded when Task 11 merged, before later tasks added tests. Current Windows `npm test` is `292 / 283 / 0 / 9` (E1, and CI run 44120966992). The fail and skip counts agree; only the test total is dated. Refreshing it is optional doc hygiene.
