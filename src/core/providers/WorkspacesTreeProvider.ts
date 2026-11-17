@@ -58,6 +58,9 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   /** True from a refresh until the next top-level render; nothing has rendered yet at construction. */
   private renderPending = true;
   private settleWaiters: Array<() => void> = [];
+  /** Reveals the workbench is still carrying out, and whether a refresh waits for them (L1). */
+  private revealsInFlight = 0;
+  private refreshHeld = false;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly prRefreshTimer: NodeJS.Timeout;
 
@@ -68,8 +71,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       this.gitHubService.clearCache();
     }
     this.updateRepoWatchers();
-    this.renderPending = true;
-    this.changeEmitter.fire();
+    this.fireChange();
   }, REFRESH_DEBOUNCE_MS);
 
   /** A branch switch, `git init`, or `.git` removal changes worktrees and upstream distance. */
@@ -92,7 +94,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     this.updateRepoWatchers();
     this.prRefreshTimer = setInterval(() => {
       this.gitHubService.clearCache();
-      this.changeEmitter.fire();
+      this.fireChange();
     }, PR_REFRESH_INTERVAL_MS);
   }
 
@@ -131,6 +133,41 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       return Promise.resolve();
     }
     return new Promise((resolve) => this.settleWaiters.push(resolve));
+  }
+
+  /**
+   * Reveal a row once the rows have rendered after the latest refresh, and
+   * hold every refresh until the workbench has finished the reveal (L1). A
+   * full refresh makes the extension host forget every row; the workbench
+   * expands a reveal's parent rows after the extension host resolved them,
+   * so a refresh landing in between makes it ask for a row that no longer
+   * exists ("No tree item with id '1/repository-…' found.") and the reveal
+   * fails. A held refresh fires once, when the last reveal ends.
+   */
+  async revealWhenSettled(reveal: () => Thenable<unknown>): Promise<void> {
+    await this.whenSettled();
+    this.revealsInFlight += 1;
+    try {
+      await reveal();
+    } catch {
+      // Best effort: a row that cannot be revealed is not an error.
+    } finally {
+      this.revealsInFlight -= 1;
+      if (this.revealsInFlight === 0 && this.refreshHeld) {
+        this.refreshHeld = false;
+        this.changeEmitter.fire();
+      }
+    }
+  }
+
+  /** Fire a full refresh now, or, while a reveal is in flight, once it ends. */
+  private fireChange(): void {
+    this.renderPending = true;
+    if (this.revealsInFlight > 0) {
+      this.refreshHeld = true;
+      return;
+    }
+    this.changeEmitter.fire();
   }
 
   /** Re-render and re-list worktrees and PRs (debounced). */
@@ -324,7 +361,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
 
     if (unknownPRs.length > 0) {
       void Promise.all(unknownPRs.map((branch) => this.gitHubService.fetchPRInfo(repo.rootPath, branch))).then(() =>
-        this.changeEmitter.fire()
+        this.fireChange()
       );
     }
     return rows;
