@@ -232,6 +232,30 @@ test('a plain folder root is stored in the one native spelling a git repo gets, 
   }
 });
 
+test("a removed repo is not re-added by discovery until a new session starts or it's added by hand", async (t) => {
+  const repo = makeRepo(tempDir(t), 'uj-lab-b');
+  const f = setup(t);
+  f.session(repo, Date.now() - 60_000);
+  await f.service.scan();
+  const remove = async () => {
+    stub.__warningResponses.push('Remove');
+    await runCommand('pitwall.removeRepository', { itemType: 'repository', data: f.storage.getRepositories()[0] });
+  };
+
+  await remove();
+  assert.deepEqual(f.roots(), []);
+  assert.deepEqual((await f.service.scan()).added, [], 'the running session does not bring it back');
+
+  f.session(repo, Date.now() + 1_000);
+  assert.deepEqual((await f.service.scan()).added, [repo], 'a new session does');
+
+  await remove();
+  stub.__openDialogResponses.push([{ fsPath: repo }]);
+  await runCommand('pitwall.addRepository');
+  assert.deepEqual(f.roots(), [repo], 'adding it by hand does');
+  assert.deepEqual(f.storage.getDismissedRepos(), {});
+});
+
 test('Remove from Pitwall names Pitwall in its message', async (t) => {
   const plain = path.join(tempDir(t), 'uj-lab-b');
   fs.mkdirSync(plain);

@@ -40,6 +40,32 @@ test('chats written before multi-harness support migrate on read, once', async (
   assert.equal(writes, 1, 'an already-migrated list is not rewritten');
 });
 
+test('chats stored twice under one id collapse to one row, keeping the newest fields', async () => {
+  // What createChat left before the fix: the chat twice. Every later update
+  // rewrote the first copy, so the second is the stale one.
+  const globalState = memento();
+  const fresh = { id: 'c1', worktreeId: 'wt-1', name: 'Renamed', harness: 'claude', harnessSessionId: 's1', createdAt: 1, lastAccessedAt: 300, seenAt: 200, status: 'idle' };
+  const stale = { ...fresh, name: 'Session', harnessSessionId: null, lastAccessedAt: 1, seenAt: 1 };
+  const other = { ...fresh, id: 'c2', name: 'Other', harnessSessionId: 's2' };
+  await globalState.update(STORAGE_KEYS.CHATS, [fresh, stale, other]);
+  let writes = 0;
+  const update = globalState.update;
+  globalState.update = async (key: string, value: unknown) => {
+    writes++;
+    return update(key, value);
+  };
+  const storage = makeStorage(globalState);
+
+  assert.deepEqual(storage.getChats(), [fresh, other], 'one row per id, the newest copy');
+  assert.equal(writes, 0, 'reading alone writes nothing');
+
+  storage.updateChat('c2', { name: 'Other renamed' });
+  await new Promise((resolve) => setImmediate(resolve));
+  const stored = globalState.get<{ id: string; name: string }[]>(STORAGE_KEYS.CHATS, []);
+  assert.deepEqual(stored.map((chat) => [chat.id, chat.name]), [['c1', 'Renamed'], ['c2', 'Other renamed']], 'the next write persists the clean list');
+  assert.deepEqual(makeStorage(globalState).getChats().find((chat) => chat.id === 'c1'), fresh);
+});
+
 test('a created chat is stored once, so a reload lists it once', async () => {
   const globalState = memento();
   const storage = makeStorage(globalState);
