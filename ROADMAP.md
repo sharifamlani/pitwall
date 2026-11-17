@@ -156,6 +156,8 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 2.3 | Windows CI job runs `npm test` | ⏸ | ⏸ | — | D8 |
 | 2.4 | Script launches of Cursor clear `ELECTRON_RUN_AS_NODE` (inherited from the extension host) | ⏸ | ⏸ | — | tests doc side notes |
 | 2.5 | Find Session with an off-enum stored setting (e.g. `pitwall.sessionSearch.harness: "codex"`) falls back to the first enabled harness instead of throwing (QA PR #5 note) | ⏸ | ⏸ | — | D9 |
+| 2.6 | After a Cursor restart, a restored chat terminal whose session never wrote a transcript is orphaned: "Remove from Pitwall" leaves it open although the dialog says terminals close (testing UJ run 5; inherited) — re-adopt or close restored tabs | ⏸ | ⏸ | — | testing UJ run 5 |
+| 2.7 | De-flake timing tests seen under load: "stopping an opencode snapshot ends the session listing…", "the opencode snapshot stops at its byte budget…", "server errors keep their JSON-RPC code, and a hung request times out" | ⏸ | ⏸ | — | R9, QA PR #6 |
 
 ### Phase 3 — Sidebar v1: repos and sessions
 **Goal:** The Pitwall list as designed on the canvas: every repo and chat from one window, sorted by who needs you.
