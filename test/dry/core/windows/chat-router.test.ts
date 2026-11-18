@@ -545,12 +545,14 @@ test('an sdk-cli chat is never routed for a UI open; it opens here (Q23)', async
 test('launch folder reads a 1 MB head with no cwd without holding the event loop', async (t) => {
   const w = world(t);
   const big = Array.from({ length: 64 }, () => ({ type: 'summary', summary: 'y'.repeat(16 * 1024) }));
-  w.transcript(w.main, ID.a, [...big, w.turn(ID.a, w.wt)]);
+  // Filed under a folder none of the repo's folders encode to, so the whole
+  // 1 MB head is read looking for a cwd that does.
+  w.transcript(path.join(w.scratch, 'not-a-root'), ID.a, [...big, w.turn(ID.a, w.wt)]);
   const { router } = windowOn(t, w, tempDir(t), () => undefined, { pid: 1001 });
   const chat = w.chat('Huge head', ID.a, w.mainWt);
   await assertNoLongBlock(
     async () => {
-      // No cwd within 1 MB: the project folder's repo wins.
+      // No cwd within 1 MB and no matching root: the chat's own worktree.
       assert.equal(await router.launchFolder(chat), w.main);
     },
     50,
