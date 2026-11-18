@@ -437,7 +437,7 @@ function listKeys(row: WorkspaceTreeItem) {
     filesTreeView: files as never,
   });
   const events: string[] = [];
-  let fired: Promise<unknown> | undefined;
+  let fired: Thenable<unknown> | undefined;
   vscode.commands.registerCommand('list.focusDown', () => undefined);
   vscode.commands.registerCommand('list.select', () => {
     view.__select([row]);
