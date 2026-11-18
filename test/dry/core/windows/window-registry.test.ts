@@ -199,6 +199,6 @@ test('activation registers the window before the first render: extension.ts call
   const source = fs.readFileSync(path.join(process.cwd(), 'src', 'extension.ts'), 'utf8');
   const early = source.indexOf('const earlyRegistry = startWindowRegistry(context)');
   assert.ok(early > 0, 'the registry is started in activate');
-  assert.ok(early < source.indexOf('const afterFirstRender'), 'before any after-first-render work is scheduled');
+  assert.ok(early < source.indexOf('afterFirstRender(() => {'), 'before any work is scheduled for after the first render');
   assert.ok(/startWindowServices\([^;]*earlyRegistry\)/.test(source), 'and the window services reuse it');
 });
