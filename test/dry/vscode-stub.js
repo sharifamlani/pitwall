@@ -928,6 +928,7 @@ module.exports = {
     openExternalResult = true;
     nextTerminalPid = 4100;
     module.exports.workspace.workspaceFolders = [];
+    module.exports.workspace.workspaceFile = undefined;
     module.exports.window.tabGroups.all = [];
     module.exports.window.state = { focused: false };
     module.exports.env.shell = '/bin/bash';
