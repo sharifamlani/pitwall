@@ -92,3 +92,47 @@ test('the tail reader skips a partial last line and widens its window until the 
     'the reader reaches the file start when the deciding entry is there'
   );
 });
+
+test('an interrupt marker ends the turn at its time; the metadata a resume or close appends changes nothing (Q24)', async (t) => {
+  const root = tempDir(t, 'pitwall-claude-interrupt-');
+  const repo = path.join(root, 'repo');
+  fs.mkdirSync(repo);
+  cwd = repo;
+  const previous = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = path.join(root, 'config');
+  t.after(() => {
+    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previous;
+  });
+  const transcript = path.join(root, 'config', 'projects', encodeClaudeProjectPath(repo), `${SESSION_ID}.jsonl`);
+  fs.mkdirSync(path.dirname(transcript), { recursive: true });
+  const service = new ClaudeSessionService();
+  const marker = (second: number, text: string) => user(second, [{ type: 'text', text }]);
+  const meta = (type: string, extra: object = {}) => line({ type, ...extra });
+
+  const steps: [string, string, 'working' | 'done', number | null][] = [
+    ['a prompt opens the turn', user(0), 'working', null],
+    ['a tool_use reply keeps it open', assistant(1, 'tool_use'), 'working', null],
+    ['the rejected tool result keeps it open', user(2, [{ type: 'tool_result', tool_use_id: 't', is_error: true, content: 'rejected' }]), 'working', null],
+    ['the interrupt marker ends it', marker(3, '[Request interrupted by user for tool use]'), 'done', Date.parse(at(3))],
+    [
+      'a resume appends metadata only',
+      meta('last-prompt', { lastPrompt: 'lab', leafUuid: 'x' }) + meta('ai-title', { aiTitle: 'Lab' }) + meta('mode', { mode: 'normal' }) +
+        meta('permission-mode', { permissionMode: 'default' }) + meta('session-owner', { accountUuid: 'a' }) + meta('atis-latch', { atis: 'a' }),
+      'done',
+      Date.parse(at(3)),
+    ],
+    ['a close appends metadata only', meta('cost-state', { totalDuration: 1 }) + meta('tools-used', { tools: [] }), 'done', Date.parse(at(3))],
+    ['a new prompt opens the next turn', user(5), 'working', null],
+    ['an Esc while streaming ends it too', marker(6, '[Request interrupted by user]'), 'done', Date.parse(at(6))],
+    ['typed text that only quotes the marker is a prompt', marker(7, 'what does [Request interrupted by user] mean?'), 'working', null],
+  ];
+
+  for (const [step, entry, turnState, turnEndedAt] of steps) {
+    fs.appendFileSync(transcript, entry);
+    const tail = await readTurnStateTail(transcript);
+    const [parsed] = await service.findSessionsForWorktree(repo);
+    assert.deepEqual(tail, { turnState, turnEndedAt }, `tail: ${step}`);
+    assert.deepEqual({ turnState: parsed.turnState, turnEndedAt: parsed.turnEndedAt ?? null }, { turnState, turnEndedAt }, `parser: ${step}`);
+  }
+});

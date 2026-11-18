@@ -76,6 +76,18 @@ test('Claude opens through its command in the active group; the documented URI i
   assert.equal(stub.__openExternalCalls[0].toString(), `vscode://anthropic.claude-code/open?session=${encodeURIComponent('session/with?chars')}`);
 });
 
+test('the link fallback uses vscode.env.uriScheme (cursor in Cursor)', async () => {
+  const env = vscode.env as unknown as { uriScheme: string };
+  env.uriScheme = 'cursor';
+  assert.deepEqual(await claude.openSession('session-1', UI_CWD), { kind: 'opened', via: 'uri' });
+  await claude.openNewSession(UI_CWD);
+  assert.deepEqual(
+    stub.__openExternalCalls.map((uri) => uri.toString()),
+    ['cursor://anthropic.claude-code/open?session=session-1', 'cursor://anthropic.claude-code/open'],
+    'Cursor routes only its own scheme to the extension'
+  );
+});
+
 test('Codex resumes a thread in its conversation editor and starts new ones with its own command', async () => {
   const openWith = command('vscode.openWith');
   const newPanel = command('chatgpt.newCodexPanel');

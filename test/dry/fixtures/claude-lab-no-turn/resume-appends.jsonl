@@ -1,0 +1,6 @@
+{"type":"last-prompt","lastPrompt":"Run this lab command and nothing else","leafUuid":"lab-0005","sessionId":"lab-session"}
+{"type":"ai-title","aiTitle":"Lab ready","sessionId":"lab-session"}
+{"type":"mode","mode":"normal","sessionId":"lab-session"}
+{"type":"permission-mode","permissionMode":"default","sessionId":"lab-session"}
+{"type":"session-owner","accountUuid":"lab-account","organizationUuid":"lab-org","sessionId":"lab-session"}
+{"type":"atis-latch","atis":"lab-atis","sessionId":"lab-session"}

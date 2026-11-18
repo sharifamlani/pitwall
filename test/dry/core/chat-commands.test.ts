@@ -15,6 +15,7 @@ import { WorktreeCatalog } from '../../../src/core/services/WorktreeCatalog';
 import { SessionImportService } from '../../../src/core/services/SessionImportService';
 import { WorkspaceTreeItem } from '../../../src/core/providers/WorkspacesTreeProvider';
 import { registerChatCommands } from '../../../src/core/commands/chat';
+import { registerNavigationCommands } from '../../../src/core/commands/navigation';
 import { registerSessionImportCommands } from '../../../src/core/commands/sessionImport';
 import { registerRepositoryCommands } from '../../../src/core/commands/repository';
 import { ForkResult, HarnessSession, NativeUiOpenResult } from '../../../src/core/harness/types';
@@ -23,6 +24,7 @@ import {
   fakeAdapter,
   fakeNativeUi,
   FakeTerminal,
+  FakeTreeView,
   makeStorage,
   runCommand,
   sessionRecord,
@@ -36,7 +38,15 @@ beforeEach(() => stub.__reset());
 
 const UUID = /^[0-9a-f-]{36}$/;
 
-function setup(t: { after(fn: () => void): void }, options: { notInstalled?: HarnessId[] } = {}) {
+function setup(
+  t: { after(fn: () => void): void },
+  /** `surface` is the defaultSessionSurface setting; null leaves it unset (the shipped default). */
+  options: { notInstalled?: HarnessId[]; surface?: 'terminal' | 'ui' | null } = {}
+) {
+  const surface = options.surface === undefined ? 'terminal' : options.surface;
+  if (surface) {
+    stub.__setConfiguration('defaultSessionSurface', surface);
+  }
   const storage: StorageService = makeStorage();
   const repo = storage.addRepository('demo', '/work/demo');
   const folderRepo = storage.addRepository('scratch', '/work/scratch');
@@ -381,6 +391,116 @@ test('with the UI as default, a click uses the UI when it can and the terminal o
   await runCommand('pitwall.openChatInTerminal', f.row(inUi));
   assert.ok(f.claudeUi.surfaces.calls.includes('close:claude-ui'));
   assert.equal(f.lastTerminal().sent[0], 'claude --resume claude-ui');
+});
+
+test('with no setting, a click on a linked chat opens it in the UI (Q3)', async (t) => {
+  const f = setup(t, { surface: null });
+  const chat = f.chat('claude', 'Linked', 'claude-1');
+  await runCommand('pitwall.openChat', f.row(chat));
+  assert.deepEqual(f.claudeUi.opened, [{ sessionId: 'claude-1', cwd: f.main.path }]);
+  assert.equal(stub.window.terminals.length, 0);
+});
+
+const SDK_REFUSAL = "Claude Code's chat panel can't resume chats made with claude -p or the SDK; opening it in a terminal.";
+
+test('an sdk-cli chat opens in the terminal even with surface ui (Q23)', async (t) => {
+  const f = setup(t, { surface: 'ui' });
+  f.claudeUi.nativeUi.resumeRefusal = async (sessionId) => (sessionId.startsWith('sdk-') ? SDK_REFUSAL : undefined);
+  const sdk = f.chat('claude', 'From claude -p', 'sdk-1');
+  const other = f.chat('claude', 'Also from the SDK', 'sdk-2');
+
+  await runCommand('pitwall.openChat', f.row(sdk));
+  assert.equal(f.lastTerminal().sent[0], 'claude --resume sdk-1');
+  assert.deepEqual(f.claudeUi.opened, [], 'never a blank "Untitled" tab');
+  assert.ok(!shown(SDK_REFUSAL), 'a click falls back with no message');
+
+  await runCommand('pitwall.openClaudeUi', f.row(other));
+  assert.ok(shown(SDK_REFUSAL), 'the explicit command says why');
+  assert.equal(f.lastTerminal().sent[0], 'claude --resume sdk-2');
+  assert.deepEqual(f.claudeUi.opened, []);
+});
+
+/**
+ * The list keyboard over a fake workbench list: `list.select` selects the row
+ * and fires its command without awaiting it, as the workbench does (QA B1).
+ */
+function listKeys(row: WorkspaceTreeItem) {
+  const view = vscode.window.createTreeView('pitwall.workspacesView', {
+    treeDataProvider: { getChildren: async () => [] } as never,
+  }) as unknown as FakeTreeView;
+  const files = vscode.window.createTreeView('pitwall.filesView', {
+    treeDataProvider: { getChildren: async () => [] } as never,
+  }) as unknown as FakeTreeView;
+  registerNavigationCommands({ subscriptions: [] } as never, {
+    workspacesProvider: {} as never,
+    workspacesTreeView: view as never,
+    filesTreeView: files as never,
+  });
+  const events: string[] = [];
+  let fired: Promise<unknown> | undefined;
+  vscode.commands.registerCommand('list.focusDown', () => undefined);
+  vscode.commands.registerCommand('list.select', () => {
+    view.__select([row]);
+    fired = vscode.commands.executeCommand('pitwall.openChat', row);
+  });
+  vscode.commands.registerCommand('pitwall.workspacesView.focus', () => void events.push('focus list'));
+  return {
+    events,
+    /** Ctrl+↓, then the row command the fake list fired. */
+    press: async () => {
+      fired = undefined;
+      await runCommand('pitwall.list.moveDownAndOpen');
+      await fired;
+    },
+  };
+}
+
+test('Ctrl+Down sets the marker and the row command, fired without await by a fake list.select, refocuses pitwall.workspacesView after the UI open', async (t) => {
+  const f = setup(t, { surface: 'ui' });
+  const chat = f.chat('claude', 'Next', 'claude-1');
+  const keys = listKeys(f.row(chat));
+  const open = f.claudeUi.nativeUi.openSession;
+  f.claudeUi.nativeUi.openSession = async (sessionId, cwd) => {
+    keys.events.push('open start');
+    // The webview takes focus with its tab, a moment into the open (S1b).
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    keys.events.push('open done');
+    return open(sessionId, cwd);
+  };
+
+  await keys.press();
+  assert.deepEqual(keys.events, ['open start', 'open done', 'focus list'], 'refocused once, after the awaited open');
+  assert.deepEqual(f.claudeUi.opened.map((entry) => entry.sessionId), ['claude-1']);
+});
+
+test('the marker is consumed once: a later plain click does not refocus', async (t) => {
+  const f = setup(t, { surface: 'ui' });
+  const first = f.chat('claude', 'First', 'claude-1');
+  const second = f.chat('claude', 'Second', 'claude-2');
+  const keys = listKeys(f.row(first));
+
+  await keys.press();
+  assert.deepEqual(keys.events, ['focus list']);
+  await runCommand('pitwall.openChat', f.row(second));
+  assert.deepEqual(f.claudeUi.opened.map((entry) => entry.sessionId), ['claude-1', 'claude-2']);
+  assert.deepEqual(keys.events, ['focus list'], 'a click lets the chat take focus');
+});
+
+test('terminal path calls show(true) only when the marker is set', async (t) => {
+  const f = setup(t, { surface: 'terminal' });
+  const first = f.chat('claude', 'First', 'claude-1');
+  const second = f.chat('claude', 'Second', 'claude-2');
+  const keys = listKeys(f.row(first));
+
+  await keys.press();
+  const keyed = f.lastTerminal();
+  assert.equal(keyed.sent[0], 'claude --resume claude-1');
+  assert.equal(stub.window.__focusedTerminal, undefined, 'Ctrl+Down keeps the list focused');
+  assert.deepEqual(keys.events, [], 'show(true) is enough; no refocus');
+
+  await runCommand('pitwall.openChat', f.row(second));
+  assert.equal(stub.window.__focusedTerminal, f.lastTerminal(), 'a click focuses its terminal');
+  assert.notEqual(f.lastTerminal(), keyed);
 });
 
 test('a new UI session is a placeholder the importer links; a failed open leaves no row behind', async (t) => {

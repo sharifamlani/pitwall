@@ -164,6 +164,27 @@ test('live states come from the transcript tail plus the waiting reason from cla
   assert.equal(agentCalls, 1, 'no session IDs means no agents call');
 });
 
+test("Claude's panel resumes only cli and claude-vscode chats; sdk-cli and unknown ones get the terminal explanation (Q23)", async (t) => {
+  const profile = claudeProfile(t);
+  const repo = profile.dir('repo');
+  const cases: [string, string | undefined, string | undefined][] = [
+    ['from-terminal', 'cli', undefined],
+    ['from-panel', 'claude-vscode', undefined],
+    ['from-sdk', 'sdk-cli', "Claude Code's chat panel can't resume chats made with claude -p or the SDK; opening it in a terminal."],
+    ['no-entrypoint', undefined, "Claude Code's chat panel can't resume chats made with claude -p or the SDK; opening it in a terminal."],
+  ];
+  for (const [sessionId, entrypoint] of cases) {
+    // The entrypoint is on every conversation line; the head decides.
+    profile.write(sessionId, repo, [{ ...entry.user('Go'), ...(entrypoint ? { entrypoint } : {}) }, entry.assistant('Done')]);
+  }
+  const ui = new ClaudeHarness().nativeUi;
+  assert.ok(ui.resumeRefusal, 'Claude\'s UI says which chats it cannot resume');
+  for (const [sessionId, entrypoint, refusal] of cases) {
+    assert.equal(await ui.resumeRefusal!(sessionId), refusal, `${entrypoint}`);
+  }
+  assert.equal(await ui.resumeRefusal!('no-such-session'), undefined, 'a missing transcript is left to the resumable check');
+});
+
 test('a relocated entry moves the session to its new cwd', async (t) => {
   const profile = claudeProfile(t);
   const repo = profile.dir('repo');

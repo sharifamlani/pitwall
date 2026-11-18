@@ -853,6 +853,8 @@ module.exports = {
     },
     /** The default terminal profile's shell; tests switch it with `__setShell`. */
     shell: '/bin/bash',
+    /** The app's link scheme: `vscode` in VS Code, `cursor` in Cursor. Tests may assign it. */
+    uriScheme: 'vscode',
   },
   commands: {
     registerCommand: (id, handler) => {
@@ -926,6 +928,7 @@ module.exports = {
     defaultPidDelayMs = undefined;
     lateShellIntegration = false;
     openExternalResult = true;
+    module.exports.env.uriScheme = 'vscode';
     nextTerminalPid = 4100;
     module.exports.workspace.workspaceFolders = [];
     module.exports.workspace.workspaceFile = undefined;
