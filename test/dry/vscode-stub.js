@@ -352,6 +352,7 @@ const activeTerminalListeners = new Set();
 const executionStartListeners = new Set();
 const tabChangeListeners = new Set();
 const tabGroupChangeListeners = new Set();
+const activeTextEditorListeners = new Set();
 const windowStateListeners = new Set();
 const configurationChangeListeners = new Set();
 const treeViews = [];
@@ -490,6 +491,13 @@ module.exports = {
     __focusTextEditor: (editor) => {
       activeTextEditor = editor;
       focusedTerminal = undefined;
+      for (const listener of [...activeTextEditorListeners]) {
+        listener(editor);
+      }
+    },
+    onDidChangeActiveTextEditor: (listener) => {
+      activeTextEditorListeners.add(listener);
+      return { dispose: () => activeTextEditorListeners.delete(listener) };
     },
     /** Records each item; `shown` follows show()/hide(), as in the status bar. */
     createStatusBarItem: (alignment, priority) => {
@@ -919,6 +927,7 @@ module.exports = {
       shellIntegrationListeners,
       tabChangeListeners,
       tabGroupChangeListeners,
+      activeTextEditorListeners,
       windowStateListeners,
       configurationChangeListeners,
       extensionChangeListeners,

@@ -147,28 +147,35 @@ test('a Claude tab dragged to another group stays bound, whether VS Code reports
   const service = claudeUiSurfaces(world.options);
   world.groups.push({ isActive: false, activeTab: undefined, tabs: [] });
   const [left, right] = world.groups;
-  /** A move across groups closes the tab in one group and opens a new Tab object in the other. */
-  const moveTo = (tab: FakeTab, from: FakeGroup, to: FakeGroup): FakeTab => {
-    from.tabs = from.tabs.filter((candidate) => candidate !== tab);
-    from.activeTab = undefined;
+  /** The moved copy: a new Tab object in the target group. */
+  const openCopy = (tab: FakeTab, to: FakeGroup): FakeTab => {
     const moved: FakeTab = { label: tab.label, input: claudeTab(), isActive: true };
     to.tabs.push(moved);
     to.activeTab = moved;
     return moved;
+  };
+  const remove = (tab: FakeTab, from: FakeGroup) => {
+    from.tabs = from.tabs.filter((candidate) => candidate !== tab);
+    from.activeTab = undefined;
   };
 
   service.expect('dragged', 'Dragged chat');
   const tab = world.open(claudeTab(), 'Dragged chat');
   assert.ok(service.isOpen('dragged'));
 
-  const once = moveTo(tab, left, right);
+  const once = openCopy(tab, right);
+  remove(tab, left);
   world.emit([once], [], [tab]);
   assert.ok(service.isOpen('dragged'), 'one event (closed + opened): still bound');
 
-  const twice = moveTo(once, right, left);
-  world.emit([], [], [once]);
+  // VS Code moves an editor across groups by opening it in the target, then
+  // closing it in the source (EditorGroupView.doMoveOrCopyEditorAcrossGroups),
+  // so two events arrive open first. A close before the open does not happen.
+  const twice = openCopy(once, left);
   world.emit([twice]);
-  assert.ok(service.isOpen('dragged'), 'two events: bound again once the moved tab appears');
+  remove(once, right);
+  world.emit([], [], [once]);
+  assert.ok(service.isOpen('dragged'), 'two events, open then close: still bound');
 
   left.tabs = [];
   left.activeTab = undefined;
