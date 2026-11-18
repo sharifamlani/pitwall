@@ -8,7 +8,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'child_process';
+import { ChildProcess, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -77,9 +77,14 @@ async function runAsChild(): Promise<void> {
   process.stdout.write(JSON.stringify({ pid: process.pid, nonces } satisfies ChildResult));
 }
 
+/** Children still running; a test that fails or times out kills its own, so the file never hangs. */
+const running = new Set<ChildProcess>();
+
 function runChild(env: Record<string, string>): Promise<ChildResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [__filename], { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    running.add(child);
+    child.on('exit', () => running.delete(child));
     let out = '';
     let err = '';
     child.stdout.on('data', (chunk) => (out += chunk));
@@ -119,6 +124,7 @@ if (process.env.PITWALL_CLAIM_CHILD) {
   });
 } else {
   test('2 processes × 20 requests: each claimed exactly once', { timeout: 10_000 }, async (t) => {
+    t.after(() => running.forEach((child) => child.kill()));
     const dir = tempDir(t);
     const folder = tempDir(t);
     const sender = new HandoffInbox(dir, { pid: process.pid, folder: undefined });
@@ -139,6 +145,7 @@ if (process.env.PITWALL_CLAIM_CHILD) {
   });
 
   test('a claiming process and an expiring process × 20 requests: each ends claimed or expired, never both', { timeout: 10_000 }, async (t) => {
+    t.after(() => running.forEach((child) => child.kill()));
     const dir = tempDir(t);
     const folder = tempDir(t);
     const sender = new HandoffInbox(dir, { pid: process.pid, folder: undefined });
