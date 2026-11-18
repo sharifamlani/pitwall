@@ -1,8 +1,17 @@
 import * as vscode from 'vscode';
-import { NativeUiSurfaceTracker } from '../types';
+import { NativeUiSurfaceTracker, NativeUiTabGroupState } from '../types';
+import { logOperation } from '../../services/OperationLog';
 
 /** How long an expected tab can take to appear before the expectation expires. */
 const PENDING_TTL_MS = 30_000;
+/** How long a serial open waits for its tab before moving on with the session unbound (Q5). */
+export const SERIAL_BIND_TIMEOUT_MS = 5_000;
+/**
+ * A move opens the copy in the target group, then closes the original. A
+ * close takes the binding to a copy that opened this recently, so a Claude
+ * tab the user opened long before is never taken for the moved one.
+ */
+const MOVE_WINDOW_MS = 2_000;
 
 interface PendingSurface {
   sessionId: string;
@@ -11,16 +20,34 @@ interface PendingSurface {
 }
 
 /**
- * What identifies a tab across Tab objects: its title and its input's kind.
- * VS Code hands out a new Tab object when it rebuilds its tab model (a group
- * added or removed) and when a tab moves to another group. A move opens the
- * copy in the target group before closing the original, so the copy is
- * always there when the close arrives.
+ * What identifies a tab across Tab objects: its place, its title and its
+ * input's kind. A tab moved to another group is a new Tab object: the
+ * workbench opens the copy in the target group, then closes the original.
+ * The editor also re-sends its whole tab model, replacing every Tab object
+ * and firing a tab-group event only: VS Code when a group is added or
+ * removed, and Cursor (3.14) also on every change of a group's active editor,
+ * which lands between a move's open and its close.
  */
-function tabKey(tab: vscode.Tab): string {
+/** The title a Claude webview shows until it sets its own: a moved tab's copy comes up with it. */
+const DEFAULT_TITLE = 'Claude Code';
+
+/** A copy's title is the original's, or the default one a fresh webview shows. */
+function sameOrDefaultTitle(copy: string, original: string): boolean {
+  return copy === original || copy.trim() === DEFAULT_TITLE;
+}
+
+function tabKind(tab: vscode.Tab): string {
   const input = tab.input as { viewType?: unknown; uri?: { toString(): string } } | undefined;
-  const kind = typeof input?.viewType === 'string' ? input.viewType : input?.uri?.toString() ?? '';
-  return `${tab.label}\u0000${kind}`;
+  return typeof input?.viewType === 'string' ? input.viewType : input?.uri?.toString() ?? '';
+}
+
+/** The input's kind as the trace prints it: a view type, never a file path. */
+function traceKind(tab: vscode.Tab): string {
+  const input = tab.input as { viewType?: unknown; uri?: unknown } | undefined;
+  if (typeof input?.viewType === 'string') {
+    return `${input.uri ? 'custom' : 'webview'}:${input.viewType}`;
+  }
+  return input?.uri ? 'text' : 'other';
 }
 
 export interface NativeUiTabSurfaceOptions {
@@ -44,6 +71,20 @@ export interface NativeUiTabSurfaceOptions {
   onDidChangeTabGroups?: (
     listener: (event: vscode.TabGroupChangeEvent) => void
   ) => vscode.Disposable;
+  /** The clock and timer behind the 5 s bind wait and the move window; tests inject their own. */
+  now?: () => number;
+  schedule?: (fn: () => void, ms: number) => { dispose(): void };
+  /** Where `[Pitwall] tab bound ...` goes; the Operations log by default. */
+  log?: (line: string) => void;
+}
+
+/** The session a serial open is waiting to see a tab for. */
+interface Claim {
+  sessionId: string;
+  tab: vscode.Tab | undefined;
+  arrived: () => void;
+  /** Set when its wait timed out: a tab arriving later is still its, until then. */
+  lateUntil?: number;
 }
 
 /**
@@ -63,6 +104,33 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   private readonly sessionTabs = new Map<string, Set<vscode.Tab>>();
   private pending: PendingSurface[] = [];
   private lastActiveSessionId: string | undefined;
+  /** The serial open waiting for a new tab, if any (one at a time). */
+  private claim: Claim | undefined;
+  /** Opens whose 5 s wait ran out, oldest first: a late tab belongs to the oldest of them, not the next open. */
+  private late: Claim[] = [];
+  /** Serial opens run one after another, never interleaved. */
+  private serialQueue: Promise<unknown> = Promise.resolve();
+  /** When an unbound Claude tab appeared, so a move's copy can be told from an older tab. */
+  private readonly openedAt = new WeakMap<vscode.Tab, { at: number; seq: number }>();
+  private openSeq = 0;
+  /**
+   * Bindings of tabs that closed with no copy yet: a move can report the close
+   * before the open. A Claude tab of the same kind opening within the move
+   * window takes the binding.
+   */
+  private released: { sessionId: string; kind: string; label: string; at: number }[] = [];
+  /**
+   * Every Claude tab as of the last tab or group event, per group in editor
+   * order. A re-sent tab model replaces every Tab object but keeps the order,
+   * so a tab's place here finds its replacement.
+   */
+  private layout: vscode.Tab[][] = [];
+  /** `pitwall.dev.traceTabs`: log every raw event and each bind decision. Off by default. */
+  private tracing = false;
+  /** Every Tab object (any kind) as of the last event, while tracing: tells a re-send from a plain group event. */
+  private traceSeen = new Set<vscode.Tab>();
+  /** `whenTabMoved` calls waiting for one of this harness's tabs to close. */
+  private readonly moveWaiters = new Set<() => void>();
 
   private readonly isUiTab: (tab: vscode.Tab) => boolean;
   private readonly sessionIdForTab:
@@ -72,8 +140,19 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   private readonly getTabGroups: () => readonly vscode.TabGroup[];
   private readonly tabListener: vscode.Disposable;
   private readonly groupListener: vscode.Disposable;
+  private readonly now: () => number;
+  private readonly schedule: (fn: () => void, ms: number) => { dispose(): void };
+  private readonly log: (line: string) => void;
 
   constructor(options: NativeUiTabSurfaceOptions) {
+    this.now = options.now ?? (() => Date.now());
+    this.schedule =
+      options.schedule ??
+      ((fn, ms) => {
+        const timer = setTimeout(fn, ms);
+        return { dispose: () => clearTimeout(timer) };
+      });
+    this.log = options.log ?? logOperation;
     this.isUiTab = options.isUiTab;
     this.sessionIdForTab = options.sessionIdForTab;
     this.matchByLabel = options.matchByLabel ?? false;
@@ -88,7 +167,9 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       options.onDidChangeTabGroups ??
       ((listener) => tabGroups.onDidChangeTabGroups(listener))
     )(() => {
+      this.traceGroupEvent();
       const mappingChanged = this.reconcile();
+      this.layout = this.uiTabsByGroup();
       if (this.updateActiveSession() || mappingChanged) {
         this._onDidChange.fire();
       }
@@ -102,6 +183,122 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       }
     }
     this.lastActiveSessionId = this.activeSessionId();
+    this.layout = this.uiTabsByGroup();
+  }
+
+  /**
+   * `pitwall.dev.traceTabs`: toggle the tab trace. While on, every raw tab and
+   * tab-group event (group, index, label, input kind; for a group event,
+   * how many Tab objects it replaced) and each bind or release decision with
+   * its reason goes to the log as `[Pitwall] trace ...`.
+   */
+  toggleTrace(): boolean {
+    this.tracing = !this.tracing;
+    this.traceSeen = this.tracing ? this.allTabs() : new Set();
+    this.log(`[Pitwall] tab trace ${this.tracing ? 'on' : 'off'}`);
+    return this.tracing;
+  }
+
+  /**
+   * Resolve true when one of this harness's tabs closes, the last step of a
+   * move (the copy opens first), or false after `timeoutMs`. Side by side
+   * arms it before each move so the next waits for this one to land.
+   */
+  whenTabMoved(timeoutMs: number): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      const done = (landed: boolean) => {
+        this.moveWaiters.delete(waiter);
+        timer.dispose();
+        resolve(landed);
+      };
+      const waiter = () => done(true);
+      const timer = this.schedule(() => done(false), timeoutMs);
+      this.moveWaiters.add(waiter);
+    });
+  }
+
+  /**
+   * Open sessions one after another and bind each new tab to the session just
+   * requested (rows 4.3, 4.4). `open` opens or reveals a session; while it
+   * runs, the next new Claude tab is that session's, so a title never has to
+   * tell them apart (new chats are all "Claude Code"). A session that already
+   * has a tab is only revealed. Each open waits at most 5 s for its tab, then
+   * moves on with the session unbound. Stops before the next open on cancel.
+   * `open` may resolve false when nothing opened, which skips the wait.
+   */
+  openSerially(
+    ids: string[],
+    open: (sessionId: string) => Promise<unknown>,
+    token?: vscode.CancellationToken
+  ): Promise<Map<string, vscode.Tab | undefined>> {
+    const run = this.serialQueue.then(() => this.openEach(ids, open, token));
+    this.serialQueue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async openEach(
+    ids: string[],
+    open: (sessionId: string) => Promise<unknown>,
+    token?: vscode.CancellationToken
+  ): Promise<Map<string, vscode.Tab | undefined>> {
+    const result = new Map<string, vscode.Tab | undefined>();
+    for (const sessionId of ids) {
+      if (token?.isCancellationRequested) {
+        break;
+      }
+      if (this.isOpen(sessionId)) {
+        await open(sessionId);
+        result.set(sessionId, this.sessionTabs.get(sessionId)?.values().next().value);
+        continue;
+      }
+      let arrived: () => void = () => undefined;
+      const tabArrived = new Promise<void>((resolve) => (arrived = resolve));
+      const claim: Claim = { sessionId, tab: undefined, arrived };
+      this.claim = claim;
+      try {
+        const opened = await open(sessionId);
+        if (!claim.tab && opened !== false && !token?.isCancellationRequested) {
+          await this.waitFor(tabArrived, token);
+          if (!claim.tab) {
+            claim.lateUntil = this.now() + PENDING_TTL_MS;
+            this.late.push(claim);
+          }
+        }
+      } finally {
+        this.claim = undefined;
+      }
+      result.set(sessionId, claim.tab);
+    }
+    return result;
+  }
+
+  /** Resolve when the tab arrives, the wait runs out, or the token cancels. */
+  private waitFor(arrived: Promise<void>, token?: vscode.CancellationToken): Promise<void> {
+    return new Promise<void>((resolve) => {
+      let subscription: { dispose(): void } | undefined;
+      const timer = this.schedule(() => finish(), SERIAL_BIND_TIMEOUT_MS);
+      const finish = () => {
+        timer.dispose();
+        subscription?.dispose();
+        resolve();
+      };
+      subscription = token?.onCancellationRequested(() => finish());
+      void arrived.then(finish);
+    });
+  }
+
+  /** Every tab group as the dump script reads it: labels, pinned and active flags, and the bound session. */
+  describeTabs(): NativeUiTabGroupState[] {
+    return this.getTabGroups().map((group, index) => ({
+      index,
+      isActive: group.isActive,
+      tabs: group.tabs.map((tab) => ({
+        label: tab.label,
+        pinned: Boolean((tab as { isPinned?: boolean }).isPinned),
+        active: tab.isActive,
+        sessionId: this.tabs.get(tab),
+      })),
+    }));
   }
 
   expect(sessionId: string, label: string): void {
@@ -207,26 +404,189 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   }
 
   private handleTabChange(event: vscode.TabChangeEvent): void {
+    this.traceTabEvent(event);
     this.prunePending();
-    // Follow rebuilt and moved Tab objects first (a refresh fires no tab
-    // event): a moved tab stays bound (D16), and a closed tab is released
-    // whichever object VS Code names.
-    let mappingChanged = this.reconcile();
+    const now = this.now();
+    let mappingChanged = false;
 
-    for (const tab of event.closed) {
-      if (this.unmapTab(tab)) {
-        mappingChanged = true;
+    // A copy that opens unbound may be a moved tab's new Tab object: note when.
+    for (const tab of event.opened) {
+      if (this.isUiTab(tab) && !this.tabs.has(tab)) {
+        this.openedAt.set(tab, { at: now, seq: ++this.openSeq });
       }
+    }
+    // A closed tab is released, unless a moved copy opened just before it:
+    // then the binding follows the copy (D16). Before the group sweep below,
+    // which would otherwise take a closed tab for a rebuilt one.
+    for (const tab of event.closed) {
+      const sessionId = this.tabs.get(tab);
+      if (sessionId === undefined) {
+        continue;
+      }
+      const copy = this.movedCopy(tab, now);
+      this.unmapTab(tab);
+      if (copy) {
+        this.mapTab(copy, sessionId);
+        this.decide('follow', sessionId, copy, 'moved copy');
+      } else {
+        this.released.push({ sessionId, kind: tabKind(tab), label: tab.label, at: now });
+        this.decide('release', sessionId, tab, `closed; a copy opening within ${MOVE_WINDOW_MS} ms takes it`);
+      }
+      mappingChanged = true;
+    }
+    // Follow re-sent Tab objects (a re-send fires no tab event).
+    mappingChanged = this.reconcile(event) || mappingChanged;
+
+    for (const tab of event.opened) {
+      mappingChanged = this.claimTab(tab) || mappingChanged;
     }
     for (const tab of [...event.opened, ...event.changed]) {
       mappingChanged =
         this.associate(tab, this.pending.length === 1) || mappingChanged;
     }
+    for (const tab of event.opened) {
+      mappingChanged = this.rebindReleased(tab, now) || mappingChanged;
+    }
 
+    this.layout = this.uiTabsByGroup();
     const activeChanged = this.updateActiveSession();
     if (mappingChanged || activeChanged) {
       this._onDidChange.fire();
     }
+    if (event.closed.some((tab) => this.isUiTab(tab))) {
+      for (const waiter of [...this.moveWaiters]) {
+        waiter();
+      }
+    }
+  }
+
+  /** A serial open's new tab binds to the session it requested. */
+  private claimTab(tab: vscode.Tab): boolean {
+    const now = this.now();
+    this.late = this.late.filter((entry) => !entry.tab && (entry.lateUntil ?? 0) > now);
+    const claim = this.late[0] ?? (this.claim?.tab ? undefined : this.claim);
+    if (!claim || claim.tab || !this.isUiTab(tab) || this.tabs.has(tab) || this.sessionIdForTab?.(tab)) {
+      return false;
+    }
+    claim.tab = tab;
+    this.pending = this.pending.filter((entry) => entry.sessionId !== claim.sessionId);
+    this.mapTab(tab, claim.sessionId);
+    this.logBound(claim.sessionId, tab, claim === this.claim ? 'serial open' : 'serial open, late');
+    claim.arrived();
+    return true;
+  }
+
+  /**
+   * A tab that opens just after a bound one closed (a move reported close
+   * first) takes that binding. `unique` (a tab that appeared in a re-sent
+   * model, with no open event) takes it only when no other closed binding
+   * fits it as well.
+   */
+  private rebindReleased(tab: vscode.Tab, now: number, unique = false): boolean {
+    this.released = this.released.filter((entry) => now - entry.at <= MOVE_WINDOW_MS);
+    if (!this.isUiTab(tab) || this.tabs.has(tab) || this.sessionIdForTab?.(tab)) {
+      return false;
+    }
+    const fits = (entry: (typeof this.released)[number]) =>
+      entry.kind === tabKind(tab) && sameOrDefaultTitle(tab.label, entry.label) && !this.isOpen(entry.sessionId);
+    const at = this.released.findIndex(fits);
+    if (at < 0 || (unique && this.released.filter(fits).length > 1)) {
+      return false;
+    }
+    const [entry] = this.released.splice(at, 1);
+    this.mapTab(tab, entry.sessionId);
+    this.decide('follow', entry.sessionId, tab, unique ? 'closed binding, copy in a re-sent model' : 'closed binding, copy opened after the close');
+    return true;
+  }
+
+  /**
+   * The unbound Claude tab that opened most recently, just now, of the closed
+   * tab's kind, with its title or the default one (a moved webview comes up
+   * with the default until it sets its own).
+   */
+  private movedCopy(closed: vscode.Tab, now: number): vscode.Tab | undefined {
+    const kind = tabKind(closed);
+    let best: { tab: vscode.Tab; seq: number } | undefined;
+    for (const tab of this.uiTabs()) {
+      const seen = this.openedAt.get(tab);
+      if (!seen || this.tabs.has(tab) || now - seen.at > MOVE_WINDOW_MS || tabKind(tab) !== kind || !sameOrDefaultTitle(tab.label, closed.label)) {
+        continue;
+      }
+      if (!best || seen.seq > best.seq) {
+        best = { tab, seq: seen.seq };
+      }
+    }
+    return best?.tab;
+  }
+
+  private uiTabs(): vscode.Tab[] {
+    return this.uiTabsByGroup().flat();
+  }
+
+  /** This harness's tabs, per group in editor order. */
+  private uiTabsByGroup(): vscode.Tab[][] {
+    return this.getTabGroups().map((group) => group.tabs.filter((tab) => this.isUiTab(tab)));
+  }
+
+  private allTabs(): Set<vscode.Tab> {
+    return new Set(this.getTabGroups().flatMap((group) => group.tabs));
+  }
+
+  private logBound(sessionId: string, tab: vscode.Tab, reason: string): void {
+    this.log(`[Pitwall] tab bound ${sessionId.slice(0, 8)} "${tab.label}"`);
+    this.decide('bind', sessionId, tab, reason);
+  }
+
+  /** A bind, follow or release decision, while tracing. */
+  private decide(verb: 'bind' | 'follow' | 'release', sessionId: string, tab: vscode.Tab, reason: string): void {
+    if (this.tracing) {
+      this.log(`[Pitwall] trace ${verb} ${sessionId.slice(0, 8)} "${tab.label}" (${reason})`);
+    }
+  }
+
+  /** Where a tab is now, as `g<group>:<index>`; `g?` once it is gone. */
+  private placeOf(tab: vscode.Tab): string {
+    const groups = this.getTabGroups();
+    for (const [g, group] of groups.entries()) {
+      const index = group.tabs.indexOf(tab);
+      if (index >= 0) {
+        return `g${g}:${index}`;
+      }
+    }
+    return 'g?';
+  }
+
+  private traceTab(tab: vscode.Tab): string {
+    const bound = this.tabs.get(tab);
+    return `${this.placeOf(tab)} "${tab.label}" ${traceKind(tab)}${bound ? ` =${bound.slice(0, 8)}` : ''}`;
+  }
+
+  /** The raw tab event, before it is handled. */
+  private traceTabEvent(event: vscode.TabChangeEvent): void {
+    if (!this.tracing) {
+      return;
+    }
+    const list = (tabs: readonly vscode.Tab[]) => `[${tabs.map((tab) => this.traceTab(tab)).join(', ')}]`;
+    this.log(`[Pitwall] trace tabs opened=${list(event.opened)} closed=${list(event.closed)} changed=${list(event.changed)}`);
+    this.traceSeen = this.allTabs();
+  }
+
+  /**
+   * The raw tab-group event, before it is handled: how many of the Tab
+   * objects seen at the last event it replaced (by identity), and every tab
+   * per group.
+   */
+  private traceGroupEvent(): void {
+    if (!this.tracing) {
+      return;
+    }
+    const now = this.allTabs();
+    const replaced = [...this.traceSeen].filter((tab) => !now.has(tab)).length;
+    const groups = this.getTabGroups();
+    const active = groups.findIndex((group) => group.isActive);
+    const tabs = groups.flatMap((group) => group.tabs.map((tab) => this.traceTab(tab)));
+    this.log(`[Pitwall] trace groups n=${groups.length} active=${active} replaced=${replaced}/${this.traceSeen.size} tabs=[${tabs.join(', ')}]`);
+    this.traceSeen = now;
   }
 
   private associate(tab: vscode.Tab, allowFallback: boolean): boolean {
@@ -244,7 +604,11 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       if (pendingIndex >= 0) {
         this.pending.splice(pendingIndex, 1);
       }
-      return this.mapTab(tab, exact);
+      const bound = this.mapTab(tab, exact);
+      if (bound) {
+        this.logBound(exact, tab, 'session id on the tab');
+      }
+      return bound;
     }
 
     if (this.tabs.has(tab) || !this.matchByLabel || this.pending.length === 0) {
@@ -264,6 +628,7 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       return false;
     }
     this.mapTab(tab, pending.sessionId);
+    this.logBound(pending.sessionId, tab, match >= 0 ? 'title matches the expected chat' : 'the only expected chat');
     return true;
   }
 
@@ -298,31 +663,87 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   }
 
   /**
-   * Keep the map on the Tab objects VS Code has now. When it rebuilds its tab
-   * model (a group added or removed) every Tab object is replaced and only a
-   * group event fires, so a later close names an object the map never saw and
-   * the binding would outlive its tab. A mapped tab that is gone moves to the
-   * unmapped UI tab with the same title and kind (the rebuilt or moved copy);
-   * with none, the tab closed and its binding is released.
+   * Keep every per-tab fact on the Tab objects the editor has now. A re-sent
+   * tab model replaces every Tab object and fires a group event only (see
+   * the top of this file), so each Claude tab that vanished is paired with
+   * its replacement, which takes its binding and its move stamp. Cursor
+   * re-sends between a move's open and its close: without the stamp, the
+   * close would find no moved copy and drop the binding (live F1).
+   *
+   * Pairing, in order: by place in the editor order when the number of
+   * Claude tabs is unchanged (a re-send keeps the order, and new chats all
+   * share one title, so a title cannot tell them apart); else by place in
+   * the group, for each group whose count is unchanged; else by title and
+   * kind, when exactly one vanished and one new tab share them. A bound tab
+   * left unpaired is released into the move window, where a copy arriving
+   * later (or a new tab of this re-send that fits it alone) takes it.
+   *
+   * On a tab event, the tabs it opened and closed are its own business, not
+   * a re-send's: they are left to `handleTabChange`.
    */
-  private reconcile(): boolean {
-    if (this.tabs.size === 0) {
+  private reconcile(event?: vscode.TabChangeEvent): boolean {
+    const previous = this.layout;
+    const current = this.uiTabsByGroup();
+    const present = new Set(current.flat());
+    const closed = new Set(event?.closed ?? []);
+    const opened = new Set(event?.opened ?? []);
+    const gone = [...new Set([...previous.flat(), ...this.tabs.keys()])].filter((tab) => !present.has(tab) && !closed.has(tab));
+    if (gone.length === 0) {
       return false;
     }
-    const current = this.getTabGroups().flatMap((group) => [...group.tabs]);
-    const present = new Set(current);
+    const before = new Set(previous.flat());
+    const fresh = new Set(current.flat().filter((tab) => !before.has(tab) && !opened.has(tab)));
+    const pairs = new Map<vscode.Tab, { tab: vscode.Tab; by: string }>();
+    const pair = (old: vscode.Tab, replacement: vscode.Tab | undefined, by: string) => {
+      if (replacement && !present.has(old) && fresh.has(replacement) && !pairs.has(old)) {
+        pairs.set(old, { tab: replacement, by });
+        fresh.delete(replacement);
+      }
+    };
+    if (previous.flat().length === current.flat().length) {
+      const now = current.flat();
+      previous.flat().forEach((old, place) => pair(old, now[place], 'place'));
+    } else if (previous.length === current.length) {
+      previous.forEach((group, g) => {
+        if (group.length === current[g].length) {
+          group.forEach((old, index) => pair(old, current[g][index], 'place in group'));
+        }
+      });
+    }
+    const key = (tab: vscode.Tab) => `${tabKind(tab)}\u0000${tab.label}`;
+    const unpaired = gone.filter((tab) => !pairs.has(tab));
+    for (const old of unpaired) {
+      const sameKey = (tab: vscode.Tab) => key(tab) === key(old);
+      const candidates = [...fresh].filter(sameKey);
+      if (candidates.length === 1 && unpaired.filter(sameKey).length === 1) {
+        pair(old, candidates[0], 'title');
+      }
+    }
+
+    const now = this.now();
     let changed = false;
-    for (const [tab, sessionId] of [...this.tabs]) {
-      if (present.has(tab)) {
+    for (const old of gone) {
+      const sessionId = this.tabs.get(old);
+      const replacement = pairs.get(old);
+      const stamp = this.openedAt.get(old);
+      if (replacement && stamp) {
+        this.openedAt.set(replacement.tab, stamp);
+      }
+      if (sessionId === undefined) {
         continue;
       }
-      const key = tabKey(tab);
-      const copy = current.find((candidate) => !this.tabs.has(candidate) && this.isUiTab(candidate) && tabKey(candidate) === key);
-      this.unmapTab(tab);
-      if (copy) {
-        this.mapTab(copy, sessionId);
-      }
+      this.unmapTab(old);
       changed = true;
+      if (replacement && !this.tabs.has(replacement.tab)) {
+        this.mapTab(replacement.tab, sessionId);
+        this.decide('follow', sessionId, replacement.tab, `re-sent model, by ${replacement.by}`);
+      } else {
+        this.released.push({ sessionId, kind: tabKind(old), label: old.label, at: now });
+        this.decide('release', sessionId, old, 'gone from a re-sent model');
+      }
+    }
+    for (const tab of fresh) {
+      changed = this.rebindReleased(tab, now, true) || changed;
     }
     return changed;
   }

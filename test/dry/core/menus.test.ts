@@ -97,7 +97,23 @@ test('the repo menu has exactly the §3c items in order, and the row shows histo
     'pitwall.revealRepository',
     'pitwall.dismissRepository',
   ];
-  assert.deepEqual(menu.map(id), expected);
+  // "Show its open chats side by side" shows only on a row with 2+ open chats (`.sideBySide`).
+  assert.deepEqual(menu.map(id), expected, 'a repo row without two open chats');
+  assert.deepEqual(
+    rowMenu.filter((entry) => shownOn(entry, 'repository.hasWindow.sideBySide') && !isInline(entry)).sort(byOrder).map(id),
+    [
+      'pitwall.newSessionInRepository',
+      'pitwall.sessionHistory',
+      'pitwall.bringItsWindowForward',
+      'pitwall.showRepoChatsSideBySide',
+      'pitwall.copyRepositoryPath',
+      'pitwall.revealRepository',
+      'pitwall.dismissRepository',
+    ],
+    'with two open chats the split item joins the window group'
+  );
+  assert.equal(title('pitwall.showRepoChatsSideBySide'), 'Show its open chats side by side');
+  assert.ok(!shownOn(rowMenu.find((entry) => entry.command === 'pitwall.showRepoChatsSideBySide')!, 'repository.hasWindow'), 'hidden below 2');
   assert.deepEqual(expected.map(title), [
     'New Claude Code session',
     'Session history…',

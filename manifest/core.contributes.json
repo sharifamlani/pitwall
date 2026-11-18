@@ -269,6 +269,28 @@
       "icon": "$(multiple-windows)"
     },
     {
+      "command": "pitwall.openRepoChats",
+      "title": "Open its chats",
+      "category": "Pitwall",
+      "icon": "$(multiple-windows)"
+    },
+    {
+      "command": "pitwall.showRepoChatsSideBySide",
+      "title": "Show its open chats side by side",
+      "category": "Pitwall",
+      "icon": "$(split-horizontal)"
+    },
+    {
+      "command": "pitwall.dev.dumpState",
+      "title": "Dump tab state (developer)",
+      "category": "Pitwall"
+    },
+    {
+      "command": "pitwall.dev.traceTabs",
+      "title": "Trace tab events (developer)",
+      "category": "Pitwall"
+    },
+    {
       "command": "pitwall.switchToWorkspace",
       "title": "Open in This Window",
       "category": "Pitwall",
@@ -1045,27 +1067,27 @@
     "view/item/context": [
       {
         "command": "pitwall.dismissRepository",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?(\\.sideBySide)?$/",
         "group": "9_destructive@9"
       },
       {
         "command": "pitwall.sessionHistoryInline",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?(\\.sideBySide)?$/",
         "group": "inline@1"
       },
       {
         "command": "pitwall.newSessionInRepositoryInline",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?(\\.sideBySide)?$/",
         "group": "inline@2"
       },
       {
         "command": "pitwall.newSessionInRepository",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?(\\.sideBySide)?$/",
         "group": "1_session@1"
       },
       {
         "command": "pitwall.sessionHistory",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?(\\.sideBySide)?$/",
         "group": "1_session@2"
       },
       {
@@ -1075,17 +1097,22 @@
       },
       {
         "command": "pitwall.bringItsWindowForward",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)\\.hasWindow$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)\\.hasWindow(\\.sideBySide)?$/",
         "group": "1_session@3"
       },
       {
+        "command": "pitwall.showRepoChatsSideBySide",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)\\.hasWindow\\.sideBySide$/",
+        "group": "1_session@4"
+      },
+      {
         "command": "pitwall.copyRepositoryPath",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?(\\.sideBySide)?$/",
         "group": "2_path@1"
       },
       {
         "command": "pitwall.revealRepository",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?(\\.sideBySide)?$/",
         "group": "2_path@2"
       },
       {
@@ -1343,6 +1370,22 @@
       },
       {
         "command": "pitwall.bringItsWindowForward",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openRepoChats",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.showRepoChatsSideBySide",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.dev.dumpState",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.dev.traceTabs",
         "when": "false"
       },
       {

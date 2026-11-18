@@ -11,6 +11,11 @@ import { canonicalPath, canonicalRoot, nativePath, samePath } from '../utils/pat
 import { formatRelativeTime } from '../utils/text';
 import { commandRegistrar, importNativeSession, withProgress } from './common';
 import type { ChatRouter } from '../windows/ChatRouter';
+import { DumpDeps, writeDump } from '../windows/dumpState';
+import { consumeKeepListFocus } from './navigation';
+
+/** A repo click opens at most this many of its chats at once; the rest are one pick away (Q18). */
+export const REPO_CLICK_CAP = 8;
 
 /**
  * When a session was last active: the value a chat's row shows as its age
@@ -36,6 +41,18 @@ export interface RepositoryCommandDeps {
   refreshTree: () => void;
   /** The chat router, once built: "+" starts the chat in that repo's window (row 4.2). */
   router?: () => Pick<ChatRouter, 'route'> | undefined;
+  /** The repo's main-folder sidebar chats, newest first; worktree chats are not in it (Q5). */
+  mainChats?: (repo: Repository) => ChatSession[];
+  /** This window's folder: `workspaceFolders[0]`. */
+  windowFolder?: () => string | undefined;
+  /** Whether the chat's terminal or tab is open in this window. */
+  isChatOpen?: (chat: ChatSession) => boolean;
+  /** The repo's main-folder chats open in its window, newest first (the side by side set). */
+  openChatsOf?: (repo: Repository) => Promise<ChatSession[]>;
+  /** Where `pitwall.dev.dumpState` writes, and what it reads. */
+  dump?: DumpDeps;
+  /** `pitwall.dev.traceTabs`: toggle the tab tracker's trace; returns whether it is now on. */
+  traceTabs?: () => boolean;
 }
 
 /** Workspace-root commands: add, clone, dismiss, remove, refresh. */
@@ -111,6 +128,93 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
       return;
     }
     await vscode.commands.executeCommand('pitwall.newClaudeChat', repositoryRow(repo, item));
+  });
+
+  /**
+   * A repo row's click and Enter (rows 4.3, 4.4; Q5, Q18, Q22): open the
+   * repo's main-folder sidebar chats as tabs in its window, the 8 most recent
+   * and then a quick pick for the rest. Worktree chats are not opened. With
+   * all of them already open in this window it reveals only the last-open
+   * tab. A Ctrl+↓/↑ that landed on the row left its marker, which is read
+   * first: a keyboard walk only expands the row.
+   */
+  register('pitwall.openRepoChats', async (item?: WorkspaceTreeItem) => {
+    if (consumeKeepListFocus()) {
+      return;
+    }
+    const repo = await repositoryFor(item, 'open the chats of');
+    const router = deps.router?.();
+    if (!repo || !router || !deps.mainChats) {
+      return;
+    }
+    const chats = deps.mainChats(repo);
+    if (chats.length === 0) {
+      return;
+    }
+    const here = deps.windowFolder?.();
+    if (here && samePath(here, repo.rootPath) && chats.every((chat) => deps.isChatOpen?.(chat))) {
+      await router.route({ kind: 'open', chats: [chats[0]] });
+      return;
+    }
+    // Oldest first, so the newest tab opens last and is the one in front.
+    const batch = chats.slice(0, REPO_CLICK_CAP);
+    await router.route({ kind: 'openAll', chats: [...batch].reverse() });
+    const rest = chats.slice(REPO_CLICK_CAP);
+    if (rest.length === 0) {
+      return;
+    }
+    // Only once the whole batch has opened, and kept open when a Claude tab
+    // that finishes loading takes focus (live F3: it closed itself 0.8 s in).
+    const label = `Open the other ${rest.length} ${rest.length === 1 ? 'chat' : 'chats'}`;
+    const picked = await vscode.window.showQuickPick([{ label }], {
+      placeHolder: `${repo.name}: opened its ${batch.length} most recent chats`,
+      ignoreFocusOut: true,
+    });
+    if (picked) {
+      await router.route({ kind: 'openAll', chats: [...rest].reverse() });
+    }
+  });
+
+  /** "Show its open chats side by side" (Q14, Q15): the one tab move Pitwall makes, on request. */
+  register('pitwall.showRepoChatsSideBySide', async (item?: WorkspaceTreeItem) => {
+    const repo = await repositoryFor(item, 'show side by side');
+    const router = deps.router?.();
+    if (!repo || !router) {
+      return;
+    }
+    const open = (await deps.openChatsOf?.(repo)) ?? [];
+    if (open.length < 2) {
+      return;
+    }
+    await router.route({ kind: 'sideBySide', chats: open });
+  });
+
+  /**
+   * Hidden: while on, every raw tab and tab-group event and each bind or
+   * release decision goes to the Pitwall Operations output, so a live walk
+   * shows the real event order. Off by default; nothing is saved.
+   */
+  register('pitwall.dev.traceTabs', () => {
+    if (!deps.traceTabs) {
+      return;
+    }
+    const on = deps.traceTabs();
+    void vscode.window.showInformationMessage(`Pitwall: tab trace ${on ? 'on' : 'off'} (output: Pitwall Operations)`);
+  });
+
+  /** Hidden: writes this window's tab and repo state for `scripts/dump-tabs.mjs`. */
+  register('pitwall.dev.dumpState', async () => {
+    if (!deps.dump || !deps.mainChats) {
+      return undefined;
+    }
+    const mainChats = deps.mainChats;
+    return writeDump(
+      deps.dump,
+      storageService.getRepositories().map((repo) => ({
+        repo,
+        sidebarMainChatIds: mainChats(repo).flatMap((chat) => (chat.harnessSessionId ? [chat.harnessSessionId] : [])),
+      }))
+    );
   });
 
   /**

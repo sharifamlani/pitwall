@@ -171,6 +171,17 @@ export class ClaudeHarness implements HarnessAdapter {
   }
 
   /**
+   * The pid of the live process running a session, from the same
+   * `~/.claude/sessions/*.json` read (`.key` files are never opened). A
+   * terminal outside Pitwall and a panel in some window look alike here; the
+   * caller tells them apart by what Pitwall owns (Q28).
+   */
+  async liveProcessOf(sessionId: string): Promise<{ pid: number; panel: boolean } | undefined> {
+    const state = (await this.sessionsFile.snapshot()).states.get(sessionId);
+    return state ? { pid: state.pid, panel: state.entrypoint === 'claude-vscode' } : undefined;
+  }
+
+  /**
    * The sessions the folder lists as running, for the attention tick's poll
    * set (row status for closed chats). The read is shared with the
    * `getLiveStates` calls of the same tick. A torn read keeps the previous

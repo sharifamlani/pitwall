@@ -25,6 +25,10 @@ Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pit
 | **Pitwall: Open its window** | Open a repository's main folder in its own window; an open window for it is focused instead |
 | **Pitwall: Bring its window forward** | The same action, labelled this way on a repo whose window is already open |
 | **Pitwall: Open in New Window** | Open a worktree's folder in a new window (no longer on the repo menu) |
+| **Pitwall: Open its chats** | What a click or Enter on a repo row runs: opens the repo's main-folder chats as tabs in its window, the 8 most recent first and a pick for the rest. Worktree chats are not opened. A row action, not in the palette |
+| **Pitwall: Show its open chats side by side** | Puts the repo's open chats in a pane each (up to 4) in its window. Shown on a repo with two or more of its chats open. A row action, not in the palette |
+| **Pitwall: Dump tab state (developer)** | Writes this window's tab groups, bound sessions and each repo's sidebar chats to `pitwall-dump/<pid>.json` in global storage, for `scripts/dump-tabs.mjs`. Hidden from the palette |
+| **Pitwall: Trace tab events (developer)** | Toggles a trace in the **Pitwall Operations** output: every raw tab and tab-group event (group, index, label, input kind, and whether a group event replaced the Tab objects) and each tab bind or release with its reason. Off by default and after a reload; changes no settings. Hidden from the palette |
 
 ### Sessions
 
@@ -118,6 +122,7 @@ The view's title bar has **Add a repository**. Its `…` menu has:
 | **New Claude Code session in this repo** | Hover **+** | The same action as the menu item; this is the hover text |
 | **Session history for this repo: every past chat** | Hover clock icon | The same action as **Session history…**; this is the hover text |
 | **Open its window** / **Bring its window forward** | Right-click | Opens the repo's main folder in its own window, or brings that window forward when it is open; the label says which |
+| **Show its open chats side by side** | Right-click | Only on a repo with a window and two or more of its chats open there. Puts them in a pane each, up to 4; any more stay as tabs in the last pane. It is the only move Pitwall makes to a tab, and it never closes one |
 | **Copy Path** | Right-click | |
 | **Reveal in File Explorer** | Right-click | |
 | **Dismiss from Pitwall** | Right-click | Hides the repo until a new session starts in it; nothing on disk changes |

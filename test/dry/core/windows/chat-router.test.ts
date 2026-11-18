@@ -103,11 +103,17 @@ function windowOn(
     servicesUp?: () => boolean;
     /** The folders the registry has a live window on (Q26); none by default. */
     windowsAt?: string[];
-    openHere?: (chat: ChatSession, worktree: Worktree) => Promise<boolean>;
+    openHere?: (chat: ChatSession, worktree: Worktree) => Promise<boolean | 'terminal'>;
     /** Whether a chat's tab or terminal is open in this window; never, by default. */
     isOpenHere?: (chat: ChatSession) => boolean;
     /** Other windows' open sessions, as the registry's heartbeats list them. */
     openIn?: { folder: string; sessionIds: string[]; pid?: number }[];
+    /** The pid of a live process outside Pitwall running a session (a terminal the user started), if any. */
+    outsideTerminal?: (sessionId: string) => number | { pid: number; panel: boolean } | undefined;
+    /** Record the serial opens the router asks the tab tracker for. */
+    serial?: ({ ids: string[]; results?: unknown[] }[] & { recordResults?: boolean });
+    /** Record the side-by-side splits the router asks for. */
+    splits?: string[][];
   }
 ) {
   const logs: string[] = [];
@@ -142,6 +148,26 @@ function windowOn(
       return true;
     },
     timing: options.timing ?? FAST,
+    outsideTerminal: options.outsideTerminal
+      ? async (sessionId: string) => {
+          const found = options.outsideTerminal!(sessionId);
+          return typeof found === 'number' ? { pid: found } : found;
+        }
+      : undefined,
+    openSerially: options.serial
+      ? async (ids: string[], open: (id: string) => Promise<unknown>) => {
+          const entry: { ids: string[]; results?: unknown[] } = { ids: [...ids] };
+          options.serial!.push(entry);
+          const results: unknown[] = [];
+          for (const id of ids) {
+            results.push(await open(id));
+          }
+          if (options.serial!.recordResults) {
+            entry.results = results;
+          }
+        }
+      : undefined,
+    sideBySide: options.splits ? async (ids: string[]) => void options.splits!.push([...ids]) : undefined,
   });
   t.after(() => router.dispose());
   return { inbox, router, logs, routeLog, opened, started };
@@ -694,9 +720,9 @@ test('a chat open in another window routes to that window, not its launch folder
   assert.deepEqual(sender.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → ${w.wt} (open-there)`]);
 });
 
-test('a chat with no transcript yet opens here and logs no-transcript', async (t) => {
+test("a chat with no transcript yet opens here, in its row's own window, and logs no-transcript", async (t) => {
   const w = world(t);
-  const here = windowOn(t, w, tempDir(t), () => w.other, { pid: 1001, claims: w.other });
+  const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main });
   const chat = w.storage.createChat(w.mainWt.id, 'claude', 'Fresh', {});
 
   await here.router.route({ kind: 'open', chats: [chat] });
@@ -925,4 +951,222 @@ test("a cwd that spells the repo's folder differently resolves to the repo's own
   w.transcript(w.main, ID.a, [w.turn(ID.a, spelled)]);
   const { router } = windowOn(t, w, tempDir(t), () => undefined, { pid: 1001 });
   assert.equal(await router.launchFolder(w.chat('Trailing slash', ID.a, w.mainWt)), w.main);
+});
+
+// ---- Phase 4 Task 4: serial opens, side by side, the outside-terminal guard (rows 4.3, 4.4; Q28) ----
+
+const OUTSIDE = (pid: number) => `That chat is already running in another terminal (pid ${pid}). Switch to it there.`;
+
+test("a chat live in an outside terminal (a live ~/.claude/sessions pid Pitwall doesn't own) is not opened again: Pitwall warns instead", async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  w.transcript(w.other, ID.b, [w.turn(ID.b, w.other)]);
+  const here = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main, outsideTerminal: (id) => (id === ID.a || id === ID.b ? 4321 : undefined) });
+
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Same folder', ID.a, w.mainWt)] }), 'gone');
+  assert.deepEqual(here.opened, [], 'nothing opened here');
+  assert.deepEqual(warnings(OUTSIDE(4321)), [OUTSIDE(4321)]);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → elsewhere (outside-terminal)`]);
+
+  // Another folder's chat is not handed to its window either: that would start a second process.
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Other folder', ID.b, w.otherWt)] }), 'gone');
+  assert.deepEqual(calls, [], 'no window raised');
+  assert.deepEqual(requestsFor(here.inbox, dir, w.other), []);
+});
+
+test('the outside-terminal guard leaves alone a chat Pitwall owns: open here, open in another window, or a chat with no process', async (t) => {
+  const w = world(t);
+  const calls = openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  w.transcript(w.main, ID.b, [w.turn(ID.b, w.main)]);
+  w.transcript(w.main, ID.c, [w.turn(ID.c, w.main)]);
+  const live = (id: string) => (id === ID.a || id === ID.b ? 4321 : undefined);
+  const here = windowOn(t, w, tempDir(t), () => w.main, {
+    pid: 1001,
+    claims: w.main,
+    outsideTerminal: live,
+    isOpenHere: (chat) => chat.name === 'Tab here',
+    openIn: [{ folder: w.other, sessionIds: [ID.b] }],
+  });
+  await here.router.route({ kind: 'open', chats: [w.chat('Tab here', ID.a, w.mainWt)] });
+  assert.deepEqual(here.opened.map((entry) => entry.chat), ['Tab here'], 'a panel chat of this window has a live pid and still reveals');
+  await here.router.route({ kind: 'open', chats: [w.chat('There', ID.b, w.mainWt)] });
+  assert.deepEqual(calls.map((call) => call.path), [w.other], 'a panel chat of another Pitwall window routes to it (open-there)');
+  await here.router.route({ kind: 'open', chats: [w.chat('Free', ID.c, w.mainWt)] });
+  assert.deepEqual(here.opened.map((entry) => entry.chat), ['Tab here', 'Free']);
+  assert.deepEqual(shownMessages().filter((message) => message.includes('another terminal')), []);
+});
+
+test('the Claude harness reports a live pid from ~/.claude/sessions *.json and never opens a .key file', async (t) => {
+  const dir = tempDir(t, 't4-sessions-');
+  const { ClaudeSessionsFile, localPidDomain } = await import('../../../../src/harnesses/claude/ClaudeSessionsFile');
+  fs.writeFileSync(
+    path.join(dir, `${process.pid}.json`),
+    JSON.stringify({ sessionId: ID.a, pid: process.pid, pidDomain: await localPidDomain(), status: 'idle', statusUpdatedAt: 1, cwd: 'C:/x' })
+  );
+  fs.writeFileSync(path.join(dir, 'abc.key'), 'TOP SECRET');
+  fs.mkdirSync(path.join(dir, 'dir.key'));
+  const read: string[] = [];
+  const realRead = fs.promises.readFile;
+  (fs.promises as { readFile: unknown }).readFile = (file: unknown, ...rest: unknown[]) => {
+    read.push(String(file));
+    return (realRead as (...a: unknown[]) => Promise<unknown>)(file, ...rest);
+  };
+  t.after(() => ((fs.promises as { readFile: unknown }).readFile = realRead));
+  const harness = new ClaudeHarness({ sessionsFile: new ClaudeSessionsFile({ dir: () => dir }) } as never);
+  assert.deepEqual(await harness.liveProcessOf?.(ID.a), { pid: process.pid, panel: false });
+  assert.equal(await harness.liveProcessOf?.(ID.b), undefined);
+  const inSessions = read.filter((file) => path.resolve(file).startsWith(dir));
+  assert.ok(inSessions.length > 0 && inSessions.every((file) => file.endsWith('.json')), `only .json files are opened: ${inSessions.join(', ')}`);
+});
+
+test("openAll opens this window's chats through the tab tracker one at a time; a single open does not", async (t) => {
+  const w = world(t);
+  for (const id of [ID.a, ID.b, ID.c]) {
+    w.transcript(w.main, id, [w.turn(id, w.main)]);
+  }
+  const serial: { ids: string[] }[] = [];
+  const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, serial });
+  const chats = [w.chat('A', ID.a, w.mainWt), w.chat('B', ID.b, w.mainWt), w.chat('C', ID.c, w.mainWt)];
+
+  await here.router.route({ kind: 'openAll', chats });
+  assert.deepEqual(serial, [{ ids: [ID.a, ID.b, ID.c] }]);
+  assert.deepEqual(here.opened.map((entry) => entry.chat), ['A', 'B', 'C']);
+
+  await here.router.route({ kind: 'open', chats: [chats[0]] });
+  assert.equal(serial.length, 1, 'a click on one chat keeps the single-open path');
+});
+
+test('a claimed openAll opens through the tab tracker, and a claimed sideBySide splits what it opened', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  for (const id of [ID.a, ID.b]) {
+    w.transcript(w.main, id, [w.turn(id, w.main)]);
+  }
+  const serial: { ids: string[] }[] = [];
+  const splits: string[][] = [];
+  const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
+  const mainWindow = windowOn(t, w, dir, () => w.main, { pid: 1002, claims: w.main, serial, splits });
+  const chats = [w.chat('A', ID.a, w.mainWt), w.chat('B', ID.b, w.mainWt)];
+
+  await sender.router.route({ kind: 'openAll', chats });
+  await mainWindow.router.runClaimed(await mainWindow.inbox.claimAll());
+  assert.deepEqual(serial, [{ ids: [ID.a, ID.b] }]);
+  assert.deepEqual(splits, [], 'openAll does not split');
+
+  await sender.router.route({ kind: 'sideBySide', chats });
+  await mainWindow.router.runClaimed(await mainWindow.inbox.claimAll());
+  assert.deepEqual(splits, [[ID.a, ID.b]], 'the claiming window splits the chats it just revealed, in order');
+});
+
+test('a local sideBySide reveals the chats and splits them in this window', async (t) => {
+  const w = world(t);
+  for (const id of [ID.a, ID.b]) {
+    w.transcript(w.main, id, [w.turn(id, w.main)]);
+  }
+  const splits: string[][] = [];
+  const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, isOpenHere: () => true, splits, serial: [] });
+  const chats = [w.chat('A', ID.a, w.mainWt), w.chat('B', ID.b, w.mainWt)];
+  assert.equal(await here.router.route({ kind: 'sideBySide', chats }), 'here');
+  assert.deepEqual(splits, [[ID.a, ID.b]]);
+});
+
+test('"+" logs one [Pitwall] route line for new-chat routing', async (t) => {
+  const w = world(t);
+  openFolderCalls();
+  const sender = windowOn(t, w, tempDir(t), () => w.other, { pid: 1001, claims: w.other });
+
+  await sender.router.route({ kind: 'new', chats: [], folder: w.main });
+  assert.deepEqual(sender.routeLog, [`[Pitwall] route new → ${w.main} (handoff)`]);
+  await sender.router.route({ kind: 'new', chats: [], folder: w.other });
+  assert.deepEqual(sender.routeLog.slice(1), [`[Pitwall] route new → here (same-folder)`]);
+  const missing = path.join(w.scratch, 'deleted-worktree');
+  await sender.router.route({ kind: 'new', chats: [], folder: missing });
+  assert.deepEqual(sender.routeLog.slice(2), [`[Pitwall] route new → ${missing} (gone)`]);
+});
+
+test("open-here opens against this window's folder, even when the row is stored under another folder", async (t) => {
+  const w = world(t);
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  // The window is on the worktree; the row is stored under the main worktree; its tab is open here.
+  const wtWindow = windowOn(t, w, tempDir(t), () => w.wt, { pid: 1001, claims: w.wt, isOpenHere: () => true });
+  assert.equal(await wtWindow.router.route({ kind: 'open', chats: [w.chat('Stored on main', ID.a, w.mainWt)] }), 'here');
+  assert.deepEqual(wtWindow.opened.map((entry) => entry.path), [w.wt], 'availability is checked against this window, not the stored row');
+  assert.deepEqual(wtWindow.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (open-here)`]);
+});
+
+// ---- Round 1 (QA #52): C1, C3 ----
+
+test('a chat in a Claude panel of a window Pitwall cannot see gets the window-or-terminal copy', async (t) => {
+  const w = world(t);
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, outsideTerminal: () => ({ pid: 777, panel: true }) });
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel elsewhere', ID.a, w.mainWt)] }), 'gone');
+  assert.deepEqual(here.opened, []);
+  assert.equal(warnings('That chat is already running in another window or terminal (pid 777). Switch to it there.').length, 1);
+  assert.deepEqual(shownMessages().filter((message) => message.includes('another terminal')), []);
+});
+
+test("a chat in this window's own panel (the guard finds no outsider) opens here and warns nothing", async (t) => {
+  const w = world(t);
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, outsideTerminal: () => undefined });
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Own panel', ID.a, w.mainWt)] }), 'here');
+  assert.deepEqual(here.opened.map((entry) => entry.chat), ['Own panel']);
+  assert.deepEqual(shownMessages(), []);
+});
+
+test('openAll with a terminal chat skips the tab wait for it, and a claimed one still reports ok', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  for (const id of [ID.a, ID.b]) {
+    w.transcript(w.main, id, [w.turn(id, w.main)]);
+  }
+  const serial = Object.assign([] as { ids: string[]; results?: unknown[] }[], { recordResults: true });
+  const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
+  const mainWindow = windowOn(t, w, dir, () => w.main, {
+    pid: 1002,
+    claims: w.main,
+    serial,
+    openHere: async (chat) => (chat.name === 'Terminal one' ? 'terminal' : true),
+  });
+  await sender.router.route({ kind: 'openAll', chats: [w.chat('Terminal one', ID.a, w.mainWt), w.chat('Tab one', ID.b, w.mainWt)] });
+  const [request] = await mainWindow.inbox.claimAll();
+  await mainWindow.router.runClaimed([request]);
+  assert.deepEqual(serial[0].results, [false, true], 'a terminal open resolves false: no 5 s wait');
+  assert.deepEqual(await sender.inbox.outcome(w.main, request.nonce), { ok: true }, 'and it is not a failure');
+});
+
+test('the Claude harness marks a claude-vscode entry as a panel', async (t) => {
+  const dir = tempDir(t, 't4-entry-');
+  const { ClaudeSessionsFile, localPidDomain } = await import('../../../../src/harnesses/claude/ClaudeSessionsFile');
+  const domain = await localPidDomain();
+  const entry = (sessionId: string, entrypoint: string) =>
+    fs.writeFileSync(
+      path.join(dir, `${sessionId.slice(0, 4)}.json`),
+      JSON.stringify({ sessionId, pid: process.pid, pidDomain: domain, status: 'idle', statusUpdatedAt: 1, cwd: 'C:/x', entrypoint })
+    );
+  entry(ID.a, 'claude-vscode');
+  entry(ID.b, 'cli');
+  const harness = new ClaudeHarness({ sessionsFile: new ClaudeSessionsFile({ dir: () => dir }) } as never);
+  assert.deepEqual(await harness.liveProcessOf?.(ID.a), { pid: process.pid, panel: true });
+  assert.deepEqual(await harness.liveProcessOf?.(ID.b), { pid: process.pid, panel: false });
+});
+
+// ---- Round 1 (tester T1) ----
+
+test('a no-transcript chat whose row folder is not this window never starts here', async (t) => {
+  const w = world(t);
+  const calls = openFolderCalls();
+  const here = windowOn(t, w, tempDir(t), () => w.other, { pid: 1001, claims: w.other });
+  const chat = w.storage.createChat(w.mainWt.id, 'claude', 'New Session', { pendingUiLaunch: true });
+
+  assert.equal(await here.router.route({ kind: 'openAll', chats: [chat] }), 'gone');
+  assert.deepEqual(here.opened, [], 'nothing opened in this window');
+  assert.deepEqual(calls, [], 'and no window raised for a chat with nothing to open');
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${chat.id.slice(0, 8)} → ${w.main} (no-transcript-elsewhere)`]);
 });
