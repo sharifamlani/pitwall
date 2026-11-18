@@ -7,7 +7,7 @@ import { HarnessRegistry } from '../harness/HarnessRegistry';
 import { HarnessSession } from '../harness/types';
 import { harnessSessionKey, sessionDisplayName } from '../harness/sessionUtils';
 import { ChatSession, HarnessId, Repository, Worktree } from '../types';
-import { canonicalPath, canonicalRoot, samePath } from '../utils/paths';
+import { canonicalPath, canonicalRoot, nativePath, samePath } from '../utils/paths';
 import { formatRelativeTime } from '../utils/text';
 import { commandRegistrar, importNativeSession, withProgress } from './common';
 
@@ -85,8 +85,8 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     }
     return (
       await vscode.window.showQuickPick(
-        repos.map((r) => ({ label: r.name, description: r.rootPath, repo: r })),
-        { placeHolder: `Select repository to ${verb} from extension` }
+        repos.map((r) => ({ label: r.name, description: nativePath(r.rootPath), repo: r })),
+        { placeHolder: `Choose a repo to ${verb}${verb === 'remove' || verb === 'dismiss' ? ' from Pitwall' : ''}` }
       )
     )?.repo;
   };

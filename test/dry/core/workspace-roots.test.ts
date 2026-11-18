@@ -68,3 +68,37 @@ test('Remove forgets every worktree of the root, so re-adding the folder can imp
   assert.deepEqual(roots(), []);
   assert.deepEqual(forgotten.map((p) => fs.realpathSync(p)).sort(), [fs.realpathSync(repo), fs.realpathSync(linked)].sort());
 });
+
+test('the remove picker uses plain wording', async () => {
+  const { storage } = setup();
+  storage.addRepository('uj-lab-b', path.join(process.cwd(), 'uj-lab-b'));
+  let placeHolder = '';
+  stub.__setQuickPickHandler((_items: unknown, options: { placeHolder?: string }) => {
+    placeHolder = options?.placeHolder ?? '';
+    return undefined;
+  });
+
+  await runCommand('pitwall.removeRepository');
+  stub.__setQuickPickHandler(null);
+
+  assert.equal(placeHolder, 'Choose a repo to remove from Pitwall');
+});
+
+test('repo paths in pickers use one spelling', async () => {
+  const { storage } = setup();
+  storage.addRepository('slash', 'C:/work/slash');
+  storage.addRepository('back', 'C:\\work\\back');
+  let descriptions: string[] = [];
+  stub.__setQuickPickHandler((items: { description: string }[]) => {
+    descriptions = items.map((item) => item.description);
+    return undefined;
+  });
+
+  await runCommand('pitwall.removeRepository');
+  stub.__setQuickPickHandler(null);
+
+  assert.deepEqual(descriptions, [path.normalize('C:/work/slash'), path.normalize('C:\\work\\back')]);
+  if (process.platform === 'win32') {
+    assert.ok(descriptions.every((description) => !description.includes('/')), descriptions.join(' ; '));
+  }
+});
