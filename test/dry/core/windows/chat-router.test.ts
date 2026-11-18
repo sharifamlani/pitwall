@@ -744,3 +744,42 @@ test('a request to an existing window warns at 20 s', async (t) => {
   await waitFor(() => warnings(UNREACHED('demo')).length > 0, 'the warning at the warm wait', 3_000);
   assert.equal(warnings(UNREACHED('demo')).length, 1);
 });
+
+// The flake behind "a click before window services start…": a router disposed
+// while its outcome read was in flight still warned once the read returned
+// (in production, a closing window could show a stray warning).
+test('a disposed router never warns, even with an outcome read in flight', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const sender = windowOn(t, w, dir, () => w.other, {
+    pid: 1001,
+    claims: w.other,
+    // Past the wait on the first read, so a read that returns would warn.
+    timing: { ...FAST, warnMs: 0, coldWarnMs: 0, expireMs: 60_000 },
+  });
+  let release: () => void = () => undefined;
+  let reading = false;
+  sender.inbox.outcome = () => {
+    reading = true;
+    return new Promise((resolve) => (release = () => resolve(undefined)));
+  };
+
+  await sender.router.route({ kind: 'open', chats: [w.chat('Closing window', ID.a, w.mainWt)] });
+  await waitFor(() => reading, 'the outcome read to start');
+  sender.router.dispose();
+  release();
+  await new Promise((resolve) => setTimeout(resolve, FAST.pollMs * 5));
+  assert.deepEqual(warnings(UNREACHED('demo')), [], 'no warning after dispose');
+});
+
+// The exact-root step decides alone when the transcript's cwd names the same
+// folder in another spelling: the window's folder is the repo's own spelling.
+test("a cwd that spells the repo's folder differently resolves to the repo's own spelling", async (t) => {
+  const w = world(t);
+  const spelled = `${w.main}${path.sep}`;
+  w.transcript(w.main, ID.a, [w.turn(ID.a, spelled)]);
+  const { router } = windowOn(t, w, tempDir(t), () => undefined, { pid: 1001 });
+  assert.equal(await router.launchFolder(w.chat('Trailing slash', ID.a, w.mainWt)), w.main);
+});

@@ -774,7 +774,13 @@ test('a line typed into a new terminal before the resume command is cleared firs
     stub.__setShell(shell);
     await runCommand('pitwall.openChat', f.row(f.chat('claude', `Shell ${index}`, `claude-${index}`)));
     const terminal = f.lastTerminal();
-    assert.equal(terminal.typed[0], `${clear}claude --resume claude-${index}`, `${shell}: the line starts with its line-clear`);
+    // The clear goes alone, with no newline, and the command in a send of its
+    // own: Esc followed at once by "c" could read as Alt+C.
+    assert.deepEqual(
+      terminal.typed.slice(0, 2),
+      [clear, `claude --resume claude-${index}\n`],
+      `${shell}: its line-clear, then the command`
+    );
     assert.equal(terminal.sent[0], `claude --resume claude-${index}`, `${shell}: the stray keys are gone from the line the shell runs`);
   }
 });

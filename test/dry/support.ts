@@ -34,7 +34,7 @@ export interface FakeTerminal {
   };
   /** The lines the shell runs: keys typed first prefix a line unless it starts with a line-clear. */
   sent: string[];
-  /** The raw text Pitwall sent, line-clear included. */
+  /** Each raw send, line-clear included, ending "\n" when the send added a newline. */
   typed: string[];
   shown: number;
   disposed: boolean;
@@ -45,7 +45,7 @@ export interface FakeTerminal {
   shellIntegration: unknown;
   state: { isInteractedWith: boolean };
   readonly processId: Promise<number>;
-  sendText(text: string): void;
+  sendText(text: string, addNewLine?: boolean): void;
   show(preserveFocus?: boolean): void;
   dispose(): void;
 }

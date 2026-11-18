@@ -836,19 +836,24 @@ module.exports = {
           return pidPromise ?? Promise.resolve(this.__pid);
         },
         /**
-         * `typed` records the raw bytes; `sent` records the line the shell
-         * runs. Like a shell's line editor, keys the user typed first
-         * (`__typeKeys`) prefix the line, unless it starts with a line-clear
-         * (Esc or Ctrl+U), which erases them (Q27).
+         * `typed` records each raw send, with "\n" when it adds a newline;
+         * `sent` records the lines the shell runs. Like a shell's line
+         * editor, keys typed first (`__typeKeys`) and text sent without a
+         * newline wait in the line, and a line-clear (Esc or Ctrl+U) at the
+         * start of a send erases what waits (Q27).
          */
-        sendText(text) {
-          this.typed.push(text);
+        sendText(text, addNewLine = true) {
+          this.typed.push(addNewLine ? `${text}\n` : text);
           const clears = text.startsWith('\x1b') || text.startsWith('\x15');
-          const line = clears ? text.slice(1) : this.__input + text;
-          this.__input = '';
-          this.sent.push(line);
+          this.__input = clears ? text.slice(1) : this.__input + text;
           // As in VS Code, text an extension sends counts as interaction (QA #51).
           module.exports.window.__typeInTerminal(this);
+          if (!addNewLine) {
+            return;
+          }
+          const line = this.__input;
+          this.__input = '';
+          this.sent.push(line);
           // A shell that has not integrated yet runs typed-ahead text later.
           if (silentExecutionEvents || this.__awaitingIntegration) {
             return;
