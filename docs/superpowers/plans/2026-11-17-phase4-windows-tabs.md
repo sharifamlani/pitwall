@@ -628,6 +628,7 @@ Create `scripts/dump-tabs.mjs`. Tests: `test/dry/shared/native-ui-surface.test.t
   - `side by side splits up to 4 open tabs, one group each, and is hidden below 2`;
   - `serial bind replaces T2's interim title re-match: two "Claude Code" tabs survive a group rebuild without swapping bindings` (QA #47 note: T2 re-matches by title and kind on group rebuilds as an interim);
   - `a chat live in an outside terminal (a live ~/.claude/sessions pid Pitwall doesn't own) is not opened again: Pitwall warns instead` (QA #51 follow-up, owner T4; one process per session, Q28; read only pids, never .key files). Copy *(new copy)*: "That chat is already running in another terminal (pid {pid}). Switch to it there.";
+  - `"+" logs one [Pitwall] route line for new-chat routing` (T3 walk gap);
   - `open-here opens against this window's folder, even when the row is stored under another folder` (QA #51 O3, if not added in T3);
   - `no code path calls tabGroups.close or moveEditor outside side by side` (an architecture test greps `src/`).
 - [ ] **Step 2:** FAIL.
