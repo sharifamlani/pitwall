@@ -695,6 +695,74 @@ test('a late rename does not refocus the list after the user moved on', async (t
   );
 });
 
+// Carried from T2 (QA #47): the move-watchers are armed at the key press, not
+// after the 'now' refocus, so the 'now' refocus also skips when an editor, a tab
+// or another terminal became active since the press.
+test('an editor click between Ctrl+Down and the refocus keeps focus in the editor', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { surface: 'terminal' });
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    if (stub.window.activeTerminal) stub.window.activeTerminal.name = arg.name;
+  });
+  const editor = { document: { uri: vscode.Uri.file('/work/demo/file.ts') } };
+  // The user clicks into a file while the new terminal is still being created.
+  const create = stub.window.createTerminal;
+  stub.window.createTerminal = (options) => {
+    const terminal = create(options);
+    stub.window.__focusTextEditor(editor);
+    return terminal;
+  };
+  t.after(() => {
+    stub.window.createTerminal = create;
+  });
+  const keys = listKeys(f.row(f.chat('claude', 'Clicked away', 'claude-1')));
+
+  await keys.press();
+  await settle();
+  assert.deepEqual(keys.events, [], 'the list does not take focus back from the editor');
+  stub.window.__integrateShell(f.lastTerminal());
+  await settle();
+  assert.deepEqual(keys.events, [], 'nor after the late rename');
+});
+
+test('typing in the new terminal before its late rename lets go of the list', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { surface: 'terminal' });
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    if (stub.window.activeTerminal) stub.window.activeTerminal.name = arg.name;
+  });
+  const { keys, terminal } = await slowShellPress(f, f.chat('claude', 'Typed into', 'claude-1'));
+  keys.events.length = 0;
+
+  // `onDidChangeTerminalState` → `isInteractedWith`: the user typed into the new terminal.
+  stub.window.__typeInTerminal(terminal);
+  stub.window.__integrateShell(terminal);
+  await settle();
+  assert.deepEqual(keys.events, [], 'the late rename does not pull focus back to the list');
+});
+
+test('the late-refocus hold also lets go when a Claude panel tab becomes active', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { surface: 'terminal' });
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    if (stub.window.activeTerminal) stub.window.activeTerminal.name = arg.name;
+  });
+  const { keys, terminal } = await slowShellPress(f, f.chat('claude', 'Then a Claude tab', 'claude-1'));
+  keys.events.length = 0;
+
+  // The Claude tab sits in another editor group: clicking it makes that group
+  // active, which fires only a tab-group event, not a tab event.
+  const claudeTab = { label: 'Other chat', input: new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel'), isActive: true };
+  stub.window.tabGroups.all = [
+    { isActive: false, viewColumn: 1, activeTab: undefined, tabs: [] },
+    { isActive: true, viewColumn: 2, activeTab: claudeTab, tabs: [claudeTab] },
+  ];
+  stub.window.__fireTabGroupsChanged();
+  stub.window.__integrateShell(terminal);
+  await settle();
+  assert.deepEqual(keys.events, [], 'no late restore over the Claude tab');
+});
+
 test('after closing its Claude tab, a terminal-surface open uses the terminal', async (t) => {
   const f = setup(t, { surface: 'terminal' });
   const chat = f.chat('claude', 'Lab ready', 'claude-1');

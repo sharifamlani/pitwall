@@ -40,6 +40,7 @@ export interface FakeTerminal {
   __pidReads: number;
   exitStatus: unknown;
   shellIntegration: unknown;
+  state: { isInteractedWith: boolean };
   readonly processId: Promise<number>;
   sendText(text: string): void;
   show(preserveFocus?: boolean): void;
@@ -129,6 +130,8 @@ interface StubControls {
     __fireWindowState(focused: boolean): void;
     __fireTabsChanged(event?: { opened?: unknown[]; closed?: unknown[]; changed?: unknown[] }): void;
     __fireTabGroupsChanged(): void;
+    /** The user types into a terminal: its state turns interacted-with and `onDidChangeTerminalState` fires once. */
+    __typeInTerminal(terminal: unknown): void;
   };
 }
 

@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { FilesTreeProvider, FileTreeItem } from '../../../src/core/providers/FilesTreeProvider';
 import { registerFileCommands } from '../../../src/core/commands/files';
-import { runCommand, shown, stub, tempDir, worktreeRecord } from '../support';
+import { runCommand, shown, shownMessages, stub, tempDir, worktreeRecord } from '../support';
 
 test('All Files lists folders first in natural order, hides build and VCS output, and keys rows by path', async (t) => {
   const root = tempDir(t);
@@ -53,6 +53,24 @@ function filesSetup(t: { after(fn: () => void): void }) {
   };
   return { root, files, row };
 }
+
+test('pasting via a FILES row and via no row shows the same drive spelling in the toast', async (t) => {
+  const { root, row } = filesSetup(t);
+  await runCommand('pitwall.files.copy', row('README.md', vscode.FileType.File));
+  // A row's fsPath spells the drive as the editor does (lower case); no row means the window's folder.
+  await runCommand('pitwall.files.paste', row('src', vscode.FileType.Directory));
+  await runCommand('pitwall.files.paste');
+
+  const into = shownMessages()
+    .filter((message) => message.startsWith('Pasted README.md'))
+    .map((message) => /\binto .+? \((.+?)\)\./.exec(message)?.[1] ?? '');
+  assert.equal(into.length, 2, shownMessages().join('\n'));
+  assert.deepEqual(into.map((dir) => dir.slice(1).toLowerCase()), [path.join(root, 'src'), root].map((dir) => dir.slice(1).toLowerCase()), 'into src, then the window folder');
+  assert.equal(into[0][0], into[1][0], `one drive spelling: ${into.join(' | ')}`);
+  if (process.platform === 'win32') {
+    assert.match(into[0], /^[A-Z]:\\/, "Windows' native spelling: an upper-case drive");
+  }
+});
 
 test('new file with a file selected creates it next to that file, not inside it', async (t) => {
   const { root, row } = filesSetup(t);

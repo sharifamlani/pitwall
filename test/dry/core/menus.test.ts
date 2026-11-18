@@ -92,7 +92,7 @@ test('the repo menu has exactly the §3c items in order, and the row shows histo
   const expected = [
     'pitwall.newSessionInRepository',
     'pitwall.sessionHistory',
-    'pitwall.openInNewWindow',
+    'pitwall.openItsWindow',
     'pitwall.copyRepositoryPath',
     'pitwall.revealRepository',
     'pitwall.dismissRepository',
@@ -115,6 +115,32 @@ test('the repo menu has exactly the §3c items in order, and the row shows histo
   const icon = (command: string) => (commands.find((entry) => entry.command === command) as { icon?: string }).icon;
   assert.equal(icon('pitwall.sessionHistoryInline'), '$(history)');
   assert.equal(icon('pitwall.newSessionInRepositoryInline'), '$(add)');
+});
+
+test('repo menu shows "Open its window" without a window and "Bring its window forward" with one', () => {
+  const title = (command: string) => commands.find((entry) => entry.command === command)?.title;
+  const byOrder = (a: MenuEntry, b: MenuEntry) => orderOf(a).localeCompare(orderOf(b));
+  const menuOf = (contextValue: string) => rowMenu.filter((entry) => shownOn(entry, contextValue) && !isInline(entry)).sort(byOrder).map(id);
+  const inlineOf = (contextValue: string) => rowMenu.filter((entry) => shownOn(entry, contextValue) && isInline(entry)).sort(byOrder).map(id);
+  const rest = ['pitwall.copyRepositoryPath', 'pitwall.revealRepository', 'pitwall.dismissRepository'];
+  const first = ['pitwall.newSessionInRepository', 'pitwall.sessionHistory'];
+  for (const base of ['repository', 'folderRepository']) {
+    assert.deepEqual(menuOf(base), [...first, 'pitwall.openItsWindow', ...rest], `${base}: no window`);
+    assert.deepEqual(menuOf(`${base}.hasWindow`), [...first, 'pitwall.bringItsWindowForward', ...rest], `${base}: has a window`);
+    assert.deepEqual(inlineOf(`${base}.hasWindow`), inlineOf(base), 'the hover icons do not change');
+  }
+  assert.equal(title('pitwall.openItsWindow'), 'Open its window');
+  assert.equal(title('pitwall.bringItsWindowForward'), 'Bring its window forward');
+  const bring = rowMenu.find((candidate) => candidate.command === 'pitwall.bringItsWindowForward')!;
+  assert.match(bring.when ?? '', /viewItem =~ \/[^/]*hasWindow/, 'the label flips on the hasWindow context value');
+  for (const command of ['pitwall.openItsWindow', 'pitwall.bringItsWindowForward']) {
+    const entry = rowMenu.find((candidate) => candidate.command === command)!;
+    assert.equal(entry.group, '1_session@3', 'the same slot, so the label flips in place');
+  }
+  assert.ok(
+    !rowMenu.some((entry) => entry.command === 'pitwall.openInNewWindow' && /repository/i.test(entry.when ?? '')),
+    '"Open in New Window" leaves the repo menu'
+  );
 });
 
 test('header and row action tooltips match the canvas copy', () => {

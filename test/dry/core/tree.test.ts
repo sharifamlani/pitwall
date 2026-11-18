@@ -744,3 +744,52 @@ test('only needs-you rows carry the Needs marker that shows the row bell', async
   open.clear();
   assert.equal((await values())['Job market networking'], 'chatNeeds');
 });
+
+/** Repo `demo` with a main folder and a worktree, one chat on each; no chat is open in this window. */
+function windowedRepo(t: { after(fn: () => void): void }) {
+  const storage = makeStorage();
+  const repo = storage.addRepository('demo', '/work/demo');
+  const main = worktreeRecord({ id: 'wt-main', repoId: repo.id, path: '/work/demo', branch: 'main' });
+  const feat = worktreeRecord({ id: 'wt-feat', repoId: repo.id, name: 'feat', path: '/work/demo-feat', branch: 'feat', isMain: false });
+  storage.createChat(main.id, 'claude', 'On main', { harnessSessionId: 'claude-main' });
+  storage.createChat(feat.id, 'claude', 'On feat', { harnessSessionId: 'claude-feat' });
+  const tree = provider(t, storage, () => ({ isGit: true, worktrees: [main, feat] }), [fakeAdapter('claude')]);
+  tree.setStatusSource(statusSource());
+  const window = (folder: string | undefined, openSessionIds: string[] = []) => ({ folder, openSessionIds });
+  const repoRow = async () => (await tree.getChildren())[0];
+  const chatRows = async () => new Map((await tree.getChildren(await repoRow())).map((row) => [row.label, row]));
+  return { tree, window, repoRow, chatRows };
+}
+
+test('repo description adds " · 2 windows" only when k > 1', async (t) => {
+  const { tree, window, repoRow } = windowedRepo(t);
+  assert.equal((await repoRow()).description, '2 sessions', 'no windows');
+
+  tree.setWindows([window('/work/demo')]);
+  assert.equal((await repoRow()).description, '2 sessions', 'one window: nothing added');
+  assert.equal((await repoRow()).contextValue, 'repository.hasWindow', 'its main folder has a window');
+
+  // The worktree's window counts; another repo's, a multi-root (no folder) and an empty window don't (Q17).
+  tree.setWindows([window('/work/demo'), window('/work/demo-feat'), window('/work/other'), window(undefined)]);
+  assert.equal((await repoRow()).description, '2 sessions · 2 windows');
+
+  tree.setWindows([window('/work/demo-feat')]);
+  const row = await repoRow();
+  assert.equal(row.description, '2 sessions');
+  assert.equal(row.contextValue, 'repository', 'a worktree window alone is not the repo window');
+});
+
+test('" · open" counts tabs in other windows', async (t) => {
+  const { tree, window, repoRow, chatRows } = windowedRepo(t);
+  tree.setWindows([window('/work/other', ['claude-feat'])]);
+
+  const rows = await chatRows();
+  assert.match(String(rows.get('On feat')!.description), / · open$/, 'open as a tab in another window');
+  assert.doesNotMatch(String(rows.get('On main')!.description), / · open/);
+  assert.equal(rows.get('On feat')!.contextValue, 'chat', 'no running context: its terminal or tab is not in this window');
+  assert.equal((await repoRow()).description, '1 open');
+
+  // Open here and elsewhere counts once.
+  tree.setChatOpenProvider((chat) => chat.harnessSessionId === 'claude-feat');
+  assert.equal((await repoRow()).description, '1 open');
+});

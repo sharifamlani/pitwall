@@ -414,6 +414,7 @@ let silentExecutionEvents = false;
 let defaultPidDelayMs;
 let lateShellIntegration = false;
 const shellIntegrationListeners = new Set();
+const terminalStateListeners = new Set();
 const warningResponses = [];
 const quickPickResponses = [];
 const inputResponses = [];
@@ -738,6 +739,18 @@ module.exports = {
       activeTerminalListeners.add(listener);
       return { dispose: () => activeTerminalListeners.delete(listener) };
     },
+    onDidChangeTerminalState: (listener) => {
+      terminalStateListeners.add(listener);
+      return { dispose: () => terminalStateListeners.delete(listener) };
+    },
+    /** Test helper: the user types into a terminal; its state turns interacted-with once, as in VS Code. */
+    __typeInTerminal: (terminal) => {
+      if (terminal.state.isInteractedWith) return;
+      terminal.state = { ...terminal.state, isInteractedWith: true };
+      for (const listener of [...terminalStateListeners]) {
+        listener(terminal);
+      }
+    },
     onDidChangeTerminalShellIntegration: (listener) => {
       shellIntegrationListeners.add(listener);
       return { dispose: () => shellIntegrationListeners.delete(listener) };
@@ -807,6 +820,7 @@ module.exports = {
         shellIntegration: lateShellIntegration ? undefined : {},
         __awaitingIntegration: lateShellIntegration,
         __pidReads: 0,
+        state: { isInteractedWith: false },
         get processId() {
           this.__pidReads += 1;
           return pidPromise ?? Promise.resolve(this.__pid);
@@ -972,6 +986,7 @@ module.exports = {
       activeTerminalListeners,
       executionStartListeners,
       shellIntegrationListeners,
+      terminalStateListeners,
       tabChangeListeners,
       tabGroupChangeListeners,
       activeTextEditorListeners,
