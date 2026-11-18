@@ -65,6 +65,25 @@ export class SharedClipboard implements vscode.Disposable {
     }
   }
 
+  /**
+   * The entry while its source file still exists. The clipboard is shared
+   * and survives restarts, so a source deleted since (T3 live: a `.env`
+   * long gone) clears it, and its banner goes with it.
+   */
+  async live(): Promise<ClipboardEntry | undefined> {
+    const entry = await this.get();
+    if (!entry) {
+      return undefined;
+    }
+    try {
+      await fs.promises.access(entry.path);
+      return entry;
+    } catch {
+      await this.clear();
+      return undefined;
+    }
+  }
+
   async clear(): Promise<void> {
     if (this.file) {
       await fs.promises.rm(this.file, { force: true });

@@ -316,7 +316,8 @@ export async function activate(context: vscode.ExtensionContext) {
   // One FILES clipboard for every window (Q9), in global storage.
   const clipboard = new SharedClipboard(context.globalStorageUri?.fsPath);
   const updateClipboardLine = async (): Promise<void> => {
-    const entry = await clipboard.get();
+    // A source deleted since it was copied clears the clipboard, so no stale banner.
+    const entry = await clipboard.live();
     clipboardLine = entry
       ? clipboardBanner(path.basename(entry.path), repoOf(entry.path)?.name ?? path.basename(path.dirname(entry.path)))
       : undefined;
