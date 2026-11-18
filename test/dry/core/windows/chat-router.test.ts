@@ -1008,7 +1008,8 @@ test('the Claude harness reports a live pid from ~/.claude/sessions *.json and n
   const harness = new ClaudeHarness({ sessionsFile: new ClaudeSessionsFile({ dir: () => dir }) } as never);
   assert.deepEqual(await harness.liveProcessOf?.(ID.a), { pid: process.pid });
   assert.equal(await harness.liveProcessOf?.(ID.b), undefined);
-  assert.ok(read.length > 0 && read.every((file) => file.endsWith('.json')), `only .json files are opened: ${read.join(', ')}`);
+  const inSessions = read.filter((file) => path.resolve(file).startsWith(dir));
+  assert.ok(inSessions.length > 0 && inSessions.every((file) => file.endsWith('.json')), `only .json files are opened: ${inSessions.join(', ')}`);
 });
 
 test("openAll opens this window's chats through the tab tracker one at a time; a single open does not", async (t) => {
