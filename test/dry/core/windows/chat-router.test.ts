@@ -103,15 +103,15 @@ function windowOn(
     servicesUp?: () => boolean;
     /** The folders the registry has a live window on (Q26); none by default. */
     windowsAt?: string[];
-    openHere?: (chat: ChatSession, worktree: Worktree) => Promise<boolean>;
+    openHere?: (chat: ChatSession, worktree: Worktree) => Promise<boolean | 'terminal'>;
     /** Whether a chat's tab or terminal is open in this window; never, by default. */
     isOpenHere?: (chat: ChatSession) => boolean;
     /** Other windows' open sessions, as the registry's heartbeats list them. */
     openIn?: { folder: string; sessionIds: string[]; pid?: number }[];
     /** The pid of a live process outside Pitwall running a session (a terminal the user started), if any. */
-    outsideTerminal?: (sessionId: string) => number | undefined;
+    outsideTerminal?: (sessionId: string) => number | { pid: number; panel: boolean } | undefined;
     /** Record the serial opens the router asks the tab tracker for. */
-    serial?: { ids: string[] }[];
+    serial?: ({ ids: string[]; results?: unknown[] }[] & { recordResults?: boolean });
     /** Record the side-by-side splits the router asks for. */
     splits?: string[][];
   }
@@ -148,12 +148,22 @@ function windowOn(
       return true;
     },
     timing: options.timing ?? FAST,
-    outsideTerminal: options.outsideTerminal ? async (sessionId: string) => options.outsideTerminal!(sessionId) : undefined,
+    outsideTerminal: options.outsideTerminal
+      ? async (sessionId: string) => {
+          const found = options.outsideTerminal!(sessionId);
+          return typeof found === 'number' ? { pid: found } : found;
+        }
+      : undefined,
     openSerially: options.serial
       ? async (ids: string[], open: (id: string) => Promise<unknown>) => {
-          options.serial!.push({ ids: [...ids] });
+          const entry: { ids: string[]; results?: unknown[] } = { ids: [...ids] };
+          options.serial!.push(entry);
+          const results: unknown[] = [];
           for (const id of ids) {
-            await open(id);
+            results.push(await open(id));
+          }
+          if (options.serial!.recordResults) {
+            entry.results = results;
           }
         }
       : undefined,
@@ -1006,7 +1016,7 @@ test('the Claude harness reports a live pid from ~/.claude/sessions *.json and n
   };
   t.after(() => ((fs.promises as { readFile: unknown }).readFile = realRead));
   const harness = new ClaudeHarness({ sessionsFile: new ClaudeSessionsFile({ dir: () => dir }) } as never);
-  assert.deepEqual(await harness.liveProcessOf?.(ID.a), { pid: process.pid });
+  assert.deepEqual(await harness.liveProcessOf?.(ID.a), { pid: process.pid, panel: false });
   assert.equal(await harness.liveProcessOf?.(ID.b), undefined);
   const inSessions = read.filter((file) => path.resolve(file).startsWith(dir));
   assert.ok(inSessions.length > 0 && inSessions.every((file) => file.endsWith('.json')), `only .json files are opened: ${inSessions.join(', ')}`);
@@ -1086,4 +1096,63 @@ test("open-here opens against this window's folder, even when the row is stored 
   assert.equal(await wtWindow.router.route({ kind: 'open', chats: [w.chat('Stored on main', ID.a, w.mainWt)] }), 'here');
   assert.deepEqual(wtWindow.opened.map((entry) => entry.path), [w.wt], 'availability is checked against this window, not the stored row');
   assert.deepEqual(wtWindow.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (open-here)`]);
+});
+
+// ---- Round 1 (QA #52): C1, C3 ----
+
+test('a chat in a Claude panel of a window Pitwall cannot see gets the window-or-terminal copy', async (t) => {
+  const w = world(t);
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, outsideTerminal: () => ({ pid: 777, panel: true }) });
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel elsewhere', ID.a, w.mainWt)] }), 'gone');
+  assert.deepEqual(here.opened, []);
+  assert.equal(warnings('That chat is already running in another window or terminal (pid 777). Switch to it there.').length, 1);
+  assert.deepEqual(shownMessages().filter((message) => message.includes('another terminal')), []);
+});
+
+test("a chat in this window's own panel (the guard finds no outsider) opens here and warns nothing", async (t) => {
+  const w = world(t);
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, outsideTerminal: () => undefined });
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Own panel', ID.a, w.mainWt)] }), 'here');
+  assert.deepEqual(here.opened.map((entry) => entry.chat), ['Own panel']);
+  assert.deepEqual(shownMessages(), []);
+});
+
+test('openAll with a terminal chat skips the tab wait for it, and a claimed one still reports ok', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  for (const id of [ID.a, ID.b]) {
+    w.transcript(w.main, id, [w.turn(id, w.main)]);
+  }
+  const serial = Object.assign([] as { ids: string[]; results?: unknown[] }[], { recordResults: true });
+  const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
+  const mainWindow = windowOn(t, w, dir, () => w.main, {
+    pid: 1002,
+    claims: w.main,
+    serial,
+    openHere: async (chat) => (chat.name === 'Terminal one' ? 'terminal' : true),
+  });
+  await sender.router.route({ kind: 'openAll', chats: [w.chat('Terminal one', ID.a, w.mainWt), w.chat('Tab one', ID.b, w.mainWt)] });
+  const [request] = await mainWindow.inbox.claimAll();
+  await mainWindow.router.runClaimed([request]);
+  assert.deepEqual(serial[0].results, [false, true], 'a terminal open resolves false: no 5 s wait');
+  assert.deepEqual(await sender.inbox.outcome(w.main, request.nonce), { ok: true }, 'and it is not a failure');
+});
+
+test('the Claude harness marks a claude-vscode entry as a panel', async (t) => {
+  const dir = tempDir(t, 't4-entry-');
+  const { ClaudeSessionsFile, localPidDomain } = await import('../../../../src/harnesses/claude/ClaudeSessionsFile');
+  const domain = await localPidDomain();
+  const entry = (sessionId: string, entrypoint: string) =>
+    fs.writeFileSync(
+      path.join(dir, `${sessionId.slice(0, 4)}.json`),
+      JSON.stringify({ sessionId, pid: process.pid, pidDomain: domain, status: 'idle', statusUpdatedAt: 1, cwd: 'C:/x', entrypoint })
+    );
+  entry(ID.a, 'claude-vscode');
+  entry(ID.b, 'cli');
+  const harness = new ClaudeHarness({ sessionsFile: new ClaudeSessionsFile({ dir: () => dir }) } as never);
+  assert.deepEqual(await harness.liveProcessOf?.(ID.a), { pid: process.pid, panel: true });
+  assert.deepEqual(await harness.liveProcessOf?.(ID.b), { pid: process.pid, panel: false });
 });

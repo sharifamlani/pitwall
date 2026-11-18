@@ -262,10 +262,11 @@ function serialWorld() {
   const world = tabWorld();
   const timers = manualTimers();
   const logs: string[] = [];
-  const service = claudeUiSurfaces({ ...world.options, schedule: timers.schedule, log: (line: string) => void logs.push(line) } as never);
+  const clock = { now: 0 };
+  const service = claudeUiSurfaces({ ...world.options, schedule: timers.schedule, now: () => clock.now, log: (line: string) => void logs.push(line) } as never);
   /** Which session each tab is bound to, per group. */
   const bound = () => service.describeTabs().map((group) => group.tabs.map((tab) => tab.sessionId));
-  return { world, timers, logs, service, bound };
+  return { world, timers, logs, service, bound, clock };
 }
 
 test('serial opens bind each new tab to the session just requested', async () => {
@@ -395,5 +396,54 @@ test('a moved tab keeps its own session when another tab shares its title', asyn
   left.tabs = left.tabs.filter((tab) => tab !== original);
   world.emit([], [], [original]);
   assert.deepEqual(bound(), [['aaaa'], ['bbbb']]);
+  service.dispose();
+});
+
+// ---- Round 1 (QA #52): C2, C3, C4 ----
+
+test('a late tab for a timed-out open does not take the next session', async () => {
+  const { world, service, timers, bound } = serialWorld();
+  const promise = service.openSerially(['slow', 'next'], async (id) => {
+    service.expect(id, 'Claude Code');
+    if (id === 'next') {
+      world.open(claudeTab(), 'Claude Code');
+      world.open(claudeTab(), 'Claude Code');
+    }
+  });
+  await until(() => timers.delays().length > 0);
+  timers.fire();
+  await promise;
+  assert.deepEqual(bound(), [['slow', 'next']], 'the first tab to arrive is the oldest outstanding open's');
+  service.dispose();
+});
+
+test('an open that resolves false schedules no 5 s wait', async () => {
+  const { service, timers } = serialWorld();
+  const result = await service.openSerially(['terminal'], async () => false);
+  assert.deepEqual(timers.delays(), []);
+  assert.equal(result.get('terminal'), undefined);
+  service.dispose();
+});
+
+test('a group event where the number of Claude tabs changed releases a vanished binding instead of shifting it', async () => {
+  const { world, service, bound } = serialWorld();
+  await service.openSerially(['aaaa', 'bbbb'], async () => void world.open(claudeTab(), 'Claude Code'));
+  const second = world.groups[0].tabs[1];
+  world.groups[0].tabs = [{ ...second }];
+  world.groups[0].activeTab = world.groups[0].tabs[0];
+  world.focusGroup(0);
+  assert.deepEqual(bound(), [[undefined]], 'neither binding lands on the tab now in its old place');
+  service.dispose();
+});
+
+test('a user tab opened long before is not taken for a moved copy on close', async () => {
+  const { world, service, bound, clock } = serialWorld();
+  world.open(claudeTab(), 'Claude Code');
+  clock.now = 10_000;
+  let mine: FakeTab | undefined;
+  await service.openSerially(['a'], async () => void (mine = world.open(claudeTab(), 'Claude Code')));
+  clock.now = 20_000;
+  world.close(mine!);
+  assert.deepEqual(bound(), [[undefined]]);
   service.dispose();
 });
