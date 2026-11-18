@@ -78,7 +78,7 @@ So you do not have to find out later:
 - No built-in chat interface. Sessions run in the agent's terminal UI or its official VS Code panel.
 - No agents beyond Claude Code, Codex, opencode, and Pi today.
 - No orchestration: Pitwall does not have agents start or direct other agents.
-- Windows support is partial.
+- Windows pop-ups and sound are not built yet (Phase 5); the rest works on Windows, macOS and Linux.
 
 ## Related
 

@@ -112,7 +112,7 @@ Not today. Pitwall supports Claude Code, Codex, opencode, and Pi. Each agent is 
 
 ### Does Pitwall work on Windows?
 
-Partly. Pitwall is developed and tested on macOS and Linux. On Windows, the commands it types into a terminal are quoted for POSIX shells, which can fail for paths with spaces or special characters. Full Windows support is on the [upstream roadmap](https://github.com/sharifamlani/pitwall/blob/47124cd/ROADMAP.md).
+Yes. Pitwall is developed and tested on Windows, macOS and Linux. Commands it types into a terminal are quoted for the shell in use, including paths with spaces, and Windows pop-ups are planned for Phase 5. Since v0.5.0, clicking a chat also opens it in the Cursor window for its folder (one window per folder). See the [roadmap](https://github.com/sharifamlani/pitwall/blob/main/ROADMAP.md).
 
 ### How is Pitwall different from Orca, Paseo, and other agent apps?
 
