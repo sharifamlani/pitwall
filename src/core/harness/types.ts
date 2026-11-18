@@ -242,6 +242,25 @@ export interface NativeUiSurfaceTracker extends vscode.Disposable {
    * back to a terminal, so two agent processes cannot run at once.
    */
   closeSurface(sessionId: string): Promise<boolean>;
+  /**
+   * Open sessions one after another, binding each new tab to the session
+   * just requested (a tracker that reads the ID from the tab needs no help).
+   * `open` resolving false means nothing opened, so there is no tab to wait for.
+   */
+  openSerially?(
+    sessionIds: string[],
+    open: (sessionId: string) => Promise<unknown>,
+    token?: vscode.CancellationToken
+  ): Promise<Map<string, vscode.Tab | undefined>>;
+  /** Every tab group with its tabs' labels, pinned flags and bound sessions (the dump). */
+  describeTabs?(): NativeUiTabGroupState[];
+}
+
+/** One tab group as the dump reads it. */
+export interface NativeUiTabGroupState {
+  index: number;
+  isActive: boolean;
+  tabs: { label: string; pinned: boolean; active: boolean; sessionId: string | undefined }[];
 }
 
 /** Why a session cannot be handed to the native UI. */
@@ -388,6 +407,14 @@ export interface HarnessAdapter {
    * still gets a live status. Undefined when the harness has no such record.
    */
   liveSessionIds?(): Promise<Set<string> | undefined>;
+
+  /**
+   * The live agent process running a native session on this machine, by the
+   * harness's own record (Claude: a `~/.claude/sessions/*.json` entry whose
+   * pid is alive). Only the pid is returned. Pitwall uses it to refuse a
+   * second process for a chat that runs in a terminal it doesn't own (Q28).
+   */
+  liveProcessOf?(sessionId: string): Promise<{ pid: number } | undefined>;
 
   /**
    * The folder a session's window is (Q2): the one its agent's UI resumes it
