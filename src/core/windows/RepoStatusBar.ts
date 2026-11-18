@@ -70,7 +70,7 @@ export class RepoStatusBar implements vscode.Disposable {
   }
 
   private async locate(folder: string): Promise<RepoInfo | undefined> {
-    const top = this.git.getRepoRoot(folder);
+    const top = await this.git.getRepoRootAsync(folder);
     const main = top ? await this.git.getMainRepoRoot(folder) : null;
     if (!top || !main) {
       return undefined;

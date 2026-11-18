@@ -175,6 +175,21 @@ export class GitService {
     return top ? nativePath(top) : null;
   }
 
+  /** `getRepoRoot` without blocking the extension host. */
+  async getRepoRootAsync(dirPath: string): Promise<string | null> {
+    try {
+      const { stdout } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], {
+        ...SPAWN_OPTIONS,
+        cwd: dirPath,
+        encoding: 'utf-8',
+      });
+      const top = stdout.trim();
+      return top ? nativePath(top) : null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * The main repository root for a folder inside any of its worktrees, from
    * the git common dir, in the native spelling `git worktree list` gives
