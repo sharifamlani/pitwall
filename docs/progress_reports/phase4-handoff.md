@@ -36,6 +36,8 @@ Also merged: #45 (v0.4.1, drive-letter case fix on Windows) and #49 (load-tolera
 - If a chat's tab takes longer than 5 seconds to appear, a Claude tab you open in the next 30 seconds can be bound to that chat.
 - A chat started with "+" shows no "· open" on its row until you click it.
 - Side by side waits a full second once before it splits.
+- A restored or pre-existing Claude tab titled "Claude Code", or with a title two chats of the folder share, stays unbound: no " · open", and a click reveals it without binding it. A tab Pitwall didn't open is bound only when its title proves the chat.
+- In a window a handoff started, the bottom bar, the session scan, repo discovery and the watchers start up to 3 seconds late (after the claimed chats open).
 - On a slow machine the lookup of a terminal's parent process can take over 2 seconds, so the chat opens in the current window.
 - A default-titled tab opened within 2 seconds of closing another can take that tab's chat binding.
 - After a cold click, the "Open the other N chats" pick stays open but has no keyboard focus; the mouse works.
@@ -50,6 +52,10 @@ Also merged: #45 (v0.4.1, drive-letter case fix on Windows) and #49 (load-tolera
 - Quiet the repeated re-sent model lines in the `traceTabs` output.
 - Make the agents service pick up changes without a restart (Phase 5).
 - Sort handoff claims by send order so a race test can't flake.
+- Dispose the early window-registry entry if the window's services fail to start, so senders don't wait on a window with no inbox.
+- Walk the 45 s re-raise and the "Open its window" toast live; the original no-window failure didn't reproduce in 3 tries on the fix.
+- Sample the first start after an install on a cold machine (one 4.12 s start right after build and install; the next 4 took 0.3 to 0.7 s).
+- Update the plan's FILES drag mime to `application/vnd.pitwall.files`.
 - Re-home a moved chat's row under its worktree.
 
 ## Next phase

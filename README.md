@@ -32,6 +32,7 @@ On an F1 pit wall, the team watches every car at once and calls in whichever one
 - **A new chat can take a second or two to get its name**, so text typed in that moment may land before the rename.
 - **Dragging a file onto a repo row, and dragging tabs to reorder them, are checked by hand**, not by automated tests.
 - **A click on a brand-new chat that belongs to another window's folder does nothing visible.** Pitwall won't start it in this window and doesn't yet say why; open that folder's window and click it there.
+- **A restored tab titled "Claude Code", or with a title two chats share, isn't marked " · open".** Pitwall only links a tab it didn't open when its title names exactly one chat; clicking the row still shows the tab.
 - **Pop-ups are Phase 5.** Today only a chat you have open can pop up.
 - **Claude Code pulls its terminal to the front.** About a second after a Claude turn starts in a terminal, the Claude Code extension's IDE integration brings that terminal forward and gives it keyboard focus. This happens with Pitwall disabled too; it isn't Pitwall.
 - **Quitting with a file in front can drop terminal chats.** If a file (not a chat terminal) is in front when you quit, VS Code and Cursor may restart the chat terminals without their names, so Pitwall can't match them and they aren't resumed. It's an editor race, reproduced without Pitwall installed. Click the chat in Pitwall to resume it in a new tab. Since v0.5.0 chats open in Claude's chat panel by default; this affects terminal mode only.

@@ -23,7 +23,8 @@ Windows and tabs: one window per folder (ROADMAP Phase 4).
 
 - A chat opens in Claude Code's chat panel by default, with its history. Set `pitwall.defaultSessionSurface` to Terminal to prefer terminals.
 - Ctrl+Down keeps the list focused after it opens a chat, in the panel and in a terminal.
-- Pitwall matches each Claude tab to its chat reliably, even when titles are cut off or every new chat says "Claude Code".
+- Pitwall matches each Claude tab to its chat reliably, even when titles are cut off or every new chat says "Claude Code". Tabs Cursor restores after a reload or restart, and tabs opened in a window a handoff started, are recognised by their title.
+- If a chat's window doesn't come up, Pitwall asks for it once more, and the "couldn't reach" message has an **Open its window** button.
 - A chat that moved into a worktree opens in the window of the folder its transcript is filed under now.
 - A repo row shows "· N windows" when more than one window has that repo or one of its worktrees open.
 
