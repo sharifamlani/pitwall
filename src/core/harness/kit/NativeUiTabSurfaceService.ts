@@ -150,6 +150,8 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   private titleSource: (() => readonly NativeUiTitleCandidate[]) | undefined;
   /** Settles when the title source is complete enough to trust (the folder's session listing). */
   private titlesReady: Promise<unknown> = Promise.resolve();
+  /** Whether adoption may act on the title source yet. */
+  private titlesTrusted = false;
 
   private readonly isUiTab: (tab: vscode.Tab) => boolean;
   private readonly sessionIdForTab:
@@ -229,10 +231,22 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
    * "Claude Code" title, or a title two chats share, stays unknown. Runs now
    * and after every tab or group event from here on.
    */
-  setTitleSource(source: () => readonly NativeUiTitleCandidate[], ready: Promise<unknown> = Promise.resolve()): void {
+  setTitleSource(source: () => readonly NativeUiTitleCandidate[], ready?: Promise<unknown>): void {
     this.titleSource = source;
-    this.titlesReady = ready.catch(() => undefined);
-    this.adopt();
+    if (!ready) {
+      this.titlesTrusted = true;
+      this.adopt();
+      return;
+    }
+    // Until the source is complete, a title cannot prove a tab is one chat's
+    // and no other's: adoption waits for it.
+    this.titlesTrusted = false;
+    this.titlesReady = ready.catch(() => undefined).then(() => {
+      if (this.titleSource === source) {
+        this.titlesTrusted = true;
+        this.adopt();
+      }
+    });
   }
 
   /** Adopt now, after the titles changed. */
@@ -746,7 +760,7 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
    */
   private adoptTabs(): boolean {
     const source = this.titleSource;
-    if (!source) {
+    if (!source || !this.titlesTrusted) {
       return false;
     }
     const unbound = this.uiTabs().filter((tab) => !this.tabs.has(tab) && !this.sessionIdForTab?.(tab) && namingTitle(tab.label));
