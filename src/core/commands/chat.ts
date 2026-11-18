@@ -35,6 +35,8 @@ type SessionSurface = 'terminal' | 'ui';
 export type PrimaryOpen = 'here' | 'routed' | 'terminal';
 /** The Repos list's focus command, contributed by the workbench for the view. */
 const FOCUS_LIST_COMMAND = 'pitwall.workspacesView.focus';
+/** How long after a Ctrl+↓/↑ a late terminal rename may still refocus the list. */
+const LATE_REFOCUS_MS = 3_000;
 type LinkedChat = ChatSession & { harnessSessionId: string };
 
 export interface ChatCommandDeps {
@@ -207,14 +209,63 @@ export function registerChatCommands(
    * creation and rename have settled (E8, F4).
    */
   const openInTerminal = async (chat: ChatSession, worktree: Worktree, keepListFocus = false): Promise<void> => {
+    pitwallOpens += 1;
     const prepared = terminalManager.isActive(chat.id)
       ? chat
       : registerPendingSession(chat, worktree);
     await terminalManager.openChat(prepared, worktree, {
       preserveFocus: keepListFocus,
-      ...(keepListFocus ? { afterTitle: refocusList } : {}),
+      ...(keepListFocus ? { afterTitle: listRefocusAfterTitle(chat) } : {}),
     });
     selectChat(prepared, worktree);
+  };
+
+  /** Every chat open Pitwall starts; a late refocus yields to a newer one. */
+  let pitwallOpens = 0;
+  /** The one late refocus still allowed to happen, with its focus watch. */
+  let pendingLateRefocus: vscode.Disposable | undefined;
+  context.subscriptions.push({ dispose: () => pendingLateRefocus?.dispose() });
+
+  /**
+   * The list refocus for a Ctrl+↓/↑ terminal open. Right after the open's
+   * own rename it always runs. After a late rename (a slow shell) it runs
+   * only within 3 s of the key and only if nothing moved focus meanwhile: a
+   * text editor or another terminal became active, or another Pitwall open
+   * started. A missed refocus is harmless; a stolen one is not.
+   */
+  const listRefocusAfterTitle = (chat: ChatSession) => {
+    pendingLateRefocus?.dispose();
+    const keyedAt = Date.now();
+    const opensAtKey = pitwallOpens;
+    let moved = false;
+    const watches = [
+      vscode.window.onDidChangeActiveTextEditor((editor) => {
+        if (editor) {
+          moved = true;
+        }
+      }),
+      vscode.window.onDidChangeActiveTerminal((terminal) => {
+        if (terminal && terminal !== terminalManager.getTerminal(chat.id)) {
+          moved = true;
+        }
+      }),
+    ];
+    const watch: vscode.Disposable = { dispose: () => watches.forEach((entry) => entry.dispose()) };
+    pendingLateRefocus = watch;
+    return async (phase: 'now' | 'late'): Promise<void> => {
+      if (phase === 'now') {
+        await refocusList();
+        return;
+      }
+      const stillYours = pendingLateRefocus === watch && !moved && pitwallOpens === opensAtKey && Date.now() - keyedAt <= LATE_REFOCUS_MS;
+      watch.dispose();
+      if (pendingLateRefocus === watch) {
+        pendingLateRefocus = undefined;
+      }
+      if (stillYours) {
+        await refocusList();
+      }
+    };
   };
 
   /**
@@ -321,6 +372,7 @@ export function registerChatCommands(
     worktree: Worktree,
     nativeUi: NativeUiCapability
   ): Promise<boolean> => {
+    pitwallOpens += 1;
     const adapter = harnessRegistry.get(chat.harness);
     const surfaces = nativeUi.surfaces;
     if (!nativeUi.isInstalled()) {

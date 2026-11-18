@@ -10,16 +10,12 @@ interface PendingSurface {
   expiresAt: number;
 }
 
-/** A binding whose tab just closed, kept so the same tab reopening elsewhere (a drag) rebinds. */
-interface ReleasedSurface {
-  sessionId: string;
-  key: string;
-}
-
 /**
  * What identifies a tab across Tab objects: its title and its input's kind.
  * VS Code hands out a new Tab object when it rebuilds its tab model (a group
- * added or removed) and when a tab moves to another group.
+ * added or removed) and when a tab moves to another group. A move opens the
+ * copy in the target group before closing the original, so the copy is
+ * always there when the close arrives.
  */
 function tabKey(tab: vscode.Tab): string {
   const input = tab.input as { viewType?: unknown; uri?: { toString(): string } } | undefined;
@@ -66,8 +62,6 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   /** Reverse index so isOpen and closeSurface never scan the tab list. */
   private readonly sessionTabs = new Map<string, Set<vscode.Tab>>();
   private pending: PendingSurface[] = [];
-  /** Bindings released by the last close, until the next UI tab opens or a new expectation. */
-  private released: ReleasedSurface[] = [];
   private lastActiveSessionId: string | undefined;
 
   private readonly isUiTab: (tab: vscode.Tab) => boolean;
@@ -122,7 +116,6 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       return;
     }
     this.prunePending();
-    this.released = [];
     this.pending = this.pending.filter((entry) => entry.sessionId !== sessionId);
     this.pending.push({
       sessionId,
@@ -211,38 +204,20 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     this.tabs.clear();
     this.sessionTabs.clear();
     this.pending = [];
-    this.released = [];
   }
 
   private handleTabChange(event: vscode.TabChangeEvent): void {
     this.prunePending();
-    // Follow rebuilt Tab objects first (a refresh fires no tab event): a move
-    // in one event stays bound, and a closed tab is released whichever
-    // object VS Code names.
-    const releasedNow: ReleasedSurface[] = [];
-    let mappingChanged = this.reconcile(releasedNow);
+    // Follow rebuilt and moved Tab objects first (a refresh fires no tab
+    // event): a moved tab stays bound (D16), and a closed tab is released
+    // whichever object VS Code names.
+    let mappingChanged = this.reconcile();
 
     for (const tab of event.closed) {
-      const sessionId = this.tabs.get(tab);
-      if (sessionId && this.unmapTab(tab)) {
-        releasedNow.push({ sessionId, key: tabKey(tab) });
+      if (this.unmapTab(tab)) {
         mappingChanged = true;
       }
     }
-    const openedUiTabs = event.opened.filter((tab) => this.isUiTab(tab));
-    for (const tab of openedUiTabs) {
-      // A tab dragged to another group arrives as a close and then an open:
-      // the opened copy of a just-released tab takes its binding back (D16).
-      const index = this.released.findIndex((entry) => entry.key === tabKey(tab));
-      if (index >= 0 && !this.tabs.has(tab)) {
-        const [entry] = this.released.splice(index, 1);
-        mappingChanged = this.mapTab(tab, entry.sessionId) || mappingChanged;
-      }
-    }
-    if (openedUiTabs.length > 0) {
-      this.released = [];
-    }
-    this.released.push(...releasedNow);
     for (const tab of [...event.opened, ...event.changed]) {
       mappingChanged =
         this.associate(tab, this.pending.length === 1) || mappingChanged;
@@ -330,7 +305,7 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
    * unmapped UI tab with the same title and kind (the rebuilt or moved copy);
    * with none, the tab closed and its binding is released.
    */
-  private reconcile(released: ReleasedSurface[] = []): boolean {
+  private reconcile(): boolean {
     if (this.tabs.size === 0) {
       return false;
     }
@@ -346,8 +321,6 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       this.unmapTab(tab);
       if (copy) {
         this.mapTab(copy, sessionId);
-      } else {
-        released.push({ sessionId, key });
       }
       changed = true;
     }

@@ -63,6 +63,9 @@ interface StartedTerminal {
 
 type CommandStartWatch = ReturnType<typeof watchCommandStart>;
 
+/** Called once a new terminal's title work has settled; see `openChat`. */
+export type AfterTitle = (phase: 'now' | 'late') => Promise<void>;
+
 /** Rename whichever terminal the workbench's rename command targets (see `writeTitle`). */
 async function renameFocusedTerminal(name: string): Promise<void> {
   await vscode.commands
@@ -233,13 +236,14 @@ export class TerminalManager {
    * A new terminal takes focus as it is created whatever `show` is told, and
    * its rename (which targets the focused terminal) leaves focus nowhere
    * (E8). `afterTitle` runs once that title work has settled, so a caller can
-   * put focus back without racing the rename (F4). An existing terminal is
-   * only shown and never calls it.
+   * put focus back without racing the rename (F4): with `'now'` while this
+   * call is still in progress, with `'late'` after a shell that integrated
+   * late got its title. An existing terminal is only shown and never calls it.
    */
   async openChat(
     chat: ChatSession,
     worktree: Worktree,
-    options: { preserveFocus?: boolean; afterTitle?: () => Promise<void> } = {}
+    options: { preserveFocus?: boolean; afterTitle?: AfterTitle } = {}
   ): Promise<vscode.Terminal | undefined> {
     const preserveFocus = options.preserveFocus ?? false;
     const afterTitle = options.afterTitle;
@@ -312,7 +316,7 @@ export class TerminalManager {
       const commandStarted = await started;
       await waitForActive(terminal);
       await this.applyTitle(terminal);
-      await this.afterTitleWork(afterTitle);
+      await this.afterTitleWork(afterTitle, 'now');
       if (commandStarted) {
         lateStart.cancel();
       } else {
@@ -325,7 +329,7 @@ export class TerminalManager {
     } else {
       lateStart.cancel();
       // No rename to wait for, but the creation may still have taken focus.
-      await afterTitle?.();
+      await afterTitle?.('now');
     }
 
     return terminal;
@@ -567,7 +571,7 @@ export class TerminalManager {
   private retitleOnLateStart(
     terminal: vscode.Terminal,
     watch: { started: Promise<boolean>; cancel(): void },
-    afterTitle?: () => Promise<void>
+    afterTitle?: AfterTitle
   ): void {
     this.lateStarts.add(watch.cancel);
     void watch.started
@@ -575,7 +579,7 @@ export class TerminalManager {
         this.lateStarts.delete(watch.cancel);
         if (started) {
           await this.retitleInBackground(terminal);
-          await this.afterTitleWork(afterTitle);
+          await this.afterTitleWork(afterTitle, 'late');
         }
       })
       .catch(() => undefined);
@@ -586,12 +590,12 @@ export class TerminalManager {
    * change while the tab was created can queue a second rename behind this
    * one, and a refocus between them would send that rename elsewhere (F4).
    */
-  private async afterTitleWork(afterTitle: (() => Promise<void>) | undefined): Promise<void> {
+  private async afterTitleWork(afterTitle: AfterTitle | undefined, phase: 'now' | 'late'): Promise<void> {
     if (!afterTitle || this.isDisposed) {
       return;
     }
     await this.titleWrites;
-    await afterTitle();
+    await afterTitle(phase);
   }
 
   /**
