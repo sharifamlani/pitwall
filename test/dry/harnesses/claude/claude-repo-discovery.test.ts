@@ -264,6 +264,53 @@ test("discovery's clock is the last user entry, as import's is, even with later 
   assert.deepEqual(folders.map((folder) => folder.cwd), [live]);
 });
 
+test('a transcript whose last user entry is over 1 MB from its end counts as recent, read no further', async (t) => {
+  const { profile, transcript, user, discovery } = setup(t);
+  const busy = profile.dir('busy');
+  // The last user entry is 31 days old, then about 3 MB of replies: past the
+  // 1 MB tail window, so the date is unknown and the mtime (today) stands.
+  const reply = (i: number) => ({
+    type: 'assistant',
+    cwd: busy,
+    timestamp: iso(Date.now() - DAY + i),
+    message: { role: 'assistant', content: [{ type: 'text', text: `${i} `.padEnd(100 * 1024, 'x') }] },
+  });
+  transcript('busy', 'b1', [user(busy, Date.now() - 31 * DAY), ...Array.from({ length: 30 }, (_, i) => reply(i))], 60_000);
+
+  // Every read of a transcript, by the bytes it asked for.
+  const nodeFs = require('fs') as typeof fs;
+  const reads: { file: string; bytes: number }[] = [];
+  const { open, readFile } = nodeFs.promises;
+  const promises = nodeFs.promises as unknown as Record<string, unknown>;
+  t.after(() => Object.assign(promises, { open, readFile }));
+  promises.readFile = async (file: unknown, ...rest: unknown[]) => {
+    if (String(file).endsWith('.jsonl')) reads.push({ file: String(file), bytes: (await fs.promises.stat(String(file))).size });
+    return (readFile as (...args: unknown[]) => unknown)(file, ...rest);
+  };
+  promises.open = async (file: unknown, ...rest: unknown[]) => {
+    const handle = (await (open as (...args: unknown[]) => Promise<fs.promises.FileHandle>)(file, ...rest)) as fs.promises.FileHandle;
+    if (String(file).endsWith('.jsonl')) {
+      const read = handle.read.bind(handle) as (...args: unknown[]) => Promise<unknown>;
+      (handle as unknown as Record<string, unknown>).read = (buffer: unknown, offset: unknown, length: number, ...more: unknown[]) => {
+        reads.push({ file: String(file), bytes: length });
+        return read(buffer, offset, length, ...more);
+      };
+    }
+    return handle;
+  };
+  const blocks = watchEventLoopBlocks();
+  t.after(() => blocks.stop());
+
+  const folders = await discovery().discoverRecentFolders(Date.now() - 14 * DAY);
+  const { maxBlockMs } = blocks.stop();
+
+  assert.deepEqual(folders.map((folder) => folder.cwd), [busy], 'an unknown date counts as recent');
+  assert.ok(reads.length > 0, 'the tail was read');
+  const largest = Math.max(...reads.map((read) => read.bytes));
+  assert.ok(largest <= 1024 * 1024, `one read asked for ${largest} bytes, past the 1 MB tail window`);
+  assert.ok(maxBlockMs <= 50, `discovery blocked the extension host for ${maxBlockMs.toFixed(0)} ms at once`);
+});
+
 test('a repo whose newest transcript has no message in the last 14 days is not discovered', async (t) => {
   const { profile, transcript, user, discovery } = setup(t);
   const stale = profile.dir('stale');
