@@ -4,6 +4,12 @@ All notable changes to Pitwall are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-17
+
+### Fixed
+
+- On Windows, opening a chat in Claude Code's chat panel no longer fails with "runs in the first folder open" because of the drive letter's case.
+
 ## [0.4.0] - 2026-11-17
 
 Sidebar v1: repos and sessions (ROADMAP Phase 3).

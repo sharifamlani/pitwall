@@ -1,6 +1,6 @@
 import { HarnessSession } from '../harness/types';
 import { Worktree } from '../types';
-import { canonicalPath, deepestContainingRoot } from '../utils/paths';
+import { deepestContainingRoot, samePath } from '../utils/paths';
 import { GitService } from './GitService';
 import { StorageService } from './StorageService';
 
@@ -103,13 +103,12 @@ export class WorktreeCatalog {
    * keeps every session.
    */
   owns(worktreePath: string, cwd: string): boolean {
-    const target = canonicalPath(worktreePath);
     const worktrees = this.worktrees();
-    if (!worktrees.some((worktree) => canonicalPath(worktree.path) === target)) {
+    if (!worktrees.some((worktree) => samePath(worktree.path, worktreePath))) {
       return true;
     }
     const owner = deepestContainingRoot(worktrees, cwd);
-    return !owner || canonicalPath(owner.path) === target;
+    return !owner || samePath(owner.path, worktreePath);
   }
 
   ownedSessions<T extends Pick<HarnessSession, 'cwd'>>(worktreePath: string, sessions: T[]): T[] {

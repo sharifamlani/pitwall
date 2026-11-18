@@ -16,7 +16,7 @@ import {
 } from '../harness/types';
 import { DEFAULT_CHAT_NAME, chatPrimarySessionId } from '../harness/sessionUtils';
 import { errorMessage, formatRelativeTime, nextForkName } from '../utils/text';
-import { canonicalPath } from '../utils/paths';
+import { samePath } from '../utils/paths';
 import { commandInDirectory } from '../services/terminalEvents';
 import {
   commandRegistrar,
@@ -827,7 +827,7 @@ export function registerChatCommands(
     // Git reports the physical path, which may differ from what was typed.
     const newWorktree = gitService
       .listWorktrees(repo.rootPath, repo.id)
-      .find((candidate) => canonicalPath(candidate.path) === canonicalPath(worktreePath));
+      .find((candidate) => samePath(candidate.path, worktreePath));
     if (!newWorktree) {
       vscode.window.showErrorMessage('Worktree created but could not find it in the list.');
       return;

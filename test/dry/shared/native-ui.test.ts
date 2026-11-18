@@ -101,3 +101,36 @@ test('a failed open is reported, never retried another way that could start a ne
   command('vscode.openWith', 'custom editor unavailable');
   assert.deepEqual(await codex.openSession('thread-1', UI_CWD), { kind: 'failed', message: 'custom editor unavailable' });
 });
+
+/** Run `body` as if on Windows, whatever the CI OS: samePath reads process.platform. */
+function asWindows(body: () => void) {
+  const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  try {
+    body();
+  } finally {
+    Object.defineProperty(process, 'platform', original);
+  }
+}
+
+test('a session whose folder is C:\\lab\\a is available in a window whose first folder is c:\\lab\\a', () => {
+  asWindows(() => {
+    windowWith(['c:\\lab\\a'], ['anthropic.claude-code']);
+    assert.equal(claude.checkAvailability('C:\\lab\\a').kind, 'available');
+  });
+});
+
+test('new-session availability accepts the same drive-case difference', () => {
+  asWindows(() => {
+    windowWith(['c:\\lab\\a'], ['openai.chatgpt']);
+    assert.equal(codex.checkNewSessionAvailability('C:\\lab\\a').kind, 'available');
+  });
+});
+
+test('a genuinely different folder is still a workspace-mismatch', () => {
+  asWindows(() => {
+    windowWith(['c:\\lab\\a'], ['anthropic.claude-code', 'openai.chatgpt']);
+    assert.equal(claude.checkAvailability('C:\\lab\\b').kind, 'workspace-mismatch');
+    assert.equal(codex.checkNewSessionAvailability('C:\\lab\\b').kind, 'workspace-mismatch');
+  });
+});

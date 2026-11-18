@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { NativeUiAvailability } from '../types';
-import { canonicalPath } from '../../utils/paths';
+import { samePath } from '../../utils/paths';
 import { errorMessage } from '../../utils/text';
 
 /**
@@ -21,7 +21,7 @@ export function firstWorkspaceFolderAvailability(
   if (options.requireSingleFolder && folders.length > 1) {
     return { kind: 'workspace-multi-root', uiCwd };
   }
-  if (canonicalPath(uiCwd) !== canonicalPath(cwd)) {
+  if (!samePath(uiCwd, cwd)) {
     return { kind: 'workspace-mismatch', uiCwd };
   }
   return { kind: 'available' };
