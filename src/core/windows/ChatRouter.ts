@@ -37,7 +37,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface ChatRouterDeps {
   /** The handoff inbox, once the window services have started (after first render). */
-  services: () => { inbox: HandoffInbox; registry?: Pick<WindowRegistry, 'windowsFor'> } | undefined;
+  services: () => { inbox: HandoffInbox; registry?: Pick<WindowRegistry, 'windowsFor' | 'windows'> } | undefined;
   /** This window's folder: `workspaceFolders[0]`, Claude's own rule. Undefined in an empty window. */
   windowFolder: () => string | undefined;
   harnessRegistry: Pick<HarnessRegistry, 'has' | 'get' | 'all'>;
@@ -186,31 +186,51 @@ export class ChatRouter implements vscode.Disposable {
     }
 
     const local: { chat: ChatSession; worktree: Worktree }[] = [];
-    const remote = new Map<string, { folder: string; ids: string[] }>();
+    const remote = new Map<string, { folder: string; ids: string[]; reasons: Map<string, string> }>();
     const gone = new Set<string>();
+    const hand = (folder: string, id: string, reason: string) => {
+      const key = pathKey(folder);
+      const group = remote.get(key) ?? { folder, ids: [] as string[], reasons: new Map<string, string>() };
+      group.ids.push(id);
+      group.reasons.set(id, reason);
+      remote.set(key, group);
+    };
     for (const chat of req.chats) {
       const worktree = await this.deps.worktreeOf(chat);
       if (!worktree) {
         continue;
       }
-      // The launch folder decides first (D35). A chat with no transcript to
-      // read yet (no session, still starting in its UI) has only its worktree.
+      const id = chat.harnessSessionId ?? chat.id;
+      // One agent process per session. Where the session is live decides
+      // first: Claude files a transcript under the session's current folder,
+      // which moves with EnterWorktree, so the launch folder alone would start
+      // a second process beside the live one.
+      if (this.deps.isOpenHere(chat)) {
+        this.logRoute(id, 'here', 'open-here');
+        local.push({ chat, worktree: { ...worktree, path: this.deps.windowFolder() ?? worktree.path } });
+        continue;
+      }
+      if (!this.canHandOff(chat)) {
+        // Nothing of this chat exists natively to hand over: it stays here.
+        this.logRoute(id, 'here', 'no-transcript');
+        local.push({ chat, worktree });
+        continue;
+      }
+      const there = await this.windowOpening(chat.harnessSessionId!);
+      if (there) {
+        hand(there, chat.harnessSessionId!, 'open-there');
+        continue;
+      }
+      // Open nowhere: the launch folder decides (D35).
       const folder = (await this.launchFolder(chat, worktree)) ?? worktree.path;
       if (!fs.existsSync(folder)) {
-        this.logRoute(chat.harnessSessionId ?? chat.id, folder, 'gone');
+        this.logRoute(id, folder, 'gone');
         gone.add(folder);
       } else if (this.isThisWindow(folder)) {
-        this.logRoute(chat.harnessSessionId ?? chat.id, 'here', this.deps.isOpenHere(chat) ? 'tab-here' : 'same-folder');
+        this.logRoute(id, 'here', 'same-folder');
         local.push({ chat, worktree: { ...worktree, path: folder } });
-      } else if (!this.canHandOff(chat)) {
-        // Nothing of this chat exists natively to hand over: it stays here.
-        this.logRoute(chat.harnessSessionId ?? chat.id, 'here', 'same-folder');
-        local.push({ chat, worktree });
       } else {
-        const key = pathKey(folder);
-        const group = remote.get(key) ?? { folder, ids: [] };
-        group.ids.push(chat.harnessSessionId!);
-        remote.set(key, group);
+        hand(folder, chat.harnessSessionId!, 'handoff');
       }
     }
 
@@ -221,11 +241,10 @@ export class ChatRouter implements vscode.Disposable {
       await this.deps.openHere(chat, worktree, { keepListFocus });
     }
     let routed = 0;
-    for (const { folder, ids } of remote.values()) {
+    for (const { folder, ids, reasons } of remote.values()) {
       const sent = await this.handOff(folder, req.kind, ids);
-      const reason = sent ? 'handoff' : 'no-services';
       for (const id of ids) {
-        this.logRoute(id, folder, reason);
+        this.logRoute(id, folder, sent ? reasons.get(id)! : 'no-services');
       }
       routed += sent ? 1 : 0;
     }
@@ -315,6 +334,13 @@ export class ChatRouter implements vscode.Disposable {
   private isThisWindow(folder: string): boolean {
     const here = this.deps.windowFolder();
     return here !== undefined && samePath(here, folder);
+  }
+
+  /** The folder of another window that has this session open, if any (its heartbeat lists it). */
+  private async windowOpening(sessionId: string): Promise<string | undefined> {
+    const registry = this.deps.services()?.registry;
+    const windows = (await registry?.windows().catch(() => [])) ?? [];
+    return windows.find((w) => w.folder && !this.isThisWindow(w.folder) && w.openSessionIds.includes(sessionId))?.folder;
   }
 
   /** Log one routing decision (`here`, or the folder it went to or was missing). */
