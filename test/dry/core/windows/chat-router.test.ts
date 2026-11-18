@@ -562,7 +562,13 @@ test('a click before window services start waits for them, else warns and opens 
 
   // The services come up 100 ms after the click: the click waits, then hands off.
   let up = false;
-  const early = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other, servicesUp: () => up });
+  // Its request stays unclaimed here, so its own 20 s warning must not fire during the test.
+  const early = windowOn(t, w, dir, () => w.other, {
+    pid: 1001,
+    claims: w.other,
+    servicesUp: () => up,
+    timing: { ...FAST, warnMs: 60_000, expireMs: 120_000 },
+  });
   const timer = setTimeout(() => (up = true), 100);
   t.after(() => clearTimeout(timer));
   assert.equal(await early.router.route({ kind: 'open', chats: [chat] }), 'routed');

@@ -6,7 +6,7 @@ import { pathKey, samePath } from '../utils/paths';
 import { errorMessage } from '../utils/text';
 import { EXPIRE_MS, HandoffInbox, HandoffKind, HandoffOutcome, HandoffRequest, WARN_MS } from './HandoffInbox';
 
-/** Where a route landed: opened in this window, handed to another, or nowhere (its folder is gone). */
+/** Where a route landed: opened in this window, handed to another, or nowhere (its folder is gone, or no window could be reached). */
 export type RouteResult = 'here' | 'routed' | 'gone';
 
 export interface RouterTiming {
@@ -16,9 +16,13 @@ export interface RouterTiming {
   expireMs: number;
   /** How often the sender reads the request's outcome. */
   pollMs: number;
+  /** How long a click made before the window services started waits for them. */
+  servicesWaitMs: number;
 }
 
-export const ROUTER_TIMING: RouterTiming = { warnMs: WARN_MS, expireMs: EXPIRE_MS, pollMs: 250 };
+export const ROUTER_TIMING: RouterTiming = { warnMs: WARN_MS, expireMs: EXPIRE_MS, pollMs: 250, servicesWaitMs: 2_000 };
+/** How often an early click checks whether the window services have started. */
+const SERVICES_CHECK_MS = 50;
 
 /** §3f, new copy. */
 export const folderGoneMessage = (folder: string): string => `That chat's folder is gone: ${folder}`;
@@ -64,6 +68,7 @@ export interface ChatRouterDeps {
  */
 export class ChatRouter implements vscode.Disposable {
   private readonly timing: RouterTiming;
+  /** The last launch folder read per session; only the search box's meta reads it. */
   private readonly launchFolders = new Map<string, string>();
   private readonly timers = new Set<NodeJS.Timeout>();
   /** Claimed batches open one after another, never interleaved. */
@@ -81,25 +86,18 @@ export class ChatRouter implements vscode.Disposable {
     this.timers.clear();
   }
 
-  /** Drop the cached launch folders (a transcript may have been filed elsewhere since). */
-  forgetLaunchFolders(): void {
-    this.launchFolders.clear();
-  }
-
   /**
    * A chat's launch folder (Q2): where its agent's UI resumes it, as its
    * harness reads it from the transcript, among its repo's folders. Falls
-   * back to the chat's worktree. Cached per session.
+   * back to the chat's worktree. Read on every call, never from a cache:
+   * EnterWorktree can move a transcript to another project folder at any
+   * time (QA #51), and the read stops at the first cwd.
    */
   async launchFolder(chat: ChatSession, worktree?: Worktree): Promise<string | undefined> {
     const target = worktree ?? (await this.deps.worktreeOf(chat));
     const sessionId = chat.harnessSessionId;
     if (!sessionId || !this.deps.harnessRegistry.has(chat.harness)) {
       return target?.path;
-    }
-    const cached = this.launchFolders.get(sessionId);
-    if (cached) {
-      return cached;
     }
     let found: string | undefined;
     try {
@@ -109,13 +107,15 @@ export class ChatRouter implements vscode.Disposable {
     }
     if (found) {
       this.launchFolders.set(sessionId, found);
+    } else {
+      this.launchFolders.delete(sessionId);
     }
     return found ?? target?.path;
   }
 
   /**
    * Whether a click on this chat opens it here, from what is known now (the
-   * cached launch folder, else its worktree), for the search box's meta.
+   * last launch folder read, else its worktree), for the search box's meta.
    */
   opensHere(chat: ChatSession, worktree: Worktree | undefined): boolean {
     const here = this.deps.windowFolder();
@@ -147,8 +147,7 @@ export class ChatRouter implements vscode.Disposable {
         await this.deps.startNew(folder);
         return 'here';
       }
-      await this.handOff(folder, 'new', []);
-      return 'routed';
+      return (await this.handOff(folder, 'new', [])) ? 'routed' : 'gone';
     }
 
     const local: { chat: ChatSession; worktree: Worktree }[] = [];
@@ -182,10 +181,14 @@ export class ChatRouter implements vscode.Disposable {
     for (const { chat, worktree } of local) {
       await this.deps.openHere(chat, worktree, { keepListFocus });
     }
+    let routed = 0;
     for (const { folder, ids } of remote.values()) {
-      await this.handOff(folder, req.kind, ids);
+      routed += (await this.handOff(folder, req.kind, ids)) ? 1 : 0;
     }
-    return remote.size > 0 ? 'routed' : local.length > 0 || gone.size === 0 ? 'here' : 'gone';
+    if (routed > 0) {
+      return 'routed';
+    }
+    return local.length > 0 || (gone.size === 0 && remote.size === 0) ? 'here' : 'gone';
   }
 
   /**
@@ -293,16 +296,36 @@ export class ChatRouter implements vscode.Disposable {
   }
 
   /** Send a request (unless the same one is pending) and raise the folder's window. */
-  private async handOff(folder: string, kind: HandoffKind, ids: string[]): Promise<void> {
-    const inbox = this.deps.services()?.inbox;
-    if (inbox) {
-      const pending = await inbox.pending(folder, kind, ids).catch(() => undefined);
-      if (!pending) {
-        const nonce = await inbox.send(folder, { kind, sessionIds: ids });
-        this.watchOutcome(inbox, folder, nonce);
-      }
+  private async handOff(folder: string, kind: HandoffKind, ids: string[]): Promise<boolean> {
+    const inbox = await this.inboxReady();
+    if (!inbox) {
+      // Raising the window without a request would bring it up with no chat.
+      void vscode.window.showWarningMessage(unreachedMessage(this.deps.repoName(folder)));
+      return false;
+    }
+    const pending = await inbox.pending(folder, kind, ids).catch(() => undefined);
+    if (!pending) {
+      const nonce = await inbox.send(folder, { kind, sessionIds: ids });
+      this.watchOutcome(inbox, folder, nonce);
     }
     await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(folder), { forceNewWindow: true });
+    return true;
+  }
+
+  /**
+   * The inbox, waiting up to 2 s for the window services: they start after
+   * the list's first render, so a click in the first moment after activation
+   * comes before them. Undefined when they still aren't up.
+   */
+  private async inboxReady(): Promise<HandoffInbox | undefined> {
+    const deadline = Date.now() + this.timing.servicesWaitMs;
+    for (;;) {
+      const inbox = this.deps.services()?.inbox;
+      if (inbox || this.disposed || Date.now() >= deadline) {
+        return inbox;
+      }
+      await new Promise((resolve) => setTimeout(resolve, SERVICES_CHECK_MS));
+    }
   }
 
   /**
