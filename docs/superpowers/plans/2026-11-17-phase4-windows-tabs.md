@@ -117,6 +117,7 @@ T8 : Close: walk, evaluator, v0.5.0
 - **Activation:** the registry and inbox start after first render. `[Pitwall] activate` → `[Pitwall] first render` stays ≤ 1 s with real `~/.claude` (E16 from Phase 3 is held).
 - **Copy:** UI strings in §3 are verbatim from the canvas or marked *(new copy)*. Sentence case, no exclamation marks.
 - **Windows parity:** every new test passes on the windows CI job; skips ≤ 9.
+- **Timing asserts** use `assertNoLongBlock(fn, maxMs, { runs: 3 })` from `test/dry/support.ts` (PR #49), never a bare `watchEventLoopBlocks` threshold.
 - **Flywheel:**
   - one PR per task on branch `phase4/task-N-<slug>`;
   - QA approves an exact sha, and the lead merges only with `gh pr checks` green at that sha, using `--match-head-commit`, then confirms main CI;
