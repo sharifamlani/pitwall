@@ -194,6 +194,16 @@ export class ClaudeSessionService {
   }
 
   /**
+   * When a transcript's last message was written: the value import and
+   * listing use (`toHarnessSession`'s `lastActivity`). Null when the file
+   * names no folder or cannot be read.
+   */
+  async lastActivityOfFile(filePath: string): Promise<number | null> {
+    const session = await this.parseSessionFileCached(filePath, path.basename(filePath, '.jsonl'));
+    return session ? toHarnessSession(session).lastActivity : null;
+  }
+
+  /**
    * Read without blocking the extension host: a scan parses every transcript
    * of every repository (129 at 1 MB each on the E16 profile), and a
    * synchronous read held the list's first render behind all of them.
