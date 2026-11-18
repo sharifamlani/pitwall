@@ -76,6 +76,44 @@ class ThemeIcon {
   }
 }
 
+/** Minimal DataTransferItem: holds a value, `asString()` gives it as text. */
+class DataTransferItem {
+  constructor(value) {
+    this.value = value;
+  }
+
+  async asString() {
+    return typeof this.value === 'string' ? this.value : JSON.stringify(this.value);
+  }
+
+  asFile() {
+    return undefined;
+  }
+}
+
+/** Minimal DataTransfer: items by mime type, lower-cased as in the editor. */
+class DataTransfer {
+  constructor() {
+    this.items = new Map();
+  }
+
+  get(mimeType) {
+    return this.items.get(mimeType.toLowerCase());
+  }
+
+  set(mimeType, value) {
+    this.items.set(mimeType.toLowerCase(), value);
+  }
+
+  forEach(callback) {
+    for (const [mime, item] of this.items) callback(item, mime, this);
+  }
+
+  [Symbol.iterator]() {
+    return this.items[Symbol.iterator]();
+  }
+}
+
 class ThemeColor {
   constructor(id) {
     this.id = id;
@@ -356,6 +394,8 @@ const windowStateListeners = new Set();
 const configurationChangeListeners = new Set();
 const treeViews = [];
 const statusBarItems = [];
+/** `window.setStatusBarMessage` calls, as `{ text, timeoutMs }`. */
+const statusBarMessages = [];
 let treeViewsVisible = false;
 /** How long a tree view created visible waits before the workbench asks for its first rows. */
 let treeViewFirstRenderDelayMs = 0;
@@ -411,6 +451,8 @@ module.exports = {
   TabInputNotebook,
   ThemeIcon,
   ThemeColor,
+  DataTransfer,
+  DataTransferItem,
   Uri,
   MarkdownString,
   RelativePattern,
@@ -490,6 +532,10 @@ module.exports = {
     __focusTextEditor: (editor) => {
       activeTextEditor = editor;
       focusedTerminal = undefined;
+    },
+    setStatusBarMessage: (text, timeoutMs) => {
+      statusBarMessages.push({ text, timeoutMs });
+      return { dispose: () => undefined };
     },
     /** Records each item; `shown` follows show()/hide(), as in the status bar. */
     createStatusBarItem: (alignment, priority) => {
@@ -894,6 +940,7 @@ module.exports = {
       shownDocuments,
       treeViews,
       statusBarItems,
+      statusBarMessages,
     ]) {
       list.length = 0;
     }
@@ -949,6 +996,7 @@ module.exports = {
   __outputChannels: outputChannels,
   __fileWatchers: fileWatchers,
   __statusBarItems: statusBarItems,
+  __statusBarMessages: statusBarMessages,
   __messages: messages,
   __warningResponses: warningResponses,
   __quickPickResponses: quickPickResponses,

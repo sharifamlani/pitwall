@@ -194,7 +194,10 @@ interface WorkspaceRow {
   description?: string;
 }
 
-test("clicking a repo row points FILES at its main worktree; opening a chat points it at the chat's worktree", async (t) => {
+// Phase 3 asserted here that FILES followed the clicked repo and the opened
+// chat. Q8 (row 4.7) keeps FILES on this window's folder instead; that is
+// tested in files-cross-repo.test.ts.
+test('the list header and the order diagnostic, with a linked-worktree chat', async (t) => {
   stub.__setTreeViewsVisible(true);
   const scratch = tempDir(t);
   const repoPath = path.join(scratch, 'app');
@@ -244,15 +247,11 @@ test("clicking a repo row points FILES at its main worktree; opening a chat poin
   );
   assert.ok(!logged.some((line) => line.startsWith('[Pitwall] order')), 'and not to console.log');
 
-  list.__select([repoRow]);
-  assert.equal(files.description, 'app ⎇ main');
-  assert.equal(fs.realpathSync(files.message ?? ''), fs.realpathSync(repoPath), 'the folder path');
-
   const [chatRow] = (await rows.getChildren(repoRow)) as WorkspaceRow[];
   assert.match(String(chatRow.description), /^⎇ feat\/fiu ⧉ {2}/);
-  await vscode.commands.executeCommand('pitwall.openChat', chatRow);
-  await waitFor(() => files.description === 'app ⎇ feat/fiu', 'FILES follows the opened chat');
-  assert.equal(fs.realpathSync(files.message ?? ''), fs.realpathSync(linkedPath));
+  // No workspace folder: FILES has no folder to show, whatever row is clicked (Q8).
+  list.__select([repoRow]);
+  assert.equal(files.description, undefined);
 });
 
 test('every command the manifest contributes is registered after activation', async (t) => {
