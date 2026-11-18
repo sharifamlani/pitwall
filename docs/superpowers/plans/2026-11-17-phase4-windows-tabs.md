@@ -577,6 +577,8 @@ Tests: `tree.test.ts`, `menus.test.ts`, `search.test.ts`.
   - `an empty window routes every chat`;
   - `a multi-root window opens its own first-folder chat locally and routes others`;
   - `runClaimed opens chats one at a time in request order and logs handoff opened`.
+  - `typing in the new terminal before its late rename lets go of the list` (QA #47 follow-up: `onDidChangeTerminalState` → `isInteractedWith` releases the list hold);
+  - `the late-refocus hold also lets go when a Claude panel tab becomes active` (carried from T2).
 
   In `tree.test.ts`:
   - `repo description adds " · 2 windows" only when k > 1`;
