@@ -10,9 +10,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { HandoffInbox } from '../../../../src/core/windows/HandoffInbox';
-import { tempDir } from '../../support';
 
 const REQUESTS = 20;
 /** The streaming race sends a request this often while both children poll. */
@@ -97,6 +97,16 @@ function runChild(env: Record<string, string>): Promise<ChildResult> {
       }
     });
   });
+}
+
+/**
+ * A temp directory removed when the test ends. Local rather than support's
+ * `tempDir`, which pulls every harness into the bundle each child re-parses.
+ */
+function tempDir(t: { after(fn: () => void): void }): string {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pitwall-claim-')));
+  t.after(() => fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }));
+  return dir;
 }
 
 const sendOne = (sender: HandoffInbox, folder: string) =>
