@@ -43,7 +43,7 @@ If [**Rebase onto Upstream…**](worktrees.md#merge-and-rebase) stops on a confl
 
 ## Browse and edit files
 
-The All Files panel is a file browser for the same worktree. Folders are listed first. Select a file to open it.
+The All Files panel (FILES) is a file browser for this window's folder. It does not follow the repo or session you click: a click brings up that repo's own window, whose FILES shows that repo. Folders are listed first. Select a file to open it.
 
 Actions in the panel's title bar: **Search in Files**, **New File…**, **New Folder…**, **Paste**, and **Refresh**. On the right-click menu of a file or folder:
 
@@ -52,17 +52,25 @@ Actions in the panel's title bar: **Search in Files**, **New File…**, **New Fo
 | Open | **Open to the Side** |
 | Locate | **Reveal in File Manager**, **Open in Integrated Terminal** |
 | Paths | **Copy Path**, **Copy Relative Path** |
-| Clipboard | **Copy**, **Cut**, **Paste** |
+| Clipboard | **Copy**, **Cut**, **Paste**, **Copy to another repo (Pitwall)** (files only) |
 | Create | **New File…**, **New Folder…** |
 | Edit | **Rename…**, **Delete** |
 
 With the panel focused, `F2` renames, `Delete` (`Cmd+Backspace` on macOS) deletes, and `Ctrl+C`, `Ctrl+X`, and `Ctrl+V` (`Cmd` on macOS) copy, cut, and paste.
 
+### Copy files between repos
+
+Pitwall keeps one clipboard across all its windows. Copy or cut a file in one window, click another repo so its window comes up, then **Paste** there (or press `Ctrl+V`). While something is on the clipboard, FILES says so under its header. A cut moves the file and empties the clipboard.
+
+**Copy to another repo (Pitwall)** asks which repo and copies the file into that repo's root. Dragging a file from FILES onto a repo row in the list does the same. Drops from the system Explorer are not accepted.
+
+If the copied file is a `.env` or `.env.*` file (not `.env.example`, `.env.sample` or `.env.template`) and the repo it lands in does not ignore it, Pitwall warns and offers **Add to .gitignore**, which appends one `/path` line to that repo's `.gitignore`.
+
 ## Safety
 
 File operations in these panels are narrow by design:
 
-- They only act **inside the worktree** the panel shows. A path outside it is refused.
+- Rename, delete and create only act **inside the folder** the panel shows. A path outside it is refused. Paste and the repo copies bring a file in from another repo, but never overwrite.
 - **Delete moves to the Trash** and asks first.
 - **Creating and pasting never overwrite** an existing file.
 - Every delete, discard, and refusal is recorded in the **Pitwall Operations** output channel (**View → Output**, then pick it from the list).

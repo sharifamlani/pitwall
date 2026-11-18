@@ -3,6 +3,28 @@ import * as path from 'path';
 import { FileTreeItem, FilesTreeProvider } from '../providers/FilesTreeProvider';
 import { logOperation } from '../services/OperationLog';
 import { isStrictlyWithin, isWithin, samePath } from '../utils/paths';
+import { SharedClipboard } from '../files/SharedClipboard';
+import { RepoRef, copyIntoRepo, landedMessage, uniqueDest } from '../files/copyInto';
+import { offerGitignore } from '../files/envIgnoreCheck';
+
+/** What the FILES clipboard commands need beyond the tree (row 4.7). */
+export interface FileCommandDeps {
+  /** The clipboard every window shares (Q9). Default: this window's alone, in memory. */
+  clipboard?: SharedClipboard;
+  /** The sidebar's repos, in list order. */
+  repos?: () => RepoRef[];
+  /** The sidebar repo a path belongs to. */
+  repoOf?: (filePath: string) => RepoRef | undefined;
+}
+
+/** The status-bar line after a copy or cut (§3f), shown for 5 s. */
+export function clipboardStatus(cut: boolean, file: string, repo: string): string {
+  return cut
+    ? `Cut ${file} (${repo}). Now click another repo: its window comes up and the cut waits on the clipboard (Pitwall keeps one clipboard across all its windows). Right-click in FILES → Paste, or press Ctrl+V.`
+    : `Copied ${file} (${repo}). Now click another repo: its window comes up and the copy waits on the clipboard (Pitwall keeps one clipboard across all its windows). Right-click in FILES → Paste, or press Ctrl+V.`;
+}
+
+const CLIPBOARD_STATUS_MS = 5000;
 
 /** Resolve a user-entered name, refusing anything that is not one segment. */
 function validateName(name: string): string | undefined {
@@ -72,34 +94,33 @@ async function createEntry(
   }
 }
 
-async function uniqueDestUri(targetDirUri: vscode.Uri, sourceUri: vscode.Uri): Promise<vscode.Uri> {
-  const name = path.basename(sourceUri.fsPath);
-  const ext = path.extname(name);
-  const base = ext ? name.slice(0, -ext.length) : name;
-
-  let candidate = vscode.Uri.joinPath(targetDirUri, name);
-  let counter = 0;
-
-  while (true) {
-    try {
-      await vscode.workspace.fs.stat(candidate);
-      // File exists — generate a new name
-      counter++;
-      const suffix = counter === 1 ? ' copy' : ` copy ${counter}`;
-      candidate = vscode.Uri.joinPath(targetDirUri, `${base}${suffix}${ext}`);
-    } catch {
-      // stat threw → file does not exist, this name is free
-      return candidate;
-    }
-  }
-}
-
 export function registerFileCommands(
   context: vscode.ExtensionContext,
   filesProvider: FilesTreeProvider,
   /** The row selected in the All Files tree; a keybinding acts on it. */
-  selectedRow: () => FileTreeItem | undefined
+  selectedRow: () => FileTreeItem | undefined,
+  deps: FileCommandDeps = {}
 ): void {
+  const clipboard = deps.clipboard ?? new SharedClipboard(undefined);
+  const repos = deps.repos ?? (() => []);
+  const repoOf = deps.repoOf ?? (() => undefined);
+  /** The name of the repo holding `filePath`; outside every sidebar repo, its folder's name. */
+  const repoNameOf = (filePath: string, fallbackFolder = path.dirname(filePath)): string =>
+    repoOf(filePath)?.name ?? path.basename(fallbackFolder);
+  // Paste is offered while anything is on the clipboard, in any window.
+  const syncClipboardContext = () =>
+    void clipboard
+      .get()
+      .then((entry) => vscode.commands.executeCommand('setContext', 'pitwall.hasFileClipboard', entry !== undefined));
+  context.subscriptions.push(clipboard.onDidChange(syncClipboardContext));
+
+  const putOnClipboard = async (item: FileTreeItem, cut: boolean): Promise<void> => {
+    const root = filesProvider.getActiveWorktree()?.path;
+    await clipboard.set(item.uri.fsPath, cut);
+    const file = path.basename(item.uri.fsPath);
+    vscode.window.setStatusBarMessage(clipboardStatus(cut, file, repoNameOf(item.uri.fsPath, root)), CLIPBOARD_STATUS_MS);
+  };
+
   /** A command on a row: the clicked one, or the selected one for a keybinding. */
   const onRow = (id: string, handler: (item: FileTreeItem) => unknown): vscode.Disposable =>
     vscode.commands.registerCommand(id, (item?: FileTreeItem) => {
@@ -220,45 +241,36 @@ export function registerFileCommands(
       createEntry(filesProvider, 'folder', item)
     ),
 
-    onRow('pitwall.files.copy', (item: FileTreeItem) => {
-      filesProvider.setClipboard(item.uri, false);
-      vscode.window.setStatusBarMessage(`Copied: ${path.basename(item.uri.fsPath)}`, 3000);
-    }),
+    onRow('pitwall.files.copy', (item: FileTreeItem) => putOnClipboard(item, false)),
 
-    onRow('pitwall.files.cut', (item: FileTreeItem) => {
-      filesProvider.setClipboard(item.uri, true);
-      vscode.window.setStatusBarMessage(`Cut: ${path.basename(item.uri.fsPath)}`, 3000);
-    }),
+    onRow('pitwall.files.cut', (item: FileTreeItem) => putOnClipboard(item, true)),
 
+    // Paste lands in this window's folder (Q8), whichever window copied or cut (Q9).
     vscode.commands.registerCommand('pitwall.files.paste', async (clicked?: FileTreeItem) => {
       const item = clicked ?? selectedRow();
-      const clipboard = filesProvider.getClipboard();
-      if (!clipboard) { return; }
+      const entry = await clipboard.get();
+      if (!entry) { return; }
 
-      const worktree = filesProvider.getActiveWorktree();
-      if (!worktree) { return; }
+      const root = filesProvider.getActiveWorktree()?.path;
+      if (!root) { return; }
 
-      // Resolve target directory: folder item → that folder, file item → its parent, no item → worktree root
+      // Resolve target directory: folder item → that folder, file item → its parent, no item → the window's folder
       const targetDir = item
         ? ((item.fileType & vscode.FileType.Directory) !== 0
             ? item.uri.fsPath
             : path.dirname(item.uri.fsPath))
-        : worktree.path;
-      if (!isWithin(targetDir, worktree.path)) {
-        vscode.window.showErrorMessage('Refusing to paste outside the active worktree.');
-        logOperation(`Refused paste outside worktree: ${targetDir}`);
-        return;
-      }
+        : root;
 
-      const sourcePath = path.resolve(clipboard.uri.fsPath);
+      const sourcePath = path.resolve(entry.path);
+      const sourceUri = vscode.Uri.file(sourcePath);
       let sourceIsFolder = false;
       try {
         sourceIsFolder =
-          ((await vscode.workspace.fs.stat(clipboard.uri)).type & vscode.FileType.Directory) !== 0;
+          ((await vscode.workspace.fs.stat(sourceUri)).type & vscode.FileType.Directory) !== 0;
       } catch {
-        vscode.window.showErrorMessage('The item to paste no longer exists.');
+        vscode.window.showWarningMessage('The item to paste no longer exists.');
         logOperation(`Paste source missing: ${sourcePath}`);
-        filesProvider.clearClipboard();
+        await clipboard.clear();
         return;
       }
 
@@ -272,30 +284,55 @@ export function registerFileCommands(
 
       // Cutting into the same folder is a no-op, not a rename to "<name> copy".
       if (
-        clipboard.isCut &&
+        entry.cut &&
         samePath(path.dirname(sourcePath), targetDir)
       ) {
         vscode.window.showInformationMessage('The item is already in this folder.');
         return;
       }
 
-      const destUri = await uniqueDestUri(vscode.Uri.file(targetDir), clipboard.uri);
-      const relativeSource = path.relative(worktree.path, sourcePath);
-      const relativeDest = path.relative(worktree.path, destUri.fsPath);
+      const name = path.basename(sourcePath);
+      const fromRepo = repoNameOf(sourcePath);
+      const dest = await uniqueDest(targetDir, name);
+      const destUri = vscode.Uri.file(dest);
       try {
-        if (clipboard.isCut) {
-          await vscode.workspace.fs.rename(clipboard.uri, destUri, { overwrite: false });
-          filesProvider.clearClipboard();
-          logOperation(`Moved ${relativeSource} -> ${relativeDest}`);
+        if (entry.cut) {
+          await vscode.workspace.fs.rename(sourceUri, destUri, { overwrite: false });
+          await clipboard.clear();
+          logOperation(`Moved ${sourcePath} -> ${dest}`);
         } else {
-          await vscode.workspace.fs.copy(clipboard.uri, destUri, { overwrite: false });
-          logOperation(`Copied ${relativeSource} -> ${relativeDest}`);
+          await vscode.workspace.fs.copy(sourceUri, destUri, { overwrite: false });
+          logOperation(`Copied ${sourcePath} -> ${dest}`);
         }
         filesProvider.refresh();
       } catch (err) {
-        logOperation(`Paste failed: ${relativeSource} -> ${relativeDest} (${String(err)})`);
+        logOperation(`Paste failed: ${sourcePath} -> ${dest} (${String(err)})`);
         vscode.window.showErrorMessage(`Paste failed: ${err}`);
+        return;
       }
+      const winName = repoNameOf(root, root);
+      vscode.window.showInformationMessage(
+        landedMessage(entry.cut ? 'Moved' : 'Pasted', name, fromRepo, winName, targetDir, dest)
+      );
+      if (!sourceIsFolder) {
+        await offerGitignore({ name: winName, rootPath: root }, name, dest);
+      }
+    }),
+
+    // Copy to another repo (Pitwall): a quick pick of the other sidebar repos;
+    // the file lands in the chosen repo's root (Q10).
+    onRow('pitwall.files.copyToRepo', async (item: FileTreeItem) => {
+      if ((item.fileType & vscode.FileType.Directory) !== 0) { return; }
+      const src = item.uri.fsPath;
+      const file = path.basename(src);
+      const from = repoOf(src);
+      const others = repos().filter((repo) => !(from && samePath(repo.rootPath, from.rootPath)) && !isWithin(src, repo.rootPath));
+      const picked = await vscode.window.showQuickPick(
+        others.map((repo) => ({ label: repo.name, detail: repo.rootPath, repo })),
+        { placeHolder: `Copy ${file} to which repo?` }
+      );
+      if (!picked) { return; }
+      await copyIntoRepo(picked.repo, src, from?.name ?? repoNameOf(src, filesProvider.getActiveWorktree()?.path));
     })
   );
 }

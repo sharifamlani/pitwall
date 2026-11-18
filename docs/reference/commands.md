@@ -158,7 +158,8 @@ Select several sessions with `Shift` or `Ctrl`/`Cmd` click.
 | **Open to the Side** | Right-click a file |
 | **Reveal in File Manager**, **Open in Integrated Terminal** | Right-click |
 | **Copy Path**, **Copy Relative Path** | Right-click |
-| **Copy**, **Cut**, **Paste** | Right-click, `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
+| **Copy**, **Cut**, **Paste** | Right-click, `Ctrl+C` / `Ctrl+X` / `Ctrl+V`. One clipboard for every Pitwall window; Paste lands in this window's folder |
+| **Copy to another repo (Pitwall)** | Right-click a file. Pick a repo; the copy lands in its root. Dragging a file onto a repo row does the same |
 | **New File...**, **New Folder...** | Right-click a folder |
 | **Rename...** | Right-click, `F2` |
 | **Delete** | Right-click, `Delete` / `Cmd+Backspace`. Moves to the Trash |

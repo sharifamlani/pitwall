@@ -18,8 +18,7 @@ test('All Files lists folders first in natural order, hides build and VCS output
   const files = new FilesTreeProvider();
   t.after(() => files.dispose());
 
-  const [placeholder] = (await files.getChildren()) as vscode.TreeItem[];
-  assert.equal(placeholder.label, 'Select a worktree or chat');
+  assert.deepEqual(await files.getChildren(), [], 'no folder: no rows, so the view shows its welcome text');
 
   files.setActiveWorktree(worktreeRecord({ path: root }));
   const top = (await files.getChildren()) as FileTreeItem[];
@@ -68,14 +67,14 @@ test('new file with a file selected creates it next to that file, not inside it'
 });
 
 test('rename, delete and paste accept a selected row whose fsPath has a lower-case drive', async (t) => {
-  const { root, files, row } = filesSetup(t);
+  const { root, row } = filesSetup(t);
 
   stub.__inputResponses.push('GUIDE.md');
   await runCommand('pitwall.files.rename', row('README.md', vscode.FileType.File));
   assert.equal(shown('Refusing'), false);
   assert.ok(fs.existsSync(path.join(root, 'GUIDE.md')));
 
-  files.setClipboard(row('GUIDE.md', vscode.FileType.File).uri, false);
+  await runCommand('pitwall.files.copy', row('GUIDE.md', vscode.FileType.File));
   await runCommand('pitwall.files.paste', row('src', vscode.FileType.Directory));
   assert.equal(shown('Refusing'), false);
   assert.ok(fs.existsSync(path.join(root, 'src', 'GUIDE.md')));
@@ -86,7 +85,7 @@ test('rename, delete and paste accept a selected row whose fsPath has a lower-ca
   assert.equal(fs.existsSync(path.join(root, 'GUIDE.md')), false);
 
   // A folder still cannot be pasted into itself, however the drive is spelled.
-  files.setClipboard(row('src', vscode.FileType.Directory).uri, false);
+  await runCommand('pitwall.files.copy', row('src', vscode.FileType.Directory));
   await runCommand('pitwall.files.paste', row('src', vscode.FileType.Directory));
   assert.ok(shown('Cannot paste a folder into itself'));
 });

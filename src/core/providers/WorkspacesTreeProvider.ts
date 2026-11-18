@@ -9,7 +9,7 @@ import { harnessIconPath } from '../harness/treeIcons';
 import { HarnessAdapter, SessionMetadata, TurnState } from '../harness/types';
 import { formatRelativeTime } from '../utils/text';
 import { debounce } from '../utils/debounce';
-import { samePath } from '../utils/paths';
+import { deepestContainingRoot, samePath } from '../utils/paths';
 import { logOperation } from '../services/OperationLog';
 import { ChatTooltipHeader, chatTooltip } from './chatTooltip';
 import { STATUS_WORDS, SessionStatus, statusIconState } from './sessionStatus';
@@ -799,6 +799,22 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       return worktrees.find((worktree) => worktree.isMain) ?? worktrees[0];
     }
     return undefined;
+  }
+
+  /**
+   * The repo whose worktree holds `filePath` (the deepest worktree wins, so a
+   * nested repo beats the one around it), for FILES messages.
+   */
+  repoContaining(filePath: string): Repository | undefined {
+    return this.deepestRootContaining(filePath)?.repo;
+  }
+
+  /** The deepest root holding `filePath`: a repo's main folder or one of its worktrees (Q25). */
+  deepestRootContaining(filePath: string): { path: string; repo: Repository } | undefined {
+    const roots = this.storageService
+      .getRepositories()
+      .flatMap((repo) => [{ path: repo.rootPath, repo }, ...this.getRepoWorktrees(repo).worktrees.map((worktree) => ({ path: worktree.path, repo }))]);
+    return deepestContainingRoot(roots, filePath);
   }
 
   /** Whether a worktree belongs to a git repository (for the FILES header). */
