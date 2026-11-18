@@ -17,6 +17,7 @@ import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/pro
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { splitSideBySide, SIDE_BY_SIDE_MAX } from '../../../src/core/windows/sideBySide';
 import { ChatSession, RepositoryWorktrees } from '../../../src/core/types';
+import type { HandoffKind } from '../../../src/core/windows/HandoffInbox';
 import { fakeAdapter, fakeWorktreeListing, makeStorage, runCommand, shownMessages, stub, tempDir, worktreeRecord } from '../support';
 
 beforeEach(() => stub.__reset());
@@ -62,7 +63,7 @@ type RepoWorld = ReturnType<typeof repoWorld>;
 function commands(t: { after(fn: () => void): void }, w: RepoWorld, options: { windowFolder?: string; open?: Set<string>; dumpDir?: string; tabs?: () => unknown[] } = {}) {
   const routes: { kind: string; chats: string[] }[] = [];
   const router = {
-    route: async (req: { kind: string; chats: ChatSession[] }) => {
+    route: async (req: { kind: HandoffKind; chats: ChatSession[]; folder?: string }) => {
       routes.push({ kind: req.kind, chats: req.chats.map((chat) => chat.name) });
       return 'here' as const;
     },
@@ -74,13 +75,13 @@ function commands(t: { after(fn: () => void): void }, w: RepoWorld, options: { w
     harnessRegistry: new HarnessRegistry([]),
     forgetWorktrees: () => undefined,
     refreshTree: () => undefined,
-    router: () => router as never,
+    router: () => router,
     mainChats: (repo) => w.tree.mainChatsOf(repo),
     windowFolder: () => options.windowFolder,
     isChatOpen: (chat) => options.open?.has(chat.id) ?? false,
     openChatsOf: async (repo) => w.tree.mainChatsOf(repo).filter((chat) => options.open?.has(chat.id)),
     dump: options.dumpDir ? { dir: options.dumpDir, pid: 4242, tabs: () => (options.tabs?.() ?? []) as never, windowFolder: () => options.windowFolder } : undefined,
-  } as never);
+  });
   t.after(() => context.subscriptions.forEach((entry) => entry.dispose()));
   const row = new WorkspaceTreeItem('demo', 1, 'repository', w.repo, 'repository');
   return { routes, row };
@@ -91,7 +92,8 @@ test("repo click opens the repo's main-folder sidebar chats and no worktree chat
   assert.deepEqual(w.tree.mainChatsOf(w.repo).map((chat) => chat.name), ['m0', 'm1', 'm2'], 'main folder only, newest first');
   const { routes, row } = commands(t, w);
   await runCommand('pitwall.openRepoChats', row);
-  assert.deepEqual(routes, [{ kind: 'openAll', chats: ['m0', 'm1', 'm2'] }]);
+  // Oldest first, so the newest tab opens last and stays in front.
+  assert.deepEqual(routes, [{ kind: 'openAll', chats: ['m2', 'm1', 'm0'] }]);
   const [repoRow] = await w.tree.getChildren();
   assert.equal(repoRow.command?.command, 'pitwall.openRepoChats', 'the repo row runs it on click and Enter');
   assert.deepEqual(repoRow.command?.arguments, [repoRow]);
@@ -102,21 +104,21 @@ test('repo click opens at most the Q18 cap, newest first, and offers the rest', 
   const { routes, row } = commands(t, w);
   stub.__quickPickResponses.push(undefined);
   await runCommand('pitwall.openRepoChats', row);
-  assert.deepEqual(routes, [{ kind: 'openAll', chats: Array.from({ length: 8 }, (_, i) => `m${i}`) }]);
+  assert.deepEqual(routes, [{ kind: 'openAll', chats: Array.from({ length: 8 }, (_, i) => `m${7 - i}`) }]);
   assert.deepEqual(
     (stub.__messages.at(-1)![0] as { label: string }[]).map((item) => item.label),
     ['Open the other 3 chats']
   );
 
-  stub.__reset();
   routes.length = 0;
+  stub.__messages.length = 0;
   stub.__quickPickResponses.push({ label: 'Open the other 3 chats' });
   await runCommand('pitwall.openRepoChats', row);
   assert.deepEqual(
     routes.map((entry) => [entry.kind, entry.chats]),
     [
-      ['openAll', Array.from({ length: 8 }, (_, i) => `m${i}`)],
-      ['openAll', ['m8', 'm9', 'm10']],
+      ['openAll', Array.from({ length: 8 }, (_, i) => `m${7 - i}`)],
+      ['openAll', ['m10', 'm9', 'm8']],
     ],
     'picking it opens the remaining chats'
   );
@@ -132,7 +134,7 @@ test('repo click in its own window with all chats open reveals only the last-ope
   routes.length = 0;
   open.delete(w.mainChats[0].id);
   await runCommand('pitwall.openRepoChats', row);
-  assert.deepEqual(routes, [{ kind: 'openAll', chats: ['m0', 'm1', 'm2'] }], 'with one closed, it opens them all again');
+  assert.deepEqual(routes, [{ kind: 'openAll', chats: ['m2', 'm1', 'm0'] }], 'with one closed, it opens them all again');
 });
 
 test('a Ctrl+↓/↑ landing on a repo row only expands it (Q22)', async (t) => {
@@ -143,7 +145,7 @@ test('a Ctrl+↓/↑ landing on a repo row only expands it (Q22)', async (t) => 
   await runCommand('pitwall.openRepoChats', row);
   assert.deepEqual(routes, [], 'the marker the key left means a keyboard walk: nothing opens');
   await runCommand('pitwall.openRepoChats', row);
-  assert.deepEqual(routes.map((entry) => entry.kind), ['openAll'], 'a click after it opens as usual');
+  assert.equal(routes.length, 1, 'a click after it opens as usual');
 });
 
 test('side by side splits up to 4 open tabs, one group each, and is hidden below 2', async (t) => {
@@ -163,19 +165,21 @@ test('side by side splits up to 4 open tabs, one group each, and is hidden below
 
   // The menu item shows only on a repo whose window has 2+ of its chats open.
   const w = repoWorld(t, { main: 3, feat: 0 });
-  const open = (...chats: ChatSession[]) => ({ folder: '/work/demo', openSessionIds: chats.map((chat) => chat.harnessSessionId!) });
+  const chat = (name: string) => w.mainChats.find((candidate) => candidate.name === name)!;
+  const open = (...chats: ChatSession[]) => ({ folder: '/work/demo', openSessionIds: chats.map((candidate) => candidate.harnessSessionId!) });
   const value = async () => (await w.tree.getChildren())[0].contextValue;
-  w.tree.setWindows([open(w.mainChats[0])]);
+  w.tree.setWindows([open(chat('m0'))]);
   assert.equal(await value(), 'repository.hasWindow');
-  w.tree.setWindows([open(w.mainChats[0], w.mainChats[1])]);
+  w.tree.setWindows([open(chat('m0'), chat('m1'))]);
   assert.equal(await value(), 'repository.hasWindow.sideBySide');
   w.tree.setWindows([{ folder: '/work/demo', openSessionIds: ['sf0', 'sf1'] }]);
   assert.equal(await value(), 'repository.hasWindow', 'worktree chats do not count');
 
-  const { routes, row } = commands(t, w, { open: new Set([w.mainChats[0].id]) });
+  const idOf = (name: string) => w.mainChats.find((chat) => chat.name === name)!.id;
+  const { routes, row } = commands(t, w, { open: new Set([idOf('m0')]) });
   await runCommand('pitwall.showRepoChatsSideBySide', row);
   assert.deepEqual(routes, [], 'a command run on one open chat does nothing');
-  const both = commands(t, w, { open: new Set([w.mainChats[0].id, w.mainChats[1].id]) });
+  const both = commands(t, w, { open: new Set([idOf('m0'), idOf('m1')]) });
   await runCommand('pitwall.showRepoChatsSideBySide', both.row);
   assert.deepEqual(both.routes, [{ kind: 'sideBySide', chats: ['m0', 'm1'] }]);
 });

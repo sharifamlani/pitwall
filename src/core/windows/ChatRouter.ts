@@ -32,8 +32,11 @@ const SERVICES_CHECK_MS = 50;
 export const folderGoneMessage = (folder: string): string => `That chat's folder is gone: ${folder}`;
 /** §3f, new copy. */
 export const unreachedMessage = (repo: string): string => `Pitwall couldn't reach the ${repo} window. Click the chat again.`;
+/** Q28, new copy: a chat a terminal outside Pitwall is running is never opened a second time. */
+export const outsideTerminalMessage = (pid: number): string =>
+  `That chat is already running in another terminal (pid ${pid}). Switch to it there.`;
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID =/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface ChatRouterDeps {
   /** The handoff inbox, once the window services have started (after first render). */
@@ -58,6 +61,20 @@ export interface ChatRouterDeps {
   openHere: (chat: ChatSession, worktree: Worktree, options: { keepListFocus: boolean }) => Promise<boolean>;
   /** Start a new chat in a folder this window shows. */
   startNew: (folder: string) => Promise<boolean>;
+  /**
+   * The pid of a live agent process running this session outside anything
+   * Pitwall owns (a terminal the user started), if any (Q28). Asked only for a
+   * chat that is not open here or in another Pitwall window: those are Pitwall's.
+   */
+  outsideTerminal?: (sessionId: string) => Promise<number | undefined>;
+  /**
+   * Open sessions one at a time, binding each new tab to its session (the tab
+   * tracker's `openSerially`). Used for `openAll` and `sideBySide`; a single
+   * open keeps T2's own binding.
+   */
+  openSerially?: (sessionIds: string[], open: (sessionId: string) => Promise<unknown>) => Promise<unknown>;
+  /** Put these sessions' tabs side by side in this window (at most 4 panes, Q15). */
+  sideBySide?: (sessionIds: string[]) => Promise<void>;
   /** Where the `[Pitwall] route ...` diagnostic lines go; the Operations log by default. */
   log?: (line: string) => void;
   timing?: Partial<RouterTiming>;
@@ -175,20 +192,24 @@ export class ChatRouter implements vscode.Disposable {
         return 'gone';
       }
       if (!fs.existsSync(folder)) {
+        this.logNewRoute(folder, 'gone');
         void vscode.window.showWarningMessage(folderGoneMessage(folder));
         return 'gone';
       }
       if (this.isThisWindow(folder)) {
+        this.logNewRoute(folder, 'same-folder');
         await this.deps.startNew(folder);
         return 'here';
       }
+      this.logNewRoute(folder, 'handoff');
       return (await this.handOff(folder, 'new', [])) ? 'routed' : 'gone';
     }
 
     const local: { chat: ChatSession; worktree: Worktree }[] = [];
     const remote = new Map<string, { folder: string; ids: string[]; reasons: Map<string, string> }>();
     const gone = new Set<string>();
-    const hand = (folder: string, id: string, reason: string) => {
+    let blocked = 0;
+    const hand =(folder: string, id: string, reason: string) => {
       const key = pathKey(folder);
       const group = remote.get(key) ?? { folder, ids: [] as string[], reasons: new Map<string, string>() };
       group.ids.push(id);
@@ -210,15 +231,25 @@ export class ChatRouter implements vscode.Disposable {
         local.push({ chat, worktree: { ...worktree, path: this.deps.windowFolder() ?? worktree.path } });
         continue;
       }
+      const there = this.canHandOff(chat) ? await this.windowOpening(chat.harnessSessionId!) : undefined;
+      if (there) {
+        hand(there, chat.harnessSessionId!, 'open-there');
+        continue;
+      }
+      // Neither open here nor in another Pitwall window: a live process for it
+      // is one Pitwall doesn't own (a terminal the user started). A second
+      // process on the session would fork it, so Pitwall warns and opens nothing.
+      const outside = chat.harnessSessionId ? await this.deps.outsideTerminal?.(chat.harnessSessionId).catch(() => undefined) : undefined;
+      if (outside !== undefined) {
+        this.logRoute(id, 'elsewhere', 'outside-terminal');
+        void vscode.window.showWarningMessage(outsideTerminalMessage(outside));
+        blocked++;
+        continue;
+      }
       if (!this.canHandOff(chat)) {
         // Nothing of this chat exists natively to hand over: it stays here.
         this.logRoute(id, 'here', 'no-transcript');
         local.push({ chat, worktree });
-        continue;
-      }
-      const there = await this.windowOpening(chat.harnessSessionId!);
-      if (there) {
-        hand(there, chat.harnessSessionId!, 'open-there');
         continue;
       }
       // Open nowhere: the launch folder decides (D35).
@@ -237,9 +268,14 @@ export class ChatRouter implements vscode.Disposable {
     for (const folder of gone) {
       void vscode.window.showWarningMessage(folderGoneMessage(folder));
     }
-    for (const { chat, worktree } of local) {
-      await this.deps.openHere(chat, worktree, { keepListFocus });
-    }
+    const idOf = (chat: ChatSession) => chat.harnessSessionId ?? chat.id;
+    const byId = new Map(local.map((entry) => [idOf(entry.chat), entry]));
+    const openLocal = async (id: string): Promise<boolean> => {
+      const entry = byId.get(id)!;
+      return this.deps.openHere(entry.chat, entry.worktree, { keepListFocus });
+    };
+    const ids = local.map((entry) => idOf(entry.chat));
+    await this.openChats(req.kind, ids, openLocal);
     let routed = 0;
     for (const { folder, ids, reasons } of remote.values()) {
       const sent = await this.handOff(folder, req.kind, ids);
@@ -251,7 +287,36 @@ export class ChatRouter implements vscode.Disposable {
     if (routed > 0) {
       return 'routed';
     }
-    return local.length > 0 || (gone.size === 0 && remote.size === 0) ? 'here' : 'gone';
+    return local.length > 0 || (gone.size === 0 && remote.size === 0 && blocked === 0) ? 'here' : 'gone';
+  }
+
+  /**
+   * Open chats in this window. `openAll` and `sideBySide` go one at a time
+   * through the tab tracker, which binds each new tab to the session just
+   * requested; `sideBySide` then splits what opened (Q15). A single open
+   * keeps T2's own binding.
+   */
+  private async openChats(kind: HandoffKind, ids: string[], open: (id: string) => Promise<boolean>): Promise<string[]> {
+    const opened: string[] = [];
+    const openOne = async (id: string): Promise<boolean> => {
+      const ok = await open(id);
+      if (ok) {
+        opened.push(id);
+      }
+      return ok;
+    };
+    if ((kind === 'openAll' || kind === 'sideBySide') && this.deps.openSerially) {
+      await this.deps.openSerially(ids, openOne);
+    } else {
+      for (const id of ids) {
+        await openOne(id);
+      }
+    }
+    if (kind === 'sideBySide' && opened.length > 0) {
+      // In the order asked, whatever order the opens finished in.
+      await this.deps.sideBySide?.(ids.filter((id) => opened.includes(id)));
+    }
+    return opened;
   }
 
   /**
@@ -287,7 +352,7 @@ export class ChatRouter implements vscode.Disposable {
   private async openClaimedChats(req: HandoffRequest): Promise<HandoffOutcome> {
     await this.activateUi();
     const failed: string[] = [];
-    for (const sessionId of req.sessionIds) {
+    await this.openChats(req.kind, req.sessionIds, async (sessionId) => {
       const chat = this.deps.chatForSession(sessionId);
       const worktree = chat && (await this.deps.worktreeOf(chat));
       const opened =
@@ -297,7 +362,8 @@ export class ChatRouter implements vscode.Disposable {
       if (!opened) {
         failed.push(sessionId.slice(0, 8));
       }
-    }
+      return opened;
+    });
     return failed.length === 0 ? { ok: true } : { ok: false, error: `could not open ${failed.join(', ')}` };
   }
 
@@ -347,6 +413,11 @@ export class ChatRouter implements vscode.Disposable {
   private logRoute(id: string, where: string, reason: string): void {
     const line = `[Pitwall] route ${id.slice(0, 8)} → ${where} (${reason})`;
     (this.deps.log ?? logOperation)(line);
+  }
+
+  /** Log where a "+" went: `same-folder` (here), `handoff` (another window) or `gone`. */
+  private logNewRoute(folder: string, reason: string): void {
+    (this.deps.log ?? logOperation)(`[Pitwall] route new → ${folder} (${reason})`);
   }
 
   /**

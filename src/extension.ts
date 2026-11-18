@@ -38,6 +38,7 @@ import { samePath } from './core/utils/paths';
 import { RepoStatusBar } from './core/windows/RepoStatusBar';
 import { WindowServices, startWindowServices } from './core/windows/startWindowServices';
 import { ChatRouter } from './core/windows/ChatRouter';
+import { splitSideBySide } from './core/windows/sideBySide';
 import { WindowRegistry } from './core/windows/WindowRegistry';
 
 /** Panels re-read the worktree this long after its files stop changing. */
@@ -149,6 +150,8 @@ export async function activate(context: vscode.ExtensionContext) {
   // local open is the chat commands' own, bound once they are registered.
   let windowServices: WindowServices | undefined;
   let openChatHere: ChatCommands['openChatHere'] = async () => 'failed';
+  /** The first harness UI whose tab tracker can open sessions serially and describe its tabs. */
+  const tabTracker = () => harnessRegistry.all().find((adapter) => adapter.nativeUi?.surfaces?.openSerially)?.nativeUi?.surfaces;
   const router = new ChatRouter({
     services: () => windowServices,
     // Claude's own rule: a window's folder is its first workspace folder.
@@ -158,6 +161,39 @@ export async function activate(context: vscode.ExtensionContext) {
     rootsOf: (worktree) => workspacesProvider.rootsOf(worktree),
     repoName: (folder) => workspacesProvider.repoContaining(folder)?.name ?? path.basename(folder),
     isOpenHere: isChatOpen,
+    // A live process for a session that is not open in any Pitwall window is one Pitwall doesn't own (Q28).
+    outsideTerminal: async (sessionId) => {
+      for (const adapter of harnessRegistry.all()) {
+        const live = await adapter.liveProcessOf?.(sessionId);
+        if (live) {
+          return live.pid;
+        }
+      }
+      return undefined;
+    },
+    openSerially: async (sessionIds, open) => {
+      const tracker = tabTracker();
+      if (tracker?.openSerially) {
+        await tracker.openSerially(sessionIds, open);
+      } else {
+        for (const sessionId of sessionIds) {
+          await open(sessionId);
+        }
+      }
+    },
+    sideBySide: async (sessionIds) => {
+      await splitSideBySide(sessionIds, {
+        reveal: async (sessionId) => {
+          const chat = storageService.getChats().find((candidate) => chatNativeSessionIds(candidate).includes(sessionId));
+          const worktree = chat && (await workspacesProvider.getWorktreeByIdAsync(chat.worktreeId));
+          const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+          if (chat && worktree) {
+            await openChatHere(chat, { ...worktree, path: folder ?? worktree.path }, false);
+          }
+        },
+        exec: (command) => Promise.resolve(vscode.commands.executeCommand(command)),
+      });
+    },
     chatForSession: (sessionId) =>
       storageService.getChats().find((chat) => harnessRegistry.has(chat.harness) && chatNativeSessionIds(chat).includes(sessionId)),
     openHere: async (chat, worktree, { keepListFocus }) => (await openChatHere(chat, worktree, keepListFocus)) !== 'failed',
@@ -482,7 +518,34 @@ export async function activate(context: vscode.ExtensionContext) {
   workspacesProvider.setStatusSource(attentionService);
 
   // Commands
-  registerRepositoryCommands(context, { storageService, gitService, harnessRegistry, forgetWorktrees, refreshTree, router: () => router });
+  registerRepositoryCommands(context, {
+    storageService,
+    gitService,
+    harnessRegistry,
+    forgetWorktrees,
+    refreshTree,
+    router: () => router,
+    mainChats: (repo) => workspacesProvider.mainChatsOf(repo),
+    windowFolder: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+    isChatOpen,
+    // The repo's main-folder chats open in its window: this window's own, or what the registry's heartbeat lists.
+    openChatsOf: async (repo) => {
+      const here = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const ours = Boolean(here && samePath(here, repo.rootPath));
+      const registered = new Set(
+        ((await windowServices?.registry.windowsFor(repo.rootPath).catch(() => [])) ?? []).flatMap((window) => window.openSessionIds)
+      );
+      return workspacesProvider
+        .mainChatsOf(repo)
+        .filter((chat) => (ours && isChatOpen(chat)) || chatNativeSessionIds(chat).some((id) => registered.has(id)));
+    },
+    dump: {
+      dir: path.join(context.globalStorageUri?.fsPath ?? os.tmpdir(), 'pitwall-dump'),
+      pid: process.pid,
+      tabs: () => tabTracker()?.describeTabs?.() ?? [],
+      windowFolder: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+    },
+  });
   registerWorktreeRowCommands(context, { workspacesProvider, switchWorkspaceFolder });
   ({ openChatHere } = registerChatCommands(context, {
     storageService,

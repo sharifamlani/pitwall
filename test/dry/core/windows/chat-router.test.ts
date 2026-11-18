@@ -158,7 +158,7 @@ function windowOn(
         }
       : undefined,
     sideBySide: options.splits ? async (ids: string[]) => void options.splits!.push([...ids]) : undefined,
-  } as never);
+  });
   t.after(() => router.dispose());
   return { inbox, router, logs, routeLog, opened, started };
 }

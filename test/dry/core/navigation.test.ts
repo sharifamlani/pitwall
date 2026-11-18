@@ -85,11 +85,14 @@ function setup(t: { after(fn: () => void): void }, repoCount = 3) {
     filesTreeView: filesView as never,
   });
   const calls: { id: string; args: unknown[] }[] = [];
+  /** What each run of the repo row's click command saw: whether a keyboard walk's marker was set. */
+  const repoOpens: boolean[] = [];
+  context.subscriptions.push(vscode.commands.registerCommand('pitwall.openRepoChats', () => void repoOpens.push(consumeKeepListFocus())));
   for (const id of ['pitwall.openChat', 'vscode.openFolder', 'pitwall.filesView.focus', 'pitwall.filesView.removeView', 'pitwall.openNextSessionNeedingYou']) {
     context.subscriptions.push(vscode.commands.registerCommand(id, (...args: unknown[]) => void calls.push({ id, args })));
   }
   t.after(() => context.subscriptions.forEach((entry) => entry.dispose()));
-  return { storage, tree, statuses, workspacesView, filesView, calls, chats, context };
+  return { storage, tree, statuses, workspacesView, filesView, calls, chats, context, repoOpens };
 }
 
 const revealed = (view: FakeTreeView) => view.reveals.map((reveal) => (reveal.item as WorkspaceTreeItem).label);
@@ -163,7 +166,7 @@ test('toggleFiles shows FILES when hidden and hides it when shown', async (t) =>
 });
 
 test('move-and-open moves focus one row and opens it; on a repo row it expands and selects', async (t) => {
-  const { workspacesView, calls, tree, context } = setup(t);
+  const { workspacesView, calls, tree, context, repoOpens } = setup(t);
   const [aRow, bRow] = await tree.getChildren();
   const [oneRow] = await tree.getChildren(bRow);
   const focused: string[] = [];
@@ -192,6 +195,7 @@ test('move-and-open moves focus one row and opens it; on a repo row it expands a
   await runCommand('pitwall.list.moveUpAndOpen');
   assert.deepEqual(focused, ['down', 'up']);
   assert.equal(calls.length, 0, 'a repo row opens no chat');
+  assert.deepEqual(repoOpens, [true], 'its click command ran and saw the walk marker');
   assert.deepEqual(
     workspacesView.reveals.map((reveal) => [(reveal.item as WorkspaceTreeItem).label, reveal.options]),
     [['a', { select: true, focus: true, expand: true }]]
@@ -240,13 +244,12 @@ test('Ctrl+Down on a repo row still only reveals it (Q22)', async (t) => {
 });
 
 test('Enter on a repo runs openRepoChats; a Ctrl+↓ landing on it does not (Q22)', async (t) => {
-  const { workspacesView, tree, context } = setup(t);
+  const { workspacesView, tree, context, repoOpens } = setup(t);
   const [aRow] = await tree.getChildren();
   assert.equal(aRow.command?.command, 'pitwall.openRepoChats', 'the row command is what Enter (list.select) and a click run');
   assert.deepEqual(aRow.command?.arguments, [aRow]);
-  const keyboard: boolean[] = [];
+  const keyboard = repoOpens;
   context.subscriptions.push(
-    vscode.commands.registerCommand('pitwall.openRepoChats', () => void keyboard.push(consumeKeepListFocus())),
     vscode.commands.registerCommand('list.focusDown', () => undefined),
     vscode.commands.registerCommand('list.select', async () => {
       workspacesView.__select([aRow]);

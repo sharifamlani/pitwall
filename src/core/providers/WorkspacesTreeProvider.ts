@@ -82,9 +82,13 @@ export interface WindowView {
   openSessionIds: readonly string[];
 }
 
-/** The repo row's context value: `.hasWindow` flips its menu to "Bring its window forward" (§3b). */
-export function repoContextValue(isGit: boolean, hasWindow: boolean): string {
-  return `${isGit ? 'repository' : 'folderRepository'}${hasWindow ? '.hasWindow' : ''}`;
+/**
+ * The repo row's context value: `.hasWindow` flips its menu to "Bring its
+ * window forward" (§3b), and `.sideBySide` (with a window, and 2+ of its
+ * chats open there) adds "Show its open chats side by side" (Q15).
+ */
+export function repoContextValue(isGit: boolean, hasWindow: boolean, canSplit = false): string {
+  return `${isGit ? 'repository' : 'folderRepository'}${hasWindow ? '.hasWindow' : ''}${hasWindow && canSplit ? '.sideBySide' : ''}`;
 }
 
 /** One session row before it is drawn. */
@@ -569,8 +573,23 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
 
   private repositoryItem(repo: Repository, state: vscode.TreeItemCollapsibleState): WorkspaceTreeItem {
     const { isGit } = this.getRepoWorktrees(repo);
-    const hasWindow = this.windows.some((window) => window.folder !== undefined && samePath(window.folder, repo.rootPath));
-    return new WorkspaceTreeItem(repo.name, state, 'repository', repo, repoContextValue(isGit, hasWindow));
+    const windows = this.windows.filter((window) => window.folder !== undefined && samePath(window.folder, repo.rootPath));
+    const open = new Set(windows.flatMap((window) => window.openSessionIds));
+    const canSplit =
+      windows.length > 0 &&
+      this.mainChatsOf(repo).filter((chat) => chatNativeSessionIds(chat).some((id) => open.has(id))).length >= 2;
+    return new WorkspaceTreeItem(repo.name, state, 'repository', repo, repoContextValue(isGit, windows.length > 0, canSplit));
+  }
+
+  /**
+   * A repo's main-folder sidebar chats, newest first (Q5). Worktree chats are
+   * not here: a repo click leaves them to their own windows.
+   */
+  mainChatsOf(repo: Repository): ChatSession[] {
+    return this.repoEntry(repo, this.chatsByWorktree())
+      .sessions.filter((session) => session.worktree.isMain)
+      .map((session) => session.chat)
+      .sort((a, b) => b.lastAccessedAt - a.lastAccessedAt);
   }
 
   /** How many single-folder windows show the repo's main folder or one of its worktrees. */
@@ -590,6 +609,8 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     const windows = this.windows.length > 0 ? this.windowCount(repo) : 0;
     item.description = `${repoSummary(needs, open, sessions.length)}${windows > 1 ? ` · ${windows} windows` : ''}`;
     item.tooltip = repoTooltip(repo.name, position);
+    // A click or Enter opens the repo's chats as tabs (rows 4.3, 4.4); the twistie only expands.
+    item.command = { command: 'pitwall.openRepoChats', title: 'Open Chats', arguments: [item] };
     return item;
   }
 

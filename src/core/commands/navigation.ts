@@ -18,6 +18,12 @@ const REVEAL_ROW = { select: true, focus: true, expand: true } as const;
 
 /** How long a Ctrl+↓/↑ asks the row command it fires to keep the list focused. */
 const KEEP_LIST_FOCUS_MS = 2_000;
+/**
+ * A repo row has a click command now (`pitwall.openRepoChats`), which a
+ * key's select fires like a click. The marker stays this long after a key
+ * lands on one, for that command to read and open nothing (Q22).
+ */
+const REPO_ROW_COMMAND_MS = 250;
 let keepListFocusUntil = 0;
 
 /**
@@ -140,8 +146,12 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
       keepListFocusOnce();
       await run('list.select');
       const row = await landed;
-      if (row?.itemType !== 'chat') {
-        // A repo row (or no row) fires no open, so nothing will consume it.
+      if (row?.itemType === 'repository') {
+        // Its click command reads the marker and only expands (Q22); if the
+        // workbench runs it late, it opens nothing after this short a wait.
+        keepListFocusUntil = Math.min(keepListFocusUntil, Date.now() + REPO_ROW_COMMAND_MS);
+      } else if (row?.itemType !== 'chat') {
+        // No row fires no open, so nothing will consume it.
         consumeKeepListFocus();
       }
       if (row?.itemType === 'repository') {
