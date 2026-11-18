@@ -254,6 +254,10 @@ export interface NativeUiSurfaceTracker extends vscode.Disposable {
   ): Promise<Map<string, vscode.Tab | undefined>>;
   /** Every tab group with its tabs' labels, pinned flags and bound sessions (the dump). */
   describeTabs?(): NativeUiTabGroupState[];
+  /** Turn the tab trace (every raw tab and group event, each bind decision) on or off; returns the new state. */
+  toggleTrace?(): boolean;
+  /** Resolve true when one of this harness's tabs closes (the last step of a move), or false after `timeoutMs`. */
+  whenTabMoved?(timeoutMs: number): Promise<boolean>;
 }
 
 /** One tab group as the dump reads it. */
