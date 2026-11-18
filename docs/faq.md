@@ -72,7 +72,7 @@ Pitwall notifies you when a session you are not looking at finishes a turn, and 
 
 ### Why don't I see the needs-you badge on the Pitwall icon?
 
-The badge appears on Cursor's vertical activity bar. Cursor's default horizontal icon row at the top of the sidebar does not draw badges for any extension, so Pitwall's can't show there. To see it, switch the activity bar to vertical in Cursor's settings.
+The badge appears on Cursor's vertical activity bar. Cursor's horizontal sidebar icon row doesn't show view badges; switch to the vertical activity bar to see it. You can change this in Cursor's settings.
 
 ## Worktrees
 
