@@ -536,8 +536,9 @@ test('Ctrl+Down onto a chat with no terminal creates it, renames it, then refocu
   assert.equal(created.sent[0], 'claude --resume claude-1');
   const order = keys.events.join(' | ');
   assert.ok(keys.events.some((event) => /^rename .* -> Pitwall: Reply/.test(event)), `the new terminal is renamed: ${order}`);
-  assert.deepEqual(keys.events.filter((event) => event === 'focus list'), ['focus list'], `refocused once: ${order}`);
-  assert.equal(keys.events.at(-1), 'focus list', `the refocus comes after every rename: ${order}`);
+  const firstFocus = keys.events.indexOf('focus list');
+  assert.ok(firstFocus > 0 && /^rename /.test(keys.events[firstFocus - 1]), `the first refocus follows the creation's rename: ${order}`);
+  assert.equal(keys.events.at(-1), 'focus list', `the last refocus comes after every rename: ${order}`);
   assert.match(created.name, /^Pitwall: Reply/);
 
   keys.events.length = 0;
@@ -569,94 +570,128 @@ test('a focus change during the rename queues a second title write, and the list
     events.push(`rename ${calls}`);
     const target = stub.window.__focusedTerminal ?? stub.window.activeTerminal;
     if (target) target.name = arg.name;
-    // The user clicks the terminal while the open's own rename runs: that
-    // focus change queues one more title write behind it.
+    // The user clicks the terminal while a title write runs: that focus
+    // change queues one more title write behind it.
     if (calls === focusOnCall && target) {
       stub.window.__focusTerminal(target);
     }
   });
+  const firstFocus = () => events.indexOf('focus list');
 
   // Calibrate: how many renames a keyed open of a new terminal makes before
-  // its refocus. The last one is the open's own title write.
+  // its first refocus.
   const calibrate = listKeys(f.row(f.chat('claude', 'Calibrate', 'claude-0')));
+  vscode.commands.registerCommand('pitwall.workspacesView.focus', () => void events.push('focus list'));
   await calibrate.press();
-  const ownWrite = calls;
-  assert.ok(ownWrite >= 1, 'a new terminal is renamed');
+  const before = events.slice(0, firstFocus()).length;
+  assert.ok(before >= 1, `a new terminal is renamed before the refocus: ${events.join(' | ')}`);
 
+  events.length = 0;
   calls = 0;
-  focusOnCall = ownWrite;
+  focusOnCall = before;
   const keys = listKeys(f.row(f.chat('claude', 'Reply', 'claude-1')));
-  keys.events.length = 0;
   vscode.commands.registerCommand('pitwall.workspacesView.focus', () => void events.push('focus list'));
   await keys.press();
 
-  const tail = events.slice(-3).join(' | ');
-  assert.equal(calls, ownWrite + 1, `the focus change queued a second write: ${events.join(' | ')}`);
-  assert.equal(events.at(-1), 'focus list', `rename ${ownWrite} → rename ${ownWrite + 1} → focus: ${tail}`);
-  assert.equal(events.at(-2), `rename ${ownWrite + 1}`, tail);
+  const order = events.join(' | ');
+  assert.ok(firstFocus() > 0, order);
+  assert.deepEqual(
+    events.slice(firstFocus() - 2, firstFocus() + 1),
+    [`rename ${before}`, `rename ${before + 1}`, 'focus list'],
+    `rename ${before} → rename ${before + 1} → focus: ${order}`
+  );
 });
 
-test('a late rename refocuses the list when it comes within 3 s and nothing moved focus', async (t) => {
+/** A Ctrl+↓ onto a chat whose new terminal's shell integrates late (Windows PowerShell 5.1). */
+async function slowShellPress(f: ReturnType<typeof setup>, chat: ChatSession) {
+  const keys = listKeys(f.row(chat));
+  let done = false;
+  const press = keys.press().then(() => {
+    done = true;
+  });
+  await waitFor(() => keys.events.includes('focus list'), 'the refocus right after the terminal is created', 1_000);
+  assert.equal(done, false, 'the list is refocused before the 2 s wait for the shell ends');
+  await press;
+  return { keys, terminal: f.lastTerminal() };
+}
+
+/** Let a late start, its queued title work and any restore run out. */
+async function settle() {
+  for (let turn = 0; turn < 20; turn++) await flush();
+}
+
+test('a new terminal whose shell never reports integration still gets the list back at once (E8)', async (t) => {
   stub.__setLateShellIntegration(true);
   const f = setup(t, { surface: 'terminal' });
-  const keys = listKeys(f.row(f.chat('claude', 'Slow shell', 'claude-1')));
+  const { keys, terminal } = await slowShellPress(f, f.chat('claude', 'Never integrates', 'claude-1'));
+  assert.equal(terminal.sent[0], 'claude --resume claude-1');
+  assert.deepEqual(keys.events, ['focus list'], 'once, with no title write in flight');
+});
+
+test('an sdk-cli chat on surface ui falls back to a new terminal and still gets the list back at once (E8)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { surface: 'ui' });
+  f.claudeUi.nativeUi.resumeRefusal = async () => SDK_REFUSAL;
+  const { keys, terminal } = await slowShellPress(f, f.chat('claude', 'From claude -p', 'sdk-1'));
+  assert.equal(terminal.sent[0], 'claude --resume sdk-1');
+  assert.deepEqual(f.claudeUi.opened, []);
+  assert.deepEqual(keys.events, ['focus list']);
+});
+
+test('a shell that integrates late: the list is refocused at once and again after the late rename when nothing moved', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { surface: 'terminal' });
+  let renames: string[] = [];
   vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
-    keys.events.push('rename');
+    renames.push('rename');
     if (stub.window.activeTerminal) stub.window.activeTerminal.name = arg.name;
   });
-
-  // The open returns on today's bound, before the slow shell integrates.
-  await keys.press();
-  assert.ok(!keys.events.includes('focus list'), 'the late title is not written yet, so nothing to refocus after');
+  const { keys, terminal } = await slowShellPress(f, f.chat('claude', 'Slow shell', 'claude-1'));
   keys.events.length = 0;
-  stub.window.__integrateShell(f.lastTerminal());
-  await waitFor(() => keys.events.includes('focus list'), 'the late refocus');
-  assert.deepEqual(keys.events.slice(-2), ['rename', 'focus list'], 'after the late rename');
+  renames = keys.events;
+  stub.window.__integrateShell(terminal);
+  await waitFor(() => keys.events.includes('focus list'), 'the restore after the late rename');
+  assert.deepEqual(keys.events.slice(-2), ['rename', 'focus list'], 'the late rename drops focus; the list gets it back');
 });
 
 test('a late rename does not refocus the list after the user moved on', async (t) => {
   stub.__setLateShellIntegration(true);
   const f = setup(t, { surface: 'terminal' });
-  const realNow = Date.now;
-  let offset = 0;
-  Date.now = () => realNow() + offset;
-  t.after(() => {
-    Date.now = realNow;
-  });
   vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
     if (stub.window.activeTerminal) stub.window.activeTerminal.name = arg.name;
   });
-  /** A keyed open whose shell integrates late, with `meanwhile` in between; the refocus calls it made. */
+  const claudeTab = { label: 'Other chat', input: new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel'), isActive: true };
+  /** A keyed slow-shell open, `meanwhile`, then the late rename; the refocus calls the late rename made. */
   const lateOpen = async (name: string, sessionId: string, meanwhile: () => Promise<unknown> | void) => {
-    const keys = listKeys(f.row(f.chat('claude', name, sessionId)));
-    await keys.press();
-    const terminal = f.lastTerminal();
+    const { keys, terminal } = await slowShellPress(f, f.chat('claude', name, sessionId));
     await meanwhile();
     keys.events.length = 0;
     stub.window.__integrateShell(terminal);
-    // Let the late start, its queued title work and any refocus run out.
-    for (let turn = 0; turn < 20; turn++) await flush();
+    await settle();
     return keys.events;
   };
 
   const editor = { document: { uri: vscode.Uri.file('/work/demo/file.ts') } };
   assert.deepEqual(await lateOpen('Went to a file', 'claude-1', () => stub.window.__focusTextEditor(editor)), [], 'a file took focus');
   assert.deepEqual(
-    await lateOpen('Another terminal', 'claude-2', () => stub.window.__focusTerminal(stub.window.createTerminal({ name: 'user shell' }))),
+    await lateOpen('Went to a Claude tab', 'claude-2', () => {
+      stub.window.tabGroups.all = [{ isActive: true, viewColumn: 1, activeTab: claudeTab, tabs: [claudeTab] }];
+      stub.window.__fireTabsChanged({ changed: [claudeTab] });
+    }),
+    [],
+    'a Claude panel tab became active'
+  );
+  assert.deepEqual(
+    await lateOpen('Another terminal', 'claude-3', () => stub.window.__focusTerminal(stub.window.createTerminal({ name: 'user shell' }))),
     [],
     'another terminal took focus'
   );
+  assert.deepEqual(await lateOpen('Left the window', 'claude-4', () => stub.window.__fireWindowState(false)), [], 'the window lost focus');
+  stub.window.__fireWindowState(true);
   assert.deepEqual(
-    await lateOpen('Opened another chat', 'claude-3', () => runCommand('pitwall.openClaudeUi', f.row(f.chat('claude', 'In the panel', 'claude-ui')))),
+    await lateOpen('Opened another chat', 'claude-5', () => runCommand('pitwall.openClaudeUi', f.row(f.chat('claude', 'In the panel', 'claude-ui')))),
     [],
     'another Pitwall open started'
-  );
-  assert.deepEqual(
-    await lateOpen('Too late', 'claude-4', () => {
-      offset += 3_500;
-    }),
-    [],
-    'more than 3 s after the key'
   );
 });
 
