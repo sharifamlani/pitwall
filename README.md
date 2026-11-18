@@ -8,17 +8,23 @@ On an F1 pit wall, the team watches every car at once and calls in whichever one
 
 ## Status
 
-**v0.3.0 (Phase 2): Windows parity.** What works today:
+**v0.4.0 (Phase 3): Sidebar v1, repos and sessions.** What works today:
 
-- A sidebar lists the repos you add and their Claude Code chats, imported automatically from your local Claude Code session files.
-- Clicking a chat reopens it in a terminal. After you quit or reload Cursor, the chat you had open comes back resumed in its own tab.
-- "Needs you": when Claude is waiting for your answer and you are looking elsewhere, its row gets an orange mark, "Go to Next Session That Needs You" (Ctrl+Alt+N) opens it, and you get one pop-up.
-- Windows works like Linux and macOS: Windows folder paths and worktrees are recognised, and resume commands work in Windows PowerShell and cmd.
+- Repos are found automatically from your Claude Code sessions (last 14 days). Dismiss or Remove from Pitwall takes one off the list.
+- Each repo lists its chats, with chat rows in a git repo showing their branch and a mark on worktree chats.
+- Four status dots: needs you, working, finished and idle. The repo that needs you is on top, and a badge counts the chats waiting.
+- Hover a chat for the bell, open in terminal and fork. The repo row has "+", session history and a right-click menu.
+- Hotkeys (Ctrl+Alt+1 to 9, 0, O, F, R) and list keys, plus a search box (Ctrl+Alt+R).
+- The list draws within a second of starting.
+- After you quit or reload Cursor, the chat you had open comes back resumed in its own tab. Windows works like Linux and macOS.
 
-**Planned, not built yet:** chats opening in Claude Code's own chat panel (the default from Phase 4), live status dots for every state, and the redesigned sidebar. The plan and its order are in [ROADMAP.md](ROADMAP.md).
+**Next, Phase 4, "Windows and tabs":** clicking a chat lands you in the right Cursor window with it open in Claude Code's own chat panel. Pop-ups for every session are Phase 5. The plan and its order are in [ROADMAP.md](ROADMAP.md).
 
 ### Known issues
 
+- **The needs-you badge shows on Cursor's vertical activity bar**, not on its default horizontal sidebar icon row. See the [FAQ](docs/faq.md).
+- **Chats open in a terminal tab until Phase 4**, when they move to Claude Code's chat panel.
+- **Pop-ups are Phase 5.** Today only a chat you have open can pop up.
 - **Claude Code pulls its terminal to the front.** About a second after a Claude turn starts in a terminal, the Claude Code extension's IDE integration brings that terminal forward and gives it keyboard focus. This happens with Pitwall disabled too; it isn't Pitwall.
 - **Quitting with a file in front can drop terminal chats.** If a file (not a chat terminal) is in front when you quit, VS Code and Cursor may restart the chat terminals without their names, so Pitwall can't match them and they aren't resumed. It's an editor race, reproduced without Pitwall installed. Click the chat in Pitwall to resume it in a new tab. Terminal mode is being replaced by Claude's chat panel in Phase 4.
 - **A terminal moved to the bottom panel always counts as "not looking"**, so you may get a "needs you" pop-up for a chat you are watching there.

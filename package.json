@@ -2,11 +2,10 @@
   "name": "pitwall",
   "displayName": "Pitwall",
   "description": "Every Claude Code session across your repos, in one sidebar.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "sharifamlani",
   "author": {
-    "name": "Subhash Khileri",
-    "url": "https://github.com/subhashkhileri"
+    "name": "Sharif Amlani"
   },
   "license": "MIT",
   "repository": {

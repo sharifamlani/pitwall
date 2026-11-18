@@ -4,13 +4,39 @@ All notable changes to Pitwall are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-17
+
+Sidebar v1: repos and sessions (ROADMAP Phase 3).
+
 ### Added
 
-- Hotkeys: Ctrl+Alt+1 to 9 jump to the nth repo (again opens its next session), Ctrl+Alt+Shift+1 to 9 and Ctrl+Alt+O open a repo in its own window, Ctrl+Alt+0 goes to the session waiting longest, and Ctrl+Down and Ctrl+Up move through the list and open the row.
+- Repos are found automatically from the Claude Code sessions in `~/.claude` (the last 14 days). Dismiss or Remove from Pitwall takes a repo off the list; it returns if you add it again or a new session starts in it.
+- A repo, then chat list. Chat rows in a git repo show their branch, and a worktree chat is marked with ⧉.
+- Four status dots on every chat: needs you, working, finished and idle. The repo that needs you sits on top, rows move only when a status changes, and the needs-you count shows as a badge on the Pitwall icon.
+- Hover icons on a chat row: the bell (needs you), open in terminal and fork.
+- A "+" on the repo row to start a chat, 🕘 session history for the repo, and a right-click menu on the repo row.
+- Hotkeys: Ctrl+Alt+1 to 9 jump to the nth repo (again opens its next chat), Ctrl+Alt+0 goes to the chat waiting longest, Ctrl+Alt+O and Ctrl+Alt+Shift+1 to 9 open a repo in its own window, Ctrl+Alt+F shows or hides FILES, Ctrl+Alt+R searches. In the list, Down and Up move, Ctrl+Down and Ctrl+Up move and open the row, and Enter opens it.
+- A search box (Ctrl+Alt+R) over repos and chats; Enter picks the first result.
+- A fast start: the list draws within a second, and "Scanning for repositories..." shows instead of a false empty state.
 
 ### Changed
 
-- Ctrl+Alt+F now shows or hides FILES. Find Session is still in the Command Palette. Ctrl+Alt+N stays as an alias of Ctrl+Alt+0.
+- Ctrl+Alt+F now shows or hides FILES. Find Session is still in the Command Palette and the search box. Ctrl+Alt+N stays as an alias of Ctrl+Alt+0.
+- Chat status is read live from Claude Code's session files, with `claude agents --json` as the fallback.
+- Session history shows each chat's age from its last message, as the row does.
+- Starred chats show a star on the row.
+- Package author is now Sharif Amlani; Agntree credit stays in LICENSE and README.
+
+### Fixed
+
+- Chats saved twice no longer appear twice.
+- Sessions started from a lowercase drive letter on Windows are imported.
+- FILES actions work on Windows when the drive letter's case differs.
+- A chat in a linked worktree opens and restores before git has listed it.
+
+### Removed
+
+- Worktree create and delete, PR badges and the Changes view are hidden. The code stays for a later release.
 
 ## [0.3.0] - 2026-11-17
 
