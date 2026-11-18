@@ -412,6 +412,58 @@ test('two "+" clicks in the same tick send one request', async (t) => {
   assert.deepEqual(mainWindow.started, [w.main], 'one new chat');
 });
 
+// Two DIFFERENT routes (so not joined as one) that hand off the same chat to
+// the same folder: only the sent-request set keeps them to one request.
+test('a multi-chat open and a single open of one of its chats in the same tick send one request for it', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  w.transcript(w.other, ID.other, [w.turn(ID.other, w.other)]);
+  const remote = w.chat('Remote', ID.a, w.mainWt);
+  const local = w.chat('Local', ID.other, w.otherWt);
+  const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
+  // Hold each file check until both hand-offs could reach it (200 ms at most),
+  // so the two always race on a file neither has written yet.
+  const pending = sender.inbox.pending.bind(sender.inbox);
+  let entered = 0;
+  sender.inbox.pending = async (...args: Parameters<HandoffInbox['pending']>) => {
+    entered += 1;
+    const deadline = Date.now() + 200;
+    while (entered < 2 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    return pending(...args);
+  };
+
+  await Promise.all([
+    sender.router.route({ kind: 'open', chats: [remote, local] }),
+    sender.router.route({ kind: 'open', chats: [remote] }),
+  ]);
+
+  assert.deepEqual(requestsFor(sender.inbox, dir, w.main).map((request) => request.sessionIds), [[ID.a]], 'one request for the remote chat');
+  assert.equal(sender.logs.filter((line) => line.startsWith('[Pitwall] handoff sent ')).length, 1);
+  assert.deepEqual(sender.opened.map((entry) => entry.chat), ['Local'], 'the local chat opens here once');
+});
+
+// The in-flight layer alone: a same-tick double click on a chat of this
+// window joins the first route, so the chat opens here once.
+test('two same-tick opens of a chat of this window open it once', async (t) => {
+  const w = world(t);
+  openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const chat = w.chat('Local double click', ID.a, w.mainWt);
+  const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main });
+
+  const results = await Promise.all([
+    here.router.route({ kind: 'open', chats: [chat] }),
+    here.router.route({ kind: 'open', chats: [chat] }),
+  ]);
+
+  assert.deepEqual(results, ['here', 'here']);
+  assert.deepEqual(here.opened.map((entry) => entry.chat), ['Local double click'], 'opened once');
+});
+
 test('two route calls for the same chat in the same tick send one request', async (t) => {
   const w = world(t);
   const dir = tempDir(t);
