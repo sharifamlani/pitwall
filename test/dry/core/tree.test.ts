@@ -793,3 +793,21 @@ test('" · open" counts tabs in other windows', async (t) => {
   tree.setChatOpenProvider((chat) => chat.harnessSessionId === 'claude-feat');
   assert.equal((await repoRow()).description, '1 open');
 });
+
+test('no git watcher is made before the first render, even when a refresh lands first; they appear after it (E16)', async (t) => {
+  const storage = makeStorage();
+  storage.addRepository('app', '/work/app');
+  storage.addRepository('notes', '/work/notes');
+  const { tree, changes } = heldListings(t, storage);
+  const watchers = () => stub.__fileWatchers.filter((watcher) => !watcher.disposed).length;
+
+  // A refresh before the first render (a focus change, a scan) runs the debounced path that keeps the watchers in step.
+  tree.refresh();
+  await waitFor(() => changes.length > 0, 'the refresh to fire');
+  for (let i = 0; i < 5; i++) await flush();
+  assert.equal(watchers(), 0, 'no watcher before the first render: the window start does nothing per repo (E16)');
+
+  await tree.getChildren();
+  await waitFor(() => watchers() === 6, 'the watchers once the rows are out');
+  assert.equal(watchers(), 6, 'three per repo');
+});
