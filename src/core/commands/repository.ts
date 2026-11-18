@@ -99,6 +99,15 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     }
   });
 
+  // The hover icons carry their own ids so their tooltips (a command's title)
+  // can differ from the right-click menu's wording; same behavior.
+  register('pitwall.newSessionInRepositoryInline', (item?: WorkspaceTreeItem) =>
+    vscode.commands.executeCommand('pitwall.newSessionInRepository', item)
+  );
+  register('pitwall.sessionHistoryInline', (item?: WorkspaceTreeItem) =>
+    vscode.commands.executeCommand('pitwall.sessionHistory', item)
+  );
+
   register('pitwall.copyRepositoryPath', async (item?: WorkspaceTreeItem) => {
     const repo = await repositoryFor(item, 'copy the path of');
     if (repo) {

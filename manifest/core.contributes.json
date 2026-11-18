@@ -128,13 +128,13 @@
     },
     {
       "command": "pitwall.search",
-      "title": "Search Repos and Chats",
+      "title": "Search repos and chats",
       "category": "Pitwall",
       "icon": "$(search)"
     },
     {
       "command": "pitwall.addRepository",
-      "title": "Add Local Folder or Repository…",
+      "title": "Add a repository",
       "category": "Pitwall",
       "icon": "$(folder)"
     },
@@ -162,8 +162,20 @@
       "icon": "$(add)"
     },
     {
+      "command": "pitwall.newSessionInRepositoryInline",
+      "title": "New Claude Code session in this repo",
+      "category": "Pitwall",
+      "icon": "$(add)"
+    },
+    {
       "command": "pitwall.sessionHistory",
       "title": "Session history…",
+      "category": "Pitwall",
+      "icon": "$(history)"
+    },
+    {
+      "command": "pitwall.sessionHistoryInline",
+      "title": "Session history for this repo: every past chat",
       "category": "Pitwall",
       "icon": "$(history)"
     },
@@ -505,7 +517,7 @@
     },
     {
       "command": "pitwall.toggleFiles",
-      "title": "Show or Hide Files",
+      "title": "Show or hide files",
       "category": "Pitwall",
       "icon": "$(files)"
     },
@@ -1020,12 +1032,12 @@
         "group": "9_destructive@9"
       },
       {
-        "command": "pitwall.sessionHistory",
+        "command": "pitwall.sessionHistoryInline",
         "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
         "group": "inline@1"
       },
       {
-        "command": "pitwall.newSessionInRepository",
+        "command": "pitwall.newSessionInRepositoryInline",
         "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
         "group": "inline@2"
       },
@@ -1238,6 +1250,14 @@
       }
     ],
     "commandPalette": [
+      {
+        "command": "pitwall.newSessionInRepositoryInline",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.sessionHistoryInline",
+        "when": "false"
+      },
       {
         "command": "pitwall.copySessionId",
         "when": "false"

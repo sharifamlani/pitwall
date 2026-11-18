@@ -42,7 +42,7 @@ Pitwall keeps the same git worktrees and adds the bookkeeping. Everything below 
 
 ### 1. Add your repository
 
-Open the Pitwall sidebar and choose **Add Local Folder or Repository…**. The repository appears with its current worktree.
+Open the Pitwall sidebar and choose **Add a repository**. The repository appears with its current worktree.
 
 ### 2. Create a worktree for each task
 

@@ -10,7 +10,7 @@ For the workflow as a whole, read [Run multiple agents in parallel with git work
 
 ## Add a folder or repository
 
-In the **Workspaces** view, select **Add Local Folder or Repository…** (the folder icon in the view's title) and pick a folder.
+In the **Workspaces** view, select **Add a repository** (the folder icon in the view's title) and pick a folder.
 
 - A **git repository** is listed with its worktrees beneath it. If you pick a directory inside a repository, Pitwall adds the repository's root.
 - A **plain folder** is listed with its sessions directly beneath it. See [Folders without git](#folders-without-git).

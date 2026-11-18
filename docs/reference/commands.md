@@ -12,8 +12,8 @@ Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pit
 
 | Command | What it does |
 | --- | --- |
-| **Pitwall: Search Repos and Chats** | Open the search box (`Ctrl+Alt+R`) |
-| **Pitwall: Add Local Folder or Repository…** | Add a folder or a git repository to the sidebar |
+| **Pitwall: Search repos and chats** | Open the search box (`Ctrl+Alt+R`) |
+| **Pitwall: Add a repository** | Add a folder or a git repository to the sidebar |
 | **Pitwall: Clone from GitHub…** | Clone a repository and add it |
 | **Pitwall: Remove from Pitwall…** | Remove a folder or repository from the sidebar. Files and conversations are kept. Like Dismiss, it stays off the list until a new session starts in it or you add it again |
 | **Pitwall: Dismiss from Pitwall** | Hide a repository from the sidebar until a new Claude Code session starts in it, or you add it again. Nothing on disk changes |
@@ -67,7 +67,7 @@ Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pit
 | **Pitwall: Open Repo 8 in Its Window** | Open repo 8 in a window of its own (key only) |
 | **Pitwall: Open Repo 9 in Its Window** | Open repo 9 in a window of its own (key only) |
 | **Pitwall: Open Current Repo in Its Window** | Open the selected repo in a window of its own |
-| **Pitwall: Show or Hide Files** | Show the FILES panel, or hide it when it is shown |
+| **Pitwall: Show or hide files** | Show the FILES panel, or hide it when it is shown |
 | **Pitwall: Move Down and Open** | Move one row down the list and open it (`Ctrl+Down`; key only) |
 | **Pitwall: Move Up and Open** | Move one row up the list and open it (`Ctrl+Up`; key only) |
 
@@ -100,7 +100,7 @@ Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pit
 
 ## Workspaces view
 
-The view's title bar has **Add Local Folder or Repository…**. Its `…` menu has:
+The view's title bar has **Add a repository**. Its `…` menu has:
 
 - **Clone from GitHub…**, **Check Out Pull Request…**
 - **Go to Next Session That Needs You**, **Find Session…**, **Starred Sessions…**
@@ -111,8 +111,10 @@ The view's title bar has **Add Local Folder or Repository…**. Its `…` menu h
 
 | Action | Where | Notes |
 | --- | --- | --- |
-| **Session history…** | Hover icon, right-click | Chats in the sidebar, then older ones that are not; picking an older one brings it back |
-| **New Claude Code session** | Hover **+**, right-click | A Claude Code session in the repo's main worktree |
+| **Session history…** | Right-click | Chats in the sidebar, then older ones that are not; picking an older one brings it back |
+| **New Claude Code session** | Right-click | A Claude Code session in the repo's main worktree |
+| **New Claude Code session in this repo** | Hover **+** | The same action as the menu item; this is the hover text |
+| **Session history for this repo: every past chat** | Hover clock icon | The same action as **Session history…**; this is the hover text |
 | **Open its window** | Right-click | Opens the repo's folder in its own window |
 | **Copy Path** | Right-click | |
 | **Reveal in File Explorer** | Right-click | |

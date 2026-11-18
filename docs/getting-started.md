@@ -38,7 +38,7 @@ Pitwall needs no account and no configuration.
 ## Add a folder or repository
 
 1. Select the Pitwall icon in the Activity Bar. `Ctrl+Alt+A` (`Ctrl+Cmd+A` on macOS) opens it from anywhere.
-2. In the **Workspaces** view, choose **Add Local Folder or Repository…** and pick a folder. To start from GitHub, choose **Clone from GitHub…** and enter a URL or `owner/repo`.
+2. In the **Workspaces** view, choose **Add a repository** and pick a folder. To start from GitHub, choose **Clone from GitHub…** and enter a URL or `owner/repo`.
 
 The folder appears as a row. A git repository expands to its worktrees, starting with the one you already have (usually `main`). A folder without git works as well: sessions run directly in it, and if it becomes a repository later, Pitwall notices.
 
