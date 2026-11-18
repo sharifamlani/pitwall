@@ -281,6 +281,38 @@ export async function waitFor<T>(
   }
 }
 
+/**
+ * Watches how long the event loop is blocked: the largest gap between runs of
+ * a 1 ms interval, counted only as far as this process spent CPU in it. A
+ * synchronous parse holds the loop and burns CPU for its whole length; a gap
+ * where the OS ran other processes (a loaded machine, parallel test files)
+ * burns almost none, so it does not count as a block.
+ */
+export function watchEventLoopBlocks(): { stop(): { maxBlockMs: number; maxGapMs: number } } {
+  let maxBlockMs = 0;
+  let maxGapMs = 0;
+  let last = performance.now();
+  let lastCpu = process.cpuUsage();
+  const sample = () => {
+    const now = performance.now();
+    const cpu = process.cpuUsage();
+    const gap = now - last;
+    const cpuMs = (cpu.user - lastCpu.user + cpu.system - lastCpu.system) / 1000;
+    maxGapMs = Math.max(maxGapMs, gap);
+    maxBlockMs = Math.max(maxBlockMs, Math.min(gap, cpuMs));
+    last = now;
+    lastCpu = cpu;
+  };
+  const timer = setInterval(sample, 1);
+  return {
+    stop() {
+      sample();
+      clearInterval(timer);
+      return { maxBlockMs, maxGapMs };
+    },
+  };
+}
+
 /** Let queued promise callbacks run. */
 export function flush(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));

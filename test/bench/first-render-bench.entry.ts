@@ -33,7 +33,7 @@ import { encodeClaudeProjectPath } from '../../src/harnesses/claude/paths';
 import { ClaudeRepoDiscovery } from '../../src/harnesses/claude/ClaudeRepoDiscovery';
 import { ClaudeSessionService } from '../../src/harnesses/claude/ClaudeSessionService';
 import { disposeOperationLog } from '../../src/core/services/OperationLog';
-import { makeStorage, memento } from '../dry/support';
+import { makeStorage, memento, watchEventLoopBlocks } from '../dry/support';
 
 interface FixtureRepo {
   name: string;
@@ -205,29 +205,22 @@ export async function storedRepos(fixture: Fixture): Promise<BenchState> {
 }
 
 /**
- * The longest the event loop is blocked while `run` runs, how long it takes,
- * and the CPU time this process spent on it (main thread and I/O threads),
- * which other load on the machine moves far less than wall time.
+ * The longest the event loop is blocked while `run` runs (counted as far as
+ * this process burned CPU, so other load on the machine does not count), how
+ * long it takes, and the CPU time this process spent on it.
  */
 async function timed<T>(run: () => Promise<T>): Promise<{ value: T; ms: number; maxBlockMs: number; cpuMs: number }> {
-  let maxBlockMs = 0;
-  let last = performance.now();
-  const lag = setInterval(() => {
-    const now = performance.now();
-    maxBlockMs = Math.max(maxBlockMs, now - last);
-    last = now;
-  }, 1);
+  const blocks = watchEventLoopBlocks();
   try {
     const cpu = process.cpuUsage();
     const start = performance.now();
-    last = start;
     const value = await run();
     const ms = performance.now() - start;
     const used = process.cpuUsage(cpu);
     await new Promise((resolve) => setTimeout(resolve, 5));
-    return { value, ms, maxBlockMs, cpuMs: (used.user + used.system) / 1000 };
+    return { value, ms, maxBlockMs: blocks.stop().maxBlockMs, cpuMs: (used.user + used.system) / 1000 };
   } finally {
-    clearInterval(lag);
+    blocks.stop();
   }
 }
 

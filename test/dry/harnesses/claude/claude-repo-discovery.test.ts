@@ -12,6 +12,7 @@ import { ClaudeHarness } from '../../../../src/harnesses/claude/ClaudeHarness';
 import { ClaudeSessionService } from '../../../../src/harnesses/claude/ClaudeSessionService';
 import { DiscoveryCounts } from '../../../../src/core/harness/types';
 import { claudeProfile } from './claudeFixture';
+import { watchEventLoopBlocks } from '../../support';
 
 const DAY = 24 * 60 * 60 * 1000;
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -199,25 +200,17 @@ async function transcriptReads(t: { after(fn: () => void): void }, run: () => Pr
 
 test('discovery does not block the host for more than 50 ms at a time', async (t) => {
   const { profile, repos } = e16Profile(t);
-  // The loop's worst delay: a 1 ms interval's largest gap between runs.
-  let maxBlockMs = 0;
-  let last = performance.now();
-  const lag = setInterval(() => {
-    const now = performance.now();
-    maxBlockMs = Math.max(maxBlockMs, now - last);
-    last = now;
-  }, 1);
-  let folders;
-  try {
-    last = performance.now();
-    folders = await new ClaudeRepoDiscovery(profile.projects, new ClaudeSessionService()).discoverRecentFolders(Date.now() - 14 * DAY);
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  } finally {
-    clearInterval(lag);
-  }
+  const blocks = watchEventLoopBlocks();
+  t.after(() => blocks.stop());
+  const folders = await new ClaudeRepoDiscovery(profile.projects, new ClaudeSessionService()).discoverRecentFolders(Date.now() - 14 * DAY);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const { maxBlockMs, maxGapMs } = blocks.stop();
 
   assert.deepEqual(folders.map((folder) => folder.cwd).sort(), [...repos].sort(), 'every repo is found');
-  assert.ok(maxBlockMs <= 50, `discovery blocked the extension host for ${maxBlockMs.toFixed(0)} ms at once`);
+  assert.ok(
+    maxBlockMs <= 50,
+    `discovery blocked the extension host for ${maxBlockMs.toFixed(0)} ms at once (longest gap ${maxGapMs.toFixed(0)} ms)`
+  );
 });
 
 test('discovery never reads a whole transcript', async (t) => {
