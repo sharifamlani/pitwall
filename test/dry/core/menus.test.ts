@@ -271,7 +271,7 @@ test('the list is named Repos, with the canvas empty state once a scan found not
   );
   assert.equal(
     welcome.find((entry) => entry.view === 'pitwall.filesView')?.contents,
-    'Select a repo or session to browse its files.'
+    "Open a repo's window to see its files."
   );
   assert.ok(
     (menus['view/title'] ?? []).some((entry) => entry.command === 'pitwall.cloneRepository' && !entry.group?.startsWith('navigation')),

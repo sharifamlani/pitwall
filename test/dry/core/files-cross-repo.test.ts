@@ -11,6 +11,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import pkg from '../../../package.json';
 import { activate } from '../../../src/extension';
 import { Repository, STORAGE_KEYS } from '../../../src/core/types';
 import { FILES_MIME, FilesDragController, FilesTreeProvider, FileTreeItem, clipboardBanner } from '../../../src/core/providers/FilesTreeProvider';
@@ -304,6 +305,47 @@ test('dropping on the same repo shows "That file is already in {repo}. Drop it o
   assert.deepEqual(fs.readdirSync(jobMarket.rootPath), ['notes.md'], 'no copy made');
 });
 
+/** The deepest of `roots` holding `p`, as the list's worktree lookup gives it. */
+const deepestOf = (roots: string[]) => (p: string) =>
+  roots.filter((root) => p.toLowerCase().startsWith(root.toLowerCase() + path.sep)).sort((a, b) => b.length - a.length)[0];
+
+test("Q25: a worktree window's file dropped on its own repo's row copies into the repo's main folder", async (t) => {
+  const scratch = tempDir(t);
+  const app = makeRepo(scratch, 'app', { 'main.md': 'm' });
+  // A sibling linked worktree, and one nested under the main folder.
+  const sibling = makeRepo(scratch, 'app-fiu', { 'notes.md': 'from fiu' });
+  const nested = makeRepo(app.rootPath, path.join('.worktrees', 'fix'), { 'fix.md': 'from fix' });
+  const repoOf = (p: string) => (p.toLowerCase().startsWith(scratch.toLowerCase()) ? app : undefined);
+  const drop = new RepoDropController(repoOf, deepestOf([app.rootPath, sibling.rootPath, nested.rootPath]));
+  const w = filesWindow(t, { name: 'app', rootPath: sibling.rootPath }, [app], tempDir(t));
+
+  const fromSibling = new vscode.DataTransfer();
+  await new FilesDragController().handleDrag([w.row(path.join(sibling.rootPath, 'notes.md'))], fromSibling, token);
+  await drop.handleDrop(repoRow(app) as never, fromSibling, token);
+  assert.equal(fs.readFileSync(path.join(app.rootPath, 'notes.md'), 'utf8'), 'from fiu', "copied into app's main folder");
+  assert.equal(shown('That file is already in app'), false, shownMessages().join('\n'));
+  assert.ok(shown(`Pasted notes.md from app into app (${app.rootPath}).`), shownMessages().join('\n'));
+
+  const fromNested = new vscode.DataTransfer();
+  await new FilesDragController().handleDrag([w.row(path.join(nested.rootPath, 'fix.md'))], fromNested, token);
+  await drop.handleDrop(repoRow(app) as never, fromNested, token);
+  assert.ok(fs.existsSync(path.join(app.rootPath, 'fix.md')), 'a worktree nested under the main folder is still another folder');
+  assert.equal(shown('That file is already in app'), false);
+});
+
+test('Q25: a file already under the main folder dropped on its repo row still says it is already there', async (t) => {
+  const scratch = tempDir(t);
+  const app = makeRepo(scratch, 'app', { 'src/main.md': 'm' });
+  const sibling = makeRepo(scratch, 'app-fiu');
+  const drop = new RepoDropController(() => app, deepestOf([app.rootPath, sibling.rootPath]));
+  const w = filesWindow(t, app, [app], tempDir(t));
+  const transfer = new vscode.DataTransfer();
+  await new FilesDragController().handleDrag([w.row(path.join(app.rootPath, 'src', 'main.md'))], transfer, token);
+  await drop.handleDrop(repoRow(app) as never, transfer, token);
+  assert.ok(shown('That file is already in app. Drop it on a different repo to copy it there.'), shownMessages().join('\n'));
+  assert.deepEqual(fs.readdirSync(app.rootPath).sort(), ['src'], 'no copy made');
+});
+
 // ---- Q11: the .gitignore offer ----
 
 test('isEnvLike: .env, .env.local yes; .env.example, .env.sample, .env.template, env.txt no', () => {
@@ -371,4 +413,42 @@ test('git check-ignore exit 128 makes no offer and logs it', async (t) => {
     operationLines().some((line) => line.includes('git check-ignore') && line.includes('.env')),
     `logged (lines: ${operationLines().join(' | ')})`
   );
+});
+
+test('a .env pasted into a folder named [id] gets a .gitignore line with the brackets escaped, which git honours', async (t) => {
+  const scratch = tempDir(t);
+  const secrets = makeRepo(scratch, 'secrets', { '.env': 'KEY=1' });
+  const web = makeRepo(scratch, 'web', { '[id]/page.tsx': '' }, { git: true });
+  const w = filesWindow(t, web, [secrets, web], tempDir(t));
+  await runCommand('pitwall.files.copy', w.row(path.join(secrets.rootPath, '.env')));
+  stub.__warningResponses.push('Add to .gitignore');
+  await runCommand('pitwall.files.paste', w.row(path.join(web.rootPath, '[id]')));
+  assert.ok(fs.existsSync(path.join(web.rootPath, '[id]', '.env')));
+  assert.equal(fs.readFileSync(path.join(web.rootPath, '.gitignore'), 'utf8'), '/\\[id\\]/.env\n', 'brackets escaped');
+  assert.equal(await checkIgnored(web.rootPath, path.join('[id]', '.env')), true, 'git check-ignore exits 0');
+  assert.ok(shown("Added .env to web's .gitignore."), shownMessages().join('\n'));
+});
+
+test('a deeper .gitignore negation that still un-ignores the copy shows no "Added" message and logs it', async (t) => {
+  const scratch = tempDir(t);
+  const secrets = makeRepo(scratch, 'secrets', { '.env': 'KEY=1' });
+  const web = makeRepo(scratch, 'web', { 'sub/.gitignore': '!.env\n' }, { git: true });
+  const w = filesWindow(t, web, [secrets, web], tempDir(t));
+  await runCommand('pitwall.files.copy', w.row(path.join(secrets.rootPath, '.env')));
+  stub.__warningResponses.push('Add to .gitignore');
+  await runCommand('pitwall.files.paste', w.row(path.join(web.rootPath, 'sub')));
+  assert.ok(shown("⚠ web's .gitignore does not cover .env, so it could get committed."), shownMessages().join('\n'));
+  assert.equal(fs.readFileSync(path.join(web.rootPath, '.gitignore'), 'utf8'), '/sub/.env\n', 'the line is appended');
+  assert.equal(await checkIgnored(web.rootPath, path.join('sub', '.env')), false, 'the deeper !.env wins');
+  assert.equal(shown('Added .env'), false, 'no confirmation for a rule git does not honour');
+  assert.ok(
+    operationLines().some((line) => line.includes('still not ignored') && line.includes('sub/.env')),
+    `logged (lines: ${operationLines().join(' | ')})`
+  );
+});
+
+test('the empty-window FILES welcome is "Open a repo\'s window to see its files." (new copy)', () => {
+  const welcome = pkg.contributes.viewsWelcome as { view: string; contents: string }[];
+  assert.equal(welcome.find((entry) => entry.view === 'pitwall.filesView')?.contents, "Open a repo's window to see its files.");
+  assert.ok(!JSON.stringify(pkg.contributes).includes('Select a repo or session to browse its files.'), 'the old copy is gone');
 });
