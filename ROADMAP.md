@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.49 · 2026-11-17
+> v0.50 · 2026-11-17
 
 ---
 
@@ -340,3 +340,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.47 · 2026-11-17.** Rows 3.9 and 3.7 ✅ (PR #36 → `8815d82`): Ctrl+Alt+R search box with REPOS / CHATS / INSIDE CHATS groups, Enter = first result, footer hands the typed text to Find Session; live check PASS. All Phase 3 feature rows merged; open: E16 startup fix (PR #37), polish PR, T10 close.
 - **v0.48 · 2026-11-17.** E16 fix PR #37 → `1522010`: first render no longer waits on git or the session scan; stored repos draw at once, "Scanning for repositories…" replaces the false "No repositories yet", linked-worktree chats resolve on first click and on restore. Live: first start 0.619 s, reloads 0.367–0.687 s (was 7.2 s / 1.04 s). Remaining: polish PR, T10 close.
 - **v0.49 · 2026-11-17.** **Phase 3 closed, tag `v0.4.0`.** Row 3.10 ✅. Release PR #39 → `8ddd887` (CHANGELOG [0.4.0], README, version 0.4.0, package author Sharif Amlani). Close-out fixes: #40 tooltip copy (`2d2f07c`, ruling P26 approved by Sharif), #42 discovery reads transcript tails (`ce03203`, live E16 5/5: first start 0.317 s, reloads 0.215–0.808 s). Closed without merge: #41 (E6 by design: seen needs a focused window), #43 (Ctrl+↓ focus timer; proper fix moved to Phase 4 row 4.1). Independent evaluator: E1–E19 19/19 PASS on `ce03203`. Phase 4 unblocked.
+- **v0.50 · 2026-11-17.** Phase 3 posts live (Sharif-approved, build-in-public update 3): LinkedIn activity `7528652706517954560` (5-image carousel), X `2122887476553338999` (reply 4 in the thread from `2122724368136442262`, 4 images). The Phase 4 post replies to the X post.
