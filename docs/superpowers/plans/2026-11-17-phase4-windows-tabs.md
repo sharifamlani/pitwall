@@ -577,6 +577,7 @@ Tests: `tree.test.ts`, `menus.test.ts`, `search.test.ts`.
   - `an empty window routes every chat`;
   - `a multi-root window opens its own first-folder chat locally and routes others`;
   - `runClaimed opens chats one at a time in request order and logs handoff opened`.
+  - `pasting via a FILES row and via no row shows the same drive spelling in the toast` (T6 follow-up: run landedMessage's path through the native spelling);
   - `typing in the new terminal before its late rename lets go of the list` (QA #47 follow-up: `onDidChangeTerminalState` → `isInteractedWith` releases the list hold);
   - `the late-refocus hold also lets go when a Claude panel tab becomes active` (carried from T2).
 
@@ -705,7 +706,7 @@ Create `scripts/dump-tabs.mjs`. Tests: `test/dry/shared/native-ui-surface.test.t
   - **W7** — Bottom bar (E9), including a `git switch` inside the worktree window: the bar updates ≤ 5 s (its HEAD lives outside that window's folder, QA #44).
   - **W8** — T18 chat (E10).
   - **W9** — "+" in another repo (E11).
-  - **W10** — FILES (E12). The real drags (FILES → repo row, same-repo refusal, Explorer drop ignored, worktree → own repo) need a human hand: CUA's SendInput and Playwright's pointer drag can't start a tree drag in Cursor (T6 walk, 2026-11-18). Sharif does a 1-minute manual drag in the test profile at T8, or the tester finds a tool that can.
+  - **W10** — FILES (E12). The real drags (FILES → repo row, same-repo refusal, Explorer drop ignored, worktree → own repo) need a human hand: CUA's SendInput and Playwright's pointer drag can't start a tree drag in Cursor (T6 walk, 2026-11-18). **Human step:** a person drags once in the testing profile (never Sharif's own windows); until then E12's drag items can't PASS, and the evaluator must not grade them on a dry test.
   - **W11** — Pin, split and reorder survive (E13).
   - **W12** — Menu flip and ` · {k} windows`, plus negative paths (E14 and Review Focus 1–5):
     - close the target window mid-handoff;
