@@ -140,3 +140,18 @@ test('picking an older chat imports it and it shows as idle', async (t) => {
   assert.equal(f.storage.getChatsByWorktree(f.main.id).length, 1, 'no second copy');
   assert.deepEqual(f.opened, [chat.id, chat.id]);
 });
+
+test('a chat shows the same age in session history and on its row', async (t) => {
+  const f = setup(t);
+  // The row's idle age is the last message (lastActivity); the file's mtime
+  // (lastUpdated) is later, as when something touched the transcript.
+  f.storage.createChat(f.main.id, 'claude', 'Stale mtime', { harnessSessionId: 's-mtime' });
+  f.session('s-mtime', 'Stale mtime', 6 * 60 * MINUTE).lastActivity = Date.now() - 8 * 60 * MINUTE;
+  f.session('s-older', 'Older chat', 6 * 60 * MINUTE).lastActivity = Date.now() - 8 * 60 * MINUTE;
+
+  const { rows } = await f.history();
+
+  const text = rows.map((row) => `${row.label} | ${row.description ?? ''}`);
+  assert.ok(text.includes('Stale mtime | ⎇ main · 8h'), `sidebar chat, got ${text.join(' ; ')}`);
+  assert.ok(text.includes('Older chat | ⎇ main · 8h'), `older chat, got ${text.join(' ; ')}`);
+});

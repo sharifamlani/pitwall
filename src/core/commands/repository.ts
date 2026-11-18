@@ -11,6 +11,15 @@ import { canonicalPath, canonicalRoot, samePath } from '../utils/paths';
 import { formatRelativeTime } from '../utils/text';
 import { commandRegistrar, importNativeSession, withProgress } from './common';
 
+/**
+ * When a session was last active: the value a chat's row shows as its age
+ * (`meta.lastActivity`), so history and the row agree. The transcript's
+ * modified time is only the fallback.
+ */
+function sessionAgeAt(session: HarnessSession | undefined): number | undefined {
+  return session?.lastActivity ?? session?.lastUpdated?.getTime();
+}
+
 /** The sidebar group of the history pick covers this many days (§3f). */
 const HISTORY_SIDEBAR_DAYS = 14;
 
@@ -136,7 +145,7 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
           ? nativeByKey.get(harnessSessionKey(chat.harness, chat.harnessSessionId))
           : undefined;
         const worktree = worktrees.find((candidate) => candidate.id === chat.worktreeId) ?? main;
-        return { chat, at: session?.lastUpdated?.getTime() ?? chat.lastAccessedAt, worktree };
+        return { chat, at: sessionAgeAt(session) ?? chat.lastAccessedAt, worktree };
       })
       .sort((a, b) => b.at - a.at);
     const chatRow = ({ chat, at, worktree }: (typeof inSidebar)[number]) => ({
@@ -148,10 +157,10 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     // group holds only sessions that are not in it, so its header stays true.
     const older = native
       .filter((entry) => !imported.has(harnessSessionKey(entry.harness, entry.session.sessionId)))
-      .sort((a, b) => (b.session.lastUpdated?.getTime() ?? 0) - (a.session.lastUpdated?.getTime() ?? 0))
+      .sort((a, b) => (sessionAgeAt(b.session) ?? 0) - (sessionAgeAt(a.session) ?? 0))
       .map(({ harness, session }) => ({
         label: sessionDisplayName(session),
-        description: `${branchPart(session.gitBranch)}${session.lastUpdated ? formatRelativeTime(session.lastUpdated, { short: true }) : ''}`,
+        description: `${branchPart(session.gitBranch)}${sessionAgeAt(session) ? formatRelativeTime(sessionAgeAt(session)!, { short: true }) : ''}`,
         harness,
         session,
       }));
