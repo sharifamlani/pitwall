@@ -252,7 +252,19 @@
     },
     {
       "command": "pitwall.openInNewWindow",
+      "title": "Open in New Window",
+      "category": "Pitwall",
+      "icon": "$(multiple-windows)"
+    },
+    {
+      "command": "pitwall.openItsWindow",
       "title": "Open its window",
+      "category": "Pitwall",
+      "icon": "$(multiple-windows)"
+    },
+    {
+      "command": "pitwall.bringItsWindowForward",
+      "title": "Bring its window forward",
       "category": "Pitwall",
       "icon": "$(multiple-windows)"
     },
@@ -1033,42 +1045,47 @@
     "view/item/context": [
       {
         "command": "pitwall.dismissRepository",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?$/",
         "group": "9_destructive@9"
       },
       {
         "command": "pitwall.sessionHistoryInline",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?$/",
         "group": "inline@1"
       },
       {
         "command": "pitwall.newSessionInRepositoryInline",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?$/",
         "group": "inline@2"
       },
       {
         "command": "pitwall.newSessionInRepository",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?$/",
         "group": "1_session@1"
       },
       {
         "command": "pitwall.sessionHistory",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?$/",
         "group": "1_session@2"
       },
       {
-        "command": "pitwall.openInNewWindow",
+        "command": "pitwall.openItsWindow",
         "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
         "group": "1_session@3"
       },
       {
+        "command": "pitwall.bringItsWindowForward",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)\\.hasWindow$/",
+        "group": "1_session@3"
+      },
+      {
         "command": "pitwall.copyRepositoryPath",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?$/",
         "group": "2_path@1"
       },
       {
         "command": "pitwall.revealRepository",
-        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
+        "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)(\\.hasWindow)?$/",
         "group": "2_path@2"
       },
       {
@@ -1318,6 +1335,14 @@
       },
       {
         "command": "pitwall.openInNewWindow",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.openItsWindow",
+        "when": "false"
+      },
+      {
+        "command": "pitwall.bringItsWindowForward",
         "when": "false"
       },
       {
