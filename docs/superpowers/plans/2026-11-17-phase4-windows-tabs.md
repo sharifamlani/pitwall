@@ -578,7 +578,7 @@ Tests: `tree.test.ts`, `menus.test.ts`, `search.test.ts`.
   - `a multi-root window opens its own first-folder chat locally and routes others`;
   - `runClaimed opens chats one at a time in request order and logs handoff opened`.
   - `pasting via a FILES row and via no row shows the same drive spelling in the toast` (T6 follow-up: run landedMessage's path through the native spelling);
-  - `typing in the new terminal before its late rename lets go of the list` (QA #47 follow-up: `onDidChangeTerminalState` → `isInteractedWith` releases the list hold);
+  - **Carried from T2 (QA #47, verbatim):** arm the move-watchers at the key press, not after the 'now' refocus, so the 'now' refocus also skips when an editor, tab or other terminal became active since the press. Tests: `an editor click between Ctrl+Down and the refocus keeps focus in the editor`; `typing in the new terminal before its late rename lets go of the list` (`onDidChangeTerminalState` → `isInteractedWith`). The flicker (the previous Pitwall terminal active for ~270 ms during the check-and-undo rename) is a known cosmetic issue; test only if cheap, else list it in the Phase 4 handoff. T3's live check re-walks E8 plus the editor-click edge.
   - `the late-refocus hold also lets go when a Claude panel tab becomes active` (carried from T2).
 
   In `tree.test.ts`:
