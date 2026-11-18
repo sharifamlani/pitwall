@@ -163,8 +163,13 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     if (rest.length === 0) {
       return;
     }
+    // Only once the whole batch has opened, and kept open when a Claude tab
+    // that finishes loading takes focus (live F3: it closed itself 0.8 s in).
     const label = `Open the other ${rest.length} ${rest.length === 1 ? 'chat' : 'chats'}`;
-    const picked = await vscode.window.showQuickPick([{ label }], { placeHolder: `${repo.name}: opened its ${batch.length} most recent chats` });
+    const picked = await vscode.window.showQuickPick([{ label }], {
+      placeHolder: `${repo.name}: opened its ${batch.length} most recent chats`,
+      ignoreFocusOut: true,
+    });
     if (picked) {
       await router.route({ kind: 'openAll', chats: [...rest].reverse() });
     }
