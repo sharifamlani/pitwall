@@ -25,6 +25,7 @@ Sidebar v1: repos and sessions (ROADMAP Phase 3).
 - Chat status is read live from Claude Code's session files, with `claude agents --json` as the fallback.
 - Session history shows each chat's age from its last message, as the row does.
 - Starred chats show a star on the row.
+- Package author is now Sharif Amlani; Agntree credit stays in LICENSE and README.
 
 ### Fixed
 
