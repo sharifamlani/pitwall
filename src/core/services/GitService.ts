@@ -383,7 +383,7 @@ export class GitService {
 
     return this.lines(['worktree', 'list', '--porcelain'], resolvedRepo)
       .filter((line) => line.startsWith('worktree '))
-      .some((line) => canonicalPath(line.slice('worktree '.length)) === resolved);
+      .some((line) => samePath(line.slice('worktree '.length), resolved));
   }
 
   deleteBranch(repoPath: string, branchName: string, force = false): boolean {
