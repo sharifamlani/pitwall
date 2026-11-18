@@ -616,6 +616,7 @@ Create `scripts/dump-tabs.mjs`. Tests: `test/dry/shared/native-ui-surface.test.t
   - `repo click in its own window with all chats open reveals only the last-open tab`;
   - `Enter on a repo runs openRepoChats`;
   - `side by side splits up to 4 open tabs, one group each, and is hidden below 2`;
+  - `serial bind replaces T2's interim title re-match: two "Claude Code" tabs survive a group rebuild without swapping bindings` (QA #47 note: T2 re-matches by title and kind on group rebuilds as an interim);
   - `no code path calls tabGroups.close or moveEditor outside side by side` (an architecture test greps `src/`).
 - [ ] **Step 2:** FAIL.
 - [ ] **Step 3:** Implement. Side by side uses `workbench.action.moveEditorToNextGroup` / `splitEditorRight` on the bound tabs in that window only. Log `tab bound` per bind.
