@@ -698,7 +698,9 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       // name when detached. A plain folder has none. ⧉ marks a worktree that
       // is not the repo's main one.
       const branch = entry.isGit ? `⎇ ${worktree.branch ?? worktree.name}${worktree.isMain ? '' : ' ⧉'}  ` : '';
-      item.description = `${branch}${statusLine}${isOpen ? ' · open' : ''}`;
+      // Starring lives in the right-click menu, so the row carries the mark.
+      const star = starredIds.has(chat.id) ? '★ ' : '';
+      item.description = `${star}${branch}${statusLine}${isOpen ? ' · open' : ''}`;
 
       item.tooltipHeader = {
         status: statusLine,

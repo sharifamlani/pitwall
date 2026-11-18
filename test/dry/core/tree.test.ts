@@ -131,11 +131,24 @@ test('session rows sit directly under the repo with branch, status word, time an
   assert.deepEqual(
     ['claude', 'opencode', 'new'].map((label) => `${items.get(label)!.description} | ${mark(items.get(label)!)} | ${items.get(label)!.contextValue}`),
     [
-      '⎇ main  idle · 16m | claude-light-idle.svg | starredChatClaudeUi',
+      '★ ⎇ main  idle · 16m | claude-light-idle.svg | starredChatClaudeUi',
       '⎇ main  idle · 33m | opencode-light-idle.svg | chat',
       '⎇ main  new | opencode-light-new.svg | chat',
     ]
   );
+});
+
+test('a starred chat shows ★ on its row and unstarring removes it', async (t) => {
+  const { rows, storage, claude } = sessionRows(t);
+  const description = async (label: string) => String((await rows()).get(label)!.description);
+
+  assert.match(await description('claude'), /^★ /);
+  assert.doesNotMatch(await description('opencode'), /★/, 'an unstarred chat has no mark');
+
+  storage.toggleStar(claude.id);
+  assert.doesNotMatch(await description('claude'), /★/, 'unstarring removes it');
+  storage.toggleStar(claude.id);
+  assert.match(await description('claude'), /^★ /, 'starring again brings it back');
 });
 
 test('an open chat, by terminal or native UI, keeps its running context and shows " · open"', async (t) => {
