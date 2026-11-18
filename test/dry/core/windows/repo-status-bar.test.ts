@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { GitService } from '../../../../src/core/services/GitService';
 import { RepoStatusBar } from '../../../../src/core/windows/RepoStatusBar';
-import { stub, tempDir } from '../../support';
+import { stub, tempDir, waitFor, watchEventLoopBlocks } from '../../support';
 
 beforeEach(() => stub.__reset());
 
@@ -64,7 +64,7 @@ test('worktree status bar watches the gitdir HEAD', async (t) => {
 
   git(wt, 'switch', '-q', '-c', 'other');
   watcher.__fireChange();
-  await bar.refresh();
+  await waitFor(() => item().text.endsWith('⎇ other ⧉'), 'the change listener to refresh', 1000);
   assert.equal(item().text, '$(repo) job-market · ⎇ other ⧉');
   bar.dispose();
   assert.ok(watcher.disposed, 'dispose stops the watcher');
@@ -106,5 +106,30 @@ test('a detached HEAD shows the short sha', async (t) => {
   const bar = new RepoStatusBar(repo, new GitService());
   await bar.refresh();
   assert.equal(item().text, `$(repo) job-market · ⎇ ${sha}`);
+  bar.dispose();
+});
+
+test('a create event on HEAD (git renames HEAD.lock over it) refreshes the text', async (t) => {
+  const { repo } = makeRepo(t);
+  const bar = new RepoStatusBar(repo, new GitService());
+  await bar.refresh();
+  const watcher = stub.__fileWatchers.find((w) => !w.disposed && w.pattern.pattern === 'HEAD');
+  assert.ok(watcher);
+  git(repo, 'switch', '-q', '-c', 'created');
+  watcher.__fireCreate();
+  await waitFor(() => item().text.endsWith('⎇ created'), 'the create listener to refresh', 1000);
+  bar.dispose();
+});
+
+test('locating the repo does not block the event loop', async (t) => {
+  const { repo } = makeRepo(t);
+  const bar = new RepoStatusBar(repo, new GitService());
+  const blocks = watchEventLoopBlocks();
+  await bar.refresh();
+  const { maxGapMs } = blocks.stop();
+  assert.equal(item().text, '$(repo) job-market · ⎇ main');
+  // A synchronous git call holds the loop for its whole run (36-100 ms). The
+  // gap is used because a blocked wait on a child burns almost no CPU.
+  assert.ok(maxGapMs < 20, `event loop gap ${maxGapMs.toFixed(1)} ms`);
   bar.dispose();
 });
