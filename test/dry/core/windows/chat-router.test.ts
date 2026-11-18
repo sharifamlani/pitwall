@@ -947,6 +947,35 @@ test('I2: no window registers for the folder: the open is retried once, then one
   assert.equal(calls.length, 3, 'one retry, one button press, nothing more');
 });
 
+test('I2: the retried window gets its own start time: a window that registers after the old cold-warn time earns no toast', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const windowsAt: string[] = [];
+  const sender = windowOn(t, w, dir, () => w.other, {
+    pid: 1001,
+    claims: w.other,
+    windowsAt,
+    // Production shape: retry 45 s, old toast 60 s (15 s later), expiry 120 s. Here 300 / 400 / 5000.
+    timing: { ...FAST, warnMs: 50, coldWarnMs: 400, retryOpenMs: 300, expireMs: 5_000 } as typeof FAST,
+  });
+  let up = false;
+  const outcome = sender.inbox.outcome.bind(sender.inbox);
+  sender.inbox.outcome = async (...args: Parameters<HandoffInbox['outcome']>) => (up ? { ok: true } : outcome(...args));
+
+  await sender.router.route({ kind: 'open', chats: [w.chat('Slow window', ID.a, w.mainWt)] });
+  await waitFor(() => calls.length === 2, 'the retry', 3_000);
+  const retriedAt = Date.now();
+  // The retried window starts after the old warn time (coldWarnMs 400 from the request, ~100 ms after the retry), before retriedAt + 300.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.ok(Date.now() - retriedAt < 300);
+  windowsAt.push(w.main);
+  up = true;
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert.deepEqual(warnings(UNREACHED('demo')), [], 'no unreached toast: the retried window was still starting');
+});
+
 test('I2: a window that registers for the folder in time gets no retry', async (t) => {
   const w = world(t);
   const dir = tempDir(t);

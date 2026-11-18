@@ -529,6 +529,8 @@ export class ChatRouter implements vscode.Disposable {
     const startedAt = Date.now();
     let warned = false;
     let retried = false;
+    /** When the retry raised the window; the toast waits `retryOpenMs` more, so the retried window has its 22-30 s to start. */
+    let retriedAt: number | undefined;
     // A closing window (a disposed router) never warns, even when a read it
     // started before closing returns afterwards.
     const warn = () => {
@@ -546,6 +548,7 @@ export class ChatRouter implements vscode.Disposable {
       if (windows && windows.length === 0 && !this.disposed) {
         (this.deps.log ?? logOperation)(`[Pitwall] handoff retry ${nonce.slice(0, 8)} → ${folder} (no window after ${Math.round((Date.now() - startedAt) / 1000)} s)`);
         await Promise.resolve(raiseFolderWindow(folder)).catch(() => undefined);
+        retriedAt = Date.now();
       }
     };
     const tick = async (): Promise<void> => {
@@ -567,7 +570,7 @@ export class ChatRouter implements vscode.Disposable {
       if (!retried && age >= this.timing.retryOpenMs) {
         await retry();
       }
-      if (age >= warnMs) {
+      if (age >= warnMs && (retriedAt === undefined || Date.now() - retriedAt >= this.timing.retryOpenMs)) {
         warn();
       }
       if (age >= this.timing.expireMs) {
