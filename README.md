@@ -11,7 +11,7 @@ On an F1 pit wall, the team watches every car at once and calls in whichever one
 **v0.4.0 (Phase 3): Sidebar v1, repos and sessions.** What works today:
 
 - Repos are found automatically from your Claude Code sessions (last 14 days). Dismiss or Remove from Pitwall takes one off the list.
-- Each repo lists its chats, with the branch on every row and a mark on worktree chats.
+- Each repo lists its chats, with chat rows in a git repo showing their branch and a mark on worktree chats.
 - Four status dots: needs you, working, finished and idle. The repo that needs you is on top, and a badge counts the chats waiting.
 - Hover a chat for the bell, open in terminal and fork. The repo row has "+", session history and a right-click menu.
 - Hotkeys (Ctrl+Alt+1 to 9, 0, O, F, R) and list keys, plus a search box (Ctrl+Alt+R).

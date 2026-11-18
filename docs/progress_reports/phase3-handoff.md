@@ -26,7 +26,7 @@ User-facing detail is in [CHANGELOG.md](../../CHANGELOG.md).
 
 ## What doesn't work yet
 
-- **Phase 4:** chats open in a terminal tab, not Claude Code's chat panel; no window-per-folder or all-chats-as-tabs (rows 4.2b, 4.3); Ctrl+Down/Enter on a repo only expands and selects it.
+- **Phase 4:** chats open in a terminal tab, not Claude Code's chat panel; no window-per-folder or all-chats-as-tabs (rows 4.2, 4.3); Ctrl+Down/Enter on a repo only expands and selects it.
 - **Phase 5:** pop-ups for every session (toasts stay limited to open chats); the header sound bell.
 - Hidden, code kept dormant: worktree create/delete, PR badges, Changes view.
 
@@ -52,4 +52,4 @@ Full text in `docs/superpowers/plans/2026-11-17-phase3-sidebar-v1.md` (P1-P25, c
 
 ## Next phase
 
-Phase 4, "Windows and tabs": clicking a chat lands you in the right Cursor window with it open in Claude Code's chat panel (rows 4.1-4.3, including 4.2b). See ROADMAP §3.
+Phase 4, Windows and tabs (ROADMAP rows 4.1–4.7, including 4.2b): clicking a chat lands you in the right Cursor window with it open in Claude Code's chat panel. See ROADMAP §3.

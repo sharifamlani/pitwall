@@ -11,7 +11,7 @@ Sidebar v1: repos and sessions (ROADMAP Phase 3).
 ### Added
 
 - Repos are found automatically from the Claude Code sessions in `~/.claude` (the last 14 days). Dismiss or Remove from Pitwall takes a repo off the list; it returns if you add it again or a new session starts in it.
-- A repo, then chat list. Every chat row shows its branch, and a worktree chat is marked with ⧉.
+- A repo, then chat list. Chat rows in a git repo show their branch, and a worktree chat is marked with ⧉.
 - Four status dots on every chat: needs you, working, finished and idle. The repo that needs you sits on top, rows move only when a status changes, and the needs-you count shows as a badge on the Pitwall icon.
 - Hover icons on a chat row: the bell (needs you), open in terminal and fork.
 - A "+" on the repo row to start a chat, 🕘 session history for the repo, and a right-click menu on the repo row.
@@ -23,7 +23,7 @@ Sidebar v1: repos and sessions (ROADMAP Phase 3).
 
 - Ctrl+Alt+F now shows or hides FILES. Find Session is still in the Command Palette and the search box. Ctrl+Alt+N stays as an alias of Ctrl+Alt+0.
 - Chat status is read live from Claude Code's session files, with `claude agents --json` as the fallback.
-- Chat ages follow the last message, as the row does.
+- Session history shows each chat's age from its last message, as the row does.
 - Starred chats show a star on the row.
 
 ### Fixed
