@@ -552,6 +552,7 @@ export async function activate(context: vscode.ExtensionContext) {
       tabs: () => tabTracker()?.describeTabs?.() ?? [],
       windowFolder: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
     },
+    traceTabs: () => tabTracker()?.toggleTrace?.() ?? false,
   });
   registerWorktreeRowCommands(context, { workspacesProvider, switchWorkspaceFolder });
   ({ openChatHere } = registerChatCommands(context, {

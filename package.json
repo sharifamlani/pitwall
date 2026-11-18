@@ -348,6 +348,11 @@
         "category": "Pitwall"
       },
       {
+        "command": "pitwall.dev.traceTabs",
+        "title": "Trace tab events (developer)",
+        "category": "Pitwall"
+      },
+      {
         "command": "pitwall.switchToWorkspace",
         "title": "Open in This Window",
         "category": "Pitwall",
@@ -1512,6 +1517,10 @@
         },
         {
           "command": "pitwall.dev.dumpState",
+          "when": "false"
+        },
+        {
+          "command": "pitwall.dev.traceTabs",
           "when": "false"
         },
         {

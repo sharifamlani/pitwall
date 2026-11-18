@@ -28,6 +28,7 @@ Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pit
 | **Pitwall: Open its chats** | What a click or Enter on a repo row runs: opens the repo's main-folder chats as tabs in its window, the 8 most recent first and a pick for the rest. Worktree chats are not opened. A row action, not in the palette |
 | **Pitwall: Show its open chats side by side** | Puts the repo's open chats in a pane each (up to 4) in its window. Shown on a repo with two or more of its chats open. A row action, not in the palette |
 | **Pitwall: Dump tab state (developer)** | Writes this window's tab groups, bound sessions and each repo's sidebar chats to `pitwall-dump/<pid>.json` in global storage, for `scripts/dump-tabs.mjs`. Hidden from the palette |
+| **Pitwall: Trace tab events (developer)** | Toggles a trace in the **Pitwall Operations** output: every raw tab and tab-group event (group, index, label, input kind, and whether a group event replaced the Tab objects) and each tab bind or release with its reason. Off by default and after a reload; changes no settings. Hidden from the palette |
 
 ### Sessions
 

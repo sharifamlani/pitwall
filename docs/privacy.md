@@ -50,6 +50,8 @@ Each Cursor or VS Code window runs its own copy of Pitwall. So that one window c
 
 Unclaimed handoff requests are deleted after 2 minutes, and the other handoff files after 10. To see what is there, run `node scripts/dump-pitwall-windows.mjs`; `--check-privacy` fails if any file holds a key outside the lists above.
 
+The hidden developer command `pitwall.dev.traceTabs` writes tab labels, input kinds (view types, never file paths) and bound session IDs to the **Pitwall Operations** output while it is on. It is off by default, writes no file of its own and changes no settings.
+
 ## When something leaves your machine
 
 Pitwall itself makes no network requests. Network traffic comes only from tools you already use, when you ask for them:

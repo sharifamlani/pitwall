@@ -51,6 +51,8 @@ export interface RepositoryCommandDeps {
   openChatsOf?: (repo: Repository) => Promise<ChatSession[]>;
   /** Where `pitwall.dev.dumpState` writes, and what it reads. */
   dump?: DumpDeps;
+  /** `pitwall.dev.traceTabs`: toggle the tab tracker's trace; returns whether it is now on. */
+  traceTabs?: () => boolean;
 }
 
 /** Workspace-root commands: add, clone, dismiss, remove, refresh. */
@@ -180,6 +182,19 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
       return;
     }
     await router.route({ kind: 'sideBySide', chats: open });
+  });
+
+  /**
+   * Hidden: while on, every raw tab and tab-group event and each bind or
+   * release decision goes to the Pitwall Operations output, so a live walk
+   * shows the real event order. Off by default; nothing is saved.
+   */
+  register('pitwall.dev.traceTabs', () => {
+    if (!deps.traceTabs) {
+      return;
+    }
+    const on = deps.traceTabs();
+    void vscode.window.showInformationMessage(`Pitwall: tab trace ${on ? 'on' : 'off'} (output: Pitwall Operations)`);
   });
 
   /** Hidden: writes this window's tab and repo state for `scripts/dump-tabs.mjs`. */
