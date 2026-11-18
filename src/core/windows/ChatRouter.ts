@@ -4,14 +4,17 @@ import { ChatSession, Worktree } from '../types';
 import { HarnessRegistry } from '../harness/HarnessRegistry';
 import { pathKey, samePath } from '../utils/paths';
 import { errorMessage } from '../utils/text';
+import type { WindowRegistry } from './WindowRegistry';
 import { EXPIRE_MS, HandoffInbox, HandoffKind, HandoffOutcome, HandoffRequest, WARN_MS } from './HandoffInbox';
 
 /** Where a route landed: opened in this window, handed to another, or nowhere (its folder is gone, or no window could be reached). */
 export type RouteResult = 'here' | 'routed' | 'gone';
 
 export interface RouterTiming {
-  /** Warn once when no `done` with `ok` arrives within this long (Q16). */
+  /** Warn once when no `done` with `ok` arrives within this long, when the folder had a window (Q16). */
   warnMs: number;
+  /** The same wait when the folder had no window yet: a new window takes 22–30 s to start Pitwall (Q26). */
+  coldWarnMs: number;
   /** Expire a request nobody claimed after this long (Q16). */
   expireMs: number;
   /** How often the sender reads the request's outcome. */
@@ -20,7 +23,7 @@ export interface RouterTiming {
   servicesWaitMs: number;
 }
 
-export const ROUTER_TIMING: RouterTiming = { warnMs: WARN_MS, expireMs: EXPIRE_MS, pollMs: 250, servicesWaitMs: 2_000 };
+export const ROUTER_TIMING: RouterTiming = { warnMs: WARN_MS, coldWarnMs: 60_000, expireMs: EXPIRE_MS, pollMs: 250, servicesWaitMs: 2_000 };
 /** How often an early click checks whether the window services have started. */
 const SERVICES_CHECK_MS = 50;
 
@@ -33,7 +36,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface ChatRouterDeps {
   /** The handoff inbox, once the window services have started (after first render). */
-  services: () => { inbox: HandoffInbox } | undefined;
+  services: () => { inbox: HandoffInbox; registry?: Pick<WindowRegistry, 'windowsFor'> } | undefined;
   /** This window's folder: `workspaceFolders[0]`, Claude's own rule. Undefined in an empty window. */
   windowFolder: () => string | undefined;
   harnessRegistry: Pick<HarnessRegistry, 'has' | 'get' | 'all'>;
@@ -326,8 +329,9 @@ export class ChatRouter implements vscode.Disposable {
 
   /** Send a request (unless the same one is pending) and raise the folder's window. */
   private async handOff(folder: string, kind: HandoffKind, ids: string[]): Promise<boolean> {
-    const inbox = await this.inboxReady();
-    if (!inbox) {
+    const services = await this.servicesReady();
+    const inbox = services?.inbox;
+    if (!services || !inbox) {
       // Raising the window without a request would bring it up with no chat.
       void vscode.window.showWarningMessage(unreachedMessage(this.deps.repoName(folder)));
       return false;
@@ -344,8 +348,11 @@ export class ChatRouter implements vscode.Disposable {
         if (pending) {
           release();
         } else {
+          // A folder with no window yet is a cold open, which gets the longer wait (Q26).
+          const windows = (await services.registry?.windowsFor(folder).catch(() => [])) ?? [];
+          const warnMs = windows.length > 0 ? this.timing.warnMs : this.timing.coldWarnMs;
           const nonce = await inbox.send(folder, { kind, sessionIds: ids });
-          this.watchOutcome(inbox, folder, nonce, release);
+          this.watchOutcome(inbox, folder, nonce, warnMs, release);
         }
       } catch (error) {
         release();
@@ -357,16 +364,16 @@ export class ChatRouter implements vscode.Disposable {
   }
 
   /**
-   * The inbox, waiting up to 2 s for the window services: they start after
-   * the list's first render, so a click in the first moment after activation
+   * The window services, waiting up to 2 s for them: they start after the
+   * list's first render, so a click in the first moment after activation
    * comes before them. Undefined when they still aren't up.
    */
-  private async inboxReady(): Promise<HandoffInbox | undefined> {
+  private async servicesReady(): Promise<ReturnType<ChatRouterDeps['services']>> {
     const deadline = Date.now() + this.timing.servicesWaitMs;
     for (;;) {
-      const inbox = this.deps.services()?.inbox;
-      if (inbox || this.disposed || Date.now() >= deadline) {
-        return inbox;
+      const services = this.deps.services();
+      if (services || this.disposed || Date.now() >= deadline) {
+        return services;
       }
       await new Promise((resolve) => setTimeout(resolve, SERVICES_CHECK_MS));
     }
@@ -374,11 +381,11 @@ export class ChatRouter implements vscode.Disposable {
 
   /**
    * Read the request's outcome until a `done` arrives. A failed one warns at
-   * once; no `ok` within 20 s warns once; an unclaimed request is expired at
-   * 120 s (Q16). Never toasts on success (Q6). `settled` runs once the
-   * request is done, failed or expired.
+   * once; no `ok` within `warnMs` (20 s, or 60 s for a cold open) warns once;
+   * an unclaimed request is expired at 120 s (Q16, Q26). Never toasts on
+   * success (Q6). `settled` runs once the request is done, failed or expired.
    */
-  private watchOutcome(inbox: HandoffInbox, folder: string, nonce: string, settled: () => void): void {
+  private watchOutcome(inbox: HandoffInbox, folder: string, nonce: string, warnMs: number, settled: () => void): void {
     const startedAt = Date.now();
     let warned = false;
     const warn = () => {
@@ -400,7 +407,7 @@ export class ChatRouter implements vscode.Disposable {
         return;
       }
       const age = Date.now() - startedAt;
-      if (age >= this.timing.warnMs) {
+      if (age >= warnMs) {
         warn();
       }
       if (age >= this.timing.expireMs) {

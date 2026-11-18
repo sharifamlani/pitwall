@@ -617,7 +617,7 @@ test('a click before window services start waits for them, else warns and opens 
     pid: 1001,
     claims: w.other,
     servicesUp: () => up,
-    timing: { ...FAST, warnMs: 60_000, expireMs: 120_000 },
+    timing: { ...FAST, warnMs: 60_000, coldWarnMs: 60_000, expireMs: 120_000 },
   });
   const timer = setTimeout(() => (up = true), 100);
   t.after(() => clearTimeout(timer));
