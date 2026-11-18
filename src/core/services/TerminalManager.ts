@@ -59,6 +59,8 @@ interface StartedTerminal {
   started: Promise<boolean>;
   /** An unbounded wait for the first command start, for a start after `started` gave up. */
   lateStart?: Promise<CommandStartWatch | undefined>;
+  /** Settles once the launch line has gone out, a turn after its line-clear (Q27). */
+  commandSent?: Promise<void>;
 }
 
 type CommandStartWatch = ReturnType<typeof watchCommandStart>;
@@ -317,7 +319,7 @@ export class TerminalManager {
 
     // Watched from before the send, which can start the command at once.
     const lateStart = watchCommandStart(terminal);
-    const { integrated, started } = this.startTerminal(
+    const { integrated, started, commandSent } = this.startTerminal(
       chat,
       terminal,
       launchLine(launch.command),
@@ -352,6 +354,8 @@ export class TerminalManager {
       lateStart.cancel();
     }
 
+    // Returned only once the launch line has gone out.
+    await commandSent;
     await created;
     return terminal;
   }
@@ -380,10 +384,20 @@ export class TerminalManager {
     this.terminalToChatId.set(terminal, chat.id);
     // Keys the user typed into the new terminal first would prefix the line
     // (`xyclaude --resume …`, T3 live): clear the shell's line first (Q27).
-    terminal.sendText(`${lineClearFor(terminal)}${command}`);
+    // The clear goes alone and the command on the next turn, in a send of
+    // its own: Esc followed at once by "c" could be read as Alt+C.
+    terminal.sendText(lineClearFor(terminal), false);
+    const commandSent = new Promise<void>((resolve) =>
+      setImmediate(() => {
+        if (!this.isDisposed && this.terminals.get(chat.id) === terminal && isLiveTerminal(terminal)) {
+          terminal.sendText(command);
+        }
+        resolve();
+      })
+    );
     this.markOpened(chat);
 
-    return { terminal, integrated, started };
+    return { terminal, integrated, started, commandSent };
   }
 
   private markOpened(chat: ChatSession): void {
