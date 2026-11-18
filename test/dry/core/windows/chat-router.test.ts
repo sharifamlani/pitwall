@@ -28,6 +28,7 @@ const ID = {
   b: '22222222-2222-4222-8222-222222222222',
   c: '33333333-3333-4333-8333-333333333333',
   t18: '44444444-4444-4444-8444-444444444444',
+  t18b: '99999999-9999-4999-8999-999999999999',
   t17: '55555555-5555-4555-8555-555555555555',
   other: '66666666-6666-4666-8666-666666666666',
   gone: '77777777-7777-4777-8777-777777777777',
@@ -201,13 +202,39 @@ test('launch folder finds a cwd after a first line over 64 KB', async (t) => {
   assert.equal(await router.launchFolder(w.chat('Long head', ID.a, w.mainWt)), w.main);
 });
 
-test('launch folder is the first cwd, not the latest', async (t) => {
-  // T18: the chat started in the main folder and later moved into a worktree,
-  // so Pitwall lists it under the worktree; Claude's panel resumes it from main.
+test('a chat moved into a worktree by EnterWorktree (early cwd = main, filed under the worktree) routes to the worktree window', async (t) => {
+  // T18 (live c7c894db): EnterWorktree moves the transcript into the worktree's
+  // project folder, and its early entries keep the main folder's cwd. The folder
+  // the transcript is filed under decides, since Claude's panel resumes it from
+  // there; the first cwd is only the candidate. Pitwall lists it under main.
   const w = world(t);
-  w.transcript(w.main, ID.t18, [w.turn(ID.t18, w.main), w.turn(ID.t18, w.wt), w.turn(ID.t18, w.wt)]);
-  const { router } = windowOn(t, w, tempDir(t), () => undefined, { pid: 1001 });
-  assert.equal(await router.launchFolder(w.chat('Moved into a worktree', ID.t18, w.featWt)), w.main);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.wt, ID.t18, [w.turn(ID.t18, w.main), w.turn(ID.t18, w.main), w.turn(ID.t18, w.wt), w.turn(ID.t18, w.wt)]);
+  const chat = w.chat('Entered a worktree', ID.t18, w.mainWt);
+  const mainWindow = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main });
+
+  assert.equal(await mainWindow.router.launchFolder(chat), w.wt);
+  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.deepEqual(requestsFor(mainWindow.inbox, dir, w.wt).map((request) => request.sessionIds), [[ID.t18]]);
+  assert.deepEqual(calls, [{ path: w.wt, forceNewWindow: true }]);
+  assert.deepEqual(mainWindow.opened, [], 'not opened in the main window, where the panel would open it blank');
+});
+
+test('a plain cd chat (all cwd = main, filed under main) routes to the main window', async (t) => {
+  // T18b (live ba8b7179): a Bash `cd` into the worktree moves neither the cwd nor the transcript.
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.main, ID.t18b, [w.turn(ID.t18b, w.main), w.turn(ID.t18b, w.main), w.turn(ID.t18b, w.main)]);
+  const chat = w.chat('cd into a worktree', ID.t18b, w.mainWt);
+  const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
+
+  assert.equal(await sender.router.launchFolder(chat), w.main);
+  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.deepEqual(requestsFor(sender.inbox, dir, w.main).map((request) => request.sessionIds), [[ID.t18b]]);
+  assert.deepEqual(requestsFor(sender.inbox, dir, w.wt), []);
+  assert.deepEqual(calls, [{ path: w.main, forceNewWindow: true }]);
 });
 
 test("a first cwd that doesn't match the transcript's project folder falls back to the matching repo or worktree", async (t) => {
@@ -241,27 +268,27 @@ test('worktree chat routes to the worktree folder', async (t) => {
   assert.deepEqual(mainWindow.opened, []);
 });
 
-test('a T18 chat claimed in the main window opens there', async (t) => {
+test('a T18 chat claimed in the worktree window opens there (availability checked against the launch folder)', async (t) => {
   const w = world(t);
   const dir = tempDir(t);
   openFolderCalls();
-  w.transcript(w.main, ID.t18, [w.turn(ID.t18, w.main), w.turn(ID.t18, w.wt)]);
-  const chat = w.chat('Moved into a worktree', ID.t18, w.featWt);
+  // Listed under main (its first cwd), filed under the worktree (EnterWorktree).
+  w.transcript(w.wt, ID.t18, [w.turn(ID.t18, w.main), w.turn(ID.t18, w.wt)]);
+  const chat = w.chat('Entered a worktree', ID.t18, w.mainWt);
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
-  const mainWindow = windowOn(t, w, dir, () => w.main, { pid: 1002, claims: w.main });
+  const wtWindow = windowOn(t, w, dir, () => w.wt, { pid: 1002, claims: w.wt });
 
   assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }), 'routed');
-  assert.deepEqual(requestsFor(sender.inbox, dir, w.main).map((request) => request.sessionIds), [[ID.t18]], 'sent to the main folder, not the worktree');
-  await mainWindow.router.runClaimed(await mainWindow.inbox.claimAll());
+  assert.deepEqual(requestsFor(sender.inbox, dir, w.wt).map((request) => request.sessionIds), [[ID.t18]], 'sent to the worktree, where it is filed');
+  await wtWindow.router.runClaimed(await wtWindow.inbox.claimAll());
 
-  // Availability is checked against the launch folder (main), never the worktree it moved into.
-  assert.deepEqual(mainWindow.opened, [{ chat: 'Moved into a worktree', path: w.main, worktreeId: 'wt-feat' }]);
-  assert.ok(mainWindow.logs.some((line) => /^\[Pitwall\] handoff opened [0-9a-f]{8} after \d+ ms$/.test(line)), mainWindow.logs.join('\n'));
+  // Availability is checked against the launch folder (the worktree), never the main folder it is listed under.
+  assert.deepEqual(wtWindow.opened, [{ chat: 'Entered a worktree', path: w.wt, worktreeId: 'wt-main' }]);
+  assert.ok(wtWindow.logs.some((line) => /^\[Pitwall\] handoff opened [0-9a-f]{8} after \d+ ms$/.test(line)), wtWindow.logs.join('\n'));
 
-  // And clicked in the main window itself, it opens there with no handoff.
-  const result = await mainWindow.router.route({ kind: 'open', chats: [chat] });
-  assert.equal(result, 'here');
-  assert.deepEqual(mainWindow.opened.at(-1), { chat: 'Moved into a worktree', path: w.main, worktreeId: 'wt-feat' });
+  // And clicked in the worktree window itself, it opens there with no handoff.
+  assert.equal(await wtWindow.router.route({ kind: 'open', chats: [chat] }), 'here');
+  assert.deepEqual(wtWindow.opened.at(-1), { chat: 'Entered a worktree', path: w.wt, worktreeId: 'wt-main' });
 });
 
 test('missing folder shows "That chat\'s folder is gone: {path}" and opens no window', async (t) => {
