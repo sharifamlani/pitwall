@@ -705,7 +705,7 @@ Create `scripts/dump-tabs.mjs`. Tests: `test/dry/shared/native-ui-surface.test.t
   - **W7** — Bottom bar (E9), including a `git switch` inside the worktree window: the bar updates ≤ 5 s (its HEAD lives outside that window's folder, QA #44).
   - **W8** — T18 chat (E10).
   - **W9** — "+" in another repo (E11).
-  - **W10** — FILES (E12).
+  - **W10** — FILES (E12). The real drags (FILES → repo row, same-repo refusal, Explorer drop ignored, worktree → own repo) need a human hand: CUA's SendInput and Playwright's pointer drag can't start a tree drag in Cursor (T6 walk, 2026-11-18). Sharif does a 1-minute manual drag in the test profile at T8, or the tester finds a tool that can.
   - **W11** — Pin, split and reorder survive (E13).
   - **W12** — Menu flip and ` · {k} windows`, plus negative paths (E14 and Review Focus 1–5):
     - close the target window mid-handoff;

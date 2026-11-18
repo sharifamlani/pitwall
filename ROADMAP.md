@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.56 · 2026-11-18
+> v0.57 · 2026-11-18
 
 ---
 
@@ -203,7 +203,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 4.4 | Match Claude tabs to chats reliably (titles are truncated, new chats all say "Claude Code") | ⏸ | ⏸ | — | T10 |
 | 4.5 | Repo + branch under tabs: file tabs via label setting; find a way for Claude tabs, else window title + bottom bar (was 2.5) | ~ | ✅ | bottom bar PR #44 → `246f015` (walk W7 pending; file-tab label part awaits Sharif, Q7a) | D26, T9 |
 | 4.6 | T18: a worktree entered mid-chat from main still opens in the main window (was 2.7) | ⏸ | ⏸ | — | D35 |
-| 4.7 | FILES follows the window's folder; file click = normal tab; copy/paste across repos, "Copy to another repo", drag onto a repo row, `.env` gitignore check | ⏸ | ⏸ | — | D19, D22, D23, T14 |
+| 4.7 | FILES follows the window's folder; file click = normal tab; copy/paste across repos, "Copy to another repo", drag onto a repo row, `.env` gitignore check | ~ | ✅ | PR #50 → merged (live 7/8 PASS; real drag needs a manual check at T8) | D19, D22, D23, T14 |
 | 4.8 | "+" starts the chat in that repo's window | ⏸ | ⏸ | — | D28, T15 |
 | 4.9 | Pin, split, drag-reorder: confirm Cursor's own behaviour is untouched | ⏸ | ⏸ | — | D16, D32 |
 
@@ -347,3 +347,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.54 · 2026-11-17.** Tag `v0.4.1` on `6f2065c` (PR #45): v0.4.0 refused every "Open in Claude Code UI" on Windows because stored roots say `C:` and Cursor says `c:` (found by Phase 4 smoke S3); also fixes "Worktree created but could not find it". Row 4.5 ~: bottom bar `repo · ⎇ branch` PR #44 → `246f015`. Smokes: S3 PASS on the Claude side (findings F2 sdk-cli chats, F3 open marks finished → T2), S1 PASS 4/4 (openFolder raises an existing window), S1b terminal half done (show(true) is enough). T1 PR #46 in QA.
 - **v0.55 · 2026-11-18.** Row 4.2b ✅ as a no-go (PR #48 → `f58740e`): revived terminals keep no `creationOptions.env` in either editor, so title matching + PID adoption stays (ADR 0009 amended). T2 PR #47 passed QA code review (12 mutations); waits on the live walk. T1 PR #46 in fix round 1. A test-only PR makes event-loop block asserts load-tolerant (best of 3).
 - **v0.56 · 2026-11-18.** Row 4.2 ⏳: window registry + handoff inbox merged (PR #46 → `a79fadd`; claims and expiries use an exclusive lock file, because a rename alone isn't exclusive on Windows; 2-process race tests). T6 (FILES across windows) started. T2 PR #47 in fix round 1 (a new terminal steals list focus; a closed Claude tab stayed "open").
+- **v0.57 · 2026-11-18.** Row 4.7 ~: FILES across windows merged (PR #50): FILES = the window's folder, one clipboard across windows with a banner, Copy to another repo, drag onto a repo row, .env → .gitignore offer (brackets escaped). Live walk 7/8 PASS; the real drag can't be produced by the test tools, so it moves to a manual check at T8. T2 PR #47 waits on its final E8 re-walk.
