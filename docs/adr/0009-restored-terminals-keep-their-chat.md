@@ -165,3 +165,27 @@ wrong terminal and a reload tab never adopted:
   when focus changed before the rename ran, and an unregistered Codex chat never
   claiming a thread announced by the fake app-server. The regression cases above encode the corrected
   behavior.
+
+## Amendment 2026-11-18: environment tags don't survive a revive (Phase 4 row 4.2b, no-go)
+
+Question: could Pitwall tag its terminals (`createTerminal({ env: { PITWALL_CHAT_ID } })`) and match revived terminals by that tag instead of by title?
+
+Spike (testing agent, isolated profiles, a throwaway probe extension outside the repo):
+- 3 tagged editor-area terminals before each cycle;
+- 5 reloads + 5 quit-and-reopen cycles per editor;
+- a file in front at quit on half the quits.
+
+| Editor | Tag after reload | Tag after quit | Name after reload | Name after quit |
+|---|---|---|---|---|
+| Cursor 1.128.0 | 0/5 | 0/5 | 1/5 | 1/5 (0/3 with a file in front) |
+| VS Code (isolated profile) | 0/5 | 0/5 | 0/5 | 0/5 |
+
+What happens:
+- After a reload, the same pids reattach, but `creationOptions` carries no `env` and no `name`. The API names every revived terminal "powershell", even while its tab still shows Pitwall's title.
+- After a quit, the processes come back with new pids and again no `env`.
+
+Decision: no-go. Title matching plus PID adoption (above) stays the identity mechanism. Names are lost by a race, and always when a file is in front at quit, which matches R48. That is an editor limitation.
+
+Since Phase 4, chats open in Claude Code's chat panel by default, and terminals are opt-in, so this path matters less.
+
+Also checked: the duplicate `[shortId]` tab seen after a restart in the Phase 3 walk did not reproduce. In 10/10 Cursor cycles, clicking an un-restored row gave exactly 1 tab.
