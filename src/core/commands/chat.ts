@@ -19,6 +19,7 @@ import { errorMessage, formatRelativeTime, nextForkName } from '../utils/text';
 import { samePath } from '../utils/paths';
 import { commandInDirectory } from '../services/terminalEvents';
 import { consumeKeepListFocus } from './navigation';
+import type { ChatRouter } from '../windows/ChatRouter';
 import {
   commandRegistrar,
   defaultWorktreePath,
@@ -30,7 +31,7 @@ import {
 type SessionSurface = 'terminal' | 'ui';
 /**
  * Where a row open landed: in this window (a UI tab, a revealed panel, or
- * nothing to open), or in a terminal. T3 adds 'routed' (another window).
+ * nothing to open), in a terminal, or handed to its folder's window (T3).
  */
 export type PrimaryOpen = 'here' | 'routed' | 'terminal';
 /** The Repos list's focus command, contributed by the workbench for the view. */
@@ -61,6 +62,13 @@ export interface ChatCommandDeps {
   /** Close chats' terminals, delete their rows, and clear the selection if it was one of them. */
   removeChats: (chatIds: string[], options?: { rememberSession?: boolean }) => string[];
   refreshTree: () => void;
+  /** The chat router (T3), once built: a row open lands in its folder's window. */
+  router?: () => Pick<ChatRouter, 'route'> | undefined;
+}
+
+/** What the session commands give back: this window's open, for the router's local path. */
+export interface ChatCommands {
+  openChatHere(chat: ChatSession, worktree: Worktree, keepListFocus: boolean): Promise<'here' | 'terminal' | 'failed'>;
 }
 
 /**
@@ -73,7 +81,7 @@ export interface ChatCommandDeps {
 export function registerChatCommands(
   context: vscode.ExtensionContext,
   deps: ChatCommandDeps
-): void {
+): ChatCommands {
   const {
     storageService,
     gitService,
@@ -206,16 +214,20 @@ export function registerChatCommands(
    * taking focus, and puts focus back on the list once a new terminal's
    * creation and rename have settled (E8, F4).
    */
-  const openInTerminal = async (chat: ChatSession, worktree: Worktree, keepListFocus = false): Promise<void> => {
+  const openInTerminal = async (chat: ChatSession, worktree: Worktree, keepListFocus = false): Promise<boolean> => {
     pitwallOpens += 1;
     const prepared = terminalManager.isActive(chat.id)
       ? chat
       : registerPendingSession(chat, worktree);
-    await terminalManager.openChat(prepared, worktree, {
+    // Armed now, at the key press, so a move before the first refocus counts too.
+    const refocus = keepListFocus ? listRefocusAfterTitle(chat) : undefined;
+    const terminal = await terminalManager.openChat(prepared, worktree, {
       preserveFocus: keepListFocus,
-      ...(keepListFocus ? { afterTitle: listRefocusAfterTitle(chat) } : {}),
+      ...(refocus ? { afterTitle: refocus.afterTitle } : {}),
     });
+    refocus?.openReturned();
     selectChat(prepared, worktree);
+    return terminal !== undefined;
   };
 
   /** Every chat open Pitwall starts; a held list yields to a newer one. */
@@ -225,59 +237,83 @@ export function registerChatCommands(
   context.subscriptions.push({ dispose: () => heldList?.dispose() });
 
   /**
-   * The list refocus for a Ctrl+↓/↑ terminal open (E8). `'now'`, once the
-   * terminal exists, always refocuses and then holds the list. Each later
-   * title write (`'late'`: the shell reported in) drops focus again, so it
-   * restores the list only while it is still held: any move lets go of it
-   * (a text editor, another terminal or another tab becoming active, the
-   * window losing focus, or another Pitwall open). A missed restore is
-   * harmless; a stolen focus is not.
+   * The list refocus for a Ctrl+↓/↑ terminal open (E8). The list is held
+   * from the key press: `'now'`, once the terminal exists, refocuses it, and
+   * each later title write (`'late'`: the shell reported in) drops focus
+   * again, so it restores the list. Both run only while the list is still
+   * held, and any move since the press lets go of it (QA #47): a text editor,
+   * another terminal or a non-terminal tab (a Claude panel tab, in this
+   * group or another) becoming active, typing into the new terminal, the
+   * window losing focus, or another Pitwall open. A missed restore is
+   * harmless; a stolen focus is not. The new terminal itself becoming
+   * active, and Pitwall's own activations to rename tabs, are not moves.
    */
   const listRefocusAfterTitle = (chat: ChatSession) => {
     heldList?.dispose();
-    let opensAtHold = -1;
-    let held = false;
-    let watch: vscode.Disposable | undefined;
-    const letGo = () => {
+    const opensAtPress = pitwallOpens;
+    let held = true;
+    let refocusedNow = false;
+    const activeTab = () => vscode.window.tabGroups.activeTabGroup?.activeTab;
+    const tabAtPress = activeTab();
+    /** Whether a terminal becoming active is this open's own doing (its new terminal, a rename pass), not the user's. */
+    const isOwnActivation = (terminal: vscode.Terminal): boolean => {
+      const chatId = terminalManager.getChatIdForTerminal(terminal);
+      return chatId === chat.id || (chatId !== undefined && terminalManager.isPitwallActivation(chatId));
+    };
+    const terminalMoved = (terminal: vscode.Terminal): void => {
+      if (isOwnActivation(terminal)) {
+        return;
+      }
+      // A terminal can report active while it is being created, before the
+      // open maps it to its chat, which it does in the same task: decide once
+      // that task is done.
+      void Promise.resolve().then(() => !isOwnActivation(terminal) && letGo());
+    };
+    const tabMoved = () => {
+      const tab = activeTab();
+      if (tab !== tabAtPress && !(tab?.input instanceof vscode.TabInputTerminal)) {
+        letGo();
+      }
+    };
+    const watches = [
+      vscode.window.onDidChangeActiveTextEditor((editor) => editor && letGo()),
+      vscode.window.onDidChangeActiveTerminal((terminal) => terminal && terminalMoved(terminal)),
+      vscode.window.onDidChangeTerminalState((terminal) => {
+        if (terminal.state.isInteractedWith && terminalManager.getChatIdForTerminal(terminal) === chat.id) {
+          letGo();
+        }
+      }),
+      vscode.window.tabGroups.onDidChangeTabs(tabMoved),
+      vscode.window.tabGroups.onDidChangeTabGroups(tabMoved),
+      vscode.window.onDidChangeWindowState((state) => !state.focused && letGo()),
+    ];
+    const watch: vscode.Disposable = { dispose: () => watches.forEach((entry) => entry.dispose()) };
+    heldList = watch;
+    function letGo(): void {
       held = false;
-      watch?.dispose();
+      watch.dispose();
       if (heldList === watch) {
         heldList = undefined;
       }
-    };
-    const hold = () => {
-      held = true;
-      opensAtHold = pitwallOpens;
-      const activeTab = () => vscode.window.tabGroups.activeTabGroup?.activeTab;
-      const tabAtHold = activeTab();
-      const watches = [
-        vscode.window.onDidChangeActiveTextEditor((editor) => editor && letGo()),
-        vscode.window.onDidChangeActiveTerminal((terminal) => {
-          if (terminal && terminal !== terminalManager.getTerminal(chat.id)) {
-            letGo();
-          }
-        }),
-        vscode.window.tabGroups.onDidChangeTabs(() => {
-          if (activeTab() !== tabAtHold) {
-            letGo();
-          }
-        }),
-        vscode.window.onDidChangeWindowState((state) => !state.focused && letGo()),
-      ];
-      watch = { dispose: () => watches.forEach((entry) => entry.dispose()) };
-      heldList = watch;
-    };
-    return async (phase: 'now' | 'late'): Promise<void> => {
-      if (phase === 'now') {
-        await refocusList();
-        hold();
-        return;
-      }
-      if (held && pitwallOpens === opensAtHold && heldList === watch) {
-        await refocusList();
-      } else {
-        letGo();
-      }
+    }
+    const stillHeld = () => held && pitwallOpens === opensAtPress && heldList === watch;
+    return {
+      afterTitle: async (phase: 'now' | 'late'): Promise<void> => {
+        if (phase === 'now') {
+          refocusedNow = true;
+        }
+        if (stillHeld()) {
+          await refocusList();
+        } else {
+          letGo();
+        }
+      },
+      /** An existing terminal is only shown and never calls back: nothing is left to hold. */
+      openReturned: () => {
+        if (!refocusedNow) {
+          letGo();
+        }
+      },
     };
   };
 
@@ -500,25 +536,53 @@ export function registerChatCommands(
     !(await nativeUi.resumeRefusal?.(chat.harnessSessionId!));
 
   /**
-   * Open a chat the way a row click does. Shared by the row click and the
-   * starred-session picker so both obey "never two agent processes for one
-   * session".
+   * Open a chat the way a row click does. Shared by the row click, the
+   * needs-you jump and the starred-session picker so all obey "never two
+   * agent processes for one session".
    *
-   * A Ctrl+↓/↑ that fired this open left a one-shot marker (Q4): the list
-   * keeps focus, by `show(true)` on a terminal and by a refocus right after
-   * an open in this window's UI.
+   * With the router (T3), a chat of another folder goes to that folder's
+   * window and focus goes with it (Q4); a chat of this window's folder opens
+   * here through `openChatHere`. A Ctrl+↓/↑ that fired this open left a
+   * one-shot marker, read now, before anything is awaited.
    */
   const openChatPrimary = async (chat: ChatSession, worktree: Worktree): Promise<PrimaryOpen> => {
     const keepListFocus = consumeKeepListFocus();
+    const router = deps.router?.();
+    if (router) {
+      const where = await router.route({ kind: 'open', chats: [chat] }, { keepListFocus });
+      return where === 'routed' ? 'routed' : 'here';
+    }
+    const result = await openChatHere(chat, worktree, keepListFocus);
+    return result === 'terminal' ? 'terminal' : 'here';
+  };
+
+  /**
+   * Open a chat in this window (T2's path). `worktree.path` is the folder
+   * availability is checked against and a terminal starts in: the chat's
+   * launch folder when the router passes one (Q2). The list keeps focus
+   * after a Ctrl+↓/↑ (Q4), by `show(true)` on a terminal and by a refocus
+   * right after an open in this window's UI. 'failed' when nothing opened.
+   */
+  const openChatHere = async (
+    chat: ChatSession,
+    worktree: Worktree,
+    keepListFocus: boolean
+  ): Promise<'here' | 'terminal' | 'failed'> => {
     const nativeUi = harnessRegistry.get(chat.harness).nativeUi;
     const sessionId = chatPrimarySessionId(chat);
     const terminalOpen = terminalManager.isActive(chat.id);
+    // The panels follow the chat's own worktree, never the launch folder it opened in.
+    const listed = workspacesProvider.getWorktreeById(chat.worktreeId) ?? worktree;
 
-    const inUi = async (ui: NativeUiCapability): Promise<PrimaryOpen> => {
-      if ((await openChatInNativeUi(chat, worktree, ui)) && keepListFocus) {
+    const inUi = async (ui: NativeUiCapability): Promise<'here' | 'failed'> => {
+      const opened = await openChatInNativeUi(chat, worktree, ui);
+      if (listed.path !== worktree.path) {
+        showWorktree(listed);
+      }
+      if (opened && keepListFocus) {
         await refocusList();
       }
-      return 'here';
+      return opened ? 'here' : 'failed';
     };
 
     // A session already open in its agent's UI is revealed, not duplicated in
@@ -544,8 +608,11 @@ export function registerChatCommands(
       return inUi(nativeUi);
     }
 
-    await openInTerminal(chat, worktree, keepListFocus);
-    return 'terminal';
+    const opened = await openInTerminal(chat, worktree, keepListFocus);
+    if (listed.path !== worktree.path) {
+      showWorktree(listed);
+    }
+    return opened ? 'terminal' : 'failed';
   };
 
   /** Explicit Open in <harness> UI: refuses another harness's session. */
@@ -1086,6 +1153,8 @@ export function registerChatCommands(
       await openChatPrimary(chat, worktree);
     }
   });
+
+  return { openChatHere };
 }
 
 function pendingUiMessage(displayName = 'its VS Code UI'): string {
