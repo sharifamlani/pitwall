@@ -32,8 +32,18 @@ export class FileTreeItem extends vscode.TreeItem {
   }
 }
 
-/** The drag mime of FILES rows; a repo row accepts drops of this mime only (Q20). */
-export const FILES_MIME = 'application/vnd.code.tree.pitwall.filesview';
+/**
+ * The drag mime of FILES rows: their paths, as a JSON list. A repo row
+ * accepts it and FILES' own tree mime only, never Explorer's `text/uri-list`
+ * (Q20). It is Pitwall's own, not the tree's: across two views the workbench
+ * puts the dragged rows' handles under the tree's mime ahead of anything the
+ * extension put there, so paths set under it never arrived (live I4).
+ */
+export const FILES_MIME = 'application/vnd.pitwall.files';
+/** The mime the workbench gives FILES rows' drags itself: `{ id, itemHandles }`, each handle `1/<the row's id>`. */
+export const FILES_TREE_MIME = 'application/vnd.code.tree.pitwall.filesview';
+/** The FILES view's id, as a tree drag names its source. */
+export const FILES_VIEW_ID = 'pitwall.filesView';
 
 /** The FILES banner while something is on the clipboard (§3e, canvas line 94). */
 export function clipboardBanner(file: string, repo: string): string {
@@ -53,7 +63,8 @@ export class FilesDragController implements vscode.TreeDragAndDropController<vsc
       .filter((item): item is FileTreeItem => item instanceof FileTreeItem && (item.fileType & vscode.FileType.Directory) === 0)
       .map((item) => item.uri.fsPath);
     if (paths.length > 0) {
-      dataTransfer.set(FILES_MIME, new vscode.DataTransferItem(paths));
+      // A string: it crosses to the other view's drop unchanged.
+      dataTransfer.set(FILES_MIME, new vscode.DataTransferItem(JSON.stringify(paths)));
     }
   }
 }

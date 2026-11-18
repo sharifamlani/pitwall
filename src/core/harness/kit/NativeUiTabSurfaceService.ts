@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { NativeUiSurfaceTracker, NativeUiTabGroupState } from '../types';
+import { NativeUiSurfaceTracker, NativeUiTabGroupState, NativeUiTitleCandidate } from '../types';
 import { logOperation } from '../../services/OperationLog';
 
 /** How long an expected tab can take to appear before the expectation expires. */
@@ -17,7 +17,16 @@ interface PendingSurface {
   sessionId: string;
   label: string;
   expiresAt: number;
+  /**
+   * The open sequence number when the expectation was made: only a tab that
+   * opened after it (a higher stamp) is new enough to be the expected chat's
+   * without its title proving it (live I1b).
+   */
+  seq: number;
 }
+
+/** How long an open waits for the titles before adopting with what it has. */
+const ADOPT_WAIT_MS = 1_000;
 
 /**
  * What identifies a tab across Tab objects: its place, its title and its
@@ -34,6 +43,12 @@ const DEFAULT_TITLE = 'Claude Code';
 /** A copy's title is the original's, or the default one a fresh webview shows. */
 function sameOrDefaultTitle(copy: string, original: string): boolean {
   return copy === original || copy.trim() === DEFAULT_TITLE;
+}
+
+/** A title that can name a chat: not empty and not the default every fresh Claude tab shows. */
+function namingTitle(label: string): boolean {
+  const title = label.trim();
+  return title.length > 0 && title !== DEFAULT_TITLE;
 }
 
 function tabKind(tab: vscode.Tab): string {
@@ -131,6 +146,12 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   private traceSeen = new Set<vscode.Tab>();
   /** `whenTabMoved` calls waiting for one of this harness's tabs to close. */
   private readonly moveWaiters = new Set<() => void>();
+  /** The sessions a tab here may belong to, with their titles; set once titles are known (I1). */
+  private titleSource: (() => readonly NativeUiTitleCandidate[]) | undefined;
+  /** Settles when the title source is complete enough to trust (the folder's session listing). */
+  private titlesReady: Promise<unknown> = Promise.resolve();
+  /** Whether adoption may act on the title source yet. */
+  private titlesTrusted = false;
 
   private readonly isUiTab: (tab: vscode.Tab) => boolean;
   private readonly sessionIdForTab:
@@ -168,7 +189,8 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       ((listener) => tabGroups.onDidChangeTabGroups(listener))
     )(() => {
       this.traceGroupEvent();
-      const mappingChanged = this.reconcile();
+      const reconciled = this.reconcile();
+      const mappingChanged = this.adoptTabs() || reconciled;
       this.layout = this.uiTabsByGroup();
       if (this.updateActiveSession() || mappingChanged) {
         this._onDidChange.fire();
@@ -197,6 +219,61 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     this.traceSeen = this.tracing ? this.allTabs() : new Set();
     this.log(`[Pitwall] tab trace ${this.tracing ? 'on' : 'off'}`);
     return this.tracing;
+  }
+
+  /**
+   * Adopt tabs Pitwall did not open (row 4.9, live I1): Claude tabs restored
+   * after a reload or a relaunch, reopened by the editor's own session
+   * restore, or opened before activation carry only their title. `source`
+   * names the sessions a tab in this window can show (the window folder's)
+   * with their titles; an unbound tab whose title names exactly one of them,
+   * when no other unbound tab names that one, is bound to it. A default
+   * "Claude Code" title, or a title two chats share, stays unknown. Runs now
+   * and after every tab or group event from here on.
+   */
+  setTitleSource(source: () => readonly NativeUiTitleCandidate[], ready?: Promise<unknown>): void {
+    this.titleSource = source;
+    if (!ready) {
+      this.titlesTrusted = true;
+      this.adopt();
+      return;
+    }
+    // Until the source is complete, a title cannot prove a tab is one chat's
+    // and no other's: adoption waits for it.
+    this.titlesTrusted = false;
+    this.titlesReady = ready.catch(() => undefined).then(() => {
+      if (this.titleSource === source) {
+        this.titlesTrusted = true;
+        this.adopt();
+      }
+    });
+  }
+
+  /** Adopt now, after the titles changed. */
+  adopt(): void {
+    if (this.adoptTabs()) {
+      this.updateActiveSession();
+      this._onDidChange.fire();
+    }
+  }
+
+  /**
+   * Before an open: wait at most `timeoutMs` for the titles to be complete,
+   * then adopt, so a chat whose tab is already here is revealed and bound,
+   * never claimed or opened twice.
+   */
+  async adoptBeforeOpen(timeoutMs = ADOPT_WAIT_MS): Promise<void> {
+    if (!this.titleSource) {
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      const timer = this.schedule(resolve, timeoutMs);
+      void this.titlesReady.then(() => {
+        timer.dispose();
+        resolve();
+      });
+    });
+    this.adopt();
   }
 
   /**
@@ -318,6 +395,7 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       sessionId,
       label,
       expiresAt: Date.now() + PENDING_TTL_MS,
+      seq: this.openSeq,
     });
   }
 
@@ -447,6 +525,8 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     for (const tab of event.opened) {
       mappingChanged = this.rebindReleased(tab, now) || mappingChanged;
     }
+    // Last, so a claim, an expectation and a move's pairing always come first.
+    mappingChanged = this.adoptTabs() || mappingChanged;
 
     this.layout = this.uiTabsByGroup();
     const activeChanged = this.updateActiveSession();
@@ -615,10 +695,17 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       return false;
     }
 
-    const match = this.pending.findIndex((entry) =>
-      labelsMatch(tab.label, entry.label)
+    // A tab that opened after the expectation may be the expected chat's on
+    // its title alone, or as the only one expected. A tab that was already
+    // there (restored, or opened by the user) binds only when its title
+    // proves it: it names the chat, no other unbound tab does, and it names
+    // no other chat of this folder. Never as "the only expected chat": the
+    // panel's own tab opens just after the command returns (live I1b).
+    const match = this.pending.findIndex(
+      (entry) => this.titlesOf(entry).some((title) => labelsMatch(tab.label, title)) && (this.isNewSince(tab, entry.seq) || this.provenFor(tab, entry))
     );
-    const index = match >= 0 ? match : allowFallback ? 0 : -1;
+    const fallback = allowFallback && this.pending[0] && this.isNewSince(tab, this.pending[0].seq) && !this.namesOther(tab, this.pending[0].sessionId) ? 0 : -1;
+    const index = match >= 0 ? match : fallback;
     if (index < 0) {
       return false;
     }
@@ -630,6 +717,94 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     this.mapTab(tab, pending.sessionId);
     this.logBound(pending.sessionId, tab, match >= 0 ? 'title matches the expected chat' : 'the only expected chat');
     return true;
+  }
+
+  /** Whether the tab opened after the open sequence number `seq` (an expectation's or a claim's). */
+  private isNewSince(tab: vscode.Tab, seq: number): boolean {
+    return (this.openedAt.get(tab)?.seq ?? 0) > seq;
+  }
+
+  /** The titles a pending chat's tab can show: the row name it was expected with, and its known titles. */
+  private titlesOf(entry: PendingSurface): string[] {
+    const known = this.titleSource?.().filter((candidate) => candidate.sessionId === entry.sessionId).flatMap((candidate) => candidate.titles) ?? [];
+    return [entry.label, ...known];
+  }
+
+  /** A pre-existing tab is this chat's only when no other unbound tab carries one of its titles, and the tab names no other chat. */
+  private provenFor(tab: vscode.Tab, entry: PendingSurface): boolean {
+    // A partial title source cannot prove "no other chat carries this title".
+    if (this.titlesUnsettled() || !namingTitle(tab.label) || this.namesOther(tab, entry.sessionId)) {
+      return false;
+    }
+    const titles = this.titlesOf(entry);
+    const carriers = this.uiTabs().filter((other) => !this.tabs.has(other) && titles.some((title) => labelsMatch(other.label, title)));
+    return carriers.length === 1 && carriers[0] === tab;
+  }
+
+  /** A title source is set but its listing has not landed: titles cannot yet prove anything. */
+  private titlesUnsettled(): boolean {
+    return this.titleSource !== undefined && !this.titlesTrusted;
+  }
+
+  /** Whether the tab's title names a chat of this folder other than `sessionId`. */
+  private namesOther(tab: vscode.Tab, sessionId: string): boolean {
+    if (!namingTitle(tab.label)) {
+      return false;
+    }
+    // Conservative while the source is partial: the chat it names may not be listed yet.
+    if (this.titlesUnsettled()) {
+      return true;
+    }
+    return (this.titleSource?.() ?? []).some(
+      (candidate) => candidate.sessionId !== sessionId && candidate.titles.some((title) => labelsMatch(tab.label, title))
+    );
+  }
+
+  /**
+   * Bind each unbound tab whose title names exactly one candidate session
+   * that has no tab yet, when no other unbound tab names that session (I1).
+   * A session whose binding was just released into the move window is left
+   * to the move's pairing. An adopted session's pending expectation, claim
+   * or late claim is satisfied by the tab, so a serial open that only
+   * revealed it stops waiting.
+   */
+  private adoptTabs(): boolean {
+    const source = this.titleSource;
+    if (!source || !this.titlesTrusted) {
+      return false;
+    }
+    const unbound = this.uiTabs().filter((tab) => !this.tabs.has(tab) && !this.sessionIdForTab?.(tab) && namingTitle(tab.label));
+    if (unbound.length === 0) {
+      return false;
+    }
+    const now = this.now();
+    const moving = new Set(this.released.filter((entry) => now - entry.at <= MOVE_WINDOW_MS).map((entry) => entry.sessionId));
+    const titles = new Map<string, string[]>();
+    for (const candidate of source()) {
+      if (!this.isOpen(candidate.sessionId) && !moving.has(candidate.sessionId)) {
+        titles.set(candidate.sessionId, [...(titles.get(candidate.sessionId) ?? []), ...candidate.titles]);
+      }
+    }
+    const fits = (tab: vscode.Tab, sessionId: string) => titles.get(sessionId)!.some((title) => labelsMatch(tab.label, title));
+    let changed = false;
+    for (const tab of unbound) {
+      const named = [...titles.keys()].filter((sessionId) => fits(tab, sessionId));
+      if (named.length !== 1 || unbound.filter((other) => fits(other, named[0])).length !== 1) {
+        continue;
+      }
+      const [sessionId] = named;
+      this.mapTab(tab, sessionId);
+      this.pending = this.pending.filter((entry) => entry.sessionId !== sessionId);
+      for (const claim of [this.claim, ...this.late]) {
+        if (claim && !claim.tab && claim.sessionId === sessionId) {
+          claim.tab = tab;
+          claim.arrived();
+        }
+      }
+      this.logBound(sessionId, tab, 'adopted: its title names one chat of this folder');
+      changed = true;
+    }
+    return changed;
   }
 
   /** Map a tab to a session, keeping the reverse index in step. */

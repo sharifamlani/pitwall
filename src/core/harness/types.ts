@@ -218,7 +218,9 @@ export interface NativeUiSurfaceTracker extends vscode.Disposable {
   readonly onDidChange: vscode.Event<void>;
   /**
    * Associate the next surface opened for this native session. A tracker that
-   * reads the ID from the tab has nothing to claim and may ignore this.
+   * reads the ID from the tab has nothing to claim and may ignore this. A tab
+   * that was already there when this is called binds only by its title,
+   * never as "the only expected chat" (live I1b).
    */
   expect(sessionId: string, label: string): void;
   /** Drop an expectation when the open did not happen. */
@@ -258,6 +260,25 @@ export interface NativeUiSurfaceTracker extends vscode.Disposable {
   toggleTrace?(): boolean;
   /** Resolve true when one of this harness's tabs closes (the last step of a move), or false after `timeoutMs`. */
   whenTabMoved?(timeoutMs: number): Promise<boolean>;
+  /**
+   * Start adopting tabs Pitwall did not open (restored after a reload or a
+   * relaunch, reopened by the editor's session restore, opened before
+   * activation): an unbound tab whose title names exactly one of these
+   * sessions, and no other unbound tab names it, is bound to it. `ready`
+   * settles once the titles are complete enough to trust (the window
+   * folder's session listing); `adoptBeforeOpen` waits for it.
+   */
+  setTitleSource?(source: () => readonly NativeUiTitleCandidate[], ready?: Promise<unknown>): void;
+  /** Run adoption now (the titles changed). */
+  adopt?(): void;
+  /** Before an open: wait at most `timeoutMs` for the titles, then adopt, so an open never misses a tab already there. */
+  adoptBeforeOpen?(timeoutMs?: number): Promise<void>;
+}
+
+/** A session a tab may belong to, and the titles its tab can show (its agent's title, its row name). */
+export interface NativeUiTitleCandidate {
+  sessionId: string;
+  titles: readonly string[];
 }
 
 /** One tab group as the dump reads it. */

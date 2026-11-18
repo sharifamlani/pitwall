@@ -12,6 +12,7 @@ import { formatRelativeTime } from '../utils/text';
 import { commandRegistrar, importNativeSession, withProgress } from './common';
 import type { ChatRouter } from '../windows/ChatRouter';
 import { DumpDeps, writeDump } from '../windows/dumpState';
+import { raiseFolderWindow } from '../windows/raiseWindow';
 import { consumeKeepListFocus } from './navigation';
 
 /** A repo click opens at most this many of its chats at once; the rest are one pick away (Q18). */
@@ -226,7 +227,7 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
   const raiseWindow = async (item?: WorkspaceTreeItem): Promise<void> => {
     const repo = await repositoryFor(item, 'open the window of');
     if (repo) {
-      await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(repo.rootPath), { forceNewWindow: true });
+      await raiseFolderWindow(repo.rootPath);
     }
   };
   register('pitwall.openItsWindow', raiseWindow);

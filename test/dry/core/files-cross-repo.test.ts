@@ -272,7 +272,7 @@ test('dropping a FILES row on a repo row copies it there', async (t) => {
   const w = filesWindow(t, jobMarket, [jobMarket, wynwood], tempDir(t));
   const drag = new FilesDragController();
   assert.deepEqual(drag.dragMimeTypes, [FILES_MIME]);
-  assert.equal(FILES_MIME, 'application/vnd.code.tree.pitwall.filesview');
+  assert.equal(FILES_MIME, 'application/vnd.pitwall.files', "Pitwall's own mime, not the tree's (I4)");
   const transfer = new vscode.DataTransfer();
   await drag.handleDrag([w.row(path.join(jobMarket.rootPath, 'notes.md'))], transfer, token);
 
@@ -287,7 +287,7 @@ test('an Explorer text/uri-list drop is not accepted', async (t) => {
   const outside = makeRepo(scratch, 'outside', { 'secret.txt': 's' });
   const wynwood = makeRepo(scratch, 'wynwood');
   const drop = new RepoDropController(() => undefined);
-  assert.deepEqual(drop.dropMimeTypes, ['application/vnd.code.tree.pitwall.filesview'], 'only FILES rows, not text/uri-list');
+  assert.deepEqual(drop.dropMimeTypes, ['application/vnd.pitwall.files', 'application/vnd.code.tree.pitwall.filesview'], 'only FILES rows, not text/uri-list');
   const transfer = new vscode.DataTransfer();
   transfer.set('text/uri-list', new vscode.DataTransferItem(vscode.Uri.file(path.join(outside.rootPath, 'secret.txt')).toString()));
   await drop.handleDrop(repoRow(wynwood) as never, transfer, token);
@@ -303,6 +303,63 @@ test('dropping on the same repo shows "That file is already in {repo}. Drop it o
   await new RepoDropController(w.repoOf).handleDrop(repoRow(jobMarket) as never, transfer, token);
   assert.ok(shown('That file is already in job-market. Drop it on a different repo to copy it there.'), shownMessages().join('\n'));
   assert.deepEqual(fs.readdirSync(jobMarket.rootPath), ['notes.md'], 'no copy made');
+});
+
+/**
+ * A drop from FILES onto the repo list, as the workbench delivers it across
+ * two views (I4): the FILES tree's own mime carries the renderer's
+ * `{id, itemHandles}` (an item's handle is `1/<its id>`), ahead of anything
+ * `handleDrag` set under that mime, and every other item `handleDrag` set
+ * arrives as its string form.
+ */
+async function crossViewDrop(dragged: vscode.DataTransfer, files: string[], options: { extensionItems?: boolean } = {}): Promise<vscode.DataTransfer> {
+  const delivered = new vscode.DataTransfer();
+  const handles = files.map((file) => `1/file:${file}`);
+  delivered.set('application/vnd.code.tree.pitwall.filesview', new vscode.DataTransferItem(JSON.stringify({ id: 'pitwall.filesView', itemHandles: handles })));
+  if (options.extensionItems ?? true) {
+    for (const [mime, item] of dragged as unknown as Iterable<[string, vscode.DataTransferItem]>) {
+      if (mime !== 'application/vnd.code.tree.pitwall.filesview') {
+        delivered.set(mime, new vscode.DataTransferItem(await item.asString()));
+      }
+    }
+  }
+  return delivered;
+}
+
+test('I4: a FILES row dropped on another repo row, as the workbench delivers it across views, is copied there', async (t) => {
+  const scratch = tempDir(t);
+  const labB = makeRepo(scratch, 'uj-lab-b', { 'w10-copy.txt': 'copy me' });
+  const labC = makeRepo(scratch, 'uj-lab-c');
+  const w = filesWindow(t, labB, [labB, labC], tempDir(t));
+  const source = path.join(labB.rootPath, 'w10-copy.txt');
+  const drag = new FilesDragController();
+  const dragged = new vscode.DataTransfer();
+  await drag.handleDrag([w.row(source)], dragged, token);
+  const drop = new RepoDropController(w.repoOf);
+  for (const mime of drag.dragMimeTypes) {
+    assert.ok(drop.dropMimeTypes.includes(mime), `the repo list accepts ${mime}`);
+  }
+  await drop.handleDrop(repoRow(labC) as never, await crossViewDrop(dragged, [source]), token);
+  assert.equal(fs.readFileSync(path.join(labC.rootPath, 'w10-copy.txt'), 'utf8'), 'copy me', "copied into uj-lab-c's root");
+  assert.ok(shown(`Pasted w10-copy.txt from uj-lab-b into uj-lab-c (${labC.rootPath}).`), shownMessages().join('\n'));
+  assert.equal(fs.readFileSync(source, 'utf8'), 'copy me', 'the source stays');
+});
+
+test("I4: with only the FILES tree's own item handles (no extension items), the drop still copies", async (t) => {
+  const scratch = tempDir(t);
+  const labB = makeRepo(scratch, 'uj-lab-b', { 'w10-copy.txt': 'copy me' });
+  const labC = makeRepo(scratch, 'uj-lab-c');
+  const w = filesWindow(t, labB, [labB, labC], tempDir(t));
+  const source = path.join(labB.rootPath, 'w10-copy.txt');
+  const drop = new RepoDropController(w.repoOf);
+  await drop.handleDrop(repoRow(labC) as never, await crossViewDrop(new vscode.DataTransfer(), [source], { extensionItems: false }), token);
+  assert.ok(fs.existsSync(path.join(labC.rootPath, 'w10-copy.txt')));
+  // Another tree's rows are not FILES rows: nothing is copied.
+  const foreign = new vscode.DataTransfer();
+  foreign.set('application/vnd.code.tree.pitwall.filesview', new vscode.DataTransferItem(JSON.stringify({ id: 'other.view', itemHandles: [`1/file:${source}`] })));
+  fs.rmSync(path.join(labC.rootPath, 'w10-copy.txt'));
+  await drop.handleDrop(repoRow(labC) as never, foreign, token);
+  assert.deepEqual(fs.readdirSync(labC.rootPath), []);
 });
 
 /** The deepest of `roots` holding `p`, as the list's worktree lookup gives it. */

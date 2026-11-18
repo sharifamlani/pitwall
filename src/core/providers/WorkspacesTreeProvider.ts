@@ -161,6 +161,8 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   private firstRenderLogged = false;
 
   private repoWatchers: vscode.Disposable[] = [];
+  /** Set after the first render; until then no repo watcher is made. */
+  private watchersMayStart = false;
   private watchedRepoIds = '';
   private pendingCacheClear = false;
   /** True from a refresh until the next top-level render; nothing has rendered yet at construction. */
@@ -213,7 +215,15 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       this.hiddenListTimer = setTimeout(resolve, HIDDEN_LIST_LISTING_MS);
       void this.whenSettled().then(() => setImmediate(resolve));
     }).then(() => clearTimeout(this.hiddenListTimer));
-    this.updateRepoWatchers();
+    // The git watchers (three per repo) are made once the rows are out, not
+    // during activation: a window's start does nothing per repo before its
+    // first render (E16, I3).
+    void this.backgroundListingsMayStart.then(() => {
+      this.watchersMayStart = true;
+      if (!this.disposed) {
+        this.updateRepoWatchers(true);
+      }
+    });
   }
 
   dispose(): void {
@@ -349,6 +359,9 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
    * `.git` appears or disappears, since the HEAD patterns need it to exist.
    */
   private updateRepoWatchers(force = false): void {
+    if (!this.watchersMayStart) {
+      return;
+    }
     const repositories = this.storageService.getRepositories();
     const ids = repositories.map((r) => r.id).sort().join(',');
     if (!force && ids === this.watchedRepoIds) {
@@ -831,6 +844,23 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
    */
   getWorktreeByIdAsync(worktreeId: string, options: { urgent?: boolean } = {}): Promise<Worktree | undefined> {
     return this.findWorktreeAsync((worktree) => worktree.id === worktreeId, options);
+  }
+
+  /**
+   * A chat's worktree without waiting on git: the one the listings (or the
+   * stored snapshots) already know, else the one a stored repo's id and
+   * `folder` derive (a worktree's id is derived from both), so a window a
+   * handoff started in a linked worktree opens its chats without a listing.
+   */
+  worktreeWithoutGit(worktreeIdOfChat: string, folder: string): Worktree | undefined {
+    const known = this.getWorktreeById(worktreeIdOfChat);
+    if (known) {
+      return known;
+    }
+    const repo = this.storageService.getRepositories().find((candidate) => worktreeId(candidate.id, folder) === worktreeIdOfChat);
+    return repo
+      ? { id: worktreeIdOfChat, repoId: repo.id, name: path.basename(folder), path: folder, isMain: samePath(repo.rootPath, folder) }
+      : undefined;
   }
 
   /** `findWorktreeByPath` for a caller that can wait (see `getWorktreeByIdAsync`). */
