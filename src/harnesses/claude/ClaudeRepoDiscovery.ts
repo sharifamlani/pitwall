@@ -25,7 +25,9 @@ interface TranscriptHead {
  * Folders Claude Code sessions ran in, from the heads of the transcripts
  * under `<configDir>/projects/<encoded cwd>/<session>.jsonl` (ADR 0019).
  * Only files written in the window are opened, each only up to its first
- * entry with a `cwd`. Read-only; nothing from a file is logged.
+ * entry with a `cwd` and back from its end to its last user entry, never in
+ * full: a pass looks at every recent transcript, and a whole-file parse
+ * blocks the extension host (E16). Read-only; nothing from a file is logged.
  */
 export class ClaudeRepoDiscovery {
   /** Heads keyed by transcript path, reused while mtime and size hold. */
@@ -33,7 +35,7 @@ export class ClaudeRepoDiscovery {
 
   constructor(
     private readonly projectsDir: string,
-    /** Dates a transcript by its last message, as import does. */
+    /** Dates a transcript by its last message, as import does, from its tail. */
     private readonly sessions: ClaudeSessionService
   ) {}
 
@@ -73,7 +75,8 @@ export class ClaudeRepoDiscovery {
         if (stats.mtimeMs < sinceMs) {
           continue;
         }
-        // The file's mtime only says it was touched; import goes by the last message.
+        // The file's mtime only says it was touched; import goes by the last
+        // message. The mtime stays the cheap prefilter above.
         const lastMessageAt = await this.sessions.lastActivityOfFile(filePath);
         if (lastMessageAt !== null && lastMessageAt < sinceMs) {
           continue;

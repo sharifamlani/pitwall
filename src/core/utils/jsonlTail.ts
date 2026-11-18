@@ -83,11 +83,13 @@ async function readWindow(
  * The first line of a later window is a fragment of an entry that begins
  * before it, so it is dropped. A trailing line without its newline is a write
  * in progress, so it is dropped too; the previous complete entry is the latest
- * fact we can rely on. Returns null when the file cannot be read.
+ * fact we can rely on. Returns null when the file cannot be read, and, with
+ * `maxBytes`, when a window of that size still did not decide.
  */
 export async function readJsonlTail<T>(
   filePath: string,
-  scan: (entries: unknown[]) => JsonlTailScan<T>
+  scan: (entries: unknown[]) => JsonlTailScan<T>,
+  options: { maxBytes?: number } = {}
 ): Promise<T | null> {
   let stats: fs.Stats;
   try {
@@ -124,7 +126,10 @@ export async function readJsonlTail<T>(
     if (result.decided || start === 0) {
       return result.value;
     }
+    if (options.maxBytes !== undefined && windowBytes >= options.maxBytes) {
+      return null;
+    }
 
-    windowBytes *= 4;
+    windowBytes = Math.min(windowBytes * 4, options.maxBytes ?? Infinity);
   }
 }
