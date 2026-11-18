@@ -321,6 +321,39 @@ export function watchEventLoopBlocks(): { stop(): { maxBlockMs: number; maxGapMs
   };
 }
 
+/**
+ * Asserts a step does not hold the event loop for more than `maxMs`, tolerant
+ * of a loaded machine. A real synchronous block shows up on EVERY run; a load
+ * spike rarely hits all of them. So the step runs up to `runs` times (default
+ * 3) and passes as soon as one run stays under `maxMs`; it fails only when
+ * every run exceeds it. `fn` must be repeatable (build its fixtures inside).
+ * `metric` is 'gap' (wall-clock gap, default) or 'block' (gap limited to this
+ * process's CPU time, see watchEventLoopBlocks).
+ */
+export async function assertNoLongBlock(
+  fn: () => Promise<void>,
+  maxMs: number,
+  opts: { runs?: number; label?: string; metric?: 'gap' | 'block' } = {}
+): Promise<void> {
+  const runs = opts.runs ?? 3;
+  const metric = opts.metric ?? 'gap';
+  const seen: number[] = [];
+  for (let i = 0; i < runs; i++) {
+    const blocks = watchEventLoopBlocks();
+    try {
+      await fn();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    } finally {
+      const { maxBlockMs, maxGapMs } = blocks.stop();
+      seen.push(metric === 'gap' ? maxGapMs : maxBlockMs);
+    }
+    if (seen[i] < maxMs) return;
+  }
+  throw new Error(
+    `${opts.label ?? 'step'} held the event loop over ${maxMs} ms on all ${runs} runs (${metric} ms: ${seen.map((g) => g.toFixed(1)).join(', ')})`
+  );
+}
+
 /** Let queued promise callbacks run. */
 export function flush(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));

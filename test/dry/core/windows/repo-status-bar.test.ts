@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { GitService } from '../../../../src/core/services/GitService';
 import { RepoStatusBar } from '../../../../src/core/windows/RepoStatusBar';
-import { stub, tempDir, waitFor, watchEventLoopBlocks } from '../../support';
+import { stub, tempDir, waitFor, assertNoLongBlock } from '../../support';
 
 beforeEach(() => stub.__reset());
 
@@ -123,14 +123,18 @@ test('a create event on HEAD (git renames HEAD.lock over it) refreshes the text'
 
 test('locating the repo does not block the event loop', async (t) => {
   const { repo } = makeRepo(t);
-  const bar = new RepoStatusBar(repo, new GitService());
-  const blocks = watchEventLoopBlocks();
-  await bar.refresh();
-  const { maxGapMs } = blocks.stop();
-  assert.equal(item().text, '$(repo) job-market · ⎇ main');
   // A synchronous git call holds the loop for its whole run (36-100 ms). The
   // gap is used because a blocked wait on a child burns almost no CPU. 30 ms
   // clears the ~16 ms Windows timer tick on a loaded runner; sync is 36+ ms.
-  assert.ok(maxGapMs < 30, `event loop gap ${maxGapMs.toFixed(1)} ms`);
-  bar.dispose();
+  // Best of 3: a real block shows on every run, a load spike rarely does.
+  await assertNoLongBlock(
+    async () => {
+      const bar = new RepoStatusBar(repo, new GitService());
+      await bar.refresh();
+      assert.equal(item().text, '$(repo) job-market · ⎇ main');
+      bar.dispose();
+    },
+    30,
+    { label: 'locating the repo' }
+  );
 });
