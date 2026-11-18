@@ -849,6 +849,15 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     return this.deepestRootContaining(filePath)?.repo;
   }
 
+  /** The folders a worktree's repo owns: its main folder and every worktree, never waiting on git. */
+  rootsOf(worktree: Worktree): string[] {
+    const repo = this.storageService.getRepository(worktree.repoId);
+    if (!repo) {
+      return [worktree.path];
+    }
+    return [repo.rootPath, ...this.getRepoWorktrees(repo).worktrees.map((candidate) => candidate.path)];
+  }
+
   /** The deepest root holding `filePath`: a repo's main folder or one of its worktrees (Q25). */
   deepestRootContaining(filePath: string): { path: string; repo: Repository } | undefined {
     const roots = this.storageService

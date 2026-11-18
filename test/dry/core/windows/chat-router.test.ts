@@ -436,11 +436,13 @@ test('runClaimed opens chats one at a time in request order and logs handoff ope
     w.transcript(w.main, id, [w.turn(id, w.main)]);
   }
   const events: string[] = [];
-  const getExtension = stub.extensions.getExtension;
-  (stub.extensions as { getExtension: unknown }).getExtension = (id: string) =>
+  // A freshly opened window may not have started Claude's extension yet (S2b).
+  const extensions = vscode.extensions as unknown as { getExtension: (id: string) => unknown };
+  const getExtension = extensions.getExtension;
+  extensions.getExtension = (id: string) =>
     id === 'anthropic.claude-code' ? { id, isActive: false, activate: async () => void events.push('activate claude') } : getExtension(id);
   t.after(() => {
-    (stub.extensions as { getExtension: unknown }).getExtension = getExtension;
+    extensions.getExtension = getExtension;
   });
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
   const mainWindow = windowOn(t, w, dir, () => w.main, {

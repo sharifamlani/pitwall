@@ -18,7 +18,7 @@ import { disposeOperationLog, logOperation } from './core/services/OperationLog'
 import { HarnessRegistry } from './core/harness/HarnessRegistry';
 import { enabledHarnesses } from './harnesses';
 import { chatNativeSessionIds } from './core/harness/sessionUtils';
-import { WorkspacesTreeProvider } from './core/providers/WorkspacesTreeProvider';
+import { WorkspaceTreeItem, WorkspacesTreeProvider } from './core/providers/WorkspacesTreeProvider';
 import { FilesDragController, FilesTreeProvider, FileTreeItem, clipboardBanner } from './core/providers/FilesTreeProvider';
 import { SharedClipboard } from './core/files/SharedClipboard';
 import { RepoDropController } from './core/files/RepoDropController';
@@ -26,7 +26,7 @@ import { RepoRef } from './core/files/copyInto';
 import { SessionSearchTreeProvider } from './core/providers/SessionSearchTreeProvider';
 import { registerRepositoryCommands } from './core/commands/repository';
 import { registerWorktreeRowCommands } from './core/commands/worktree-rows';
-import { registerChatCommands } from './core/commands/chat';
+import { ChatCommands, registerChatCommands } from './core/commands/chat';
 import { registerSessionImportCommands } from './core/commands/sessionImport';
 import { registerFileCommands } from './core/commands/files';
 import { registerNavigationCommands } from './core/commands/navigation';
@@ -36,7 +36,9 @@ import { commandRegistrar } from './core/commands/common';
 import { debounce } from './core/utils/debounce';
 import { samePath } from './core/utils/paths';
 import { RepoStatusBar } from './core/windows/RepoStatusBar';
-import { startWindowServices } from './core/windows/startWindowServices';
+import { WindowServices, startWindowServices } from './core/windows/startWindowServices';
+import { ChatRouter } from './core/windows/ChatRouter';
+import { WindowRegistry } from './core/windows/WindowRegistry';
 
 /** Panels re-read the worktree this long after its files stop changing. */
 const FILE_CHANGE_DEBOUNCE_MS = 300;
@@ -143,8 +145,74 @@ export async function activate(context: vscode.ExtensionContext) {
   // the extension host most of a reload's activation on Windows; a chat that
   // links meanwhile is caught by their first check.
   afterFirstRender(() => harnessWatcherRegistry.startAll());
+  // Clicking a chat lands in its folder's window (rows 4.2, 4.6, 4.8). The
+  // local open is the chat commands' own, bound once they are registered.
+  let windowServices: WindowServices | undefined;
+  let openChatHere: ChatCommands['openChatHere'] = async () => 'failed';
+  const router = new ChatRouter({
+    services: () => windowServices,
+    // Claude's own rule: a window's folder is its first workspace folder.
+    windowFolder: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+    harnessRegistry,
+    worktreeOf: (chat) => workspacesProvider.getWorktreeByIdAsync(chat.worktreeId),
+    rootsOf: (worktree) => workspacesProvider.rootsOf(worktree),
+    repoName: (folder) => workspacesProvider.repoContaining(folder)?.name ?? path.basename(folder),
+    isOpenHere: isChatOpen,
+    chatForSession: (sessionId) =>
+      storageService.getChats().find((chat) => harnessRegistry.has(chat.harness) && chatNativeSessionIds(chat).includes(sessionId)),
+    openHere: async (chat, worktree, { keepListFocus }) => (await openChatHere(chat, worktree, keepListFocus)) !== 'failed',
+    startNew: async (folder) => {
+      const worktree = await workspacesProvider.findWorktreeByPathAsync(folder);
+      if (!worktree) {
+        return false;
+      }
+      await vscode.commands.executeCommand(
+        'pitwall.newClaudeChat',
+        new WorkspaceTreeItem(worktree.name, vscode.TreeItemCollapsibleState.None, 'worktree', worktree, 'worktree')
+      );
+      return true;
+    },
+  });
+  context.subscriptions.push(router);
+
+  /**
+   * Publish this window's open chats to the registry on every change (a
+   * terminal or a Claude tab opening or closing), and show every window's on
+   * the rows (` · open`, ` · {k} windows`, the menu flip), refreshed at most
+   * every 500 ms.
+   */
+  const publishWindows = (registry: WindowRegistry): void => {
+    const openSessionIds = (): string[] =>
+      storageService.getChats().flatMap((chat) => {
+        if (!harnessRegistry.has(chat.harness)) {
+          return [];
+        }
+        const ids = chatNativeSessionIds(chat);
+        if (terminalManager.isActive(chat.id)) {
+          return ids.slice(0, 1);
+        }
+        const surfaces = harnessRegistry.get(chat.harness).nativeUi?.surfaces;
+        return surfaces ? ids.filter((id) => surfaces.isOpen(id)) : [];
+      });
+    const beat = debounce(() => void registry.beat(openSessionIds()).catch(() => undefined), 50);
+    const showWindows = debounce(() => void registry.windows().then((windows) => workspacesProvider.setWindows(windows)), 500);
+    context.subscriptions.push(
+      terminalManager.onTerminalStateChange(() => beat()),
+      ...harnessRegistry.all().flatMap((adapter) => (adapter.nativeUi?.surfaces ? [adapter.nativeUi.surfaces.onDidChange(() => beat())] : [])),
+      registry.onDidChange(() => showWindows()),
+      { dispose: () => (beat.cancel(), showWindows.cancel()) }
+    );
+    beat();
+  };
+
   // The window registry and handoff inbox (ADR 0020); nothing awaits them.
-  afterFirstRender(() => startWindowServices(context, logOperation));
+  // Requests this window claims open through the router (T3).
+  afterFirstRender(() => {
+    windowServices = startWindowServices(context, logOperation, (requests, inbox) => void router.runClaimed(requests, inbox));
+    if (windowServices) {
+      publishWindows(windowServices.registry);
+    }
+  });
 
   // Bottom bar: this window's `repo · ⎇ branch` (row 4.5).
   afterFirstRender(() => {
@@ -413,9 +481,9 @@ export async function activate(context: vscode.ExtensionContext) {
   workspacesProvider.setStatusSource(attentionService);
 
   // Commands
-  registerRepositoryCommands(context, { storageService, gitService, harnessRegistry, forgetWorktrees, refreshTree });
+  registerRepositoryCommands(context, { storageService, gitService, harnessRegistry, forgetWorktrees, refreshTree, router: () => router });
   registerWorktreeRowCommands(context, { workspacesProvider, switchWorkspaceFolder });
-  registerChatCommands(context, {
+  ({ openChatHere } = registerChatCommands(context, {
     storageService,
     gitService,
     terminalManager,
@@ -430,7 +498,8 @@ export async function activate(context: vscode.ExtensionContext) {
     showWorktree,
     removeChats,
     refreshTree,
-  });
+    router: () => router,
+  }));
   registerSessionImportCommands(context, storageService, gitService, worktreeCatalog, workspacesProvider, harnessRegistry, refreshTree);
   registerFileCommands(
     context,
@@ -447,7 +516,10 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   registerNavigationCommands(context, { workspacesProvider, workspacesTreeView, filesTreeView });
-  registerSearchCommands(context, { workspacesProvider });
+  registerSearchCommands(context, {
+    workspacesProvider,
+    opensHere: (chat) => router.opensHere(chat, workspacesProvider.getWorktreeById(chat.worktreeId)),
+  });
 
   // Each search runs in a short temp folder of its own, so its leftovers
   // never mix with a real project's sessions.
