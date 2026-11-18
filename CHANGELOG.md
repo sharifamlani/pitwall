@@ -4,6 +4,29 @@ All notable changes to Pitwall are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-18
+
+Windows and tabs: one window per folder (ROADMAP Phase 4).
+
+### Added
+
+- A click on any chat opens it in the Cursor window for its folder, and opens that window if it isn't open. A chat that is already open stays where it is.
+- A repo click opens the repo's 8 newest chats as tabs, and the row "Open the other N chats" offers the rest. Chats never open twice.
+- Side by side: the chats open in up to 4 panes, one move at a time.
+- "+" on a repo row starts the chat in that repo's window.
+- The bottom bar shows `repo · ⎇ branch` in every window, with ⧉ for a worktree, and updates within 5 seconds of a branch switch.
+- FILES follows the window's folder. Copy and paste files between repos, "Copy to another repo", drag a file onto a repo row, and an offer to add `.env` files to `.gitignore`.
+- A guard for chats already running in a terminal outside the editor.
+- Developer commands `pitwall.dev.dumpState` and `pitwall.dev.traceTabs` (output goes to the Pitwall Operations channel) for bug reports.
+
+### Changed
+
+- A chat opens in Claude Code's chat panel by default, with its history. Set `pitwall.defaultSessionSurface` to Terminal to prefer terminals.
+- Ctrl+Down keeps the list focused after it opens a chat, in the panel and in a terminal.
+- Pitwall matches each Claude tab to its chat reliably, even when titles are cut off or every new chat says "Claude Code".
+- A chat that moved into a worktree opens in the window of the folder its transcript is filed under now.
+- The context menu shows the window count when more than one window is open.
+
 ## [0.4.1] - 2026-11-17
 
 ### Fixed
