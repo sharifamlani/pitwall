@@ -618,6 +618,25 @@ test('a listing that started before a hard refresh never overwrites the one afte
   assert.equal(row.description, '0 sessions', 'the rows show B');
 });
 
+test('a chat lookup that races a hard refresh still finds its worktree', async (t) => {
+  const storage = makeStorage();
+  const app = storage.addRepository('app', '/work/app');
+  const main = worktreeRecord({ id: 'wt-app', repoId: app.id, path: '/work/app' });
+  const linked = worktreeRecord({ id: 'wt-fiu', repoId: app.id, name: 'feat/fiu', path: '/work/app-fiu', isMain: false });
+  const { tree, calls, changes } = heldListings(t, storage);
+
+  const lookup = tree.getWorktreeByIdAsync('wt-fiu');
+  await waitFor(() => calls.length === 1, 'listing A, for the lookup');
+  // A hard refresh lands while A is in flight, so A's answer is discarded.
+  tree.refresh();
+  await waitFor(() => changes.length > 0, 'the hard refresh');
+  calls[0].answer(gitListing(main, linked));
+
+  await waitFor(() => calls.length === 2, 'the lookup to list again');
+  calls[1].answer(gitListing(main, linked));
+  assert.equal((await lookup)?.id, 'wt-fiu', 'found, not "Could not find worktree"');
+});
+
 test('a repo row stands for its main worktree; a plain folder follows git init and removal through its watcher', async (t) => {
   const storage = makeStorage();
   const folder = storage.addRepository('notes', '/work/notes');

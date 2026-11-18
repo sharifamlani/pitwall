@@ -840,11 +840,19 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     // Never start git inside the caller's task, which may be activation; a
     // lookup that is not urgent waits until the first render is out.
     await (urgent ? new Promise((resolve) => setImmediate(resolve)) : this.backgroundListingsMayStart);
-    const pending = this.storageService.getRepositories().filter((repo) => !this.listed.has(repo.id));
-    if (pending.length === 0) {
-      return this.findWorktree(predicate);
+    // A hard refresh mid-flight discards the listing it waited on, leaving
+    // the repository unlisted: look again, as `whenListed` does.
+    for (let round = 0; round < 5 && !this.disposed; round++) {
+      const pending = this.storageService.getRepositories().filter((repo) => !this.listed.has(repo.id));
+      if (pending.length === 0) {
+        break;
+      }
+      await Promise.all(pending.map((repo) => this.listWorktrees(repo, urgent)));
+      const listed = this.findWorktree(predicate);
+      if (listed) {
+        return listed;
+      }
     }
-    await Promise.all(pending.map((repo) => this.listWorktrees(repo, urgent)));
     return this.findWorktree(predicate);
   }
 }
