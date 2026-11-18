@@ -8,8 +8,11 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as vscode from 'vscode';
 import { stub, tempDir, waitFor } from '../../support';
 import { STALE_MS, WindowRegistry, ownsFolder } from '../../../../src/core/windows/WindowRegistry';
+import { HandoffInbox } from '../../../../src/core/windows/HandoffInbox';
+import { startWindowServices } from '../../../../src/core/windows/startWindowServices';
 
 beforeEach(() => stub.__reset());
 
@@ -127,6 +130,32 @@ test('openSessionIds unions every live window', async (t) => {
   await new WindowRegistry(dir, { pid: deadPid(), folder: tempDir(t) }, clock.read).beat(['8c3f6071-4d5e-4f60-9b2c-3d4e5f607182']);
 
   assert.deepEqual([...(await registry.openSessionIds())].sort(), [a, b, c]);
+});
+
+test('window services start in the background, beat, log the registry, and stop on dispose', async (t) => {
+  const storage = path.join(tempDir(t), 'globalStorage');
+  const lab = tempDir(t);
+  stub.workspace.workspaceFolders = [{ uri: { fsPath: lab } }];
+  const lines: string[] = [];
+  const context = { subscriptions: [] as { dispose(): unknown }[], globalStorageUri: vscode.Uri.file(storage) };
+  t.after(() => context.subscriptions.forEach((subscription) => subscription.dispose()));
+
+  const services = startWindowServices(context as never, (line) => lines.push(line));
+  assert.ok(services, 'started');
+  const own = path.join(storage, 'pitwall-windows', `${process.pid}.json`);
+  await waitFor(() => lines.includes('[Pitwall] window registry 1 windows'), 'the registry log line');
+  assert.deepEqual(JSON.parse(fs.readFileSync(own, 'utf8')).folder, lab);
+  assert.equal(fs.existsSync(path.join(storage, 'pitwall-handoff', services.inbox.folderKey(lab))), true, 'its inbox folder');
+
+  // A claimed request fails cleanly until a window can open handed-off chats (Task 3).
+  const sender = new HandoffInbox(storage, { pid: process.pid, folder: undefined });
+  const nonce = await sender.send(lab, { kind: 'open', sessionIds: ['5f0c3d4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f'] });
+  await waitFor(() => sender.outcome(lab, nonce), 'the outcome', 20_000);
+  assert.equal((await sender.outcome(lab, nonce))?.ok, false);
+
+  context.subscriptions.forEach((subscription) => subscription.dispose());
+  assert.equal(fs.existsSync(own), false, 'disposing deletes the record');
+  assert.equal(startWindowServices({ subscriptions: [] } as never, (line) => lines.push(line)), undefined, 'no global storage');
 });
 
 test('a multi-root window owns no folder', (t) => {

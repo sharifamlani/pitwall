@@ -32,6 +32,7 @@ import { commandRegistrar } from './core/commands/common';
 import { debounce } from './core/utils/debounce';
 import { samePath } from './core/utils/paths';
 import { RepoStatusBar } from './core/windows/RepoStatusBar';
+import { startWindowServices } from './core/windows/startWindowServices';
 
 /** Panels re-read the worktree this long after its files stop changing. */
 const FILE_CHANGE_DEBOUNCE_MS = 300;
@@ -138,6 +139,8 @@ export async function activate(context: vscode.ExtensionContext) {
   // the extension host most of a reload's activation on Windows; a chat that
   // links meanwhile is caught by their first check.
   afterFirstRender(() => harnessWatcherRegistry.startAll());
+  // The window registry and handoff inbox (ADR 0020); nothing awaits them.
+  afterFirstRender(() => startWindowServices(context, logOperation));
 
   // Bottom bar: this window's `repo · ⎇ branch` (row 4.5).
   afterFirstRender(() => {
