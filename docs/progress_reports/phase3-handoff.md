@@ -2,7 +2,7 @@
 
 Release files prepared 2026-11-17. The tag and the ROADMAP flip come from the lead after the independent evaluator passes.
 
-Scorecard: docs/progress_reports/phase3-scorecard.md (evaluator)
+Scorecard: docs/progress_reports/phase3-scorecard.md (independent evaluator, release sha `ce03203`: E1–E19 19 PASS / 0 FAIL).
 
 ## What shipped
 
@@ -35,11 +35,14 @@ User-facing detail is in [CHANGELOG.md](../../CHANGELOG.md).
 - The needs-you badge shows on Cursor's vertical activity bar, not the default horizontal icon row.
 - Chats open in a terminal tab until Phase 4.
 - Native list limits accepted for v1 (plan P22): the status word uses Cursor's muted description colour, and the selected row uses Cursor's selection colour.
+- Native hover-text limits accepted (plan P26): the repo row "+" and 🕘 hover text say "this repo" rather than the repo's name; the FILES header has no hover text.
+- After Ctrl+↓/↑ opens a chat, keyboard focus moves into the chat, so a second Ctrl+↓ needs a click back in the list. Fix planned in Phase 4 (row 4.1).
+- On a first start, when discovery adds repos with sessions, the importer writes chats one at a time (a ~0.25 s extension-host pause after the list appears). Batching is a follow-up.
 - Inherited from Phase 2: Claude Code pulls its terminal to the front; quitting with a file in front can drop terminal chats (Phase 4 row 4.2b).
 
 ## Rulings made
 
-Full text in `docs/superpowers/plans/2026-11-17-phase3-sidebar-v1.md` (P1-P25, criteria E1-E18). In short:
+Full text in `docs/superpowers/plans/2026-11-17-phase3-sidebar-v1.md` (P1-P26, criteria E1-E19). In short:
 
 - **P1-P3, P13, P17:** discovered repos are stored with `origin: 'discovered'`; a dismissal returns only when a session starts after it; 14-day retention; all discovered repos are added on first run; one deterministic id per root.
 - **P4-P6, P16:** live status from `~/.claude/sessions`, with `claude agents --json` as the per-session fallback; rows sort by when they entered their status, so order changes only on a status change; every chat has a "seen" baseline so old chats don't show "finished".

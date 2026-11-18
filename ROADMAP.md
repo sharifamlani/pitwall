@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.48 · 2026-11-17
+> v0.49 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
-- **Current phase:** Phase 3 — Sidebar v1 (planning). Development resumed by Sharif on 2026-11-17.
-- **Current step:** Phase 3: rows 3.0–3.9 ✅; 3.10 partial. E16 startup fix merged (PR #37 → `1522010`, live 6/6 ≤ 1 s). Next: polish PR, then T10 close + marketing drafts (Sharif approves before posting). Open failure: E16 startup (welcome shown ~35 s before rows), fix PR in flight. Waves A and B merged. 3.5 ✅ (T7). In flight: PR #34 (T8 keys) rebasing + S5/S6 live check; PR #35 (lowercase-drive fix) merged `2be4ecb`, testing re-walk pending. Then Wave C (T7 repo row, T8 keys), Wave D (T9 search), close (T10).
+- **Current phase:** Phase 4 — Windows and tabs (one window per folder). Phase 3 closed 2026-11-17 with tag `v0.4.0`.
+- **Current step:** Phase 3 ✅ (rows 3.0–3.10; evaluator 19/19 PASS on `ce03203`). Phase 4 not started: write its plan from §3 (rows 4.1–4.7, incl. 4.2b and the deferred Ctrl+↓ focus).
 - **Last update:** 2026-11-17
-- **Next action:** testing walks `6698045` (discovery, Remove/Dismiss, O2 re-walk, P23); dispatch T7 + T8. State: `.superpowers/sdd/2026-11-17-phase3-sidebar-v1/progress.md` (latest STATE block).
+- **Next action:** Sharif reviews the Phase 3 posts going live; then write the Phase 4 plan (tree, flowchart, wireframes, derisking, criteria). Follow-ups: batch importer chat writes; `list-claude-repos.mjs` to the message clock; a dry test that clicks the inline + / 🕘 commands.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -170,7 +170,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 **Goal:** The Pitwall list as designed on the canvas: every repo and chat from one window, sorted by who needs you.
 **Entry gate:** Phase 2 ✅ (`v0.3.0`).
 **Exit gate:** Walkthrough of the canvas prototype's sidebar flows passes in real Cursor against Sharif's real repos; tag `v0.4.0`.
-**Status:** ⏳ in flight (Wave B).
+**Status:** ✅ done · tag `v0.4.0` (2026-11-17). Evaluator: E1–E19 19/19 PASS on `ce03203` ([phase3-scorecard.md](docs/progress_reports/phase3-scorecard.md)); handoff [phase3-handoff.md](docs/progress_reports/phase3-handoff.md).
 **Plan:** ✅ [2026-11-17-phase3-sidebar-v1.md](docs/superpowers/plans/2026-11-17-phase3-sidebar-v1.md) (QA pre-flight OK `e955a7e`)
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
@@ -185,7 +185,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 3.7 | Hotkeys Ctrl+Alt+1–9 / 0 / R / F / O / Shift+1–9, latent (hover); confirm Ctrl+Alt+F beats Cursor's `list.find` | ✅ | ✅ | 2026-11-17 · PR #34 `e21fda7` → merge `7e1cbab` (QA APPROVE; S5 PASS; main CI green); Ctrl+Alt+R PR #36 → `8815d82` | D12, D15, T13 |
 | 3.8 | List keyboard: ↓/↑ highlight, Ctrl+↓/↑ open, Enter | ✅ | ✅ | 2026-11-17 · PR #34 `e21fda7` → merge `7e1cbab` (QA APPROVE; S6 PASS; main CI green) | D37 |
 | 3.9 | Search box (Ctrl+Alt+R): repos, chats, Find Session | ✅ | ✅ | 2026-11-17 · PR #36 `a0b338e` → merge `8815d82` (QA APPROVE; live check PASS; main CI green) | D24 |
-| 3.10 | Brand: status-row activity icon, D17 colors; no sideways scroll, resizable | ~ (icons ✅; scroll/resize checked by E17 at close) | ✅ | 2026-11-17 · PR #27 `3ded3ef` → merge `c0814b0` (QA APPROVE; main CI green; circles only, no Claude mark, P24) | D17, D33 |
+| 3.10 | Brand: status-row activity icon, D17 colors; no sideways scroll, resizable | ✅ | ✅ | 2026-11-17 · icons PR #27 → `c0814b0`; no sideways scroll + resize E17 PASS (T10 walk W10); tooltip copy PR #40 → `2d2f07c` | D17, D33 |
 
 ### Phase 4 — Windows and tabs (one window per folder)
 **Goal:** Clicking anything in Pitwall lands you in the right Cursor window with the chat open in Claude's panel; files and tabs behave like Cursor.
@@ -196,7 +196,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
-| 4.1 | Chats open in Claude's panel by default; link uses `vscode.env.uriScheme` (Agntree hardcodes `vscode://`) (was 3.1) | ⏸ | ⏸ | — | D3 |
+| 4.1 | Chats open in Claude's panel by default; link uses `vscode.env.uriScheme` (Agntree hardcodes `vscode://`) (was 3.1). Also: Ctrl+↓/↑ keep focus in the Pitwall list (deferred from Phase 3; QA design: keepListFocus → show(true), refocus after the UI open resolves; live repro on both surfaces first) | ⏸ | ⏸ | — | D3, D37 |
 | 4.2 | Click a chat → Pitwall focuses (or opens) its folder's window, then opens the chat there (was 3.2) | ⏸ | ⏸ | — | D35, D36, T5, T6 |
 | 4.2b | Terminal ↔ chat identity without titles (finding F4, Phase 2 Task 6b): `renameWithArg` renames the terminal with keyboard focus, not the target, so title-based identity is fragile. Spike tagging Pitwall terminals (e.g. `creationOptions.env`) and whether revived terminals keep it on reload and quit, in Cursor and VS Code; if so, match on the tag and retire title matching (amends ADR 0009). Also: chats don't restore when a FILE is in front at quit, because VS Code and Cursor drop the revived terminals' names (editor limitation, reproduced without Pitwall); and a plain panel terminal in front can leave the last chat in front. Parked branch `phase2/task-6d-restore-file-front` has the e2e coverage (R48). Also (Phase 3 testing, T2 walk O2): after a Cursor restart where a chat's Claude wasn't restored, clicking its row left two tabs with the same `[shortId]` title, one live and one blank terminal (repro uncertain; evidence `phase3-t2-evidence\duplicate-fork-tabs.*`). Data points: the name drop is a race, not deterministic. Live, it kept the name once (UJ run 11 on `9765de0`) and lost it 3/3 (run 12 on `718068a`). In the e2e, 1/5 (`9765de0`) vs 0/6 (`718068a`) restores kept the names, and only failed runs carry the editor's "Attach to process failed" warning | ⏸ | ⏸ | — | Task 6b/6d reports, rulings R39, R48 |
 | 4.3 | Repo click opens all its chats as tabs; chat clicks add tabs; never duplicates | ⏸ | ⏸ | — | D11, T6 |
@@ -339,3 +339,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.46 · 2026-11-17.** Row 3.8 ✅ and 3.7 ~ (PR #34 → `7e1cbab`): Ctrl+Alt+1–9 (again = next chat), 0, O, F, Shift+1–9; ↓/↑ highlight, Ctrl+↓/↑ open, Enter on a repo expands it. Live S5/S6 PASS. Ctrl+Alt+R lands with search (PR #36). E16 fix PR #37 in a fix round (linked-worktree chats unresolved before the first git listing).
 - **v0.47 · 2026-11-17.** Rows 3.9 and 3.7 ✅ (PR #36 → `8815d82`): Ctrl+Alt+R search box with REPOS / CHATS / INSIDE CHATS groups, Enter = first result, footer hands the typed text to Find Session; live check PASS. All Phase 3 feature rows merged; open: E16 startup fix (PR #37), polish PR, T10 close.
 - **v0.48 · 2026-11-17.** E16 fix PR #37 → `1522010`: first render no longer waits on git or the session scan; stored repos draw at once, "Scanning for repositories…" replaces the false "No repositories yet", linked-worktree chats resolve on first click and on restore. Live: first start 0.619 s, reloads 0.367–0.687 s (was 7.2 s / 1.04 s). Remaining: polish PR, T10 close.
+- **v0.49 · 2026-11-17.** **Phase 3 closed, tag `v0.4.0`.** Row 3.10 ✅. Release PR #39 → `8ddd887` (CHANGELOG [0.4.0], README, version 0.4.0, package author Sharif Amlani). Close-out fixes: #40 tooltip copy (`2d2f07c`, ruling P26 approved by Sharif), #42 discovery reads transcript tails (`ce03203`, live E16 5/5: first start 0.317 s, reloads 0.215–0.808 s). Closed without merge: #41 (E6 by design: seen needs a focused window), #43 (Ctrl+↓ focus timer; proper fix moved to Phase 4 row 4.1). Independent evaluator: E1–E19 19/19 PASS on `ce03203`. Phase 4 unblocked.
