@@ -42,11 +42,14 @@ import { SIDE_BY_SIDE_MOVE_WAIT_MS, splitSideBySide } from './core/windows/sideB
 import { outsideProcessOf } from './core/windows/outsideProcess';
 import { parentPidOf } from './core/utils/parentPid';
 import { WindowRegistry } from './core/windows/WindowRegistry';
+import { startTabAdoption } from './core/windows/tabAdoption';
 
 /** Panels re-read the worktree this long after its files stop changing. */
 const FILE_CHANGE_DEBOUNCE_MS = 300;
 /** Work deferred past the list's first render starts after this long anyway while the list stays hidden. */
 const HIDDEN_LIST_START_MS = 3_000;
+/** Startup work after the first render waits at most this long for a handoff's claimed chats to open (I3). */
+const CLAIM_FIRST_MAX_MS = 3_000;
 
 export async function activate(context: vscode.ExtensionContext) {
   // Startup timing (E16): this line and the tree's "first render" bracket
@@ -66,6 +69,9 @@ export async function activate(context: vscode.ExtensionContext) {
   const worktreeCatalog = new WorktreeCatalog(storageService, gitService);
   const modules = harnessModules.map((m) => m.create({ storageService, worktreeCatalog }));
   const harnessRegistry = new HarnessRegistry(modules.map((m) => m.adapter));
+  /** Every session listing the importer's scans make (tab adoption reads the titles). */
+  const sessionsListed = new vscode.EventEmitter<HarnessSession[]>();
+  context.subscriptions.push(sessionsListed);
   const harnessWatcherRegistry = new HarnessWatcherRegistry(
     modules.flatMap((m) => (m.watcher ? [m.watcher] : []))
   );
@@ -144,10 +150,28 @@ export async function activate(context: vscode.ExtensionContext) {
   };
   context.subscriptions.push({ dispose: () => (deactivated = true) });
 
-  // The session watchers arm a file watcher per project folder, which costs
-  // the extension host most of a reload's activation on Windows; a chat that
-  // links meanwhile is caught by their first check.
-  afterFirstRender(() => harnessWatcherRegistry.startAll());
+  // A window a handoff started claims it before anything else reads the
+  // Claude profile or runs git (I3): the window services start first after
+  // the first render, and the heavy startup work waits until the chats the
+  // first claim pass took have opened, at most CLAIM_FIRST_MAX_MS. A window
+  // with no request passes at once.
+  let firstClaimed: () => void = () => undefined;
+  let firstOpened: () => void = () => undefined;
+  const claimedPass = new Promise<void>((resolve) => (firstClaimed = resolve));
+  const openedPass = new Promise<void>((resolve) => (firstOpened = resolve));
+  const bounded = (pass: Promise<void>): Promise<void> =>
+    new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, CLAIM_FIRST_MAX_MS);
+      context.subscriptions.push({ dispose: () => clearTimeout(timer) });
+      void pass.then(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  /** Run `start` after the first render (as `afterFirstRender`) and the first claim's opens. */
+  const afterClaim = (start: () => void): void =>
+    afterFirstRender(() => void bounded(openedPass).then(() => !deactivated && start()));
+
   // Clicking a chat lands in its folder's window (rows 4.2, 4.6, 4.8). The
   // local open is the chat commands' own, bound once they are registered.
   let windowServices: WindowServices | undefined;
@@ -249,16 +273,45 @@ export async function activate(context: vscode.ExtensionContext) {
   };
 
   // The window registry and handoff inbox (ADR 0020); nothing awaits them.
-  // Requests this window claims open through the router (T3).
+  // Requests this window claims open through the router (T3). First of the
+  // work after the first render (I3).
   afterFirstRender(() => {
-    windowServices = startWindowServices(context, logOperation, (requests, inbox) => void router.runClaimed(requests, inbox));
+    windowServices = startWindowServices(context, logOperation, (requests, inbox) => router.runClaimed(requests, inbox));
     if (windowServices) {
       publishWindows(windowServices.registry);
+      void windowServices.claimed.then(firstClaimed);
+      void windowServices.opened.then(firstOpened);
+    } else {
+      firstClaimed();
+      firstOpened();
     }
   });
 
-  // Bottom bar: this window's `repo · ⎇ branch` (row 4.5).
+  // The session watchers arm a file watcher per project folder, which costs
+  // the extension host most of a reload's activation on Windows; a chat that
+  // links meanwhile is caught by their first check.
+  afterClaim(() => harnessWatcherRegistry.startAll());
+
+  // Adopt the Claude tabs this window has that Pitwall did not open (I1):
+  // restored after a reload or a relaunch, or reopened by the editor's own
+  // session restore. The title source is installed now, so an open waits
+  // for it (at most 1 s); the folder's listing runs once the first claim
+  // pass is done.
   afterFirstRender(() => {
+    context.subscriptions.push(
+      startTabAdoption({
+        folder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+        adapters: harnessRegistry.all(),
+        chats: () => storageService.getChats(),
+        worktreePathOf: (chat) => workspacesProvider.getWorktreeById(chat.worktreeId)?.path,
+        onSessionsListed: sessionsListed.event,
+        listAfter: bounded(claimedPass),
+      })
+    );
+  });
+
+  // Bottom bar: this window's `repo · ⎇ branch` (row 4.5).
+  afterClaim(() => {
     const bar = new RepoStatusBar(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, gitService);
     context.subscriptions.push(bar);
     void bar.refresh();
@@ -463,7 +516,10 @@ export async function activate(context: vscode.ExtensionContext) {
   // Native sessions started outside an exact-ID launch: a UI launch, or a
   // session started outside Pitwall. Also ages out quiet auto-imports.
   const sessionImporter = new SessionImportService(storageService, worktreeCatalog, harnessRegistry, {
-    onSessionsListed: (sessions) => noteSessions(sessions),
+    onSessionsListed: (sessions) => {
+      noteSessions(sessions);
+      sessionsListed.fire(sessions);
+    },
     // Retention must also keep a chat whose terminal is still resuming.
     isChatOpen: (chat) => isChatOpen(chat) || terminalManager.isResuming(chat.id),
     isVisible: () => workspacesTreeView.visible,
@@ -477,8 +533,10 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   });
   context.subscriptions.push(sessionImporter);
-  // The first scan starts after the list's first render (E16).
-  sessionImporter.start(workspacesProvider.whenSettled());
+  // The first scan starts after the list's first render (E16) and the first
+  // claim's opens (I3).
+  const afterSettledClaim = workspacesProvider.whenSettled().then(() => bounded(openedPass));
+  sessionImporter.start(afterSettledClaim);
 
   // Repos found from the agents' sessions (ADR 0019), after the list first
   // renders; activation never waits for a pass.
@@ -492,7 +550,7 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   });
   context.subscriptions.push(repoDiscovery);
-  repoDiscovery.start(workspacesProvider.whenSettled());
+  repoDiscovery.start(afterSettledClaim);
 
   /** Whether the chat's terminal or native-UI tab is the one in front of the user. */
   const isChatVisible = (chatId: string): boolean => chatVisibility.isChatVisible(visibilitySources, chatId);
