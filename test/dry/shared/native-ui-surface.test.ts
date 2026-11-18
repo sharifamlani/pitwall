@@ -952,3 +952,90 @@ test('adoptBeforeOpen waits for the titles (bounded), then adopts', async () => 
   service.dispose();
   stuck.dispose();
 });
+
+// ---- T8 round 2: guards QA showed could be deleted with every test still green ----
+
+test('R2-2: nothing is adopted while the title source is partial; once the listing lands, a title two chats share leaves the tab unknown', async () => {
+  const world = tabWorld();
+  const tab = world.open(claudeTab(), 'Lab C one', { announce: false });
+  const service = claudeUiSurfaces(world.options);
+  let release: () => void = () => undefined;
+  // The listing so far has chat A only; chat B, with the very same title, is not listed yet.
+  const titles = [{ sessionId: 'aaaa', titles: ['Lab C one'] }];
+  service.setTitleSource(() => titles, new Promise<void>((resolve) => (release = resolve)));
+  world.emit([], [tab]);
+  world.emitGroups();
+  service.adopt();
+  assert.ok(!service.isOpen('aaaa'), 'the partial source cannot prove the title is chat A\'s alone');
+  titles.push({ sessionId: 'bbbb', titles: ['Lab C one'] });
+  release();
+  for (let i = 0; i < 3; i++) await nextTurn();
+  assert.ok(!service.isOpen('aaaa') && !service.isOpen('bbbb'), 'listing ready: the shared title stays unknown');
+  assert.deepEqual(service.describeTabs()[0].tabs.map((entry) => entry.sessionId), [undefined]);
+  service.dispose();
+});
+
+test("R2-3 (I1b): a new tab titled as ANOTHER chat of the folder (the user opened it by hand) is not bound to the pending open", () => {
+  const { world, service, bound } = serialWorld();
+  service.setTitleSource(() => [
+    { sessionId: 'aaaa', titles: ['Chat A'] },
+    { sessionId: 'bbbb', titles: ['Chat B'] },
+  ]);
+  service.expect('aaaa', 'reply with exactly: chat a');
+  world.open(claudeTab(), 'Chat B');
+  assert.ok(!service.isOpen('aaaa'), 'chat A is still waiting for its own tab');
+  assert.deepEqual(bound(), [['bbbb']], 'the tab is chat B\'s');
+  service.dispose();
+});
+
+test('R2-4: a title that arrives after the open callback resolved adopts the tab and ends the serial open at once', async () => {
+  const { world, service, timers } = serialWorld();
+  const tab = world.open(claudeTab(), 'Claude Code', { announce: false });
+  service.setTitleSource(() => [{ sessionId: '095a88d2', titles: ['Lab C one'] }]);
+  let opened = false;
+  const result = service.openSerially(['095a88d2'], async () => void (opened = true));
+  await until(() => opened);
+  await nextTurn();
+  assert.equal(timers.delays().length, 1, 'the open is now waiting out its 5 s for the tab');
+  tab.label = 'Lab C one';
+  world.emit([], [tab]);
+  const outcome = await Promise.race([result, new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 1_000))]);
+  assert.notEqual(outcome, 'hung', 'adoption ends the wait; the 5 s timer never has to run');
+  assert.equal((outcome as Map<string, unknown>).get('095a88d2'), tab as never);
+  assert.deepEqual(timers.delays(), [], 'no 5 s wait is left running');
+  service.dispose();
+});
+
+test('R2-5 (F1): a title that arrives only in a re-sent tab model (Cursor) adopts the tab, and bound tabs still pair by place', async () => {
+  const { world, service, bound } = serialWorld();
+  const cursor = cursorWorkbench(world);
+  world.open(claudeTab(), 'Claude Code', { announce: false });
+  await service.openSerially(['bbbb'], async () => void world.open(claudeTab(), 'Chat bbbb'));
+  service.setTitleSource(() => [
+    { sessionId: 'aaaa', titles: ['Lab C one'] },
+    { sessionId: 'bbbb', titles: ['Chat bbbb'] },
+  ]);
+  assert.deepEqual(bound(), [[undefined, 'bbbb']]);
+  // The new model carries the title; a re-send fires a group event only, no tab event.
+  world.groups[0].tabs[0].label = 'Lab C one';
+  cursor.resend();
+  assert.deepEqual(bound(), [['aaaa', 'bbbb']], 'adopted by the group event; the other binding followed its place');
+  service.dispose();
+});
+
+test('R2-6: while the title source is partial, a title proves nothing: a restored tab is not bound by it, nor is a new tab with an unlisted title', () => {
+  const restored = serialWorld();
+  restored.world.open(claudeTab(), 'O2 chat two', { announce: false });
+  restored.service.setTitleSource(() => labB, new Promise(() => undefined));
+  restored.service.expect('20aa05a6', 'O2 chat two');
+  restored.service.settle('20aa05a6', { allowActiveFallback: true });
+  assert.deepEqual(restored.bound(), [[undefined]], 'provenFor is false until the listing is complete');
+  restored.service.dispose();
+
+  const fresh = serialWorld();
+  fresh.service.setTitleSource(() => [], new Promise(() => undefined));
+  fresh.service.expect('aaaa', 'reply with exactly: chat a');
+  fresh.world.open(claudeTab(), 'Title the partial listing lacks');
+  assert.deepEqual(fresh.bound(), [[undefined]], 'namesOther is conservative until the listing is complete');
+  fresh.service.dispose();
+});

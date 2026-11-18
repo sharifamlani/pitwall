@@ -732,7 +732,8 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
 
   /** A pre-existing tab is this chat's only when no other unbound tab carries one of its titles, and the tab names no other chat. */
   private provenFor(tab: vscode.Tab, entry: PendingSurface): boolean {
-    if (!namingTitle(tab.label) || this.namesOther(tab, entry.sessionId)) {
+    // A partial title source cannot prove "no other chat carries this title".
+    if (this.titlesUnsettled() || !namingTitle(tab.label) || this.namesOther(tab, entry.sessionId)) {
       return false;
     }
     const titles = this.titlesOf(entry);
@@ -740,10 +741,19 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     return carriers.length === 1 && carriers[0] === tab;
   }
 
+  /** A title source is set but its listing has not landed: titles cannot yet prove anything. */
+  private titlesUnsettled(): boolean {
+    return this.titleSource !== undefined && !this.titlesTrusted;
+  }
+
   /** Whether the tab's title names a chat of this folder other than `sessionId`. */
   private namesOther(tab: vscode.Tab, sessionId: string): boolean {
     if (!namingTitle(tab.label)) {
       return false;
+    }
+    // Conservative while the source is partial: the chat it names may not be listed yet.
+    if (this.titlesUnsettled()) {
+      return true;
     }
     return (this.titleSource?.() ?? []).some(
       (candidate) => candidate.sessionId !== sessionId && candidate.titles.some((title) => labelsMatch(tab.label, title))
