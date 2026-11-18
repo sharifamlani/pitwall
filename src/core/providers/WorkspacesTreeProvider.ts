@@ -806,10 +806,15 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
    * nested repo beats the one around it), for FILES messages.
    */
   repoContaining(filePath: string): Repository | undefined {
+    return this.deepestRootContaining(filePath)?.repo;
+  }
+
+  /** The deepest root holding `filePath`: a repo's main folder or one of its worktrees (Q25). */
+  deepestRootContaining(filePath: string): { path: string; repo: Repository } | undefined {
     const roots = this.storageService
       .getRepositories()
       .flatMap((repo) => [{ path: repo.rootPath, repo }, ...this.getRepoWorktrees(repo).worktrees.map((worktree) => ({ path: worktree.path, repo }))]);
-    return deepestContainingRoot(roots, filePath)?.repo;
+    return deepestContainingRoot(roots, filePath);
   }
 
   /** Whether a worktree belongs to a git repository (for the FILES header). */

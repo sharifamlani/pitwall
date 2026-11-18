@@ -43,7 +43,7 @@
     },
     {
       "view": "pitwall.filesView",
-      "contents": "Select a repo or session to browse its files."
+      "contents": "Open a repo's window to see its files."
     },
     {
       "view": "pitwall.sessionSearchView",

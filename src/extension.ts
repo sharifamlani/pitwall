@@ -175,7 +175,7 @@ export async function activate(context: vscode.ExtensionContext) {
     canSelectMany: true,
     // A FILES row dropped on a repo row is copied into that repo (row 4.7).
     // The controller can only be given here, at creation.
-    dragAndDropController: new RepoDropController(repoOf),
+    dragAndDropController: new RepoDropController(repoOf, (filePath) => workspacesProvider.deepestRootContaining(filePath)?.path),
   });
   const filesTreeView = vscode.window.createTreeView('pitwall.filesView', {
     treeDataProvider: filesProvider,
