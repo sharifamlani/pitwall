@@ -18,6 +18,7 @@ import { ClaudeHarness } from '../../../../src/harnesses/claude/ClaudeHarness';
 import { registerRepositoryCommands } from '../../../../src/core/commands/repository';
 import { WorkspaceTreeItem } from '../../../../src/core/providers/WorkspacesTreeProvider';
 import { ChatSession, Worktree } from '../../../../src/core/types';
+import { samePath } from '../../../../src/core/utils/paths';
 import { claudeProfile } from '../../harnesses/claude/claudeFixture';
 import { assertNoLongBlock, makeStorage, runCommand, shownMessages, stub, tempDir, waitFor, worktreeRecord } from '../../support';
 
@@ -36,7 +37,7 @@ const ID = {
 };
 
 /** Short timings so the 20 s warning and 120 s expiry run in milliseconds. */
-const FAST = { warnMs: 150, expireMs: 400, pollMs: 10, servicesWaitMs: 300 };
+const FAST = { warnMs: 150, coldWarnMs: 150, expireMs: 400, pollMs: 10, servicesWaitMs: 300 };
 const GONE = (folder: string) => `That chat's folder is gone: ${folder}`;
 const UNREACHED = (repo: string) => `Pitwall couldn't reach the ${repo} window. Click the chat again.`;
 
@@ -100,15 +101,21 @@ function windowOn(
     timing?: typeof FAST;
     /** When the window services are up; always, unless a test says otherwise. */
     servicesUp?: () => boolean;
+    /** The folders the registry has a live window on (Q26); none by default. */
+    windowsAt?: string[];
     openHere?: (chat: ChatSession, worktree: Worktree) => Promise<boolean>;
   }
 ) {
   const logs: string[] = [];
   const inbox = new HandoffInbox(dir, { pid: options.pid, folder: options.claims }, Date.now, (line) => logs.push(line));
+  const registry = {
+    windowsFor: async (target: string) =>
+      (options.windowsAt ?? []).filter((folder) => samePath(folder, target)).map((folder, index) => ({ pid: 9000 + index, folder, beatAt: Date.now(), openSessionIds: [] })),
+  };
   const opened: { chat: string; path: string; worktreeId: string }[] = [];
   const started: string[] = [];
   const router = new ChatRouter({
-    services: () => ((options.servicesUp?.() ?? true) ? { inbox } : undefined),
+    services: () => ((options.servicesUp?.() ?? true) ? { inbox, registry } : undefined),
     windowFolder: folder,
     harnessRegistry: new HarnessRegistry([new ClaudeHarness()]),
     worktreeOf: async (chat) => w.worktrees.find((worktree) => worktree.id === chat.worktreeId),
@@ -160,6 +167,7 @@ const warnings = (text: string) => shownMessages().filter((message) => message =
 
 test('the router waits 20 s for a done{ok} and expires an unclaimed request at 120 s (Q16)', () => {
   assert.deepEqual([ROUTER_TIMING.warnMs, ROUTER_TIMING.expireMs], [WARN_MS, EXPIRE_MS]);
+  assert.equal(ROUTER_TIMING.coldWarnMs, 60_000, 'a cold open warns at 60 s (Q26)');
   assert.deepEqual([WARN_MS, EXPIRE_MS], [20_000, 120_000]);
 });
 
@@ -321,6 +329,7 @@ test('no done{ok} within 20 s warns once with "Pitwall couldn\'t reach the {repo
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
 
   await sender.router.route({ kind: 'open', chats: [w.chat('Nobody home', ID.a, w.mainWt)] });
+  // (No registry window here: a cold open, whose wait FAST sets equal to the warm one.)
   assert.deepEqual(warnings(UNREACHED('demo')), [], 'no warning before the wait ends');
   await waitFor(() => warnings(UNREACHED('demo')).length > 0, 'the warning');
   // Past the expiry: the unclaimed request is expired, and the warning was not repeated.
@@ -621,4 +630,63 @@ test('a click before window services start waits for them, else warns and opens 
   assert.deepEqual(warnings(UNREACHED('demo')), [UNREACHED('demo')]);
   assert.deepEqual(calls.map((call) => call.path), [w.main], 'no second openFolder');
   assert.equal(requestsFor(never.inbox, dir2, w.main).length, 0);
+});
+
+// E10 (T3 live, c7c894db): an EnterWorktree chat whose transcript moved to the
+// worktree's project folder opened locally in the main window. Its worktree
+// is a sibling (`demo-wt`), whose project folder name starts with main's
+// encoding plus "-", and the repo's listing did not name it yet.
+test("a chat whose transcript moved to the worktree's project dir (stored worktree still main) routes to the worktree window", async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  const sibling = `${w.main}-wt`;
+  fs.mkdirSync(sibling);
+  w.transcript(sibling, ID.t18, [w.turn(ID.t18, w.main), w.turn(ID.t18, w.main), w.turn(ID.t18, sibling)]);
+  const chat = w.chat('Entered a sibling worktree', ID.t18, w.mainWt);
+  const mainWindow = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main });
+
+  assert.ok(!w.worktrees.some((worktree) => worktree.path === sibling), 'the listing does not know the worktree');
+  assert.equal(await mainWindow.router.launchFolder(chat), sibling);
+  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.deepEqual(calls.map((call) => call.path), [sibling]);
+  assert.deepEqual(mainWindow.opened, [], 'not opened in the main window');
+});
+
+// Q26: a new Cursor window takes 22–30 s on Sharif's machine before Pitwall
+// activates there, so a cold open waits 60 s before warning; a window that
+// already exists keeps 20 s.
+test('a cold open (no window for the folder yet) warns at 60 s, not 20 s', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const sender = windowOn(t, w, dir, () => w.other, {
+    pid: 1001,
+    claims: w.other,
+    timing: { ...FAST, warnMs: 50, coldWarnMs: 800, expireMs: 5_000 },
+  });
+
+  await sender.router.route({ kind: 'open', chats: [w.chat('Cold', ID.a, w.mainWt)] });
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.deepEqual(warnings(UNREACHED('demo')), [], 'no warning at the warm wait');
+  await waitFor(() => warnings(UNREACHED('demo')).length > 0, 'the warning at the cold wait', 3_000);
+  assert.equal(warnings(UNREACHED('demo')).length, 1);
+});
+
+test('a request to an existing window warns at 20 s', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const sender = windowOn(t, w, dir, () => w.other, {
+    pid: 1001,
+    claims: w.other,
+    windowsAt: [w.main],
+    timing: { ...FAST, warnMs: 50, coldWarnMs: 60_000, expireMs: 120_000 },
+  });
+
+  await sender.router.route({ kind: 'open', chats: [w.chat('Warm', ID.a, w.mainWt)] });
+  await waitFor(() => warnings(UNREACHED('demo')).length > 0, 'the warning at the warm wait', 3_000);
+  assert.equal(warnings(UNREACHED('demo')).length, 1);
 });

@@ -747,6 +747,38 @@ test('the late-refocus hold also lets go when a Claude panel tab becomes active'
   assert.deepEqual(keys.events, [], 'no late restore over the Claude tab');
 });
 
+// Q27 (T3 live): the user typed "xyz" into a brand-new terminal before Pitwall
+// sent its line, and the shell ran `xyzclaude --resume …`.
+test('a line typed into a new terminal before the resume command is cleared first', async (t) => {
+  const f = setup(t, { surface: 'terminal' });
+  const create = stub.window.createTerminal;
+  stub.window.createTerminal = (options) => {
+    const terminal = create(options);
+    stub.window.__typeKeys(terminal, 'xyz');
+    return terminal;
+  };
+  t.after(() => {
+    stub.window.createTerminal = create;
+  });
+  // PSReadLine's default edit mode is Windows on Windows (Esc reverts the
+  // line) but Emacs elsewhere (Esc is a meta prefix there, Ctrl+U clears).
+  const shells: [string, string][] = [
+    ['/bin/bash', '\x15'],
+    ['/usr/bin/zsh', '\x15'],
+    ['C:\\Program Files\\Git\\bin\\bash.exe', '\x15'],
+    ['C:\\Windows\\System32\\cmd.exe', '\x1b'],
+    ['C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', process.platform === 'win32' ? '\x1b' : '\x15'],
+    ['C:\\Program Files\\PowerShell\\7\\pwsh.exe', process.platform === 'win32' ? '\x1b' : '\x15'],
+  ];
+  for (const [index, [shell, clear]] of shells.entries()) {
+    stub.__setShell(shell);
+    await runCommand('pitwall.openChat', f.row(f.chat('claude', `Shell ${index}`, `claude-${index}`)));
+    const terminal = f.lastTerminal();
+    assert.equal(terminal.typed[0], `${clear}claude --resume claude-${index}`, `${shell}: the line starts with its line-clear`);
+    assert.equal(terminal.sent[0], `claude --resume claude-${index}`, `${shell}: the stray keys are gone from the line the shell runs`);
+  }
+});
+
 test('after closing its Claude tab, a terminal-surface open uses the terminal', async (t) => {
   const f = setup(t, { surface: 'terminal' });
   const chat = f.chat('claude', 'Lab ready', 'claude-1');

@@ -754,6 +754,11 @@ module.exports = {
         listener(terminal);
       }
     },
+    /** Test helper: the user types keys into a terminal before Pitwall sends its line (they wait in the line editor). */
+    __typeKeys: (terminal, text) => {
+      terminal.__input += text;
+      module.exports.window.__typeInTerminal(terminal);
+    },
     onDidChangeTerminalShellIntegration: (listener) => {
       shellIntegrationListeners.add(listener);
       return { dispose: () => shellIntegrationListeners.delete(listener) };
@@ -816,6 +821,8 @@ module.exports = {
         name: options.name,
         options,
         sent: [],
+        typed: [],
+        __input: '',
         shown: 0,
         disposed: false,
         __pid: options.__pid ?? nextTerminalPid++,
@@ -828,8 +835,18 @@ module.exports = {
           this.__pidReads += 1;
           return pidPromise ?? Promise.resolve(this.__pid);
         },
+        /**
+         * `typed` records the raw bytes; `sent` records the line the shell
+         * runs. Like a shell's line editor, keys the user typed first
+         * (`__typeKeys`) prefix the line, unless it starts with a line-clear
+         * (Esc or Ctrl+U), which erases them (Q27).
+         */
         sendText(text) {
-          this.sent.push(text);
+          this.typed.push(text);
+          const clears = text.startsWith('\x1b') || text.startsWith('\x15');
+          const line = clears ? text.slice(1) : this.__input + text;
+          this.__input = '';
+          this.sent.push(line);
           // As in VS Code, text an extension sends counts as interaction (QA #51).
           module.exports.window.__typeInTerminal(this);
           // A shell that has not integrated yet runs typed-ahead text later.
@@ -837,7 +854,7 @@ module.exports = {
             return;
           }
           for (const listener of executionStartListeners) {
-            listener({ terminal: this, execution: { commandLine: text } });
+            listener({ terminal: this, execution: { commandLine: line } });
           }
         },
         show(preserveFocus) {

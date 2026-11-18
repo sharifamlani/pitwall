@@ -32,7 +32,10 @@ export interface FakeTerminal {
     __exitStatus?: unknown;
     location?: number;
   };
+  /** The lines the shell runs: keys typed first prefix a line unless it starts with a line-clear. */
   sent: string[];
+  /** The raw text Pitwall sent, line-clear included. */
+  typed: string[];
   shown: number;
   disposed: boolean;
   __pid: number;
@@ -132,6 +135,8 @@ interface StubControls {
     __fireTabGroupsChanged(): void;
     /** Data reaches a terminal (typing, or sendText): its state turns interacted-with and `onDidChangeTerminalState` fires once. */
     __typeInTerminal(terminal: unknown): void;
+    /** The user types keys before Pitwall sends its line; they wait in the line editor. */
+    __typeKeys(terminal: unknown, text: string): void;
   };
 }
 
