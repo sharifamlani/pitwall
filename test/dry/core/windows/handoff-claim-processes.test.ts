@@ -39,8 +39,12 @@ async function runAsChild(): Promise<void> {
   const box = new HandoffInbox(dir!, { pid: process.pid, folder: expiring ? undefined : folder! });
   const inboxDir = path.join(dir!, 'pitwall-handoff', box.folderKey(folder!));
   const stopFile = path.join(dir!, 'stop');
+  // Sleep until just before the shared start, then spin the last few ms so
+  // both processes start in the same millisecond without burning a core each
+  // (other test files measure event-loop gaps meanwhile).
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(start) - Date.now() - 20)));
   while (Date.now() < Number(start)) {
-    // Busy-wait so both processes start in the same millisecond.
+    // Spin.
   }
   const nonces: string[] = [];
   for (let empty = 0; ; ) {
@@ -64,6 +68,10 @@ async function runAsChild(): Promise<void> {
     empty = found === 0 ? empty + 1 : 0;
     if (streaming ? stopping && found === 0 : empty >= 2) {
       break;
+    }
+    if (streaming && found === 0) {
+      // Poll, don't spin, while waiting for the next request.
+      await new Promise((resolve) => setTimeout(resolve, 1));
     }
   }
   process.stdout.write(JSON.stringify({ pid: process.pid, nonces } satisfies ChildResult));
