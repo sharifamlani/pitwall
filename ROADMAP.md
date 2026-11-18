@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.53 · 2026-11-17
+> v0.54 · 2026-11-17
 
 ---
 
@@ -201,7 +201,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 4.2b | Terminal ↔ chat identity without titles (finding F4, Phase 2 Task 6b): `renameWithArg` renames the terminal with keyboard focus, not the target, so title-based identity is fragile. Spike tagging Pitwall terminals (e.g. `creationOptions.env`) and whether revived terminals keep it on reload and quit, in Cursor and VS Code; if so, match on the tag and retire title matching (amends ADR 0009). Also: chats don't restore when a FILE is in front at quit, because VS Code and Cursor drop the revived terminals' names (editor limitation, reproduced without Pitwall); and a plain panel terminal in front can leave the last chat in front. Parked branch `phase2/task-6d-restore-file-front` has the e2e coverage (R48). Also (Phase 3 testing, T2 walk O2): after a Cursor restart where a chat's Claude wasn't restored, clicking its row left two tabs with the same `[shortId]` title, one live and one blank terminal (repro uncertain; evidence `phase3-t2-evidence\duplicate-fork-tabs.*`). Data points: the name drop is a race, not deterministic. Live, it kept the name once (UJ run 11 on `9765de0`) and lost it 3/3 (run 12 on `718068a`). In the e2e, 1/5 (`9765de0`) vs 0/6 (`718068a`) restores kept the names, and only failed runs carry the editor's "Attach to process failed" warning | ⏸ | ⏸ | — | Task 6b/6d reports, rulings R39, R48 |
 | 4.3 | Repo click opens all its chats as tabs; chat clicks add tabs; never duplicates | ⏸ | ⏸ | — | D11, T6 |
 | 4.4 | Match Claude tabs to chats reliably (titles are truncated, new chats all say "Claude Code") | ⏸ | ⏸ | — | T10 |
-| 4.5 | Repo + branch under tabs: file tabs via label setting; find a way for Claude tabs, else window title + bottom bar (was 2.5) | ⏸ | ⏸ | — | D26, T9 |
+| 4.5 | Repo + branch under tabs: file tabs via label setting; find a way for Claude tabs, else window title + bottom bar (was 2.5) | ~ | ✅ | bottom bar PR #44 → `246f015` (walk W7 pending; file-tab label part awaits Sharif, Q7a) | D26, T9 |
 | 4.6 | T18: a worktree entered mid-chat from main still opens in the main window (was 2.7) | ⏸ | ⏸ | — | D35 |
 | 4.7 | FILES follows the window's folder; file click = normal tab; copy/paste across repos, "Copy to another repo", drag onto a repo row, `.env` gitignore check | ⏸ | ⏸ | — | D19, D22, D23, T14 |
 | 4.8 | "+" starts the chat in that repo's window | ⏸ | ⏸ | — | D28, T15 |
@@ -344,3 +344,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.51 · 2026-11-17.** Phase 4 plan drafted (`docs/superpowers/plans/2026-11-17-phase4-windows-tabs.md`, `97bb14f`): window registry + handoff inbox in shared global storage, Claude panel by default, repo click opens its chats as tabs, bottom-bar repo · branch, FILES across windows, 4.2b terminal-tag spike; 8 tasks in 4 waves, E1–E19. Next: QA plan review, then Sharif's go.
 - **v0.52 · 2026-11-17.** Phase 4 plan QA round 1 (6 blocking, 12 fixes) applied: handoff outcome file + sender-side expiry and dedupe, single-folder-window claims only, `pathKey()` for `\?\` spellings, one-shot keep-focus marker for Ctrl+↓, sturdier launch-folder read, no-code smokes S3/S1/S1b first, cold-start smoke S2b. Three questions to Sharif (Q18, Q22, Q7a).
 - **v0.53 · 2026-11-17.** Sharif: go on Phase 4 once QA approves; repo click caps at 8 chats (Q18); Ctrl+↓ on a repo row only expands (Q22, D37 amended). QA re-review D1 fixed (a request whose sender died is expired, never opened late).
+- **v0.54 · 2026-11-17.** Tag `v0.4.1` on `6f2065c` (PR #45): v0.4.0 refused every "Open in Claude Code UI" on Windows because stored roots say `C:` and Cursor says `c:` (found by Phase 4 smoke S3); also fixes "Worktree created but could not find it". Row 4.5 ~: bottom bar `repo · ⎇ branch` PR #44 → `246f015`. Smokes: S3 PASS on the Claude side (findings F2 sdk-cli chats, F3 open marks finished → T2), S1 PASS 4/4 (openFolder raises an existing window), S1b terminal half done (show(true) is enough). T1 PR #46 in QA.

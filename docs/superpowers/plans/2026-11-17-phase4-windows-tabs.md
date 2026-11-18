@@ -500,7 +500,7 @@ Each later PR rebases on main after the earlier merge. `package.json` conflicts 
 - `src/core/commands/navigation.ts:107-128` (`moveAndOpen`): sets the marker.
 - `src/core/commands/chat.ts`: `openChatPrimary` consumes the marker.
 - `src/core/terminal/TerminalManager.ts:238,254,266,291`: `show(preserveFocus)`.
-- `src/core/harness/kit/nativeUiWorkspace.ts:24`: compare with `samePath()`, not `canonicalPath() !==` (S3 finding F1, 2026-11-17: `workspaceFolders[0].uri.fsPath` gives `c:\…` while terminal-started chats record `C:\…`, so every terminal-started chat on Windows was refused in its own window).
+- (F1, the drive-letter case refusal, shipped separately as v0.4.1, PR #45; T2 keeps its regression test only if one is missing.)
 
 Tests: `test/dry/core/chat-commands.test.ts`, `test/dry/core/navigation.test.ts`, `test/dry/core/terminal.test.ts`, `test/dry/core/manifest.test.ts`, and the Claude native-UI test that covers the URI.
 
