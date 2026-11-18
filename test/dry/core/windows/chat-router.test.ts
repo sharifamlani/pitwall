@@ -914,6 +914,55 @@ test('a request to an existing window warns at 20 s', async (t) => {
   assert.equal(warnings(UNREACHED('demo')).length, 1);
 });
 
+// ---- T8 (live I2): a handoff to a recently closed folder whose window never came up ----
+
+test('I2: the router raises a window with the same call as "Open its window", and retries a cold open after 45 s', () => {
+  assert.equal(ROUTER_TIMING.retryOpenMs, 45_000, 'never below 45 s: Cursor takes 22-30 s to start a window here');
+  assert.ok(ROUTER_TIMING.retryOpenMs < ROUTER_TIMING.coldWarnMs, 'the retry comes before the warning');
+});
+
+test('I2: no window registers for the folder: the open is retried once, then one "couldn\'t reach" toast whose "Open its window" raises it', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const sender = windowOn(t, w, dir, () => w.other, {
+    pid: 1001,
+    claims: w.other,
+    timing: { ...FAST, warnMs: 50, coldWarnMs: 700, retryOpenMs: 250, expireMs: 5_000 } as typeof FAST,
+  });
+  stub.__warningResponses.push('Open its window');
+
+  await sender.router.route({ kind: 'open', chats: [w.chat('Closed window', ID.a, w.mainWt)] });
+  assert.equal(calls.length, 1);
+  await waitFor(() => calls.length === 2, 'the retry', 3_000);
+  assert.deepEqual(warnings(UNREACHED('demo')), [], 'no toast before the cold wait');
+  assert.deepEqual(calls[1], { path: w.main, forceNewWindow: true }, 'the same call again');
+  await waitFor(() => warnings(UNREACHED('demo')).length > 0, 'the toast', 3_000);
+  const toast = stub.__messages.find((args) => args[0] === UNREACHED('demo'))!;
+  assert.deepEqual(toast.slice(1), ['Open its window'], 'with an "Open its window" button');
+  await waitFor(() => calls.length === 3, 'the button raising the window', 3_000);
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  assert.equal(warnings(UNREACHED('demo')).length, 1, 'the toast fires exactly once');
+  assert.equal(calls.length, 3, 'one retry, one button press, nothing more');
+});
+
+test('I2: a window that registers for the folder in time gets no retry', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const sender = windowOn(t, w, dir, () => w.other, {
+    pid: 1001,
+    claims: w.other,
+    windowsAt: [w.main],
+    timing: { ...FAST, warnMs: 5_000, coldWarnMs: 5_000, retryOpenMs: 100, expireMs: 10_000 } as typeof FAST,
+  });
+  await sender.router.route({ kind: 'open', chats: [w.chat('Up', ID.a, w.mainWt)] });
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.equal(calls.length, 1, 'raised once only');
+});
+
 // The flake behind "a click before window services start…": a router disposed
 // while its outcome read was in flight still warned once the read returned
 // (in production, a closing window could show a stray warning).
