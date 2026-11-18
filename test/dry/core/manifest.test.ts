@@ -127,6 +127,17 @@ test('the shipped package.json is the build of enabled.json, which is SHIPPED_HA
   assert.equal(check.status, 0, `${check.stdout}${check.stderr}`);
 });
 
+test('default surface is ui', () => {
+  // Q3: a click opens Claude's panel; the terminal stays one setting away.
+  for (const file of [path.join(ROOT, 'manifest', 'core.contributes.json'), path.join(ROOT, 'package.json')]) {
+    const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const configuration = (json.contributes ?? json).configuration as { properties: Record<string, { default?: unknown; enum?: string[] }> }[];
+    const setting = configuration.map((section) => section.properties['pitwall.defaultSessionSurface']).find(Boolean);
+    assert.equal(setting?.default, 'ui', file);
+    assert.deepEqual(setting?.enum, ['terminal', 'ui'], 'the terminal stays a choice');
+  }
+});
+
 test('--check fails with a diff when the manifest is out of date', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pitwall-manifest-'));
   try {

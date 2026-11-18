@@ -127,7 +127,8 @@ interface StubControls {
     __focusTextEditor(editor: { document: { uri: unknown }; viewColumn?: number }): void;
     __integrateShell(terminal: unknown): void;
     __fireWindowState(focused: boolean): void;
-    __fireTabsChanged(): void;
+    __fireTabsChanged(event?: { opened?: unknown[]; closed?: unknown[]; changed?: unknown[] }): void;
+    __fireTabGroupsChanged(): void;
   };
 }
 

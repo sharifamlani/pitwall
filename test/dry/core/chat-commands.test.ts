@@ -15,6 +15,8 @@ import { WorktreeCatalog } from '../../../src/core/services/WorktreeCatalog';
 import { SessionImportService } from '../../../src/core/services/SessionImportService';
 import { WorkspaceTreeItem } from '../../../src/core/providers/WorkspacesTreeProvider';
 import { registerChatCommands } from '../../../src/core/commands/chat';
+import { registerNavigationCommands } from '../../../src/core/commands/navigation';
+import { claudeUiSurfaces } from '../../../src/harnesses/claude/claudeUi';
 import { registerSessionImportCommands } from '../../../src/core/commands/sessionImport';
 import { registerRepositoryCommands } from '../../../src/core/commands/repository';
 import { ForkResult, HarnessSession, NativeUiOpenResult } from '../../../src/core/harness/types';
@@ -22,7 +24,9 @@ import { ChatSession, HarnessId, Worktree } from '../../../src/core/types';
 import {
   fakeAdapter,
   fakeNativeUi,
+  flush,
   FakeTerminal,
+  FakeTreeView,
   makeStorage,
   runCommand,
   sessionRecord,
@@ -36,7 +40,15 @@ beforeEach(() => stub.__reset());
 
 const UUID = /^[0-9a-f-]{36}$/;
 
-function setup(t: { after(fn: () => void): void }, options: { notInstalled?: HarnessId[] } = {}) {
+function setup(
+  t: { after(fn: () => void): void },
+  /** `surface` is the defaultSessionSurface setting; null leaves it unset (the shipped default). */
+  options: { notInstalled?: HarnessId[]; surface?: 'terminal' | 'ui' | null } = {}
+) {
+  const surface = options.surface === undefined ? 'terminal' : options.surface;
+  if (surface) {
+    stub.__setConfiguration('defaultSessionSurface', surface);
+  }
   const storage: StorageService = makeStorage();
   const repo = storage.addRepository('demo', '/work/demo');
   const folderRepo = storage.addRepository('scratch', '/work/scratch');
@@ -381,6 +393,343 @@ test('with the UI as default, a click uses the UI when it can and the terminal o
   await runCommand('pitwall.openChatInTerminal', f.row(inUi));
   assert.ok(f.claudeUi.surfaces.calls.includes('close:claude-ui'));
   assert.equal(f.lastTerminal().sent[0], 'claude --resume claude-ui');
+});
+
+test('with no setting, a click on a linked chat opens it in the UI (Q3)', async (t) => {
+  const f = setup(t, { surface: null });
+  const chat = f.chat('claude', 'Linked', 'claude-1');
+  await runCommand('pitwall.openChat', f.row(chat));
+  assert.deepEqual(f.claudeUi.opened, [{ sessionId: 'claude-1', cwd: f.main.path }]);
+  assert.equal(stub.window.terminals.length, 0);
+});
+
+const SDK_REFUSAL = "Claude Code's chat panel can't resume chats made with claude -p or the SDK; opening it in a terminal.";
+
+test('an sdk-cli chat opens in the terminal even with surface ui (Q23)', async (t) => {
+  const f = setup(t, { surface: 'ui' });
+  f.claudeUi.nativeUi.resumeRefusal = async (sessionId) => (sessionId.startsWith('sdk-') ? SDK_REFUSAL : undefined);
+  const sdk = f.chat('claude', 'From claude -p', 'sdk-1');
+  const other = f.chat('claude', 'Also from the SDK', 'sdk-2');
+
+  await runCommand('pitwall.openChat', f.row(sdk));
+  assert.equal(f.lastTerminal().sent[0], 'claude --resume sdk-1');
+  assert.deepEqual(f.claudeUi.opened, [], 'never a blank "Untitled" tab');
+  assert.ok(!shown(SDK_REFUSAL), 'a click falls back with no message');
+
+  await runCommand('pitwall.openClaudeUi', f.row(other));
+  assert.ok(shown(SDK_REFUSAL), 'the explicit command says why');
+  assert.equal(f.lastTerminal().sent[0], 'claude --resume sdk-2');
+  assert.deepEqual(f.claudeUi.opened, []);
+});
+
+/**
+ * The list keyboard over a fake workbench list: `list.select` selects the row
+ * and fires its command without awaiting it, as the workbench does (QA B1).
+ */
+function listKeys(row: WorkspaceTreeItem) {
+  const view = vscode.window.createTreeView('pitwall.workspacesView', {
+    treeDataProvider: { getChildren: async () => [] } as never,
+  }) as unknown as FakeTreeView;
+  const files = vscode.window.createTreeView('pitwall.filesView', {
+    treeDataProvider: { getChildren: async () => [] } as never,
+  }) as unknown as FakeTreeView;
+  registerNavigationCommands({ subscriptions: [] } as never, {
+    workspacesProvider: {} as never,
+    workspacesTreeView: view as never,
+    filesTreeView: files as never,
+  });
+  const events: string[] = [];
+  let fired: Thenable<unknown> | undefined;
+  vscode.commands.registerCommand('list.focusDown', () => undefined);
+  vscode.commands.registerCommand('list.select', () => {
+    view.__select([row]);
+    fired = vscode.commands.executeCommand('pitwall.openChat', row);
+  });
+  vscode.commands.registerCommand('pitwall.workspacesView.focus', () => void events.push('focus list'));
+  return {
+    events,
+    /** Ctrl+↓, then the row command the fake list fired. */
+    press: async () => {
+      fired = undefined;
+      await runCommand('pitwall.list.moveDownAndOpen');
+      await fired;
+    },
+  };
+}
+
+test('Ctrl+Down sets the marker and the row command, fired without await by a fake list.select, refocuses pitwall.workspacesView after the UI open', async (t) => {
+  const f = setup(t, { surface: 'ui' });
+  const chat = f.chat('claude', 'Next', 'claude-1');
+  const keys = listKeys(f.row(chat));
+  const open = f.claudeUi.nativeUi.openSession;
+  f.claudeUi.nativeUi.openSession = async (sessionId, cwd) => {
+    keys.events.push('open start');
+    // The webview takes focus with its tab, a moment into the open (S1b).
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    keys.events.push('open done');
+    return open(sessionId, cwd);
+  };
+
+  await keys.press();
+  assert.deepEqual(keys.events, ['open start', 'open done', 'focus list'], 'refocused once, after the awaited open');
+  assert.deepEqual(f.claudeUi.opened.map((entry) => entry.sessionId), ['claude-1']);
+});
+
+test('the marker is consumed once: a later plain click does not refocus', async (t) => {
+  const f = setup(t, { surface: 'ui' });
+  const first = f.chat('claude', 'First', 'claude-1');
+  const second = f.chat('claude', 'Second', 'claude-2');
+  const keys = listKeys(f.row(first));
+
+  await keys.press();
+  assert.deepEqual(keys.events, ['focus list']);
+  await runCommand('pitwall.openChat', f.row(second));
+  assert.deepEqual(f.claudeUi.opened.map((entry) => entry.sessionId), ['claude-1', 'claude-2']);
+  assert.deepEqual(keys.events, ['focus list'], 'a click lets the chat take focus');
+});
+
+test('terminal path calls show(true) only when the marker is set', async (t) => {
+  const f = setup(t, { surface: 'terminal' });
+  const first = f.chat('claude', 'First', 'claude-1');
+  const second = f.chat('claude', 'Second', 'claude-2');
+  const keys = listKeys(f.row(first));
+
+  await keys.press();
+  const keyed = f.lastTerminal();
+  assert.equal(keyed.sent[0], 'claude --resume claude-1');
+  assert.equal(stub.window.__focusedTerminal, undefined, 'Ctrl+Down keeps the list focused');
+
+  keys.events.length = 0;
+  await keys.press();
+  assert.deepEqual([stub.window.terminals.length, keyed.shown], [1, 2], 'the live terminal is revealed');
+  assert.deepEqual(keys.events, [], 'an existing terminal: show(true) is enough, no refocus');
+
+  await runCommand('pitwall.openChat', f.row(second));
+  assert.equal(stub.window.__focusedTerminal, f.lastTerminal(), 'a click focuses its terminal');
+  assert.notEqual(f.lastTerminal(), keyed);
+});
+
+test('Ctrl+Down onto a chat with no terminal creates it, renames it, then refocuses the list', async (t) => {
+  const f = setup(t, { surface: 'terminal' });
+  const chat = f.chat('claude', 'Reply', 'claude-1');
+  const other = f.chat('claude', 'Other', 'claude-2');
+  const keys = listKeys(f.row(chat));
+  // As live (E8): creating a terminal focuses it despite show(true).
+  const create = stub.window.createTerminal;
+  stub.window.createTerminal = (options) => {
+    const terminal = create(options);
+    stub.window.__focusTerminal(terminal);
+    return terminal;
+  };
+  t.after(() => {
+    stub.window.createTerminal = create;
+  });
+  // renameWithArg renames the terminal with keyboard focus, so it must run before the refocus (F4).
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    keys.events.push(`rename ${stub.window.__focusedTerminal?.name ?? 'nothing'} -> ${arg.name}`);
+    const target = stub.window.__focusedTerminal ?? stub.window.activeTerminal;
+    if (target) target.name = arg.name;
+  });
+
+  await keys.press();
+  const created = f.lastTerminal();
+  assert.equal(created.sent[0], 'claude --resume claude-1');
+  const order = keys.events.join(' | ');
+  assert.ok(keys.events.some((event) => /^rename .* -> Pitwall: Reply/.test(event)), `the new terminal is renamed: ${order}`);
+  const firstFocus = keys.events.indexOf('focus list');
+  assert.ok(firstFocus > 0 && /^rename /.test(keys.events[firstFocus - 1]), `the first refocus follows the creation's rename: ${order}`);
+  assert.equal(keys.events.at(-1), 'focus list', `the last refocus comes after every rename: ${order}`);
+  assert.match(created.name, /^Pitwall: Reply/);
+
+  keys.events.length = 0;
+  await runCommand('pitwall.openChat', f.row(other));
+  assert.ok(!keys.events.includes('focus list'), 'a plain click onto a new terminal leaves focus there');
+});
+
+/** Creating a terminal focuses it despite show(true), as live (E8). */
+function terminalsTakeFocus(t: { after(fn: () => void): void }) {
+  const create = stub.window.createTerminal;
+  stub.window.createTerminal = (options) => {
+    const terminal = create(options);
+    stub.window.__focusTerminal(terminal);
+    return terminal;
+  };
+  t.after(() => {
+    stub.window.createTerminal = create;
+  });
+}
+
+test('a focus change during the rename queues a second title write, and the list is refocused only after it (N5)', async (t) => {
+  const f = setup(t, { surface: 'terminal' });
+  terminalsTakeFocus(t);
+  const events: string[] = [];
+  let calls = 0;
+  let focusOnCall = -1;
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    calls += 1;
+    events.push(`rename ${calls}`);
+    const target = stub.window.__focusedTerminal ?? stub.window.activeTerminal;
+    if (target) target.name = arg.name;
+    // The user clicks the terminal while a title write runs: that focus
+    // change queues one more title write behind it.
+    if (calls === focusOnCall && target) {
+      stub.window.__focusTerminal(target);
+    }
+  });
+  const firstFocus = () => events.indexOf('focus list');
+
+  // Calibrate: how many renames a keyed open of a new terminal makes before
+  // its first refocus.
+  const calibrate = listKeys(f.row(f.chat('claude', 'Calibrate', 'claude-0')));
+  vscode.commands.registerCommand('pitwall.workspacesView.focus', () => void events.push('focus list'));
+  await calibrate.press();
+  const before = events.slice(0, firstFocus()).length;
+  assert.ok(before >= 1, `a new terminal is renamed before the refocus: ${events.join(' | ')}`);
+
+  events.length = 0;
+  calls = 0;
+  focusOnCall = before;
+  const keys = listKeys(f.row(f.chat('claude', 'Reply', 'claude-1')));
+  vscode.commands.registerCommand('pitwall.workspacesView.focus', () => void events.push('focus list'));
+  await keys.press();
+
+  const order = events.join(' | ');
+  assert.ok(firstFocus() > 0, order);
+  assert.deepEqual(
+    events.slice(firstFocus() - 2, firstFocus() + 1),
+    [`rename ${before}`, `rename ${before + 1}`, 'focus list'],
+    `rename ${before} → rename ${before + 1} → focus: ${order}`
+  );
+});
+
+/** A Ctrl+↓ onto a chat whose new terminal's shell integrates late (Windows PowerShell 5.1). */
+async function slowShellPress(f: ReturnType<typeof setup>, chat: ChatSession) {
+  const keys = listKeys(f.row(chat));
+  let done = false;
+  const press = keys.press().then(() => {
+    done = true;
+  });
+  await waitFor(() => keys.events.includes('focus list'), 'the refocus right after the terminal is created', 1_000);
+  assert.equal(done, false, 'the list is refocused before the 2 s wait for the shell ends');
+  await press;
+  return { keys, terminal: f.lastTerminal() };
+}
+
+/** Let a late start, its queued title work and any restore run out. */
+async function settle() {
+  for (let turn = 0; turn < 20; turn++) await flush();
+}
+
+test('a new terminal whose shell never reports integration still gets the list back at once (E8)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { surface: 'terminal' });
+  const { keys, terminal } = await slowShellPress(f, f.chat('claude', 'Never integrates', 'claude-1'));
+  assert.equal(terminal.sent[0], 'claude --resume claude-1');
+  assert.deepEqual(keys.events, ['focus list'], 'once, with no title write in flight');
+});
+
+test('an sdk-cli chat on surface ui falls back to a new terminal and still gets the list back at once (E8)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { surface: 'ui' });
+  f.claudeUi.nativeUi.resumeRefusal = async () => SDK_REFUSAL;
+  const { keys, terminal } = await slowShellPress(f, f.chat('claude', 'From claude -p', 'sdk-1'));
+  assert.equal(terminal.sent[0], 'claude --resume sdk-1');
+  assert.deepEqual(f.claudeUi.opened, []);
+  assert.deepEqual(keys.events, ['focus list']);
+});
+
+test('a shell that integrates late: the list is refocused at once and again after the late rename when nothing moved', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { surface: 'terminal' });
+  let renames: string[] = [];
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    renames.push('rename');
+    if (stub.window.activeTerminal) stub.window.activeTerminal.name = arg.name;
+  });
+  const { keys, terminal } = await slowShellPress(f, f.chat('claude', 'Slow shell', 'claude-1'));
+  keys.events.length = 0;
+  renames = keys.events;
+  stub.window.__integrateShell(terminal);
+  await waitFor(() => keys.events.includes('focus list'), 'the restore after the late rename');
+  assert.deepEqual(keys.events.slice(-2), ['rename', 'focus list'], 'the late rename drops focus; the list gets it back');
+});
+
+test('a late rename does not refocus the list after the user moved on', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { surface: 'terminal' });
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    if (stub.window.activeTerminal) stub.window.activeTerminal.name = arg.name;
+  });
+  const claudeTab = { label: 'Other chat', input: new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel'), isActive: true };
+  /** A keyed slow-shell open, `meanwhile`, then the late rename; the refocus calls the late rename made. */
+  const lateOpen = async (name: string, sessionId: string, meanwhile: () => Promise<unknown> | void) => {
+    const { keys, terminal } = await slowShellPress(f, f.chat('claude', name, sessionId));
+    await meanwhile();
+    keys.events.length = 0;
+    stub.window.__integrateShell(terminal);
+    await settle();
+    return keys.events;
+  };
+
+  const editor = { document: { uri: vscode.Uri.file('/work/demo/file.ts') } };
+  assert.deepEqual(await lateOpen('Went to a file', 'claude-1', () => stub.window.__focusTextEditor(editor)), [], 'a file took focus');
+  assert.deepEqual(
+    await lateOpen('Went to a Claude tab', 'claude-2', () => {
+      stub.window.tabGroups.all = [{ isActive: true, viewColumn: 1, activeTab: claudeTab, tabs: [claudeTab] }];
+      stub.window.__fireTabsChanged({ changed: [claudeTab] });
+    }),
+    [],
+    'a Claude panel tab became active'
+  );
+  assert.deepEqual(
+    await lateOpen('Another terminal', 'claude-3', () => stub.window.__focusTerminal(stub.window.createTerminal({ name: 'user shell' }))),
+    [],
+    'another terminal took focus'
+  );
+  assert.deepEqual(await lateOpen('Left the window', 'claude-4', () => stub.window.__fireWindowState(false)), [], 'the window lost focus');
+  stub.window.__fireWindowState(true);
+  assert.deepEqual(
+    await lateOpen('Opened another chat', 'claude-5', () => runCommand('pitwall.openClaudeUi', f.row(f.chat('claude', 'In the panel', 'claude-ui')))),
+    [],
+    'another Pitwall open started'
+  );
+});
+
+test('after closing its Claude tab, a terminal-surface open uses the terminal', async (t) => {
+  const f = setup(t, { surface: 'terminal' });
+  const chat = f.chat('claude', 'Lab ready', 'claude-1');
+  const surfaces = claudeUiSurfaces();
+  t.after(() => surfaces.dispose());
+  (f.claudeUi.nativeUi as { surfaces?: unknown }).surfaces = surfaces;
+  const panelTab = () => ({ label: 'Lab ready', input: new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel'), isActive: true });
+  const group: { isActive: boolean; viewColumn: number; activeTab: unknown; tabs: unknown[] } = { isActive: true, viewColumn: 1, activeTab: undefined, tabs: [] };
+  stub.window.tabGroups.all = [group];
+  const open = f.claudeUi.nativeUi.openSession;
+  f.claudeUi.nativeUi.openSession = async (sessionId, cwd) => {
+    const tab = panelTab();
+    group.tabs = [tab];
+    group.activeTab = tab;
+    stub.window.__fireTabsChanged({ opened: [tab] });
+    return open(sessionId, cwd);
+  };
+
+  await runCommand('pitwall.openClaudeUi', f.row(chat));
+  assert.ok(surfaces.isOpen('claude-1'), 'the panel tab is bound');
+
+  // A tab-model refresh rebuilds the Tab objects; then the user closes the tab.
+  const rebuilt = panelTab();
+  group.tabs = [rebuilt];
+  group.activeTab = rebuilt;
+  stub.window.__fireTabGroupsChanged();
+  group.tabs = [];
+  group.activeTab = undefined;
+  stub.window.__fireTabsChanged({ closed: [rebuilt] });
+  assert.equal(surfaces.isOpen('claude-1'), false);
+
+  const keys = listKeys(f.row(chat));
+  await keys.press();
+  assert.equal(f.lastTerminal()?.sent[0], 'claude --resume claude-1', 'Ctrl+Down opens a terminal');
+  assert.equal(f.claudeUi.opened.length, 1, 'not the closed panel again');
 });
 
 test('a new UI session is a placeholder the importer links; a failed open leaves no row behind', async (t) => {

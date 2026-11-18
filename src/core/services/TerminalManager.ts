@@ -63,6 +63,9 @@ interface StartedTerminal {
 
 type CommandStartWatch = ReturnType<typeof watchCommandStart>;
 
+/** Called once a new terminal's title work has settled; see `openChat`. */
+export type AfterTitle = (phase: 'now' | 'late') => Promise<void>;
+
 /** Rename whichever terminal the workbench's rename command targets (see `writeTitle`). */
 async function renameFocusedTerminal(name: string): Promise<void> {
   await vscode.commands
@@ -225,17 +228,32 @@ export class TerminalManager {
     ];
   }
 
-  /** Focus a chat's live terminal, or launch (or resume) it in a new one. */
+  /**
+   * Focus a chat's live terminal, or launch (or resume) it in a new one.
+   * `preserveFocus` shows the terminal without taking keyboard focus (a
+   * Ctrl+↓/↑ in the list keeps the list focused, Q4).
+   *
+   * A new terminal takes focus as it is created whatever `show` is told, and
+   * its title write (which targets the focused terminal) leaves focus nowhere
+   * (E8). `afterTitle` lets a caller put focus back, never while a title
+   * write is in flight (F4, N5): `'now'` once the terminal is created and
+   * active, on every branch and without waiting for the shell; `'late'`
+   * after each later title write (once the shell reports in, however late).
+   * An existing terminal is only shown and never calls it.
+   */
   async openChat(
     chat: ChatSession,
-    worktree: Worktree
+    worktree: Worktree,
+    options: { preserveFocus?: boolean; afterTitle?: AfterTitle } = {}
   ): Promise<vscode.Terminal | undefined> {
+    const preserveFocus = options.preserveFocus ?? false;
+    const afterTitle = options.afterTitle;
     // Only a terminal still in the in-memory map is this chat's session. A
     // same-named terminal is not: after a quit it is a revived shell.
     const existingTerminal = this.terminals.get(chat.id);
     if (existingTerminal) {
       if (isLiveTerminal(existingTerminal)) {
-        existingTerminal.show();
+        existingTerminal.show(preserveFocus);
         return existingTerminal;
       }
       // The process exited or VS Code dropped the terminal; its tab may
@@ -251,7 +269,7 @@ export class TerminalManager {
     const restoring = this.restoringChats.get(chat.id);
     if (restoring) {
       if (isLiveTerminal(restoring)) {
-        restoring.show();
+        restoring.show(preserveFocus);
         return restoring;
       }
       this.restoringChats.delete(chat.id);
@@ -263,7 +281,7 @@ export class TerminalManager {
     if (await this.waitForPendingAdoption(chat.id)) {
       const adopted = this.terminals.get(chat.id);
       if (adopted && isLiveTerminal(adopted)) {
-        adopted.show();
+        adopted.show(preserveFocus);
         return adopted;
       }
     }
@@ -288,7 +306,10 @@ export class TerminalManager {
       launchLine(launch.command),
       COMMAND_START_TIMEOUT_MS
     );
-    terminal.show();
+    terminal.show(preserveFocus);
+    // The caller's focus comes back as soon as the tab exists, not after the
+    // shell: a slow PowerShell can take seconds to report in (E8).
+    const created = afterTitle ? waitForActive(terminal).then(() => this.afterTitleWork(afterTitle, 'now')) : undefined;
 
     // A rename is only persisted by VS Code after the shell has reported its
     // cwd for the running command. A shell without integration reports no
@@ -298,20 +319,23 @@ export class TerminalManager {
     if (await integrated) {
       const commandStarted = await started;
       await waitForActive(terminal);
+      await created;
       await this.applyTitle(terminal);
+      await this.afterTitleWork(afterTitle, 'late');
       if (commandStarted) {
         lateStart.cancel();
       } else {
-        this.retitleOnLateStart(terminal, lateStart);
+        this.retitleOnLateStart(terminal, lateStart, afterTitle);
       }
     } else if (shellIntegrationEnabled()) {
       // The shell has not integrated yet (Windows PowerShell 5.1 starts
       // slowly); the title still needs applying once its command starts.
-      this.retitleOnLateStart(terminal, lateStart);
+      this.retitleOnLateStart(terminal, lateStart, afterTitle);
     } else {
       lateStart.cancel();
     }
 
+    await created;
     return terminal;
   }
 
@@ -550,7 +574,8 @@ export class TerminalManager {
    */
   private retitleOnLateStart(
     terminal: vscode.Terminal,
-    watch: { started: Promise<boolean>; cancel(): void }
+    watch: { started: Promise<boolean>; cancel(): void },
+    afterTitle?: AfterTitle
   ): void {
     this.lateStarts.add(watch.cancel);
     void watch.started
@@ -558,9 +583,28 @@ export class TerminalManager {
         this.lateStarts.delete(watch.cancel);
         if (started) {
           await this.retitleInBackground(terminal);
+          await this.afterTitleWork(afterTitle, 'late');
         }
       })
       .catch(() => undefined);
+  }
+
+  /**
+   * Run `afterTitle` once no title write is queued or running: a focus change
+   * during one queues another behind it, and a refocus between them would
+   * send that rename elsewhere (F4, N5). The queue is re-read until it holds
+   * still.
+   */
+  private async afterTitleWork(afterTitle: AfterTitle | undefined, phase: 'now' | 'late'): Promise<void> {
+    if (!afterTitle || this.isDisposed) {
+      return;
+    }
+    let settled: Promise<void>;
+    do {
+      settled = this.titleWrites;
+      await settled;
+    } while (settled !== this.titleWrites);
+    await afterTitle(phase);
   }
 
   /**

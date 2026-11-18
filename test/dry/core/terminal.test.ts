@@ -119,6 +119,19 @@ test('an open chat is focused, not relaunched; an exited process is replaced', a
   assert.ok(first.disposed);
 });
 
+test('openChat with preserveFocus shows a new or live terminal without taking focus (Q4)', async (t) => {
+  const f = setup(t, { chats: [{ id: 'chat', harnessSessionId: 'linked' }] });
+  const launched = (await f.manager.openChat(f.chat('chat'), WORKTREE, { preserveFocus: true })) as unknown as FakeTerminal;
+  assert.equal(stub.window.activeTerminal, launched, 'shown in front');
+  assert.equal(stub.window.__focusedTerminal, undefined, 'focus stays where it was');
+
+  await f.manager.openChat(f.chat('chat'), WORKTREE, { preserveFocus: true });
+  assert.deepEqual([launched.shown, stub.window.__focusedTerminal], [2, undefined], 'a live terminal is revealed, not focused');
+
+  await f.manager.openChat(f.chat('chat'), WORKTREE);
+  assert.equal(stub.window.__focusedTerminal, launched, 'a plain open still focuses it');
+});
+
 test('a shell without integration still gets the launch command, without waiting for it to start', async (t) => {
   stub.__setConfiguration('shellIntegration.enabled', false);
   stub.__setSilentExecutionEvents(true);

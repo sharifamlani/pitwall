@@ -1,0 +1,4 @@
+{"type":"cost-state","sessionId":"lab-session","totalCostUSD":0,"totalAPIDuration":0,"totalAPIDurationWithoutRetries":0,"totalToolDuration":0,"totalLinesAdded":0,"totalLinesRemoved":0,"totalDuration":2000,"startTime":1767225600000,"modelUsage":{},"hasUnknownModelCost":false}
+{"type":"last-prompt","lastPrompt":"Run this lab command and nothing else","leafUuid":"lab-0005","sessionId":"lab-session"}
+{"type":"cost-state","sessionId":"lab-session","totalCostUSD":0,"totalAPIDuration":0,"totalAPIDurationWithoutRetries":0,"totalToolDuration":0,"totalLinesAdded":0,"totalLinesRemoved":0,"totalDuration":2100,"startTime":1767225600000,"modelUsage":{},"hasUnknownModelCost":false}
+{"type":"tools-used","tools":["Bash"],"sessionId":"lab-session"}

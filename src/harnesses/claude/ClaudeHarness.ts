@@ -77,7 +77,7 @@ export class ClaudeHarness implements HarnessAdapter {
       new ClaudeAgentsService({ command: () => this.command });
     this.sessionsFile = options.sessionsFile ?? new ClaudeSessionsFile();
     this.repoDiscovery = new ClaudeRepoDiscovery(this.sessionService.getProjectsDirectory(), this.sessionService);
-    this.nativeUi = options.nativeUi ?? new ClaudeUi();
+    this.nativeUi = options.nativeUi ?? new ClaudeUi((sessionId) => this.sessionService.getEntrypoint(sessionId));
     this.sessionSearch = new ClaudeSessionSearch(this.sessionService);
     this.sessionSearchRunner = new ClaudeSearchRunner({
       command: () => this.command,

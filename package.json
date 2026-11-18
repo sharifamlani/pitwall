@@ -857,7 +857,7 @@
               "Sessions open in a terminal running the agent CLI.",
               "Sessions open in the agent's own VS Code extension panel, when it has one. Agents without one, and sessions the panel cannot open, use the terminal."
             ],
-            "default": "terminal",
+            "default": "ui",
             "enumItemLabels": [
               "Terminal",
               "Agent's VS Code panel"

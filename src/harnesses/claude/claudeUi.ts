@@ -7,8 +7,17 @@ import { errorMessage } from '../../core/utils/text';
 const CLAUDE_EXTENSION_ID = 'anthropic.claude-code';
 /** The extension's command that opens a session in its UI. */
 const CLAUDE_UI_COMMAND = 'claude-vscode.editor.open';
-/** The documented URI handler, used when the command is unavailable. */
-const CLAUDE_UI_URI = 'vscode://anthropic.claude-code/open';
+/**
+ * The documented URI handler, used when the command is unavailable. The
+ * scheme is the app's own (`cursor` in Cursor): an app routes only its own
+ * scheme to its extensions, so a hard-coded `vscode://` would open VS Code.
+ */
+const claudeUiUri = (): string => `${vscode.env.uriScheme}://anthropic.claude-code/open`;
+/** The surfaces whose chats Claude's panel lists and can resume (Q23). */
+const PANEL_ENTRYPOINTS: ReadonlySet<string> = new Set(['cli', 'claude-vscode']);
+/** Shown by the explicit UI command for a chat the panel cannot resume (new copy, Q23). */
+export const PANEL_CANNOT_RESUME =
+  "Claude Code's chat panel can't resume chats made with claude -p or the SDK; opening it in a terminal.";
 /** The webview view type the extension registers for its tabs. */
 const CLAUDE_TAB_VIEW_TYPE = 'claudeVSCodePanel';
 
@@ -40,6 +49,26 @@ export class ClaudeUi implements NativeUiCapability {
   readonly contextValueSuffix = 'ClaudeUi';
   readonly extensionId = CLAUDE_EXTENSION_ID;
   readonly surfaces = claudeUiSurfaces();
+
+  /**
+   * @param entrypointOf A session's transcript `entrypoint` (null when no line
+   *   has one, undefined when there is no transcript), from the harness's
+   *   transcript reader.
+   */
+  constructor(private readonly entrypointOf: (sessionId: string) => Promise<string | null | undefined> = async () => undefined) {}
+
+  /**
+   * Claude's panel lists and resumes only chats started in a terminal or in
+   * the panel. A `claude -p` or SDK chat (`sdk-cli`) opens as a blank
+   * "Untitled" tab on every call (S3 finding F2), so it goes to the terminal.
+   */
+  async resumeRefusal(sessionId: string): Promise<string | undefined> {
+    const entrypoint = await this.entrypointOf(sessionId);
+    if (entrypoint === undefined) {
+      return undefined;
+    }
+    return entrypoint !== null && PANEL_ENTRYPOINTS.has(entrypoint) ? undefined : PANEL_CANNOT_RESUME;
+  }
 
   isInstalled(): boolean {
     return vscode.extensions.getExtension(CLAUDE_EXTENSION_ID) !== undefined;
@@ -86,7 +115,8 @@ export class ClaudeUi implements NativeUiCapability {
     }
 
     try {
-      const uri = sessionId ? `${CLAUDE_UI_URI}?session=${encodeURIComponent(sessionId)}` : CLAUDE_UI_URI;
+      const base = claudeUiUri();
+      const uri = sessionId ? `${base}?session=${encodeURIComponent(sessionId)}` : base;
       return (await vscode.env.openExternal(vscode.Uri.parse(uri)))
         ? { kind: 'opened', via: 'uri' }
         : { kind: 'failed', message: 'VS Code did not open the Claude Code UI.' };

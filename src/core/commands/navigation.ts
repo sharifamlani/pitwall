@@ -16,6 +16,28 @@ const LANDING_TIMEOUT_MS = 500;
 /** Reveal, expand, select and focus a row. */
 const REVEAL_ROW = { select: true, focus: true, expand: true } as const;
 
+/** How long a Ctrl+↓/↑ asks the row command it fires to keep the list focused. */
+const KEEP_LIST_FOCUS_MS = 2_000;
+let keepListFocusUntil = 0;
+
+/**
+ * Ask the next chat open to leave keyboard focus in the list (Q4). The
+ * workbench fires a row's command from `list.select` without awaiting it, so
+ * the key can't wait for the open; it leaves this one-shot marker instead,
+ * which the open consumes. It expires after 2 s, so a click long after a key
+ * press that opened nothing is a plain click.
+ */
+export function keepListFocusOnce(): void {
+  keepListFocusUntil = Date.now() + KEEP_LIST_FOCUS_MS;
+}
+
+/** Whether the marker is set and unexpired; reading it clears it. */
+export function consumeKeepListFocus(): boolean {
+  const keep = Date.now() < keepListFocusUntil;
+  keepListFocusUntil = 0;
+  return keep;
+}
+
 /**
  * The global hotkeys and the list keyboard (rows 3.7, 3.8). Ctrl+Alt+1–9 and a
  * repo pick jump to the nth repo in inbox order and, pressed again, open its
@@ -114,8 +136,14 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
     });
     try {
       await run(move);
+      // Before the select: the row command it fires reads the marker.
+      keepListFocusOnce();
       await run('list.select');
       const row = await landed;
+      if (row?.itemType !== 'chat') {
+        // A repo row (or no row) fires no open, so nothing will consume it.
+        consumeKeepListFocus();
+      }
       if (row?.itemType === 'repository') {
         await workspacesTreeView.reveal(row, REVEAL_ROW);
       }

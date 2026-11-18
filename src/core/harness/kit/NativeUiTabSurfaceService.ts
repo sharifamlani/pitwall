@@ -10,6 +10,19 @@ interface PendingSurface {
   expiresAt: number;
 }
 
+/**
+ * What identifies a tab across Tab objects: its title and its input's kind.
+ * VS Code hands out a new Tab object when it rebuilds its tab model (a group
+ * added or removed) and when a tab moves to another group. A move opens the
+ * copy in the target group before closing the original, so the copy is
+ * always there when the close arrives.
+ */
+function tabKey(tab: vscode.Tab): string {
+  const input = tab.input as { viewType?: unknown; uri?: { toString(): string } } | undefined;
+  const kind = typeof input?.viewType === 'string' ? input.viewType : input?.uri?.toString() ?? '';
+  return `${tab.label}\u0000${kind}`;
+}
+
 export interface NativeUiTabSurfaceOptions {
   /** Whether the tab belongs to this harness's native UI. */
   isUiTab: (tab: vscode.Tab) => boolean;
@@ -75,7 +88,8 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       options.onDidChangeTabGroups ??
       ((listener) => tabGroups.onDidChangeTabGroups(listener))
     )(() => {
-      if (this.updateActiveSession()) {
+      const mappingChanged = this.reconcile();
+      if (this.updateActiveSession() || mappingChanged) {
         this._onDidChange.fire();
       }
     });
@@ -194,7 +208,10 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
 
   private handleTabChange(event: vscode.TabChangeEvent): void {
     this.prunePending();
-    let mappingChanged = false;
+    // Follow rebuilt and moved Tab objects first (a refresh fires no tab
+    // event): a moved tab stays bound (D16), and a closed tab is released
+    // whichever object VS Code names.
+    let mappingChanged = this.reconcile();
 
     for (const tab of event.closed) {
       if (this.unmapTab(tab)) {
@@ -278,6 +295,36 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       }
     }
     return true;
+  }
+
+  /**
+   * Keep the map on the Tab objects VS Code has now. When it rebuilds its tab
+   * model (a group added or removed) every Tab object is replaced and only a
+   * group event fires, so a later close names an object the map never saw and
+   * the binding would outlive its tab. A mapped tab that is gone moves to the
+   * unmapped UI tab with the same title and kind (the rebuilt or moved copy);
+   * with none, the tab closed and its binding is released.
+   */
+  private reconcile(): boolean {
+    if (this.tabs.size === 0) {
+      return false;
+    }
+    const current = this.getTabGroups().flatMap((group) => [...group.tabs]);
+    const present = new Set(current);
+    let changed = false;
+    for (const [tab, sessionId] of [...this.tabs]) {
+      if (present.has(tab)) {
+        continue;
+      }
+      const key = tabKey(tab);
+      const copy = current.find((candidate) => !this.tabs.has(candidate) && this.isUiTab(candidate) && tabKey(candidate) === key);
+      this.unmapTab(tab);
+      if (copy) {
+        this.mapTab(copy, sessionId);
+      }
+      changed = true;
+    }
+    return changed;
   }
 
   /** Returns true when the active native-UI session changed. */

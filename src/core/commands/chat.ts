@@ -18,6 +18,7 @@ import { DEFAULT_CHAT_NAME, chatPrimarySessionId } from '../harness/sessionUtils
 import { errorMessage, formatRelativeTime, nextForkName } from '../utils/text';
 import { samePath } from '../utils/paths';
 import { commandInDirectory } from '../services/terminalEvents';
+import { consumeKeepListFocus } from './navigation';
 import {
   commandRegistrar,
   defaultWorktreePath,
@@ -27,6 +28,13 @@ import {
 } from './common';
 
 type SessionSurface = 'terminal' | 'ui';
+/**
+ * Where a row open landed: in this window (a UI tab, a revealed panel, or
+ * nothing to open), or in a terminal. T3 adds 'routed' (another window).
+ */
+export type PrimaryOpen = 'here' | 'routed' | 'terminal';
+/** The Repos list's focus command, contributed by the workbench for the view. */
+const FOCUS_LIST_COMMAND = 'pitwall.workspacesView.focus';
 type LinkedChat = ChatSession & { harnessSessionId: string };
 
 export interface ChatCommandDeps {
@@ -88,7 +96,7 @@ export function registerChatCommands(
   const defaultSessionSurface = (): SessionSurface =>
     vscode.workspace
       .getConfiguration('pitwall')
-      .get<SessionSurface>('defaultSessionSurface', 'terminal');
+      .get<SessionSurface>('defaultSessionSurface', 'ui');
 
   /**
    * The chat on a session row. A keybinding passes no row, so the command
@@ -194,14 +202,96 @@ export function registerChatCommands(
   /**
    * Open a chat in its terminal. A live terminal is focused; otherwise a new
    * one is launched and registered for linkage when the harness assigns its
-   * session ID later.
+   * session ID later. `keepListFocus` (a Ctrl+↓/↑, Q4) shows it without
+   * taking focus, and puts focus back on the list once a new terminal's
+   * creation and rename have settled (E8, F4).
    */
-  const openInTerminal = async (chat: ChatSession, worktree: Worktree): Promise<void> => {
+  const openInTerminal = async (chat: ChatSession, worktree: Worktree, keepListFocus = false): Promise<void> => {
+    pitwallOpens += 1;
     const prepared = terminalManager.isActive(chat.id)
       ? chat
       : registerPendingSession(chat, worktree);
-    await terminalManager.openChat(prepared, worktree);
+    await terminalManager.openChat(prepared, worktree, {
+      preserveFocus: keepListFocus,
+      ...(keepListFocus ? { afterTitle: listRefocusAfterTitle(chat) } : {}),
+    });
     selectChat(prepared, worktree);
+  };
+
+  /** Every chat open Pitwall starts; a held list yields to a newer one. */
+  let pitwallOpens = 0;
+  /** The focus watch of the last Ctrl+↓/↑ terminal open that may still restore the list. */
+  let heldList: vscode.Disposable | undefined;
+  context.subscriptions.push({ dispose: () => heldList?.dispose() });
+
+  /**
+   * The list refocus for a Ctrl+↓/↑ terminal open (E8). `'now'`, once the
+   * terminal exists, always refocuses and then holds the list. Each later
+   * title write (`'late'`: the shell reported in) drops focus again, so it
+   * restores the list only while it is still held: any move lets go of it
+   * (a text editor, another terminal or another tab becoming active, the
+   * window losing focus, or another Pitwall open). A missed restore is
+   * harmless; a stolen focus is not.
+   */
+  const listRefocusAfterTitle = (chat: ChatSession) => {
+    heldList?.dispose();
+    let opensAtHold = -1;
+    let held = false;
+    let watch: vscode.Disposable | undefined;
+    const letGo = () => {
+      held = false;
+      watch?.dispose();
+      if (heldList === watch) {
+        heldList = undefined;
+      }
+    };
+    const hold = () => {
+      held = true;
+      opensAtHold = pitwallOpens;
+      const activeTab = () => vscode.window.tabGroups.activeTabGroup?.activeTab;
+      const tabAtHold = activeTab();
+      const watches = [
+        vscode.window.onDidChangeActiveTextEditor((editor) => editor && letGo()),
+        vscode.window.onDidChangeActiveTerminal((terminal) => {
+          if (terminal && terminal !== terminalManager.getTerminal(chat.id)) {
+            letGo();
+          }
+        }),
+        vscode.window.tabGroups.onDidChangeTabs(() => {
+          if (activeTab() !== tabAtHold) {
+            letGo();
+          }
+        }),
+        vscode.window.onDidChangeWindowState((state) => !state.focused && letGo()),
+      ];
+      watch = { dispose: () => watches.forEach((entry) => entry.dispose()) };
+      heldList = watch;
+    };
+    return async (phase: 'now' | 'late'): Promise<void> => {
+      if (phase === 'now') {
+        await refocusList();
+        hold();
+        return;
+      }
+      if (held && pitwallOpens === opensAtHold && heldList === watch) {
+        await refocusList();
+      } else {
+        letGo();
+      }
+    };
+  };
+
+  /**
+   * Put keyboard focus back on the Repos list after an open in this window
+   * (Q4). The webview takes focus with its tab, at the open itself (S1b), so
+   * this runs right after the awaited open; no timer.
+   */
+  const refocusList = async (): Promise<void> => {
+    try {
+      await vscode.commands.executeCommand(FOCUS_LIST_COMMAND);
+    } catch (error) {
+      console.error('[Pitwall] Could not refocus the Repos list:', error);
+    }
   };
 
   /**
@@ -288,17 +378,19 @@ export function registerChatCommands(
    * panel, or follows a UI default). Every refusal is explained, and a running
    * terminal is closed only after the user confirms and the UI is known to be
    * able to open the session, so two agent processes never share a session.
+   * Resolves true when the UI opened or revealed the session.
    */
   const openChatInNativeUi = async (
     chat: ChatSession,
     worktree: Worktree,
     nativeUi: NativeUiCapability
-  ): Promise<void> => {
+  ): Promise<boolean> => {
+    pitwallOpens += 1;
     const adapter = harnessRegistry.get(chat.harness);
     const surfaces = nativeUi.surfaces;
     if (!nativeUi.isInstalled()) {
       await explainNativeUiUnavailable(nativeUi, worktree.path, { kind: 'not-installed' });
-      return;
+      return false;
     }
 
     // The UI extensions cannot adopt a chosen ID, so the handoff only covers a
@@ -310,16 +402,25 @@ export function registerChatCommands(
           ? pendingUiMessage(nativeUi.displayName)
           : `Start this session in the terminal first. ${nativeUi.displayName} can open it after its first prompt creates the session.`
       );
-      return;
+      return false;
     }
 
     // Revealing an open panel needs neither a resume check nor a terminal close.
     let open = surfaces?.isOpen(sessionId) ?? false;
     if (!open && terminalManager.isResuming(chat.id)) {
       vscode.window.showInformationMessage('This session is still starting. Try again in a moment.');
-      return;
+      return false;
     }
     if (!open) {
+      // A session the UI can't resume opens a blank tab there (Q23): say why
+      // and resume it where it can be resumed.
+      const refusal = await nativeUi.resumeRefusal?.(sessionId);
+      if (refusal) {
+        vscode.window.showInformationMessage(refusal);
+        await openInTerminal(chat, worktree);
+        return false;
+      }
+
       const resumable = await adapter.isSessionResumable(sessionId, worktree.path);
       // The panel may have opened while the native check was in flight; an
       // open panel is itself proof that the session exists.
@@ -334,7 +435,7 @@ export function registerChatCommands(
             `This session has no transcript yet. Send a prompt in the terminal first, then open it in ${nativeUi.displayName}.`
           );
         }
-        return;
+        return false;
       }
     }
 
@@ -343,7 +444,7 @@ export function registerChatCommands(
     const availability = nativeUi.checkAvailability(worktree.path);
     if (availability.kind !== 'available') {
       await explainNativeUiUnavailable(nativeUi, worktree.path, availability);
-      return;
+      return false;
     }
 
     if (!open && terminalManager.isActive(chat.id)) {
@@ -353,7 +454,7 @@ export function registerChatCommands(
         'Close and Open'
       );
       if (confirm !== 'Close and Open') {
-        return;
+        return false;
       }
       const closed = terminalManager.waitForChatClosed(chat.id);
       terminalManager.closeChat(chat.id);
@@ -361,7 +462,7 @@ export function registerChatCommands(
         vscode.window.showErrorMessage(
           'Could not close the terminal for this session. Close it and try again.'
         );
-        return;
+        return false;
       }
     }
 
@@ -373,50 +474,64 @@ export function registerChatCommands(
     if (result.kind !== 'opened') {
       surfaces?.cancelExpect(sessionId);
       await reportNativeUiProblem(nativeUi, worktree.path, result);
-      return;
+      return false;
     }
     surfaces?.settle(sessionId, { allowActiveFallback: true });
     selectChat(chat, worktree);
     activateChat(chat);
+    return true;
   };
 
   /**
    * Whether a UI default can open this chat without asking anything: it has a
-   * native session, no terminal owns it, and the UI can open its worktree.
+   * native session the UI can resume (Q23), no terminal owns it, and the UI
+   * can open its worktree.
    */
-  const canOpenInNativeUi = (
+  const canOpenInNativeUi = async (
     chat: ChatSession,
     worktree: Worktree,
     nativeUi: NativeUiCapability
-  ): boolean =>
+  ): Promise<boolean> =>
     Boolean(chat.harnessSessionId) &&
     !terminalManager.isActive(chat.id) &&
     !terminalManager.isResuming(chat.id) &&
     nativeUi.isInstalled() &&
-    nativeUi.checkAvailability(worktree.path).kind === 'available';
+    nativeUi.checkAvailability(worktree.path).kind === 'available' &&
+    !(await nativeUi.resumeRefusal?.(chat.harnessSessionId!));
 
   /**
    * Open a chat the way a row click does. Shared by the row click and the
    * starred-session picker so both obey "never two agent processes for one
    * session".
+   *
+   * A Ctrl+↓/↑ that fired this open left a one-shot marker (Q4): the list
+   * keeps focus, by `show(true)` on a terminal and by a refocus right after
+   * an open in this window's UI.
    */
-  const openChatPrimary = async (chat: ChatSession, worktree: Worktree): Promise<void> => {
+  const openChatPrimary = async (chat: ChatSession, worktree: Worktree): Promise<PrimaryOpen> => {
+    const keepListFocus = consumeKeepListFocus();
     const nativeUi = harnessRegistry.get(chat.harness).nativeUi;
     const sessionId = chatPrimarySessionId(chat);
     const terminalOpen = terminalManager.isActive(chat.id);
 
+    const inUi = async (ui: NativeUiCapability): Promise<PrimaryOpen> => {
+      if ((await openChatInNativeUi(chat, worktree, ui)) && keepListFocus) {
+        await refocusList();
+      }
+      return 'here';
+    };
+
     // A session already open in its agent's UI is revealed, not duplicated in
     // a terminal. A live terminal stays the surface a click focuses.
     if (nativeUi && sessionId && nativeUi.surfaces?.isOpen(sessionId) && !terminalOpen) {
-      await openChatInNativeUi(chat, worktree, nativeUi);
-      return;
+      return inUi(nativeUi);
     }
 
     // A UI-started chat has no native ID until its first prompt; a click must
     // not start a second agent beside the open conversation.
     if (chat.pendingUiLaunch && !terminalOpen) {
       vscode.window.showInformationMessage(pendingUiMessage(nativeUi?.displayName));
-      return;
+      return 'here';
     }
 
     // The configured default is a preference: use the UI when it can open the
@@ -424,13 +539,13 @@ export function registerChatCommands(
     if (
       defaultSessionSurface() === 'ui' &&
       nativeUi &&
-      canOpenInNativeUi(chat, worktree, nativeUi)
+      (await canOpenInNativeUi(chat, worktree, nativeUi))
     ) {
-      await openChatInNativeUi(chat, worktree, nativeUi);
-      return;
+      return inUi(nativeUi);
     }
 
-    await openInTerminal(chat, worktree);
+    await openInTerminal(chat, worktree, keepListFocus);
+    return 'terminal';
   };
 
   /** Explicit Open in <harness> UI: refuses another harness's session. */

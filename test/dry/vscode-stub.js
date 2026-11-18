@@ -390,6 +390,7 @@ const activeTerminalListeners = new Set();
 const executionStartListeners = new Set();
 const tabChangeListeners = new Set();
 const tabGroupChangeListeners = new Set();
+const activeTextEditorListeners = new Set();
 const windowStateListeners = new Set();
 const configurationChangeListeners = new Set();
 const treeViews = [];
@@ -532,6 +533,13 @@ module.exports = {
     __focusTextEditor: (editor) => {
       activeTextEditor = editor;
       focusedTerminal = undefined;
+      for (const listener of [...activeTextEditorListeners]) {
+        listener(editor);
+      }
+    },
+    onDidChangeActiveTextEditor: (listener) => {
+      activeTextEditorListeners.add(listener);
+      return { dispose: () => activeTextEditorListeners.delete(listener) };
     },
     setStatusBarMessage: (text, timeoutMs) => {
       statusBarMessages.push({ text, timeoutMs });
@@ -575,9 +583,21 @@ module.exports = {
     },
     /** Test helper: `__setWindowState({ focused })`, by its focus flag alone. */
     __fireWindowState: (focused) => module.exports.window.__setWindowState({ focused }),
-    /** Test helper: announce a tab change after a test rearranged `tabGroups.all`. */
-    __fireTabsChanged: () => {
+    /**
+     * Test helper: announce a tab change after a test rearranged `tabGroups.all`,
+     * optionally naming the opened, closed or changed tabs.
+     */
+    __fireTabsChanged: (event = {}) => {
       for (const listener of [...tabChangeListeners]) {
+        listener({ opened: [], closed: [], changed: [], ...event });
+      }
+    },
+    /**
+     * Test helper: a tab-model refresh. VS Code rebuilds every group and Tab
+     * object when groups are added or removed, and fires only a group event.
+     */
+    __fireTabGroupsChanged: () => {
+      for (const listener of [...tabGroupChangeListeners]) {
         listener({ opened: [], closed: [], changed: [] });
       }
     },
@@ -899,6 +919,8 @@ module.exports = {
     },
     /** The default terminal profile's shell; tests switch it with `__setShell`. */
     shell: '/bin/bash',
+    /** The app's link scheme: `vscode` in VS Code, `cursor` in Cursor. Tests may assign it. */
+    uriScheme: 'vscode',
   },
   commands: {
     registerCommand: (id, handler) => {
@@ -952,6 +974,7 @@ module.exports = {
       shellIntegrationListeners,
       tabChangeListeners,
       tabGroupChangeListeners,
+      activeTextEditorListeners,
       windowStateListeners,
       configurationChangeListeners,
       extensionChangeListeners,
@@ -973,6 +996,7 @@ module.exports = {
     defaultPidDelayMs = undefined;
     lateShellIntegration = false;
     openExternalResult = true;
+    module.exports.env.uriScheme = 'vscode';
     nextTerminalPid = 4100;
     module.exports.workspace.workspaceFolders = [];
     module.exports.workspace.workspaceFile = undefined;

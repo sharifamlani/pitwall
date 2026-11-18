@@ -7,7 +7,7 @@ import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import pkg from '../../../package.json';
-import { registerNavigationCommands } from '../../../src/core/commands/navigation';
+import { consumeKeepListFocus, keepListFocusOnce, registerNavigationCommands } from '../../../src/core/commands/navigation';
 import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/providers/WorkspacesTreeProvider';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { SessionStatus } from '../../../src/core/providers/sessionStatus';
@@ -196,6 +196,41 @@ test('move-and-open moves focus one row and opens it; on a repo row it expands a
     workspacesView.reveals.map((reveal) => [(reveal.item as WorkspaceTreeItem).label, reveal.options]),
     [['a', { select: true, focus: true, expand: true }]]
   );
+});
+
+test('the marker expires after 2 s', (t) => {
+  const realNow = Date.now;
+  let offset = 0;
+  Date.now = () => realNow() + offset;
+  t.after(() => {
+    Date.now = realNow;
+  });
+
+  keepListFocusOnce();
+  offset += 1_999;
+  assert.equal(consumeKeepListFocus(), true, 'still set just inside 2 s');
+  assert.equal(consumeKeepListFocus(), false, 'one-shot');
+
+  keepListFocusOnce();
+  offset += 2_000;
+  assert.equal(consumeKeepListFocus(), false, 'expired at 2 s: a click much later is a plain click');
+});
+
+test('Ctrl+Down on a repo row still only reveals it (Q22)', async (t) => {
+  const { workspacesView, calls, tree, context } = setup(t);
+  const [aRow] = await tree.getChildren();
+  context.subscriptions.push(
+    vscode.commands.registerCommand('list.focusDown', () => undefined),
+    vscode.commands.registerCommand('list.select', () => workspacesView.__select([aRow]))
+  );
+
+  await runCommand('pitwall.list.moveDownAndOpen');
+  assert.equal(calls.length, 0, 'no chat opens');
+  assert.deepEqual(
+    workspacesView.reveals.map((reveal) => [(reveal.item as WorkspaceTreeItem).label, reveal.options]),
+    [['a', { select: true, focus: true, expand: true }]]
+  );
+  assert.equal(consumeKeepListFocus(), false, 'no marker is left for a later click');
 });
 
 test('a repo tooltip names its keys only for positions 1–9', async (t) => {
