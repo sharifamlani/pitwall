@@ -35,8 +35,6 @@ type SessionSurface = 'terminal' | 'ui';
 export type PrimaryOpen = 'here' | 'routed' | 'terminal';
 /** The Repos list's focus command, contributed by the workbench for the view. */
 const FOCUS_LIST_COMMAND = 'pitwall.workspacesView.focus';
-/** How long after a Ctrl+↓/↑ a late terminal rename may still refocus the list. */
-const LATE_REFOCUS_MS = 3_000;
 type LinkedChat = ChatSession & { harnessSessionId: string };
 
 export interface ChatCommandDeps {
@@ -220,50 +218,65 @@ export function registerChatCommands(
     selectChat(prepared, worktree);
   };
 
-  /** Every chat open Pitwall starts; a late refocus yields to a newer one. */
+  /** Every chat open Pitwall starts; a held list yields to a newer one. */
   let pitwallOpens = 0;
-  /** The one late refocus still allowed to happen, with its focus watch. */
-  let pendingLateRefocus: vscode.Disposable | undefined;
-  context.subscriptions.push({ dispose: () => pendingLateRefocus?.dispose() });
+  /** The focus watch of the last Ctrl+↓/↑ terminal open that may still restore the list. */
+  let heldList: vscode.Disposable | undefined;
+  context.subscriptions.push({ dispose: () => heldList?.dispose() });
 
   /**
-   * The list refocus for a Ctrl+↓/↑ terminal open. Right after the open's
-   * own rename it always runs. After a late rename (a slow shell) it runs
-   * only within 3 s of the key and only if nothing moved focus meanwhile: a
-   * text editor or another terminal became active, or another Pitwall open
-   * started. A missed refocus is harmless; a stolen one is not.
+   * The list refocus for a Ctrl+↓/↑ terminal open (E8). `'now'`, once the
+   * terminal exists, always refocuses and then holds the list. Each later
+   * title write (`'late'`: the shell reported in) drops focus again, so it
+   * restores the list only while it is still held: any move lets go of it
+   * (a text editor, another terminal or another tab becoming active, the
+   * window losing focus, or another Pitwall open). A missed restore is
+   * harmless; a stolen focus is not.
    */
   const listRefocusAfterTitle = (chat: ChatSession) => {
-    pendingLateRefocus?.dispose();
-    const keyedAt = Date.now();
-    const opensAtKey = pitwallOpens;
-    let moved = false;
-    const watches = [
-      vscode.window.onDidChangeActiveTextEditor((editor) => {
-        if (editor) {
-          moved = true;
-        }
-      }),
-      vscode.window.onDidChangeActiveTerminal((terminal) => {
-        if (terminal && terminal !== terminalManager.getTerminal(chat.id)) {
-          moved = true;
-        }
-      }),
-    ];
-    const watch: vscode.Disposable = { dispose: () => watches.forEach((entry) => entry.dispose()) };
-    pendingLateRefocus = watch;
+    heldList?.dispose();
+    let opensAtHold = -1;
+    let held = false;
+    let watch: vscode.Disposable | undefined;
+    const letGo = () => {
+      held = false;
+      watch?.dispose();
+      if (heldList === watch) {
+        heldList = undefined;
+      }
+    };
+    const hold = () => {
+      held = true;
+      opensAtHold = pitwallOpens;
+      const activeTab = () => vscode.window.tabGroups.activeTabGroup?.activeTab;
+      const tabAtHold = activeTab();
+      const watches = [
+        vscode.window.onDidChangeActiveTextEditor((editor) => editor && letGo()),
+        vscode.window.onDidChangeActiveTerminal((terminal) => {
+          if (terminal && terminal !== terminalManager.getTerminal(chat.id)) {
+            letGo();
+          }
+        }),
+        vscode.window.tabGroups.onDidChangeTabs(() => {
+          if (activeTab() !== tabAtHold) {
+            letGo();
+          }
+        }),
+        vscode.window.onDidChangeWindowState((state) => !state.focused && letGo()),
+      ];
+      watch = { dispose: () => watches.forEach((entry) => entry.dispose()) };
+      heldList = watch;
+    };
     return async (phase: 'now' | 'late'): Promise<void> => {
       if (phase === 'now') {
         await refocusList();
+        hold();
         return;
       }
-      const stillYours = pendingLateRefocus === watch && !moved && pitwallOpens === opensAtKey && Date.now() - keyedAt <= LATE_REFOCUS_MS;
-      watch.dispose();
-      if (pendingLateRefocus === watch) {
-        pendingLateRefocus = undefined;
-      }
-      if (stillYours) {
+      if (held && pitwallOpens === opensAtHold && heldList === watch) {
         await refocusList();
+      } else {
+        letGo();
       }
     };
   };
