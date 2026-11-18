@@ -1,10 +1,16 @@
 import * as vscode from 'vscode';
-import { Repository } from '../types';
+import { ChatSession, Repository } from '../types';
 import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../providers/WorkspacesTreeProvider';
 import { commandRegistrar } from './common';
 
 export interface SearchDeps {
   workspacesProvider: Pick<WorkspacesTreeProvider, 'repoRowAt' | 'getChildren'>;
+  /**
+   * Whether picking this chat opens it in this window; its meta then ends
+   * "· this window", otherwise "· its own window" (row 4.8). Without it, no
+   * window is named.
+   */
+  opensHere?: (chat: ChatSession) => boolean;
 }
 
 const PLACEHOLDER = 'Search repos, chats, and what was said in them  (Ctrl+Alt+R)';
@@ -32,7 +38,10 @@ const matches = (query: string, ...fields: string[]): boolean => {
  * The box filters itself so each group can say "No … matches.".
  */
 export function registerSearchCommands(context: vscode.ExtensionContext, deps: SearchDeps): void {
-  const { workspacesProvider } = deps;
+  const { workspacesProvider, opensHere } = deps;
+  /** "· this window" or "· its own window": where picking the chat opens it. */
+  const windowMeta = (chat: ChatSession): string =>
+    opensHere ? (opensHere(chat) ? ' · this window' : ' · its own window') : '';
   const register = commandRegistrar(context);
   const run = (command: string, ...args: unknown[]) => vscode.commands.executeCommand(command, ...args);
 
@@ -74,7 +83,7 @@ export function registerSearchCommands(context: vscode.ExtensionContext, deps: S
         if (matches(query, name, branchOf(chatRow))) {
           chatPicks.push({
             label: name,
-            description: `${repo.name} · ${chatRow.description ?? ''}`.trim(),
+            description: `${repo.name} · ${chatRow.description ?? ''}`.trim() + windowMeta(chatRow.data as ChatSession),
             alwaysShow: true,
             action: () => run('pitwall.openChat', chatRow),
           });

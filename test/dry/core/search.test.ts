@@ -11,7 +11,7 @@ import { registerSearchCommands } from '../../../src/core/commands/search';
 import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/providers/WorkspacesTreeProvider';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { SessionStatus } from '../../../src/core/providers/sessionStatus';
-import { RepositoryWorktrees } from '../../../src/core/types';
+import { ChatSession, RepositoryWorktrees } from '../../../src/core/types';
 import { FakeQuickPick, FakeTreeView, fakeAdapter, fakeWorktreeListing, makeStorage, runCommand, stub, worktreeRecord } from '../support';
 
 beforeEach(() => stub.__reset());
@@ -25,7 +25,7 @@ const labels = (pick: FakeQuickPick) => pick.items.map((item) => (item.kind === 
 const chatLabels = (pick: FakeQuickPick) => labels(pick).filter((label) => ['Fix login', 'Parser spike'].includes(label));
 
 /** Repos alpha (chats "Fix login" on main, needing you, and "Parser spike" on feat/parse) and beta (none). */
-function setup(t: { after(fn: () => void): void }) {
+function setup(t: { after(fn: () => void): void }, options: { opensHere?: (chat: ChatSession) => boolean } = {}) {
   const storage = makeStorage();
   const statuses = new Map<string, SessionStatus>();
   const worktrees = new Map<string, ReturnType<typeof worktreeRecord>>();
@@ -60,7 +60,7 @@ function setup(t: { after(fn: () => void): void }) {
   const filesView = vscode.window.createTreeView('pitwall.filesView', { treeDataProvider: { getChildren: async () => [] } as never }) as unknown as FakeTreeView;
   const context = { subscriptions: [] as { dispose(): void }[] };
   registerNavigationCommands(context as never, { workspacesProvider: tree, workspacesTreeView: workspacesView as never, filesTreeView: filesView as never });
-  registerSearchCommands(context as never, { workspacesProvider: tree });
+  registerSearchCommands(context as never, { workspacesProvider: tree, ...options });
   const calls: { id: string; args: unknown[] }[] = [];
   for (const id of ['pitwall.openChat', 'pitwall.findSession']) {
     context.subscriptions.push(vscode.commands.registerCommand(id, (...args: unknown[]) => void calls.push({ id, args })));
@@ -176,4 +176,14 @@ test('no two consecutive rows are both separators, however the box is filtered',
       assert.ok(!(item.kind === SEPARATOR && pick.items[at + 1]?.kind === SEPARATOR), `"${text}": separators back to back at ${at}`);
     });
   }
+});
+
+test('chat meta says "· this window" or "· its own window"', async (t) => {
+  // "Fix login" belongs to this window's folder; "Parser spike" opens in its own window.
+  setup(t, { opensHere: (chat) => chat.name === 'Fix login' });
+  const pick = await open();
+  const meta = (label: string) => String(pick.items.find((item) => item.label === label)!.description);
+  assert.match(meta('Fix login'), /^alpha · ⎇ main .* · this window$/);
+  assert.match(meta('Parser spike'), /^alpha · ⎇ main .* · its own window$/);
+  assert.doesNotMatch(meta('Fix login'), /its own window/);
 });

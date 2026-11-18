@@ -10,6 +10,7 @@ import { ChatSession, HarnessId, Repository, Worktree } from '../types';
 import { canonicalPath, canonicalRoot, nativePath, samePath } from '../utils/paths';
 import { formatRelativeTime } from '../utils/text';
 import { commandRegistrar, importNativeSession, withProgress } from './common';
+import type { ChatRouter } from '../windows/ChatRouter';
 
 /**
  * When a session was last active: the value a chat's row shows as its age
@@ -33,6 +34,8 @@ export interface RepositoryCommandDeps {
    */
   forgetWorktrees: (worktrees: Worktree[], options?: { closeTerminals?: boolean }) => void;
   refreshTree: () => void;
+  /** The chat router, once built: "+" starts the chat in that repo's window (row 4.2). */
+  router?: () => Pick<ChatRouter, 'route'> | undefined;
 }
 
 /** Workspace-root commands: add, clone, dismiss, remove, refresh. */
@@ -91,13 +94,39 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     )?.repo;
   };
 
-  /** The repo row's "+" and its menu's first item: a Claude chat in the main worktree. */
+  /**
+   * The repo row's "+" and its menu's first item: a Claude chat in the main
+   * worktree, in that repo's window (§3 state summary). With the router, a
+   * repo of this window starts here and any other is handed to its window;
+   * a second click while that window starts sends nothing new (Q16).
+   */
   register('pitwall.newSessionInRepository', async (item?: WorkspaceTreeItem) => {
     const repo = await repositoryFor(item, 'start a session in');
-    if (repo) {
-      await vscode.commands.executeCommand('pitwall.newClaudeChat', repositoryRow(repo, item));
+    if (!repo) {
+      return;
     }
+    const router = deps.router?.();
+    if (router) {
+      await router.route({ kind: 'new', chats: [], folder: repo.rootPath });
+      return;
+    }
+    await vscode.commands.executeCommand('pitwall.newClaudeChat', repositoryRow(repo, item));
   });
+
+  /**
+   * "Open its window" / "Bring its window forward" (§3b): one label shows,
+   * flipped by the row's hasWindow context value. Both raise the repo's main
+   * folder: `vscode.openFolder` with forceNewWindow brings an existing window
+   * forward and opens one only when none exists (S1). No toast (Q6).
+   */
+  const raiseWindow = async (item?: WorkspaceTreeItem): Promise<void> => {
+    const repo = await repositoryFor(item, 'open the window of');
+    if (repo) {
+      await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(repo.rootPath), { forceNewWindow: true });
+    }
+  };
+  register('pitwall.openItsWindow', raiseWindow);
+  register('pitwall.bringItsWindowForward', raiseWindow);
 
   // The hover icons carry their own ids so their tooltips (a command's title)
   // can differ from the right-click menu's wording; same behavior.

@@ -695,6 +695,96 @@ test('a late rename does not refocus the list after the user moved on', async (t
   );
 });
 
+// Carried from T2 (QA #47): the move-watchers are armed at the key press, not
+// after the 'now' refocus, so the 'now' refocus also skips when an editor, a tab
+// or another terminal became active since the press.
+test('an editor click between Ctrl+Down and the refocus keeps focus in the editor', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { surface: 'terminal' });
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    if (stub.window.activeTerminal) stub.window.activeTerminal.name = arg.name;
+  });
+  const editor = { document: { uri: vscode.Uri.file('/work/demo/file.ts') } };
+  // The user clicks into a file while the new terminal is still being created.
+  const create = stub.window.createTerminal;
+  stub.window.createTerminal = (options) => {
+    const terminal = create(options);
+    stub.window.__focusTextEditor(editor);
+    return terminal;
+  };
+  t.after(() => {
+    stub.window.createTerminal = create;
+  });
+  const keys = listKeys(f.row(f.chat('claude', 'Clicked away', 'claude-1')));
+
+  await keys.press();
+  await settle();
+  assert.deepEqual(keys.events, [], 'the list does not take focus back from the editor');
+  stub.window.__integrateShell(f.lastTerminal());
+  await settle();
+  assert.deepEqual(keys.events, [], 'nor after the late rename');
+});
+
+test('the late-refocus hold also lets go when a Claude panel tab becomes active', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const f = setup(t, { surface: 'terminal' });
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    if (stub.window.activeTerminal) stub.window.activeTerminal.name = arg.name;
+  });
+  const { keys, terminal } = await slowShellPress(f, f.chat('claude', 'Then a Claude tab', 'claude-1'));
+  keys.events.length = 0;
+
+  // The Claude tab sits in another editor group: clicking it makes that group
+  // active, which fires only a tab-group event, not a tab event.
+  const claudeTab = { label: 'Other chat', input: new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel'), isActive: true };
+  stub.window.tabGroups.all = [
+    { isActive: false, viewColumn: 1, activeTab: undefined, tabs: [] },
+    { isActive: true, viewColumn: 2, activeTab: claudeTab, tabs: [claudeTab] },
+  ];
+  stub.window.__fireTabGroupsChanged();
+  stub.window.__integrateShell(terminal);
+  await settle();
+  assert.deepEqual(keys.events, [], 'no late restore over the Claude tab');
+});
+
+// Q27 (T3 live): the user typed "xyz" into a brand-new terminal before Pitwall
+// sent its line, and the shell ran `xyzclaude --resume …`.
+test('a line typed into a new terminal before the resume command is cleared first', async (t) => {
+  const f = setup(t, { surface: 'terminal' });
+  const create = stub.window.createTerminal;
+  stub.window.createTerminal = (options) => {
+    const terminal = create(options);
+    stub.window.__typeKeys(terminal, 'xyz');
+    return terminal;
+  };
+  t.after(() => {
+    stub.window.createTerminal = create;
+  });
+  // PSReadLine's default edit mode is Windows on Windows (Esc reverts the
+  // line) but Emacs elsewhere (Esc is a meta prefix there, Ctrl+U clears).
+  const shells: [string, string][] = [
+    ['/bin/bash', '\x15'],
+    ['/usr/bin/zsh', '\x15'],
+    ['C:\\Program Files\\Git\\bin\\bash.exe', '\x15'],
+    ['C:\\Windows\\System32\\cmd.exe', '\x1b'],
+    ['C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', process.platform === 'win32' ? '\x1b' : '\x15'],
+    ['C:\\Program Files\\PowerShell\\7\\pwsh.exe', process.platform === 'win32' ? '\x1b' : '\x15'],
+  ];
+  for (const [index, [shell, clear]] of shells.entries()) {
+    stub.__setShell(shell);
+    await runCommand('pitwall.openChat', f.row(f.chat('claude', `Shell ${index}`, `claude-${index}`)));
+    const terminal = f.lastTerminal();
+    // The clear goes alone, with no newline, and the command in a send of its
+    // own: Esc followed at once by "c" could read as Alt+C.
+    assert.deepEqual(
+      terminal.typed.slice(0, 2),
+      [clear, `claude --resume claude-${index}\n`],
+      `${shell}: its line-clear, then the command`
+    );
+    assert.equal(terminal.sent[0], `claude --resume claude-${index}`, `${shell}: the stray keys are gone from the line the shell runs`);
+  }
+});
+
 test('after closing its Claude tab, a terminal-surface open uses the terminal', async (t) => {
   const f = setup(t, { surface: 'terminal' });
   const chat = f.chat('claude', 'Lab ready', 'claude-1');

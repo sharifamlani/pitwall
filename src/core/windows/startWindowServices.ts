@@ -7,7 +7,10 @@ export interface WindowServices {
   inbox: HandoffInbox;
 }
 
-/** Until a window can open handed-off chats (Phase 4 Task 3), it reports each claimed request as failed. */
+/**
+ * Without an opener (the extension passes `ChatRouter.runClaimed`), a window
+ * reports each claimed request as failed, so its sender warns.
+ */
 const NO_OPENER = 'this build cannot open handed-off chats';
 
 /**

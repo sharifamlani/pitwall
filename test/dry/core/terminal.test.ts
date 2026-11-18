@@ -136,7 +136,12 @@ test('a shell without integration still gets the launch command, without waiting
   stub.__setConfiguration('shellIntegration.enabled', false);
   stub.__setSilentExecutionEvents(true);
   const f = setup(t, { chats: [{ id: 'chat' }] });
-  const opened = await Promise.race([f.open('chat'), flush().then(() => 'still waiting' as const)]);
+  // Far inside the 2 s wait for a command start. (The launch line goes out a
+  // turn after its line-clear, Q27, so the open takes one turn more than it did.)
+  const opened = await Promise.race([
+    f.open('chat'),
+    new Promise<'still waiting'>((resolve) => setTimeout(() => resolve('still waiting'), 100)),
+  ]);
   assert.notEqual(opened, 'still waiting');
   assert.equal((opened as FakeTerminal).sent[0], 'claude');
 });

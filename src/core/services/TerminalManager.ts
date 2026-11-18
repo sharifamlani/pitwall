@@ -59,6 +59,8 @@ interface StartedTerminal {
   started: Promise<boolean>;
   /** An unbounded wait for the first command start, for a start after `started` gave up. */
   lateStart?: Promise<CommandStartWatch | undefined>;
+  /** Settles once the launch line has gone out, a turn after its line-clear (Q27). */
+  commandSent?: Promise<void>;
 }
 
 type CommandStartWatch = ReturnType<typeof watchCommandStart>;
@@ -99,6 +101,23 @@ export interface RestoreSync {
    * background because a harness resumability check can outlast startup.
    */
   complete: Promise<void>;
+}
+
+/**
+ * The key that empties a shell's input line before Pitwall types into it
+ * (Q27), from the shell the terminal reports, else the default profile's.
+ * cmd and PowerShell on Windows: Esc (PSReadLine's Windows edit mode reverts
+ * the line). Everything else, PowerShell elsewhere included (its default
+ * there is Emacs mode, where Esc is a meta prefix): Ctrl+U, which empties
+ * the line in bash, zsh, fish and Emacs-mode PSReadLine.
+ */
+export function lineClearFor(terminal: vscode.Terminal): string {
+  const reported = (terminal.state as { shell?: string } | undefined)?.shell;
+  const shell = (reported ?? (vscode.env.shell ?? '').split(/[\\/]/).pop() ?? '').toLowerCase().replace(/\.exe$/, '');
+  if (shell === 'cmd' || (process.platform === 'win32' && (shell === 'pwsh' || shell === 'powershell'))) {
+    return '\x1b';
+  }
+  return '\x15';
 }
 
 /**
@@ -300,7 +319,7 @@ export class TerminalManager {
 
     // Watched from before the send, which can start the command at once.
     const lateStart = watchCommandStart(terminal);
-    const { integrated, started } = this.startTerminal(
+    const { integrated, started, commandSent } = this.startTerminal(
       chat,
       terminal,
       launchLine(launch.command),
@@ -335,6 +354,8 @@ export class TerminalManager {
       lateStart.cancel();
     }
 
+    // Returned only once the launch line has gone out.
+    await commandSent;
     await created;
     return terminal;
   }
@@ -361,10 +382,22 @@ export class TerminalManager {
 
     this.terminals.set(chat.id, terminal);
     this.terminalToChatId.set(terminal, chat.id);
-    terminal.sendText(command);
+    // Keys the user typed into the new terminal first would prefix the line
+    // (`xyclaude --resume …`, T3 live): clear the shell's line first (Q27).
+    // The clear goes alone and the command on the next turn, in a send of
+    // its own: Esc followed at once by "c" could be read as Alt+C.
+    terminal.sendText(lineClearFor(terminal), false);
+    const commandSent = new Promise<void>((resolve) =>
+      setImmediate(() => {
+        if (!this.isDisposed && this.terminals.get(chat.id) === terminal && isLiveTerminal(terminal)) {
+          terminal.sendText(command);
+        }
+        resolve();
+      })
+    );
     this.markOpened(chat);
 
-    return { terminal, integrated, started };
+    return { terminal, integrated, started, commandSent };
   }
 
   private markOpened(chat: ChatSession): void {

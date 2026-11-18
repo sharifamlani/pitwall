@@ -447,6 +447,40 @@ test('a deeper .gitignore negation that still un-ignores the copy shows no "Adde
   );
 });
 
+// T3 live: every window's banner still named a .env deleted long before; the
+// shared clipboard survives restarts.
+test('a clipboard whose source file is gone is cleared and shows no banner', async (t) => {
+  stub.__setTreeViewsVisible(true);
+  const scratch = tempDir(t);
+  const repo = makeRepo(scratch, 'uj-lab-a', { 'README.md': 'hi' });
+  const storage = tempDir(t, 'pitwall-t3-storage-');
+  fs.writeFileSync(
+    path.join(storage, CLIPBOARD_FILE),
+    JSON.stringify({ path: path.join(repo.rootPath, '.env'), cut: false, at: Date.now() - 86_400_000 })
+  );
+  setEnv(t, { CLAUDE_CONFIG_DIR: tempDir(t, 'pitwall-claude-') });
+  stub.workspace.workspaceFolders = [{ uri: vscode.Uri.file(repo.rootPath) } as never];
+  const globalState = memento();
+  await globalState.update(STORAGE_KEYS.CHATS, []);
+  await globalState.update(STORAGE_KEYS.REPOSITORIES, [{ id: 'repo-a', name: 'uj-lab-a', rootPath: repo.rootPath }]);
+  const context = {
+    subscriptions: [] as { dispose(): unknown }[],
+    globalState,
+    workspaceState: memento(),
+    globalStorageUri: vscode.Uri.file(storage),
+    extensionUri: vscode.Uri.file('/extension'),
+    extension: { id: 'sharifamlani.pitwall' },
+  };
+  t.after(() => context.subscriptions.forEach((subscription) => subscription.dispose()));
+  t.after(disposeOperationLog);
+  await activate(context as never);
+
+  const filesView = stub.__treeViews.find((view) => view.id === 'pitwall.filesView')!;
+  await waitFor(() => !fs.existsSync(path.join(storage, CLIPBOARD_FILE)), 'the stale clipboard to be cleared', 5_000);
+  await waitFor(() => stub.__contextKeys.get('pitwall.hasFileClipboard') === false, 'the clipboard context to clear', 5_000);
+  assert.doesNotMatch(filesView.message ?? '', /On the clipboard/, 'no banner');
+});
+
 test('the empty-window FILES welcome is "Open a repo\'s window to see its files." (new copy)', () => {
   const welcome = pkg.contributes.viewsWelcome as { view: string; contents: string }[];
   assert.equal(welcome.find((entry) => entry.view === 'pitwall.filesView')?.contents, "Open a repo's window to see its files.");

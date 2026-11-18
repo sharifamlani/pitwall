@@ -199,9 +199,12 @@ test('move-and-open moves focus one row and opens it; on a repo row it expands a
 });
 
 test('the marker expires after 2 s', (t) => {
+  // An injected clock that moves only when the test moves it: on the real one,
+  // the milliseconds a loaded machine spends between calls ate the 1 ms margin.
   const realNow = Date.now;
+  const start = realNow();
   let offset = 0;
-  Date.now = () => realNow() + offset;
+  Date.now = () => start + offset;
   t.after(() => {
     Date.now = realNow;
   });

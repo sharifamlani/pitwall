@@ -6,6 +6,7 @@ import { ClaudeAgentsService } from './ClaudeAgentsService';
 import { ClaudeSessionFileState, ClaudeSessionsFile, ClaudeSessionsSnapshot } from './ClaudeSessionsFile';
 import { ClaudeTurnReading } from './ClaudeTurnState';
 import { ClaudeRepoDiscovery } from './ClaudeRepoDiscovery';
+import { readLaunchFolder } from './launchFolder';
 import { ClaudeUi } from './claudeUi';
 import { ClaudeSearchRunner, ClaudeSessionSearch } from './claudeSearch';
 import { generateId } from '../../core/types';
@@ -125,6 +126,12 @@ export class ClaudeHarness implements HarnessAdapter {
   /** Folders sessions ran in, from the transcripts' heads (ADR 0019). */
   discoverRecentFolders(sinceMs: number, counts?: DiscoveryCounts): Promise<DiscoveredFolder[]> {
     return this.repoDiscovery.discoverRecentFolders(sinceMs, counts);
+  }
+
+  /** The folder Claude's panel resumes a session from (Q2), read from its transcript's head. */
+  async launchFolder(sessionId: string, roots: readonly string[]): Promise<string | undefined> {
+    const transcript = this.sessionService.getSessionFilePath(sessionId);
+    return transcript ? readLaunchFolder(transcript, roots) : undefined;
   }
 
   async isSessionResumable(sessionId: string): Promise<boolean> {

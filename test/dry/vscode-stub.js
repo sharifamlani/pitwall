@@ -414,6 +414,7 @@ let silentExecutionEvents = false;
 let defaultPidDelayMs;
 let lateShellIntegration = false;
 const shellIntegrationListeners = new Set();
+const terminalStateListeners = new Set();
 const warningResponses = [];
 const quickPickResponses = [];
 const inputResponses = [];
@@ -738,6 +739,26 @@ module.exports = {
       activeTerminalListeners.add(listener);
       return { dispose: () => activeTerminalListeners.delete(listener) };
     },
+    onDidChangeTerminalState: (listener) => {
+      terminalStateListeners.add(listener);
+      return { dispose: () => terminalStateListeners.delete(listener) };
+    },
+    /**
+     * Test helper: data goes to a terminal's process (the user typing, or an
+     * extension's sendText); its state turns interacted-with once, as in VS Code.
+     */
+    __typeInTerminal: (terminal) => {
+      if (terminal.state.isInteractedWith) return;
+      terminal.state = { ...terminal.state, isInteractedWith: true };
+      for (const listener of [...terminalStateListeners]) {
+        listener(terminal);
+      }
+    },
+    /** Test helper: the user types keys into a terminal before Pitwall sends its line (they wait in the line editor). */
+    __typeKeys: (terminal, text) => {
+      terminal.__input += text;
+      module.exports.window.__typeInTerminal(terminal);
+    },
     onDidChangeTerminalShellIntegration: (listener) => {
       shellIntegrationListeners.add(listener);
       return { dispose: () => shellIntegrationListeners.delete(listener) };
@@ -800,6 +821,8 @@ module.exports = {
         name: options.name,
         options,
         sent: [],
+        typed: [],
+        __input: '',
         shown: 0,
         disposed: false,
         __pid: options.__pid ?? nextTerminalPid++,
@@ -807,18 +830,36 @@ module.exports = {
         shellIntegration: lateShellIntegration ? undefined : {},
         __awaitingIntegration: lateShellIntegration,
         __pidReads: 0,
+        state: { isInteractedWith: false },
         get processId() {
           this.__pidReads += 1;
           return pidPromise ?? Promise.resolve(this.__pid);
         },
-        sendText(text) {
-          this.sent.push(text);
+        /**
+         * `typed` records each raw send, with "\n" when it adds a newline;
+         * `sent` records the lines the shell runs. Like a shell's line
+         * editor, keys typed first (`__typeKeys`) and text sent without a
+         * newline wait in the line, and a line-clear (Esc or Ctrl+U) at the
+         * start of a send erases what waits (Q27).
+         */
+        sendText(text, addNewLine = true) {
+          this.typed.push(addNewLine ? `${text}\n` : text);
+          const clears = text.startsWith('\x1b') || text.startsWith('\x15');
+          this.__input = clears ? text.slice(1) : this.__input + text;
+          // As in VS Code, text an extension sends counts as interaction (QA #51).
+          module.exports.window.__typeInTerminal(this);
+          if (!addNewLine) {
+            return;
+          }
+          const line = this.__input;
+          this.__input = '';
+          this.sent.push(line);
           // A shell that has not integrated yet runs typed-ahead text later.
           if (silentExecutionEvents || this.__awaitingIntegration) {
             return;
           }
           for (const listener of executionStartListeners) {
-            listener({ terminal: this, execution: { commandLine: text } });
+            listener({ terminal: this, execution: { commandLine: line } });
           }
         },
         show(preserveFocus) {
@@ -972,6 +1013,7 @@ module.exports = {
       activeTerminalListeners,
       executionStartListeners,
       shellIntegrationListeners,
+      terminalStateListeners,
       tabChangeListeners,
       tabGroupChangeListeners,
       activeTextEditorListeners,

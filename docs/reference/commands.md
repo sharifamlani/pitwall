@@ -22,7 +22,9 @@ Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pit
 | **Pitwall: Open in This Window** | Switch this window's workspace folder to a repository's folder |
 | **Pitwall: Open Terminal Here** | Open a plain terminal in a repository's folder |
 | **Pitwall: Remove All Sessions from List…** | Take every session of a folder off the list. Conversations are kept |
-| **Pitwall: Open its window** | Open a repository's folder in its own window; an open window for it is focused instead |
+| **Pitwall: Open its window** | Open a repository's main folder in its own window; an open window for it is focused instead |
+| **Pitwall: Bring its window forward** | The same action, labelled this way on a repo whose window is already open |
+| **Pitwall: Open in New Window** | Open a worktree's folder in a new window (no longer on the repo menu) |
 
 ### Sessions
 
@@ -112,10 +114,10 @@ The view's title bar has **Add a repository**. Its `…` menu has:
 | Action | Where | Notes |
 | --- | --- | --- |
 | **Session history…** | Right-click | Chats in the sidebar, then older ones that are not; picking an older one brings it back |
-| **New Claude Code session** | Right-click | A Claude Code session in the repo's main worktree |
+| **New Claude Code session** | Right-click | A Claude Code session in the repo's main worktree, in that repo's window |
 | **New Claude Code session in this repo** | Hover **+** | The same action as the menu item; this is the hover text |
 | **Session history for this repo: every past chat** | Hover clock icon | The same action as **Session history…**; this is the hover text |
-| **Open its window** | Right-click | Opens the repo's folder in its own window |
+| **Open its window** / **Bring its window forward** | Right-click | Opens the repo's main folder in its own window, or brings that window forward when it is open; the label says which |
 | **Copy Path** | Right-click | |
 | **Reveal in File Explorer** | Right-click | |
 | **Dismiss from Pitwall** | Right-click | Hides the repo until a new session starts in it; nothing on disk changes |
