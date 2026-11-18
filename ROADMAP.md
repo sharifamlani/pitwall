@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.51 · 2026-11-17
+> v0.52 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 4 — Windows and tabs (one window per folder). Phase 3 closed 2026-11-17 with tag `v0.4.0`.
-- **Current step:** Phase 3 ✅ (rows 3.0–3.10; evaluator 19/19 PASS on `ce03203`). Phase 4 not started: write its plan from §3 (rows 4.1–4.7, incl. 4.2b and the deferred Ctrl+↓ focus).
+- **Current step:** Phase 4 plan written (rows 4.1–4.9 incl. 4.2b), QA review round 1 fixed (6 B + 12 C). Waiting on QA re-review of the diff and on Sharif: go, plus Q18 (repo-click cap), Q22 (Ctrl+↓ on a repo row), Q7a (drop the file-tab label part of row 4.5).
 - **Last update:** 2026-11-17
-- **Next action:** Sharif reviews the Phase 3 posts going live; then write the Phase 4 plan (tree, flowchart, wireframes, derisking, criteria). Follow-ups: batch importer chat writes; `list-claude-repos.mjs` to the message clock; a dry test that clicks the inline + / 🕘 commands.
+- **Next action:** On Sharif's go: no-code smokes S3 → S1 → S1b, then wave A (T1, T2, T5, T7). Follow-ups: batch importer chat writes; `list-claude-repos.mjs` to the message clock; a dry test that clicks the inline + / 🕘 commands.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -342,3 +342,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.49 · 2026-11-17.** **Phase 3 closed, tag `v0.4.0`.** Row 3.10 ✅. Release PR #39 → `8ddd887` (CHANGELOG [0.4.0], README, version 0.4.0, package author Sharif Amlani). Close-out fixes: #40 tooltip copy (`2d2f07c`, ruling P26 approved by Sharif), #42 discovery reads transcript tails (`ce03203`, live E16 5/5: first start 0.317 s, reloads 0.215–0.808 s). Closed without merge: #41 (E6 by design: seen needs a focused window), #43 (Ctrl+↓ focus timer; proper fix moved to Phase 4 row 4.1). Independent evaluator: E1–E19 19/19 PASS on `ce03203`. Phase 4 unblocked.
 - **v0.50 · 2026-11-17.** Phase 3 posts live (Sharif-approved, build-in-public update 3): LinkedIn activity `7528652706517954560` (5-image carousel), X `2122887476553338999` (reply 4 in the thread from `2122724368136442262`, 4 images). The Phase 4 post replies to the X post.
 - **v0.51 · 2026-11-17.** Phase 4 plan drafted (`docs/superpowers/plans/2026-11-17-phase4-windows-tabs.md`, `97bb14f`): window registry + handoff inbox in shared global storage, Claude panel by default, repo click opens its chats as tabs, bottom-bar repo · branch, FILES across windows, 4.2b terminal-tag spike; 8 tasks in 4 waves, E1–E19. Next: QA plan review, then Sharif's go.
+- **v0.52 · 2026-11-17.** Phase 4 plan QA round 1 (6 blocking, 12 fixes) applied: handoff outcome file + sender-side expiry and dedupe, single-folder-window claims only, `pathKey()` for \?\ spellings, one-shot keep-focus marker for Ctrl+↓, sturdier launch-folder read, no-code smokes S3/S1/S1b first, cold-start smoke S2b. Three questions to Sharif (Q18, Q22, Q7a).
