@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { DiscoveredFolder, DiscoveryCounts } from '../../core/harness/types';
 import { StatCache } from '../../core/harness/kit/recordCache';
+import { ClaudeSessionService } from './ClaudeSessionService';
 import { parseJsonLine, scanJsonlLines } from '../../core/utils/jsonlTail';
 
 /**
@@ -30,7 +31,11 @@ export class ClaudeRepoDiscovery {
   /** Heads keyed by transcript path, reused while mtime and size hold. */
   private readonly heads = new StatCache<TranscriptHead | null>(CACHE_LIMIT);
 
-  constructor(private readonly projectsDir: string) {}
+  constructor(
+    private readonly projectsDir: string,
+    /** Dates a transcript by its last message, as import does. */
+    private readonly sessions: ClaudeSessionService
+  ) {}
 
   async discoverRecentFolders(sinceMs: number, counts?: DiscoveryCounts): Promise<DiscoveredFolder[]> {
     let projects: string[];
@@ -66,6 +71,11 @@ export class ClaudeRepoDiscovery {
           continue;
         }
         if (stats.mtimeMs < sinceMs) {
+          continue;
+        }
+        // The file's mtime only says it was touched; import goes by the last message.
+        const lastMessageAt = await this.sessions.lastActivityOfFile(filePath);
+        if (lastMessageAt !== null && lastMessageAt < sinceMs) {
           continue;
         }
         const head = await this.readHead(filePath, stats);

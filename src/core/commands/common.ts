@@ -6,6 +6,7 @@ import { HarnessRegistry } from '../harness/HarnessRegistry';
 import { HarnessSession } from '../harness/types';
 import { sessionDisplayName } from '../harness/sessionUtils';
 import { ChatSession, HarnessId, Repository, Worktree } from '../types';
+import { nativePath } from '../utils/paths';
 
 /** Registers commands and ties each one's lifetime to the extension. */
 export type RegisterCommand = (id: string, handler: (...args: any[]) => unknown) => void;
@@ -35,7 +36,7 @@ export async function pickWorktree(
     const { isGit, worktrees } = gitService.listRepositoryWorktrees(repo.rootPath, repo.id);
     return worktrees.map((worktree) => ({
       label: isGit ? `${repo.name} / ${worktree.name}` : repo.name,
-      description: worktree.path,
+      description: nativePath(worktree.path),
       worktree,
     }));
   });

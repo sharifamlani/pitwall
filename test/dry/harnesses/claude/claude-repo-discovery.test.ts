@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ClaudeRepoDiscovery } from '../../../../src/harnesses/claude/ClaudeRepoDiscovery';
 import { ClaudeHarness } from '../../../../src/harnesses/claude/ClaudeHarness';
+import { ClaudeSessionService } from '../../../../src/harnesses/claude/ClaudeSessionService';
 import { DiscoveryCounts } from '../../../../src/core/harness/types';
 import { claudeProfile } from './claudeFixture';
 
@@ -35,7 +36,7 @@ function setup(t: { after(fn: () => void): void }) {
     timestamp: iso(timestamp),
     message: { role: 'user', content: 'hi' },
   });
-  return { profile, transcript, queued, user, discovery: () => new ClaudeRepoDiscovery(profile.projects) };
+  return { profile, transcript, queued, user, discovery: () => new ClaudeRepoDiscovery(profile.projects, new ClaudeSessionService()) };
 }
 
 test('lists folders whose transcripts changed in the window, with cwd and first entry time', async (t) => {
@@ -112,4 +113,17 @@ test('a cwd past the first megabyte is not looked for, and the file counts as sk
   const counts: DiscoveryCounts = { skipped: 0 };
   assert.deepEqual(await discovery().discoverRecentFolders(Date.now() - DAY, counts), []);
   assert.equal(counts.skipped, 1);
+});
+
+test('a repo whose newest transcript has no message in the last 14 days is not discovered', async (t) => {
+  const { profile, transcript, user, discovery } = setup(t);
+  const stale = profile.dir('stale');
+  const live = profile.dir('live');
+  // Touched (mtime) 1 day ago, but the last message is 31 days old.
+  transcript('stale', 's1', [user(stale, Date.now() - 31 * DAY)], DAY);
+  transcript('live', 'l1', [user(live, Date.now() - 2 * DAY)], DAY);
+
+  const folders = await discovery().discoverRecentFolders(Date.now() - 14 * DAY);
+
+  assert.deepEqual(folders.map((folder) => folder.cwd), [live]);
 });

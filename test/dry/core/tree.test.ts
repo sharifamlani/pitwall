@@ -131,11 +131,24 @@ test('session rows sit directly under the repo with branch, status word, time an
   assert.deepEqual(
     ['claude', 'opencode', 'new'].map((label) => `${items.get(label)!.description} | ${mark(items.get(label)!)} | ${items.get(label)!.contextValue}`),
     [
-      '⎇ main  idle · 16m | claude-light-idle.svg | starredChatClaudeUi',
+      '★ ⎇ main  idle · 16m | claude-light-idle.svg | starredChatClaudeUi',
       '⎇ main  idle · 33m | opencode-light-idle.svg | chat',
       '⎇ main  new | opencode-light-new.svg | chat',
     ]
   );
+});
+
+test('a starred chat shows ★ on its row and unstarring removes it', async (t) => {
+  const { rows, storage, claude } = sessionRows(t);
+  const description = async (label: string) => String((await rows()).get(label)!.description);
+
+  assert.match(await description('claude'), /^★ /);
+  assert.doesNotMatch(await description('opencode'), /★/, 'an unstarred chat has no mark');
+
+  storage.toggleStar(claude.id);
+  assert.doesNotMatch(await description('claude'), /★/, 'unstarring removes it');
+  storage.toggleStar(claude.id);
+  assert.match(await description('claude'), /^★ /, 'starring again brings it back');
 });
 
 test('an open chat, by terminal or native UI, keeps its running context and shows " · open"', async (t) => {
@@ -603,6 +616,25 @@ test('a listing that started before a hard refresh never overwrites the one afte
   assert.deepEqual(storage.getWorktreeSnapshot(app.id), gitListing(main), 'the stored listing is B');
   const [row] = await tree.getChildren();
   assert.equal(row.description, '0 sessions', 'the rows show B');
+});
+
+test('a chat lookup that races a hard refresh still finds its worktree', async (t) => {
+  const storage = makeStorage();
+  const app = storage.addRepository('app', '/work/app');
+  const main = worktreeRecord({ id: 'wt-app', repoId: app.id, path: '/work/app' });
+  const linked = worktreeRecord({ id: 'wt-fiu', repoId: app.id, name: 'feat/fiu', path: '/work/app-fiu', isMain: false });
+  const { tree, calls, changes } = heldListings(t, storage);
+
+  const lookup = tree.getWorktreeByIdAsync('wt-fiu');
+  await waitFor(() => calls.length === 1, 'listing A, for the lookup');
+  // A hard refresh lands while A is in flight, so A's answer is discarded.
+  tree.refresh();
+  await waitFor(() => changes.length > 0, 'the hard refresh');
+  calls[0].answer(gitListing(main, linked));
+
+  await waitFor(() => calls.length === 2, 'the lookup to list again');
+  calls[1].answer(gitListing(main, linked));
+  assert.equal((await lookup)?.id, 'wt-fiu', 'found, not "Could not find worktree"');
 });
 
 test('a repo row stands for its main worktree; a plain folder follows git init and removal through its watcher', async (t) => {
