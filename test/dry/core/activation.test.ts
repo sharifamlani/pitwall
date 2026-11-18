@@ -470,25 +470,26 @@ test('a reload with stored repos renders rows before discovery finishes', async 
   stub.__reset();
   stub.__setTreeViewsVisible(true);
 
-  // The reload, timed from activation until its first discovery pass ends.
-  let maxBlockMs = 0;
-  let last = performance.now();
-  const lag = setInterval(() => {
-    const now = performance.now();
-    maxBlockMs = Math.max(maxBlockMs, now - last);
-    last = now;
-  }, 1);
-  t.after(() => clearInterval(lag));
-  last = performance.now();
+  // The reload, with discovery's reads watched: the long sessions are only
+  // ever discovery's to read.
+  const longDir = path.resolve(f.claudeDir, 'projects', encodeClaudeProjectPath(dismissed));
+  const wholeReads: string[] = [];
+  const { readFile } = nodeFs.promises;
+  (nodeFs.promises as unknown as Record<string, unknown>).readFile = (file: unknown, ...rest: unknown[]) => {
+    if (path.resolve(String(file)).startsWith(longDir)) wholeReads.push(String(file));
+    return (readFile as (...args: unknown[]) => unknown)(file, ...rest);
+  };
+  t.after(() => Object.assign(nodeFs.promises, { readFile }));
   await f.start();
   const rows = await requestRows();
   const scannedAtFirstRender = stub.__contextKeys.get('pitwall.scanned') === true;
   await waitFor(() => stub.__contextKeys.get('pitwall.scanned') === true, 'the reload to finish discovery', 30_000);
-  clearInterval(lag);
 
   assert.deepEqual(rows.map((row) => row.label).sort(), ['folder-0', 'folder-1', 'folder-2'], 'the stored rows, so no welcome shows');
   assert.equal(scannedAtFirstRender, false, 'the rows did not wait for discovery');
-  assert.ok(maxBlockMs <= 50, `the reload blocked the extension host for ${maxBlockMs.toFixed(0)} ms at once`);
+  // A whole 16 MB transcript is parsed in one go, blocking the extension
+  // host for its length (E16).
+  assert.deepEqual(wholeReads, [], 'discovery never reads a long transcript in full');
 });
 
 /** A long Claude transcript, about `bytes` long, of a session started in `cwd` a day ago. */
