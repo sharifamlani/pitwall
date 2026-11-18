@@ -25,7 +25,7 @@ Windows and tabs: one window per folder (ROADMAP Phase 4).
 - Ctrl+Down keeps the list focused after it opens a chat, in the panel and in a terminal.
 - Pitwall matches each Claude tab to its chat reliably, even when titles are cut off or every new chat says "Claude Code".
 - A chat that moved into a worktree opens in the window of the folder its transcript is filed under now.
-- The context menu shows the window count when more than one window is open.
+- A repo row shows "· N windows" when more than one window has that repo or one of its worktrees open.
 
 ## [0.4.1] - 2026-11-17
 

@@ -19,7 +19,7 @@ Install Pitwall from the VS Code Marketplace, add a folder or repository, and cl
 
 - **GitHub CLI** (`gh`), optional. Pitwall uses it to check out pull requests and to show a PR number on a branch.
 
-Pitwall is developed and tested on Windows, macOS and Linux. Commands that Pitwall types into a terminal are quoted for the shell in use. Since v0.5.0, a click on any chat opens it in the Cursor window for its folder.
+Pitwall is developed and tested on Windows and Linux; macOS is not tested since the fork. Commands that Pitwall types into a terminal are quoted for PowerShell and POSIX shells; cmd.exe works with the default `claude` command. Since v0.5.0, a click on any chat opens it in the Cursor window for its folder.
 
 ## Install
 

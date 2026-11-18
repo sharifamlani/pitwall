@@ -21,7 +21,7 @@ Phase 4 makes Pitwall a one-window-per-folder tool. A click on any chat lands in
 | 4.6 | A chat that moved into a worktree opens in the window of the folder its transcript is filed under | #51 |
 | 4.7 | FILES across windows, Copy to another repo, drag onto a repo row, `.env` gitignore offer | #50 |
 | 4.8 | "+" starts the chat in that repo's window | #51 |
-| 4.9 | Pin, split and reorder left untouched (checked live) | #52 |
+| 4.9 | Pin, split and reorder left untouched (partial: real drag pending, E12) | #52 |
 
 Also merged: #45 (v0.4.1, drive-letter case fix on Windows) and #49 (load-tolerant event-loop test asserts). Dev commands `pitwall.dev.dumpState` and `pitwall.dev.traceTabs` ship for bug reports. User-facing detail is in [CHANGELOG.md](../../CHANGELOG.md).
 
@@ -33,7 +33,9 @@ Also merged: #45 (v0.4.1, drive-letter case fix on Windows) and #49 (load-tolera
 - A terminal flickers for about a quarter of a second when a chat opens in one.
 - A click on a chat that has no transcript yet and belongs to another window's folder does nothing visible; Pitwall won't start it here, and says nothing.
 - The needs-you check turns off after a single 5-second timeout.
-- A handoff that timed out can still be claimed for up to 30 seconds.
+- If a chat's tab takes longer than 5 seconds to appear, a Claude tab you open in the next 30 seconds can be bound to that chat.
+- A chat started with "+" shows no "· open" on its row until you click it.
+- Side by side waits a full second once before it splits.
 - On a slow machine the lookup of a terminal's parent process can take over 2 seconds, so the chat opens in the current window.
 - A default-titled tab opened within 2 seconds of closing another can take that tab's chat binding.
 - After a cold click, the "Open the other N chats" pick stays open but has no keyboard focus; the mouse works.
