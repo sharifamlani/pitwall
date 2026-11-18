@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.59 · 2026-11-18
+> v0.60 · 2026-11-18
 
 ---
 
@@ -202,7 +202,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 4.3 | Repo click opens all its chats as tabs; chat clicks add tabs; never duplicates | ⏸ | ⏸ | — | D11, T6 |
 | 4.4 | Match Claude tabs to chats reliably (titles are truncated, new chats all say "Claude Code") | ⏸ | ⏸ | — | T10 |
 | 4.5 | Repo + branch under tabs: file tabs via label setting; find a way for Claude tabs, else window title + bottom bar (was 2.5) | ~ | ✅ | bottom bar PR #44 → `246f015` (walk W7 pending; file-tab label part awaits Sharif, Q7a) | D26, T9 |
-| 4.6 | T18: a chat moved into a worktree mid-session opens in the window of the folder Claude filed it under (amended 2026-11-18: EnterWorktree moves the transcript into the worktree's project folder → worktree window; a plain `cd` stays under main → main window) (was 2.7) | ⏸ | ⏸ | — | D35 |
+| 4.6 | T18: a chat that moved into a worktree mid-session opens in the window of the folder its transcript is filed under right now (amended 2026-11-18 by live data: Claude files it under the worktree while the session runs there after EnterWorktree and back under main after /exit; a plain `cd` never moves it) (was 2.7) | ⏸ | ⏸ | — | D35 |
 | 4.7 | FILES follows the window's folder; file click = normal tab; copy/paste across repos, "Copy to another repo", drag onto a repo row, `.env` gitignore check | ~ | ✅ | PR #50 → merged (live 7/8 PASS; real drag needs a manual check at T8) | D19, D22, D23, T14 |
 | 4.8 | "+" starts the chat in that repo's window | ⏸ | ⏸ | — | D28, T15 |
 | 4.9 | Pin, split, drag-reorder: confirm Cursor's own behaviour is untouched | ⏸ | ⏸ | — | D16, D32 |
@@ -350,3 +350,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.57 · 2026-11-18.** Row 4.7 ~: FILES across windows merged (PR #50): FILES = the window's folder, one clipboard across windows with a banner, Copy to another repo, drag onto a repo row, .env → .gitignore offer (brackets escaped). Live walk 7/8 PASS; the real drag can't be produced by the test tools, so it moves to a manual check at T8. T2 PR #47 waits on its final E8 re-walk.
 - **v0.58 · 2026-11-18.** Row 4.1 ✅ (PR #47 → `7b5ba34`, 3 fix rounds): chats open in Claude's panel by default; the link uses `vscode.env.uriScheme`; Ctrl+↓ keeps list focus on both surfaces (a new terminal's rename no longer drops focus); `claude -p`/SDK chats open in a terminal; an interrupt marker ends the turn, so opening or closing a chat no longer shows working/finished. T3 (router) next.
 - **v0.59 · 2026-11-18.** Row 4.6 amended by live evidence: Claude's EnterWorktree moves a session's transcript into the worktree's project folder, so such a chat belongs in the worktree window (the old premise "stays in the main window" was wrong); a plain `cd` keeps it under main. The plan's Q2/E10 now say the project folder decides. T3 (router) in build.
+- **v0.60 · 2026-11-18.** Row 4.6 refined again by live data: Claude files a transcript under the session's current folder (the worktree while it runs there after EnterWorktree, main again after /exit), so the router follows wherever the file is now. T3 router PR #51: E3 shape, E6, E11, menus, the cold open (Pitwall's part 2.0–2.5 s), the line-clear 12/12 and E8 pass live; a fresh builder is closing the sdk-cli bypass and adding a route log line. Weekly usage about 76%.
