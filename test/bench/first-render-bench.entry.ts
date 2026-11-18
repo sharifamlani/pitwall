@@ -204,8 +204,12 @@ export async function storedRepos(fixture: Fixture): Promise<BenchState> {
   return { globalState, workspaceState };
 }
 
-/** The longest the event loop is blocked while `run` runs, and how long it takes. */
-async function timed<T>(run: () => Promise<T>): Promise<{ value: T; ms: number; maxBlockMs: number }> {
+/**
+ * The longest the event loop is blocked while `run` runs, how long it takes,
+ * and the CPU time this process spent on it (main thread and I/O threads),
+ * which other load on the machine moves far less than wall time.
+ */
+async function timed<T>(run: () => Promise<T>): Promise<{ value: T; ms: number; maxBlockMs: number; cpuMs: number }> {
   let maxBlockMs = 0;
   let last = performance.now();
   const lag = setInterval(() => {
@@ -214,12 +218,14 @@ async function timed<T>(run: () => Promise<T>): Promise<{ value: T; ms: number; 
     last = now;
   }, 1);
   try {
+    const cpu = process.cpuUsage();
     const start = performance.now();
     last = start;
     const value = await run();
     const ms = performance.now() - start;
+    const used = process.cpuUsage(cpu);
     await new Promise((resolve) => setTimeout(resolve, 5));
-    return { value, ms, maxBlockMs };
+    return { value, ms, maxBlockMs, cpuMs: (used.user + used.system) / 1000 };
   } finally {
     clearInterval(lag);
   }
@@ -227,8 +233,8 @@ async function timed<T>(run: () => Promise<T>): Promise<{ value: T; ms: number; 
 
 export interface DiscoveryBench {
   folders: number;
-  cold: { ms: number; maxBlockMs: number };
-  warm: { ms: number; maxBlockMs: number };
+  cold: { ms: number; maxBlockMs: number; cpuMs: number };
+  warm: { ms: number; maxBlockMs: number; cpuMs: number };
 }
 
 /** Discovery alone over the profile: a cold pass, as after a start, then a warm one, as every minute. */

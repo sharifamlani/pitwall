@@ -66,12 +66,12 @@ test('discovery never blocks the extension host for more than 50 ms at a time (E
     const run = await discoveryPass(fixture);
     runs.push(run);
     console.log(
-      `[bench] discovery run ${i + 1}: ${run.folders} folders; cold ${run.cold.ms.toFixed(0)} ms (longest block ${run.cold.maxBlockMs.toFixed(0)} ms), warm ${run.warm.ms.toFixed(0)} ms (longest block ${run.warm.maxBlockMs.toFixed(0)} ms)`
+      `[bench] discovery run ${i + 1}: ${run.folders} folders; cold ${run.cold.ms.toFixed(0)} ms (CPU ${run.cold.cpuMs.toFixed(0)} ms, longest block ${run.cold.maxBlockMs.toFixed(0)} ms), warm ${run.warm.ms.toFixed(0)} ms (CPU ${run.warm.cpuMs.toFixed(0)} ms, longest block ${run.warm.maxBlockMs.toFixed(0)} ms)`
     );
   }
   const median = (pick) => runs.map(pick).sort((a, b) => a - b)[Math.floor(runs.length / 2)];
   console.log(
-    `[bench] median of ${RUNS}, discovery: cold ${median((r) => r.cold.ms).toFixed(0)} ms (longest block ${median((r) => r.cold.maxBlockMs).toFixed(0)} ms), warm ${median((r) => r.warm.ms).toFixed(0)} ms (longest block ${median((r) => r.warm.maxBlockMs).toFixed(0)} ms)`
+    `[bench] median of ${RUNS}, discovery: cold ${median((r) => r.cold.ms).toFixed(0)} ms (CPU ${median((r) => r.cold.cpuMs).toFixed(0)} ms, longest block ${median((r) => r.cold.maxBlockMs).toFixed(0)} ms), warm ${median((r) => r.warm.ms).toFixed(0)} ms (CPU ${median((r) => r.warm.cpuMs).toFixed(0)} ms, longest block ${median((r) => r.warm.maxBlockMs).toFixed(0)} ms)`
   );
   const longest = Math.max(...runs.flatMap((r) => [r.cold.maxBlockMs, r.warm.maxBlockMs]));
   assert.ok(longest <= BLOCK_LIMIT_MS, `discovery blocked the host for ${longest.toFixed(0)} ms at once`);
