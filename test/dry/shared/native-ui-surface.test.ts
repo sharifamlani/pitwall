@@ -72,6 +72,10 @@ function tabWorld() {
     groups,
     /** Fire a tab event after a test rearranged `groups` itself. */
     emit: event,
+    /** Fire a tab-group event (no tab event) after a test rearranged `groups` itself. */
+    emitGroups() {
+      for (const listener of groupListeners) listener();
+    },
   };
 }
 
@@ -551,5 +555,230 @@ test('side by side: every moved tab keeps its own session, and panes = min(n, 4)
     'every session still bound'
   );
   assert.equal(bound().flat().filter((id) => id !== undefined).length, 5);
+  service.dispose();
+});
+
+// ---- Round 2 (live F1): Cursor re-sends its whole tab model in the middle of a move ----
+
+/**
+ * Cursor's workbench as the extension host sees it, read from Cursor 3.14.27's
+ * own MainThreadEditorTabs and ExtHostEditorTabs. A group added or removed,
+ * and every change of a group's active editor (an EDITORS_SELECTION change,
+ * which VS Code ignores and Cursor does not), make the workbench re-send the
+ * whole tab model: the extension host replaces every Tab object and fires a
+ * tab-group event only. A move to another group opens the copy in the target
+ * (a tab event), makes it active there (re-send), closes the original in the
+ * source (a tab event), makes the next tab active there (re-send), focuses
+ * the target group (a group event that keeps the Tab objects), and removes
+ * the source group if the move emptied it (re-send).
+ */
+type MoveOrder = 'cursor' | 'close-first' | 'one-event' | 'no-resend';
+function cursorWorkbench(world: ReturnType<typeof tabWorld>) {
+  const resend = () => {
+    for (const group of world.groups) {
+      const activeAt = group.activeTab ? group.tabs.indexOf(group.activeTab) : -1;
+      group.tabs = group.tabs.map((tab) => ({ ...tab }));
+      group.activeTab = activeAt >= 0 ? group.tabs[activeAt] : undefined;
+    }
+    world.emitGroups();
+  };
+  const setActive = (group: FakeGroup, tab: FakeTab | undefined) => {
+    for (const other of group.tabs) other.isActive = other === tab;
+    group.activeTab = tab;
+  };
+  /** Move the tab at `fromGroup`/`fromIndex` into group `to`, or into a new group made right or left of the source. */
+  const move = (fromGroup: number, fromIndex: number, to: number | 'new-after' | 'new-before', order: MoveOrder = 'cursor'): void => {
+    const again = () => (order === 'no-resend' ? world.emitGroups() : resend());
+    const from = world.groups[fromGroup];
+    let target: FakeGroup;
+    if (typeof to === 'number') {
+      target = world.groups[to];
+    } else {
+      target = { isActive: false, activeTab: undefined, tabs: [] };
+      world.groups.splice(to === 'new-after' ? fromGroup + 1 : fromGroup, 0, target);
+      again();
+    }
+    const copy: FakeTab = { label: from.tabs[fromIndex].label, input: claudeTab(), isActive: false };
+    const openCopy = () => {
+      target.tabs.push(copy);
+      world.emit([copy]);
+      setActive(target, copy);
+      world.emit([], [copy]);
+      again();
+    };
+    const closeOriginal = () => {
+      const [original] = from.tabs.splice(fromIndex, 1);
+      world.emit([], [], [original]);
+      const next = from.tabs[Math.min(fromIndex, from.tabs.length - 1)];
+      setActive(from, next);
+      if (next) world.emit([], [next]);
+      again();
+    };
+    if (order === 'one-event') {
+      target.tabs.push(copy);
+      const [original] = from.tabs.splice(fromIndex, 1);
+      setActive(target, copy);
+      setActive(from, from.tabs[0]);
+      world.emit([copy], [], [original]);
+      again();
+    } else if (order === 'close-first') {
+      closeOriginal();
+      openCopy();
+    } else {
+      openCopy();
+      closeOriginal();
+    }
+    world.groups.forEach((group) => (group.isActive = group === target));
+    world.emitGroups();
+    if (from.tabs.length === 0) {
+      world.groups.splice(world.groups.indexOf(from), 1);
+      again();
+    }
+  };
+  /** Bring a tab to the front of its group and focus the group (a re-send in Cursor). */
+  const reveal = (groupIndex: number, tabIndex: number) => {
+    const group = world.groups[groupIndex];
+    world.groups.forEach((candidate) => (candidate.isActive = candidate === group));
+    setActive(group, group.tabs[tabIndex]);
+    world.emit([], [group.tabs[tabIndex]]);
+    resend();
+  };
+  return { move, resend, reveal };
+}
+
+/** Where each bound session's tab is: group index and index in the group. */
+function placesOf(service: ReturnType<typeof claudeUiSurfaces>): Map<string, [number, number]> {
+  const places = new Map<string, [number, number]>();
+  service.describeTabs().forEach((group, g) =>
+    group.tabs.forEach((tab, i) => {
+      if (tab.sessionId) places.set(tab.sessionId, [g, i]);
+    })
+  );
+  return places;
+}
+const groupOf = (service: ReturnType<typeof claudeUiSurfaces>) =>
+  Object.fromEntries([...placesOf(service)].map(([id, [g]]) => [id, g] as const).sort());
+
+test('a move into a new group keeps its binding when Cursor re-sends the tab model between the open and the close', async () => {
+  const { world, service, bound } = serialWorld();
+  const cursor = cursorWorkbench(world);
+  await service.openSerially(['aaaa', 'bbbb', 'cccc'], async (id) => void world.open(claudeTab(), `Chat ${id}`));
+  cursor.move(0, 1, 'new-after');
+  assert.deepEqual(bound(), [['aaaa', 'cccc'], ['bbbb']]);
+  service.dispose();
+});
+
+test('a group move keeps every binding in every event order VS Code and Cursor emit', async () => {
+  type Cursor = ReturnType<typeof cursorWorkbench>;
+  type Service = ReturnType<typeof claudeUiSurfaces>;
+  const at = (service: Service, id: string) => placesOf(service).get(id)!;
+  const scenarios: { name: string; setup?: (c: Cursor, s: Service) => void; run: (c: Cursor, s: Service, o: MoveOrder) => void; expect: Record<string, number> }[] = [
+    { name: 'Move Editor into Next Group (makes a group)', run: (c, s, o) => c.move(...at(s, 'bbbb'), 'new-after', o), expect: { aaaa: 0, bbbb: 1, cccc: 0 } },
+    { name: 'drag to the left edge (makes a group before)', run: (c, s, o) => c.move(...at(s, 'cccc'), 'new-before', o), expect: { aaaa: 1, bbbb: 1, cccc: 0 } },
+    {
+      name: 'Move Editor into Next Group (existing group)',
+      setup: (c, s) => c.move(...at(s, 'cccc'), 'new-after'),
+      run: (c, s, o) => c.move(...at(s, 'aaaa'), 1, o),
+      expect: { aaaa: 1, bbbb: 0, cccc: 1 },
+    },
+    {
+      name: 'Move Editor into Previous Group (empties and closes the group)',
+      setup: (c, s) => c.move(...at(s, 'cccc'), 'new-after'),
+      run: (c, s, o) => c.move(...at(s, 'cccc'), 0, o),
+      expect: { aaaa: 0, bbbb: 0, cccc: 0 },
+    },
+    {
+      name: 'Move Editor into Previous Group (leaves a tab behind)',
+      setup: (c, s) => {
+        c.move(...at(s, 'bbbb'), 'new-after');
+        c.move(...at(s, 'cccc'), 1);
+      },
+      run: (c, s, o) => c.move(...at(s, 'bbbb'), 0, o),
+      expect: { aaaa: 0, bbbb: 0, cccc: 1 },
+    },
+  ];
+  const failures: string[] = [];
+  for (const titles of ['own', 'shared'] as const) {
+    for (const scenario of scenarios) {
+      for (const order of ['cursor', 'close-first', 'one-event', 'no-resend'] as const) {
+        const { world, service } = serialWorld();
+        const cursor = cursorWorkbench(world);
+        world.open(fileTab(), 'file.ts');
+        await service.openSerially(['aaaa', 'bbbb', 'cccc'], async (id) => void world.open(claudeTab(), titles === 'own' ? `Chat ${id}` : 'Claude Code'));
+        try {
+          scenario.setup?.(cursor, service);
+          scenario.run(cursor, service, order);
+          assert.deepEqual(groupOf(service), scenario.expect);
+        } catch {
+          failures.push(`${scenario.name} / ${order} / ${titles} titles: ${JSON.stringify(groupOf(service))}`);
+        }
+        service.dispose();
+      }
+    }
+  }
+  assert.deepEqual(failures, []);
+});
+
+test('a re-sent model that lost a tab keeps the bindings it can still place', async () => {
+  const { world, service } = serialWorld();
+  const cursor = cursorWorkbench(world);
+  await service.openSerially(['aaaa', 'bbbb', 'cccc', 'dddd'], async (id) => void world.open(claudeTab(), `Chat ${id}`));
+  cursor.move(0, 3, 'new-after');
+  // A tab gone from a re-sent model with no close event (the workbench re-sends instead of reporting it).
+  world.groups[1].tabs = [];
+  world.groups[1].activeTab = undefined;
+  cursor.resend();
+  assert.deepEqual(groupOf(service), { aaaa: 0, bbbb: 0, cccc: 0 }, 'a group whose tabs are unchanged keeps them by place');
+  world.groups[0].tabs.splice(1, 1);
+  cursor.resend();
+  assert.deepEqual(groupOf(service), { aaaa: 0, cccc: 0 }, 'in a group that lost one, the others keep theirs by their own title');
+  service.dispose();
+});
+
+test('side by side with 6 bound tabs in Cursor: all 6 still bound, 4 panes', async () => {
+  const { world, service } = serialWorld();
+  const cursor = cursorWorkbench(world);
+  const ids = ['s1', 's2', 's3', 's4', 's5', 's6'];
+  await service.openSerially(ids, async (id) => void world.open(claudeTab(), `Chat ${id}`));
+  const { splitSideBySide } = await import('../../../src/core/windows/sideBySide');
+  const result = await splitSideBySide(ids, {
+    reveal: async (id) => cursor.reveal(...placesOf(service).get(id)!),
+    exec: async (command) => {
+      const from = world.groups.findIndex((group) => group.isActive);
+      const fromIndex = world.groups[from].tabs.indexOf(world.groups[from].activeTab!);
+      if (command === 'workbench.action.moveEditorToLastGroup') {
+        if (from !== world.groups.length - 1) cursor.move(from, fromIndex, world.groups.length - 1);
+      } else if (command === 'workbench.action.moveEditorToRightGroup') {
+        cursor.move(from, fromIndex, from === world.groups.length - 1 ? 'new-after' : from + 1);
+      }
+    },
+  });
+  assert.deepEqual(result, { panes: 4, stacked: 2 });
+  assert.equal(world.groups.filter((group) => group.tabs.length > 0).length, 4, 'four panes');
+  assert.deepEqual(ids.filter((id) => !service.isOpen(id)), [], 'every session still bound');
+  service.dispose();
+});
+
+test('the tab trace logs raw tab and group events, whether a group event replaced the Tab objects, and each bind decision', async () => {
+  const { world, service, logs } = serialWorld();
+  const cursor = cursorWorkbench(world);
+  await service.openSerially(['aaaa', 'bbbb'], async (id) => void world.open(claudeTab(), `Chat ${id}`));
+  cursor.resend();
+  assert.deepEqual(logs.filter((line) => line.includes('trace')), [], 'off by default');
+  assert.equal(service.toggleTrace(), true);
+  logs.length = 0;
+  cursor.move(0, 1, 'new-after');
+  const trace = logs.filter((line) => line.startsWith('[Pitwall] trace '));
+  assert.ok(trace.some((line) => /^\[Pitwall\] trace groups .*replaced=2\/2/.test(line)), 'a re-send says every Tab object was replaced');
+  assert.ok(trace.some((line) => /^\[Pitwall\] trace groups .*replaced=0\//.test(line)), 'a focus change says none were');
+  assert.ok(
+    trace.some((line) => line.startsWith('[Pitwall] trace tabs opened=[g1:0 "Chat bbbb" webview:mainThreadWebview-claudeVSCodePanel]')),
+    'a tab event names group, index, label and input kind'
+  );
+  assert.ok(trace.some((line) => /^\[Pitwall\] trace follow bbbb "Chat bbbb" \(moved copy\)/.test(line)), 'the bind decision and its reason');
+  assert.equal(service.toggleTrace(), false);
+  logs.length = 0;
+  cursor.resend();
+  assert.deepEqual(logs.filter((line) => line.includes('trace')), [], 'off again');
   service.dispose();
 });
