@@ -782,3 +782,26 @@ test('the tab trace logs raw tab and group events, whether a group event replace
   assert.deepEqual(logs.filter((line) => line.includes('trace')), [], 'off again');
   service.dispose();
 });
+
+// ---- Round 2 (live F2): side by side waits for each move to land ----
+
+test('whenTabMoved resolves when a Claude tab closes (a move landing), or false after its timeout', async () => {
+  const { world, service, timers } = serialWorld();
+  await service.openSerially(['aaaa'], async () => void world.open(claudeTab(), 'Chat a'));
+  const landed = service.whenTabMoved(1000);
+  assert.deepEqual(timers.delays(), [1000]);
+  const file = world.open(fileTab(), 'file.ts');
+  world.close(file);
+  world.open(claudeTab(), 'Claude Code');
+  let settled: boolean | undefined;
+  void landed.then((value) => (settled = value));
+  await until(() => settled !== undefined);
+  assert.equal(settled, undefined, 'a file closing or a tab opening is not the end of a move');
+  world.close(world.groups[0].tabs[0]);
+  assert.equal(await landed, true);
+  assert.deepEqual(timers.delays(), [], 'its timer is gone');
+  const nothing = service.whenTabMoved(1000);
+  timers.fire();
+  assert.equal(await nothing, false, 'a move that never lands times out');
+  service.dispose();
+});

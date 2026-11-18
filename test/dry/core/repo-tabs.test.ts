@@ -60,11 +60,24 @@ function repoWorld(t: { after(fn: () => void): void }, counts: { main: number; f
 type RepoWorld = ReturnType<typeof repoWorld>;
 
 /** The repo commands wired to a recording router. */
-function commands(t: { after(fn: () => void): void }, w: RepoWorld, options: { windowFolder?: string; open?: Set<string>; dumpDir?: string; tabs?: () => unknown[] } = {}) {
+function commands(
+  t: { after(fn: () => void): void },
+  w: RepoWorld,
+  options: {
+    windowFolder?: string;
+    open?: Set<string>;
+    dumpDir?: string;
+    tabs?: () => unknown[];
+    /** Awaited inside each route, so a test controls when a batch has finished opening. */
+    routeGate?: () => Promise<void>;
+    traceTabs?: () => boolean;
+  } = {}
+) {
   const routes: { kind: string; chats: string[] }[] = [];
   const router = {
     route: async (req: { kind: HandoffKind; chats: ChatSession[]; folder?: string }) => {
       routes.push({ kind: req.kind, chats: req.chats.map((chat) => chat.name) });
+      await options.routeGate?.();
       return 'here' as const;
     },
   };
@@ -80,7 +93,8 @@ function commands(t: { after(fn: () => void): void }, w: RepoWorld, options: { w
     windowFolder: () => options.windowFolder,
     isChatOpen: (chat) => options.open?.has(chat.id) ?? false,
     openChatsOf: async (repo) => w.tree.mainChatsOf(repo).filter((chat) => options.open?.has(chat.id)),
-    dump: options.dumpDir ? { dir: options.dumpDir, pid: 4242, tabs: () => (options.tabs?.() ?? []) as never, windowFolder: () => options.windowFolder } : undefined,
+    dump: options.dumpDir ? { dir: options.dumpDir, pid: process.pid, tabs: () => (options.tabs?.() ?? []) as never, windowFolder: () => options.windowFolder } : undefined,
+    traceTabs: options.traceTabs,
   });
   t.after(() => context.subscriptions.forEach((entry) => entry.dispose()));
   const row = new WorkspaceTreeItem('demo', 1, 'repository', w.repo, 'repository');
@@ -160,7 +174,11 @@ test('side by side splits up to 4 open tabs, one group each, and is hidden below
   assert.deepEqual(reveal, ['a', 'b', 'c', 'd', 'e', 'f'], 'each tab is brought to the front before it moves');
   const last = 'workbench.action.moveEditorToLastGroup';
   const right = 'workbench.action.moveEditorToRightGroup';
-  assert.deepEqual(exec, [last, right, last, right, last, right, last, last], 'tabs 2–4 each open a new group; the rest join the last pane');
+  assert.deepEqual(
+    exec,
+    [last, right, last, right, last, right, last, last, 'workbench.action.evenEditorWidths'],
+    'tabs 2–4 each open a new group; the rest join the last pane; then the panes are evened out'
+  );
   assert.deepEqual(await splitSideBySide(['only'], { reveal: async () => undefined, exec: async () => undefined }), { panes: 0, stacked: 0 }, 'below 2 nothing moves');
 
   // The menu item shows only on a repo whose window has 2+ of its chats open.
@@ -190,7 +208,7 @@ test('pitwall.dev.dumpState writes the tab and repo state, and scripts/dump-tabs
   const tabs = [{ index: 0, isActive: true, tabs: [{ label: 'Claude Code', pinned: false, active: true, sessionId: 'sm0' }] }];
   commands(t, w, { windowFolder: '/work/demo', dumpDir: dir, tabs: () => tabs });
   await runCommand('pitwall.dev.dumpState');
-  const file = path.join(dir, '4242.json');
+  const file = path.join(dir, `${process.pid}.json`);
   const dump = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.deepEqual(Object.keys(dump).sort(), ['pid', 'repos', 'tabGroups', 'version', 'windowFolder']);
   assert.equal(dump.version, 1);
@@ -203,7 +221,7 @@ test('pitwall.dev.dumpState writes the tab and repo state, and scripts/dump-tabs
     repo: 'demo',
     rootPath: '/work/demo',
     sidebarMainChatIds: ['sm0', 'sm1'],
-    windows: [{ pid: 4242, windowFolder: '/work/demo', boundTabIds: ['sm0'], tabGroups: tabs }],
+    windows: [{ pid: process.pid, windowFolder: '/work/demo', boundTabIds: ['sm0'], tabGroups: tabs }],
   });
   const missing = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'dump-tabs.mjs'), '--dir', dir, '--repo', 'nope'], { encoding: 'utf8' });
   assert.notEqual(missing.status, 0, 'an unknown repo exits non-zero');
@@ -230,4 +248,105 @@ test('a repo click skips pending rows with no session, and the quick pick count 
   assert.equal(routes[0].chats.length, 8);
   assert.ok(!routes[0].chats.includes('New Session') && !routes[0].chats.includes('Blank'));
   assert.deepEqual((stub.__messages.at(-1)![0] as { label: string }[]).map((item) => item.label), ['Open the other 2 chats']);
+});
+
+// ---- Round 2 (live F2, F3, F4 and the tab trace) ----
+
+const turns = async (n = 20) => {
+  for (let i = 0; i < n; i++) await new Promise<void>((resolve) => setImmediate(resolve));
+};
+
+test('side by side moves one tab at a time, waiting for each move to land, then evens the pane widths', async () => {
+  const log: string[] = [];
+  const landings: (() => void)[] = [];
+  const run = splitSideBySide(['a', 'b', 'c'], {
+    reveal: async (id) => void log.push(`reveal ${id}`),
+    exec: async (command) => void log.push(command.replace('workbench.action.', '')),
+    whenMoved: () => {
+      log.push('watch');
+      return new Promise<void>((resolve) => landings.push(() => (log.push('landed'), resolve())));
+    },
+  });
+  await turns();
+  assert.deepEqual(log, ['reveal a', 'reveal b', 'watch', 'moveEditorToLastGroup'], 'the watch is set before the move, and the next move waits');
+  while (landings.length > 0 || log.at(-1) !== 'evenEditorWidths') {
+    const land = landings.shift();
+    if (!land) break;
+    land();
+    await turns();
+  }
+  await run;
+  assert.deepEqual(log, [
+    'reveal a',
+    'reveal b',
+    'watch',
+    'moveEditorToLastGroup',
+    'landed',
+    'watch',
+    'moveEditorToRightGroup',
+    'landed',
+    'reveal c',
+    'watch',
+    'moveEditorToLastGroup',
+    'landed',
+    'watch',
+    'moveEditorToRightGroup',
+    'landed',
+    'evenEditorWidths',
+  ]);
+});
+
+test('the "Open the other {n} chats" pick shows only after the whole batch opened, and ignores focus moving away', async (t) => {
+  const w = repoWorld(t, { main: 10, feat: 0 });
+  const order: string[] = [];
+  let finish: () => void = () => undefined;
+  const { row } = commands(t, w, {
+    routeGate: () => new Promise<void>((resolve) => (finish = () => (order.push('batch opened'), resolve()))),
+  });
+  let options: vscode.QuickPickOptions | undefined;
+  stub.__setQuickPickHandler((_items: unknown, shownWith: vscode.QuickPickOptions) => {
+    order.push('pick shown');
+    options = shownWith;
+    return undefined;
+  });
+  const command = runCommand('pitwall.openRepoChats', row);
+  await turns();
+  assert.deepEqual(order, [], 'no pick while the batch is still opening');
+  finish();
+  await command;
+  assert.deepEqual(order, ['batch opened', 'pick shown']);
+  assert.equal(options?.ignoreFocusOut, true, 'a new tab taking focus does not close it');
+});
+
+test('pitwall.dev.traceTabs toggles the tab trace, and is hidden from the palette and documented', async (t) => {
+  const w = repoWorld(t, { main: 1, feat: 0 });
+  let on = false;
+  commands(t, w, { traceTabs: () => (on = !on) });
+  await runCommand('pitwall.dev.traceTabs');
+  assert.equal(on, true);
+  assert.ok(shownMessages().some((message) => /tab trace on/i.test(message) && message.includes('Pitwall Operations')), shownMessages().join(' | '));
+  await runCommand('pitwall.dev.traceTabs');
+  assert.equal(on, false);
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  assert.ok((pkg.contributes.commands as { command: string }[]).some((entry) => entry.command === 'pitwall.dev.traceTabs'));
+  const palette = pkg.contributes.menus.commandPalette as { command: string; when?: string }[];
+  assert.ok(palette.some((entry) => entry.command === 'pitwall.dev.traceTabs' && entry.when === 'false'));
+  assert.match(fs.readFileSync(path.join(ROOT, 'docs', 'reference', 'commands.md'), 'utf8'), /Trace tab events \(developer\)/);
+});
+
+test('dump-tabs.mjs skips dumps from closed windows unless --include-dead', (t) => {
+  const dir = tempDir(t, 't4r2-dump-');
+  const deadPid = spawnSync(process.execPath, ['-e', '']).pid!;
+  const dump = (pid: number) => ({ version: 1, pid, windowFolder: '/work/demo', tabGroups: [], repos: [{ name: 'demo', rootPath: '/work/demo', sidebarMainChatIds: [] }] });
+  fs.writeFileSync(path.join(dir, `${process.pid}.json`), JSON.stringify(dump(process.pid)));
+  fs.writeFileSync(path.join(dir, `${deadPid}.json`), JSON.stringify(dump(deadPid)));
+  const script = path.join(ROOT, 'scripts', 'dump-tabs.mjs');
+  const pids = (args: string[]) => {
+    const run = spawnSync(process.execPath, [script, '--dir', dir, ...args], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    return (JSON.parse(run.stdout).windows as { pid: number }[]).map((window) => window.pid).sort((a, b) => a - b);
+  };
+  assert.deepEqual(pids([]), [process.pid], 'a dead pid is left out');
+  assert.deepEqual(pids(['--repo', 'demo']), [process.pid]);
+  assert.deepEqual(pids(['--include-dead']), [process.pid, deadPid].sort((a, b) => a - b));
 });
