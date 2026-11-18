@@ -182,7 +182,13 @@ export class SessionAttentionService {
      */
     private readonly isChatOpen: (chat: ChatSession) => boolean,
     /** Whether the user is looking at this chat right now. */
-    private readonly isChatVisible: (chatId: string) => boolean = () => false
+    private readonly isChatVisible: (chatId: string) => boolean = () => false,
+    /**
+     * Whether the chat's tab is the active tab, with or without window focus.
+     * A turn that ends under it is seen at once, as selecting the tab counts
+     * as a visit without focus (E6, P16). Defaults to being in front.
+     */
+    private readonly isChatTabActive: (chatId: string) => boolean = isChatVisible
   ) {}
 
   start(): void {
@@ -548,11 +554,16 @@ export class SessionAttentionService {
     }
     this.polledChats = polled;
 
-    // A finished turn in front of the user is seen as it lands (QA S4).
+    // A finished turn under the active tab, or in front of the user, is seen
+    // as it lands (QA S4, E6).
     const now = Date.now();
     for (const chat of chats) {
-      if (this.isChatVisible(chat.id)) {
+      if (this.isChatVisible(chat.id) || this.isChatTabActive(chat.id)) {
         this.markFinishedSeen(chat, now);
+        if (!this.waitingSince.has(chat.id)) {
+          // Seen, so it is no longer owed a look; a wait stays listed.
+          this.needsYouSince.delete(chat.id);
+        }
       }
     }
     this.recomputeStatuses(allChats);

@@ -43,9 +43,16 @@ export function activeNativeUiChatId(sources: ChatVisibilitySources): string | u
  * chat the user is looking at beats missing one they are not.
  */
 export function chatIdInFront(sources: ChatVisibilitySources): string | undefined {
-  if (!vscode.window.state.focused) {
-    return undefined;
-  }
+  return vscode.window.state.focused ? chatIdWithActiveTab(sources) : undefined;
+}
+
+/**
+ * The chat whose tab is the active tab of the active editor group, whether or
+ * not the window has focus: the tab the user left in front. Selecting a tab
+ * already counts as a visit without focus (E6), so a turn that ends under
+ * such a tab is seen too. Not for toasts: a user in another window is away.
+ */
+export function chatIdWithActiveTab(sources: ChatVisibilitySources): string | undefined {
   const activeTab = vscode.window.tabGroups.activeTabGroup?.activeTab;
   if (!activeTab) {
     return undefined;
@@ -62,6 +69,11 @@ export function chatIdInFront(sources: ChatVisibilitySources): string | undefine
 /** Whether this chat is the one in front of the user right now. */
 export function isChatVisible(sources: ChatVisibilitySources, chatId: string): boolean {
   return chatIdInFront(sources) === chatId;
+}
+
+/** Whether this chat's tab is the active tab, with or without window focus. */
+export function isChatTabActive(sources: ChatVisibilitySources, chatId: string): boolean {
+  return chatIdWithActiveTab(sources) === chatId;
 }
 
 /**

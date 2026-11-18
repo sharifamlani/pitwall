@@ -932,6 +932,8 @@ interface RowFlowOptions {
   open?: Set<string>;
   /** Chat ids in front of the user. */
   visible?: Set<string>;
+  /** Chat ids whose tab is the active tab, with or without window focus. */
+  tabActive?: Set<string>;
   /** Native session ids live in the sessions file. */
   live?: () => Set<string>;
   /** Live state per native session id; missing ids are not reported. */
@@ -942,6 +944,7 @@ interface RowFlowOptions {
 function rowFlow(storage: ReturnType<typeof makeStorage>, options: RowFlowOptions = {}) {
   const open = options.open ?? new Set<string>();
   const visible = options.visible ?? new Set<string>();
+  const tabActive = options.tabActive ?? new Set<string>();
   const polled: string[][] = [];
   const adapter = fakeAdapter('claude', {
     liveSessionIds: async () => options.live?.() ?? new Set<string>(),
@@ -965,7 +968,8 @@ function rowFlow(storage: ReturnType<typeof makeStorage>, options: RowFlowOption
     (id) => worktreeRecord({ id, path: `/repo/${id}` }),
     () => undefined,
     (chat) => open.has(chat.id),
-    isVisible
+    isVisible,
+    (chatId: string) => tabActive.has(chatId) || visible.has(chatId)
   );
   const changes: string[][] = [];
   service.onDidChangeStatus((ids) => changes.push(ids));
@@ -1064,6 +1068,44 @@ test('a chat kept in front writes seenAt at most once per finished turn', async 
     await flow.service.poll();
   }
   assert.equal(flow.seenWrites.length, 2, 'the next finished turn writes once more');
+});
+
+test("a turn that ends while the chat's tab is active shows idle, not finished", async (t) => {
+  const clock = useClock(t);
+  const storage = makeStorage();
+  const chat = storage.createChat('wt-1', 'claude', 'Active tab', { harnessSessionId: 's-1' });
+  const other = storage.createChat('wt-1', 'claude', 'Other tab', { harnessSessionId: 's-2' });
+  let live: HarnessLiveState = { turnState: 'working', turnEndedAt: null, liveStatus: 'busy' };
+  // The window is not focused (nothing is "in front"), but the tab is the active one.
+  const flow = rowFlow(storage, {
+    open: new Set([chat.id, other.id]),
+    tabActive: new Set([chat.id]),
+    states: () => ({ 's-1': live, 's-2': live }),
+  });
+  await flow.service.poll(true);
+  clock.advance(4_000);
+  live = { turnState: 'done', turnEndedAt: Date.now(), liveStatus: 'idle' };
+  clock.advance(4_000);
+  await flow.service.poll();
+  assert.equal(flow.service.statusOf(chat.id).status, 'idle', 'seen as the turn landed');
+  assert.equal(flow.service.statusOf(other.id).status, 'finished', 'a background tab still shows finished');
+  assert.equal(flow.seenWrites.length, 1);
+  assert.ok(!flow.service.sessionsNeedingYou().includes(chat.id), 'a seen turn is not on the needs-you list');
+});
+
+test('a deny that ends the turn on the active tab shows idle within one status tick', async (t) => {
+  const clock = useClock(t);
+  const storage = makeStorage();
+  const chat = storage.createChat('wt-1', 'claude', 'Denied', { harnessSessionId: 's-1' });
+  let live: HarnessLiveState = { turnState: 'working', turnEndedAt: null, liveStatus: 'waiting', waitingFor: 'permission prompt' };
+  const flow = rowFlow(storage, { open: new Set([chat.id]), tabActive: new Set([chat.id]), states: () => ({ 's-1': live }) });
+  await flow.service.poll(true);
+  clock.advance(4_000);
+  // O1: the denied tool call leaves the transcript mid-turn while the process is idle.
+  live = { turnState: 'working', turnEndedAt: null, liveStatus: 'idle', statusUpdatedAt: Date.now() };
+  clock.advance(1_000);
+  await flow.service.poll();
+  assert.equal(flow.service.statusOf(chat.id).status, 'idle', 'never finished');
 });
 
 test("closing a chat keeps its row status, and reopening it doesn't toast a pre-existing wait", async () => {

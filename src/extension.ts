@@ -317,6 +317,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
   /** Whether the chat's terminal or native-UI tab is the one in front of the user. */
   const isChatVisible = (chatId: string): boolean => chatVisibility.isChatVisible(visibilitySources, chatId);
+  /** Whether the chat's tab is the active tab, with or without window focus (E6). */
+  const isChatTabActive = (chatId: string): boolean => chatVisibility.isChatTabActive(visibilitySources, chatId);
   const notificationService = new NotificationService(
     (chatId) => {
       const chat = storageService.getChat(chatId);
@@ -335,7 +337,8 @@ export async function activate(context: vscode.ExtensionContext) {
     // Turn and needs-you changes swap the row mark (beating mark, orange or green dot).
     () => workspacesProvider.softRefresh(),
     isChatOpen,
-    isChatVisible
+    isChatVisible,
+    isChatTabActive
   );
   markChatSeen = (chatId) => attentionService.markSeen(chatId);
   noteSessions = (sessions) => attentionService.noteSessions(sessions);
