@@ -129,7 +129,8 @@ test('locating the repo does not block the event loop', async (t) => {
   const { maxGapMs } = blocks.stop();
   assert.equal(item().text, '$(repo) job-market · ⎇ main');
   // A synchronous git call holds the loop for its whole run (36-100 ms). The
-  // gap is used because a blocked wait on a child burns almost no CPU.
-  assert.ok(maxGapMs < 20, `event loop gap ${maxGapMs.toFixed(1)} ms`);
+  // gap is used because a blocked wait on a child burns almost no CPU. 30 ms
+  // clears the ~16 ms Windows timer tick on a loaded runner; sync is 36+ ms.
+  assert.ok(maxGapMs < 30, `event loop gap ${maxGapMs.toFixed(1)} ms`);
   bar.dispose();
 });
