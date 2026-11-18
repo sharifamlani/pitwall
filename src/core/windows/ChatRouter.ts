@@ -199,7 +199,7 @@ export class ChatRouter implements vscode.Disposable {
         return 'gone';
       }
       if (this.isThisWindow(folder)) {
-        this.logNewRoute(folder, 'same-folder');
+        this.logNewRoute('here', 'same-folder');
         await this.deps.startNew(folder);
         return 'here';
       }
@@ -249,6 +249,13 @@ export class ChatRouter implements vscode.Disposable {
         continue;
       }
       if (!this.canHandOff(chat)) {
+        if ((!chat.harnessSessionId || chat.pendingUiLaunch) && !this.isThisWindow(worktree.path)) {
+          // Nothing to hand over, and its folder is another window's: starting it here would
+          // run a chat for that folder in this window.
+          this.logRoute(id, worktree.path, 'no-transcript-elsewhere');
+          blocked++;
+          continue;
+        }
         // Nothing of this chat exists natively to hand over: it stays here.
         this.logRoute(id, 'here', 'no-transcript');
         local.push({ chat, worktree });

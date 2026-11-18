@@ -587,7 +587,8 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
    */
   mainChatsOf(repo: Repository): ChatSession[] {
     return this.repoEntry(repo, this.chatsByWorktree())
-      .sessions.filter((session) => session.worktree.isMain)
+      // A chat still starting (no session id yet) has no transcript to open.
+      .sessions.filter((session) => session.worktree.isMain && session.chat.harnessSessionId && !session.chat.pendingUiLaunch)
       .map((session) => session.chat)
       .sort((a, b) => b.lastAccessedAt - a.lastAccessedAt);
   }

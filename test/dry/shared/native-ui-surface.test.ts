@@ -493,3 +493,63 @@ test('a tab opened long after a close does not inherit the closed tab\'s binding
   assert.deepEqual(bound(), [[undefined]]);
   service.dispose();
 });
+
+test('side by side: every moved tab keeps its own session, and panes = min(n, 4) when some moved earlier', async () => {
+  const { world, service, bound } = serialWorld();
+  const ids = ['s1', 's2', 's3', 's4', 's5'];
+  await service.openSerially(ids, async (id) => void world.open(claudeTab(), `Chat ${id}`));
+  const { splitSideBySide } = await import('../../../src/core/windows/sideBySide');
+  /** Where a bound session's tab is now. */
+  const find = (id: string) => {
+    for (const group of world.groups) {
+      const tab = group.tabs.find((candidate) => service.describeTabs().flatMap((g) => g.tabs).some((d) => d.label === candidate.label && d.sessionId === id));
+      if (tab) return { group, tab };
+    }
+    throw new Error(`no tab for ${id}`);
+  };
+  const move = (command: string) => {
+    const from = world.groups.find((group) => group.isActive)!;
+    const tab = from.activeTab!;
+    let to: FakeGroup;
+    if (command.endsWith('LastGroup')) {
+      to = world.groups[world.groups.length - 1];
+    } else {
+      to = { isActive: false, activeTab: undefined, tabs: [] };
+      world.groups.splice(world.groups.indexOf(from) + 1, 0, to);
+    }
+    if (to === from) return;
+    // The workbench opens the copy (a webview with its default title) in the target, then closes the original.
+    const copy: FakeTab = { label: 'Claude Code', input: claudeTab(), isActive: true };
+    to.tabs.push(copy);
+    to.activeTab = copy;
+    world.groups.forEach((group) => (group.isActive = group === to));
+    world.emit([copy]);
+    from.tabs = from.tabs.filter((candidate) => candidate !== tab);
+    from.activeTab = from.tabs[0];
+    world.emit([], [], [tab]);
+  };
+  const run = async () =>
+    splitSideBySide(ids, {
+      reveal: async (id) => {
+        const { group, tab } = find(id);
+        world.groups.forEach((g) => (g.isActive = g === group));
+        group.activeTab = tab;
+      },
+      exec: async (command) => void move(command),
+    });
+  // Move the second tab on its own first, as a user's earlier drag would have.
+  world.groups[0].activeTab = world.groups[0].tabs[1];
+  move('workbench.action.moveEditorToRightGroup');
+  assert.equal(world.groups.length, 2);
+  const result = await run();
+  assert.deepEqual(result, { panes: 4, stacked: 1 });
+  const nonEmpty = world.groups.filter((group) => group.tabs.length > 0);
+  assert.equal(nonEmpty.length, 4, 'four panes');
+  assert.deepEqual(
+    ids.map((id) => service.isOpen(id)),
+    [true, true, true, true, true],
+    'every session still bound'
+  );
+  assert.equal(bound().flat().filter((id) => id !== undefined).length, 5);
+  service.dispose();
+});

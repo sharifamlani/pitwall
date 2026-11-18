@@ -1082,7 +1082,7 @@ test('"+" logs one [Pitwall] route line for new-chat routing', async (t) => {
   await sender.router.route({ kind: 'new', chats: [], folder: w.main });
   assert.deepEqual(sender.routeLog, [`[Pitwall] route new → ${w.main} (handoff)`]);
   await sender.router.route({ kind: 'new', chats: [], folder: w.other });
-  assert.deepEqual(sender.routeLog.slice(1), [`[Pitwall] route new → ${w.other} (same-folder)`]);
+  assert.deepEqual(sender.routeLog.slice(1), [`[Pitwall] route new → here (same-folder)`]);
   const missing = path.join(w.scratch, 'deleted-worktree');
   await sender.router.route({ kind: 'new', chats: [], folder: missing });
   assert.deepEqual(sender.routeLog.slice(2), [`[Pitwall] route new → ${missing} (gone)`]);

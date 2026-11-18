@@ -26,10 +26,17 @@ interface PendingSurface {
  * copy in the target group before closing the original, so the copy is
  * always there when the close arrives.
  */
-function tabKey(tab: vscode.Tab): string {
+/** The title a Claude webview shows until it sets its own: a moved tab's copy comes up with it. */
+const DEFAULT_TITLE = 'Claude Code';
+
+/** A copy's title is the original's, or the default one a fresh webview shows. */
+function sameOrDefaultTitle(copy: string, original: string): boolean {
+  return copy === original || copy.trim() === DEFAULT_TITLE;
+}
+
+function tabKind(tab: vscode.Tab): string {
   const input = tab.input as { viewType?: unknown; uri?: { toString(): string } } | undefined;
-  const kind = typeof input?.viewType === 'string' ? input.viewType : input?.uri?.toString() ?? '';
-  return `${tab.label}\u0000${kind}`;
+  return typeof input?.viewType === 'string' ? input.viewType : input?.uri?.toString() ?? '';
 }
 
 export interface NativeUiTabSurfaceOptions {
@@ -95,6 +102,12 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   /** When an unbound Claude tab appeared, so a move's copy can be told from an older tab. */
   private readonly openedAt = new WeakMap<vscode.Tab, { at: number; seq: number }>();
   private openSeq = 0;
+  /**
+   * Bindings of tabs that closed with no copy yet: a move can report the close
+   * before the open. A Claude tab of the same kind opening within the move
+   * window takes the binding.
+   */
+  private released: { sessionId: string; kind: string; label: string; at: number }[] = [];
   /**
    * Every Claude tab as of the last tab or group event, in editor order. When
    * VS Code rebuilds its tab model every Tab object is replaced but the order
@@ -364,6 +377,8 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       this.unmapTab(tab);
       if (copy) {
         this.mapTab(copy, sessionId);
+      } else {
+        this.released.push({ sessionId, kind: tabKind(tab), label: tab.label, at: now });
       }
       mappingChanged = true;
     }
@@ -376,6 +391,9 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     for (const tab of [...event.opened, ...event.changed]) {
       mappingChanged =
         this.associate(tab, this.pending.length === 1) || mappingChanged;
+    }
+    for (const tab of event.opened) {
+      mappingChanged = this.rebindReleased(tab, now) || mappingChanged;
     }
 
     this.layout = this.uiTabs();
@@ -401,13 +419,32 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     return true;
   }
 
-  /** The unbound Claude tab that opened most recently, just now, with the closed tab's title and kind. */
+  /** A tab that opens just after a bound one closed (a move reported close first) takes that binding. */
+  private rebindReleased(tab: vscode.Tab, now: number): boolean {
+    this.released = this.released.filter((entry) => now - entry.at <= MOVE_WINDOW_MS);
+    if (!this.isUiTab(tab) || this.tabs.has(tab) || this.sessionIdForTab?.(tab)) {
+      return false;
+    }
+    const at = this.released.findIndex((entry) => entry.kind === tabKind(tab) && sameOrDefaultTitle(tab.label, entry.label) && !this.isOpen(entry.sessionId));
+    if (at < 0) {
+      return false;
+    }
+    const [entry] = this.released.splice(at, 1);
+    this.mapTab(tab, entry.sessionId);
+    return true;
+  }
+
+  /**
+   * The unbound Claude tab that opened most recently, just now, of the closed
+   * tab's kind, with its title or the default one (a moved webview comes up
+   * with the default until it sets its own).
+   */
   private movedCopy(closed: vscode.Tab, now: number): vscode.Tab | undefined {
-    const key = tabKey(closed);
+    const kind = tabKind(closed);
     let best: { tab: vscode.Tab; seq: number } | undefined;
     for (const tab of this.uiTabs()) {
       const seen = this.openedAt.get(tab);
-      if (!seen || this.tabs.has(tab) || now - seen.at > MOVE_WINDOW_MS || tabKey(tab) !== key) {
+      if (!seen || this.tabs.has(tab) || now - seen.at > MOVE_WINDOW_MS || tabKind(tab) !== kind || !sameOrDefaultTitle(tab.label, closed.label)) {
         continue;
       }
       if (!best || seen.seq > best.seq) {
