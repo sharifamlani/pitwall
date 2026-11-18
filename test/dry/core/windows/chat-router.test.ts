@@ -382,6 +382,45 @@ test('"+" twice on a slow-starting window starts one chat', async (t) => {
   assert.deepEqual(sender.started, [], 'none in the sending window');
 });
 
+// Live E4 at e9a4807: two fast "+" clicks logged two "handoff sent" lines in
+// the same millisecond, because both passed the file check before either
+// request file existed. No await between the two calls here.
+test('two "+" clicks in the same tick send one request', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
+
+  await Promise.all([
+    sender.router.route({ kind: 'new', chats: [], folder: w.main }),
+    sender.router.route({ kind: 'new', chats: [], folder: w.main }),
+  ]);
+
+  assert.equal(requestsFor(sender.inbox, dir, w.main).length, 1, 'one request file');
+  assert.equal(sender.logs.filter((line) => line.startsWith('[Pitwall] handoff sent ')).length, 1);
+  const mainWindow = windowOn(t, w, dir, () => w.main, { pid: 1002, claims: w.main });
+  await mainWindow.router.runClaimed(await mainWindow.inbox.claimAll());
+  assert.deepEqual(mainWindow.started, [w.main], 'one new chat');
+});
+
+test('two route calls for the same chat in the same tick send one request', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const chat = w.chat('Double click', ID.a, w.mainWt);
+  const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
+
+  const results = await Promise.all([
+    sender.router.route({ kind: 'open', chats: [chat] }),
+    sender.router.route({ kind: 'open', chats: [chat] }),
+  ]);
+
+  assert.deepEqual(results, ['routed', 'routed']);
+  assert.equal(requestsFor(sender.inbox, dir, w.main).length, 1, 'one request file');
+  assert.equal(sender.logs.filter((line) => line.startsWith('[Pitwall] handoff sent ')).length, 1);
+});
+
 test('"+" on another repo sends kind new to that repo', async (t) => {
   const w = world(t);
   const dir = tempDir(t);
