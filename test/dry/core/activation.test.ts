@@ -441,6 +441,32 @@ test('a window started by a handoff claims it before the session scan, repo disc
   assert.deepEqual(Object.fromEntries(firstTouch), { scan: true, watch: true }, 'nothing reads or watches the profile before the claim');
 });
 
+test("the repos' git watchers are made only after the first render, in an empty window too (I3, E16)", async (t) => {
+  stub.__setTreeViewsVisible(true);
+  stub.__setTreeViewFirstRenderDelay(1_000);
+  const lab = labFolder(t);
+  const other = labFolder(t);
+  const f = await seededActivation(t, [], {}, [lab.repository, { ...other.repository, id: 'other-repo', name: 'other' }]);
+  // An empty window: no folder.
+  (stub.workspace as { workspaceFolders: unknown[] }).workspaceFolders = [];
+  const bases: string[] = [];
+  const workspace = stub.workspace as unknown as { createFileSystemWatcher: (pattern: { base?: string }) => unknown };
+  const create = workspace.createFileSystemWatcher;
+  workspace.createFileSystemWatcher = (pattern) => {
+    bases.push(String(pattern?.base ?? pattern));
+    return create(pattern);
+  };
+  t.after(() => (workspace.createFileSystemWatcher = create));
+  const repoWatchers = () => bases.filter((base) => [lab.repository.rootPath, other.repository.rootPath].some((root) => base.startsWith(root)));
+
+  await f.start();
+  stub.__treeViews.find((candidate) => candidate.id === 'pitwall.workspacesView')!.__renderDelayMs = 1_000;
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.deepEqual(repoWatchers(), [], 'activation makes no watcher per repo before the rows are out');
+  await requestRows();
+  await waitFor(() => repoWatchers().length === 6, 'three watchers per repo once the rows are out');
+});
+
 test('stored repos render before discovery finishes', async (t) => {
   stub.__setTreeViewsVisible(true);
   const scratch = tempDir(t);

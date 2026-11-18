@@ -161,6 +161,8 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   private firstRenderLogged = false;
 
   private repoWatchers: vscode.Disposable[] = [];
+  /** Set after the first render; until then no repo watcher is made. */
+  private watchersMayStart = false;
   private watchedRepoIds = '';
   private pendingCacheClear = false;
   /** True from a refresh until the next top-level render; nothing has rendered yet at construction. */
@@ -213,7 +215,15 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       this.hiddenListTimer = setTimeout(resolve, HIDDEN_LIST_LISTING_MS);
       void this.whenSettled().then(() => setImmediate(resolve));
     }).then(() => clearTimeout(this.hiddenListTimer));
-    this.updateRepoWatchers();
+    // The git watchers (three per repo) are made once the rows are out, not
+    // during activation: a window's start does nothing per repo before its
+    // first render (E16, I3).
+    void this.backgroundListingsMayStart.then(() => {
+      this.watchersMayStart = true;
+      if (!this.disposed) {
+        this.updateRepoWatchers(true);
+      }
+    });
   }
 
   dispose(): void {
@@ -349,6 +359,9 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
    * `.git` appears or disappears, since the HEAD patterns need it to exist.
    */
   private updateRepoWatchers(force = false): void {
+    if (!this.watchersMayStart) {
+      return;
+    }
     const repositories = this.storageService.getRepositories();
     const ids = repositories.map((r) => r.id).sort().join(',');
     if (!force && ids === this.watchedRepoIds) {
