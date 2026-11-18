@@ -191,13 +191,13 @@
       },
       {
         "command": "pitwall.search",
-        "title": "Search Repos and Chats",
+        "title": "Search repos and chats",
         "category": "Pitwall",
         "icon": "$(search)"
       },
       {
         "command": "pitwall.addRepository",
-        "title": "Add Local Folder or Repository…",
+        "title": "Add a repository",
         "category": "Pitwall",
         "icon": "$(folder)"
       },
@@ -220,13 +220,13 @@
       },
       {
         "command": "pitwall.newSessionInRepository",
-        "title": "New Claude Code session",
+        "title": "New Claude Code session in this repo",
         "category": "Pitwall",
         "icon": "$(add)"
       },
       {
         "command": "pitwall.sessionHistory",
-        "title": "Session history…",
+        "title": "Session history for this repo: every past chat",
         "category": "Pitwall",
         "icon": "$(history)"
       },
@@ -568,7 +568,7 @@
       },
       {
         "command": "pitwall.toggleFiles",
-        "title": "Show or Hide Files",
+        "title": "Show or hide files",
         "category": "Pitwall",
         "icon": "$(files)"
       },

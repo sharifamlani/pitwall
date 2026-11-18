@@ -86,7 +86,7 @@ In a folder beside the repository, named `<repo>-worktrees`. A worktree for `fea
 
 ### Can I use Pitwall without git?
 
-Yes. **Add Local Folder or Repository…** accepts any folder. Sessions run directly in it, and worktree, merge, rebase, and pull request actions appear if the folder later becomes a repository. See [Folders without git](worktrees.md#folders-without-git).
+Yes. **Add a repository** accepts any folder. Sessions run directly in it, and worktree, merge, rebase, and pull request actions appear if the folder later becomes a repository. See [Folders without git](worktrees.md#folders-without-git).
 
 ### Can an agent review a GitHub pull request?
 

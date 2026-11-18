@@ -99,8 +99,8 @@ test('the repo menu has exactly the §3c items in order, and the row shows histo
   ];
   assert.deepEqual(menu.map(id), expected);
   assert.deepEqual(expected.map(title), [
-    'New Claude Code session',
-    'Session history…',
+    'New Claude Code session in this repo',
+    'Session history for this repo: every past chat',
     'Open its window',
     'Copy Path',
     'Reveal in File Explorer',
@@ -115,6 +115,21 @@ test('the repo menu has exactly the §3c items in order, and the row shows histo
   const icon = (command: string) => (commands.find((entry) => entry.command === command) as { icon?: string }).icon;
   assert.equal(icon('pitwall.sessionHistory'), '$(history)');
   assert.equal(icon('pitwall.newSessionInRepository'), '$(add)');
+});
+
+test('header and row action tooltips match the canvas copy', () => {
+  // An icon action's hover text is its command title; VS Code appends the bound
+  // key itself, so "(Ctrl+Alt+R)" and "(Ctrl+Alt+F)" are not written into titles.
+  const title = (command: string) => commands.find((entry) => entry.command === command)?.title;
+  assert.equal(title('pitwall.search'), 'Search repos and chats');
+  assert.equal(title('pitwall.addRepository'), 'Add a repository');
+  // A static title cannot carry the repo's name, so "in job-market" is "in this repo".
+  assert.equal(title('pitwall.newSessionInRepository'), 'New Claude Code session in this repo');
+  assert.equal(title('pitwall.sessionHistory'), 'Session history for this repo: every past chat');
+  assert.equal(title('pitwall.toggleFiles'), 'Show or hide files');
+  const keys = pkg.contributes.keybindings as { command: string; key: string }[];
+  assert.ok(keys.some((entry) => entry.command === 'pitwall.search' && entry.key === 'ctrl+alt+r'), 'the key VS Code appends');
+  assert.ok(keys.some((entry) => entry.command === 'pitwall.toggleFiles' && entry.key === 'ctrl+alt+f'), 'the key VS Code appends');
 });
 
 test('a plain folder row offers the same repo menu as a git repo', () => {
@@ -222,7 +237,8 @@ test('Open in UI is a context-menu item only, never a hover action', () => {
 });
 
 test('dialog commands end in an ellipsis; row-only commands stay out of the palette', () => {
-  for (const command of ['pitwall.addRepository', 'pitwall.cloneRepository', 'pitwall.importSessions', 'pitwall.renameChat']) {
+  // pitwall.addRepository is exempt: its tooltip copy is the canvas's "Add a repository".
+  for (const command of ['pitwall.cloneRepository', 'pitwall.importSessions', 'pitwall.renameChat']) {
     assert.match(commands.find((entry) => entry.command === command)?.title ?? '', /…$/, command);
   }
   for (const command of ['pitwall.renameChat', 'pitwall.files.delete', 'pitwall.starChat']) {
