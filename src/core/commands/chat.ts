@@ -202,13 +202,18 @@ export function registerChatCommands(
   /**
    * Open a chat in its terminal. A live terminal is focused; otherwise a new
    * one is launched and registered for linkage when the harness assigns its
-   * session ID later. `preserveFocus` shows it without taking focus.
+   * session ID later. `keepListFocus` (a Ctrl+↓/↑, Q4) shows it without
+   * taking focus, and puts focus back on the list once a new terminal's
+   * creation and rename have settled (E8, F4).
    */
-  const openInTerminal = async (chat: ChatSession, worktree: Worktree, preserveFocus = false): Promise<void> => {
+  const openInTerminal = async (chat: ChatSession, worktree: Worktree, keepListFocus = false): Promise<void> => {
     const prepared = terminalManager.isActive(chat.id)
       ? chat
       : registerPendingSession(chat, worktree);
-    await terminalManager.openChat(prepared, worktree, { preserveFocus });
+    await terminalManager.openChat(prepared, worktree, {
+      preserveFocus: keepListFocus,
+      ...(keepListFocus ? { afterTitle: refocusList } : {}),
+    });
     selectChat(prepared, worktree);
   };
 
