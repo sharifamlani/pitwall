@@ -72,7 +72,7 @@ T8 : Close: walk, evaluator, v0.5.0
 | Q21 | Row 4.2b's O2 item (after a restart, a row click left two `[shortId]` tabs, one blank) goes into T7's runs: each reload trial also clicks one un-restored row and counts `[shortId]` tabs. If it doesn't reproduce in 10+10 runs, it moves to the Phase 4 handoff's known issues (QA C10) | Its repro is uncertain, and terminals are opt-in after Q3 | A rare duplicate terminal tab survives |
 
 | Q23 | Chats whose transcript `entrypoint` is not `cli` or `claude-vscode` (e.g. `sdk-cli` from `claude -p` / the SDK) open in the terminal, not Claude's panel, and are never routed for a UI open. They are also never used as UI lab fixtures (S3 finding F2: Claude's UI doesn't list them, and `editor.open(<id>)` opens a blank "Untitled" tab on every call, so it duplicates every time) | Claude's panel can't resume them; the terminal (`claude --resume`) can | An SDK chat opens in a terminal; that's the only way to resume it |
-| Q24 | Opening a chat (UI or terminal) must not turn its row "finished" when no turn ran (S3 finding F3: a UI resume flipped an idle row to "finished · now"; resuming likely appends a non-turn line to the transcript). T2 finds the line type from a before/after transcript diff and makes turn-state ignore it | A row should change only when Claude actually took a turn (D21) | A false green "finished" after every open |
+| Q24 | Opening a chat (UI or terminal), or closing its Claude tab, must not turn its row "working" or "finished" when no turn ran (S1b/T5 walk, 3/3: closing a Claude tab showed "working · now · open" then "finished" with no `~/.claude/sessions` entry) (S3 finding F3: a UI resume flipped an idle row to "finished · now"; resuming likely appends a non-turn line to the transcript). T2 finds the line type from a before/after transcript diff and makes turn-state ignore it | A row should change only when Claude actually took a turn (D21) | A false green "finished" after every open |
 
 **Sharif's answers (2026-11-17):** Q18 = cap at 8 (approved). Q22 = expand only (approved; D37 amended). Q7a: Sharif asked whether tabs in one window can be on different branches. Answer: no, a folder has one checked-out branch at a time, and a different branch at the same time means a worktree, which is its own folder and window with its own bottom bar. Waiting on his confirmation; no code depends on it.
 
@@ -510,11 +510,12 @@ Tests: `test/dry/core/chat-commands.test.ts`, `test/dry/core/navigation.test.ts`
   - `openChatPrimary(chat): Promise<'here' | 'routed' | 'terminal'>`. T3 adds `'routed'`; T2 returns `'here' | 'terminal'`.
 - Consumes: S1b evidence (where focus lands per surface).
 
-- [ ] **Step 0 (F3):** in a lab chat, diff the transcript before and after a UI open with no prompt (testing agent evidence: `captures\phase4-s3-s1-s1b\`). Name the appended line type(s) in the report.
+- [ ] **Step 0 (F3):** in a lab chat, diff the transcript before and after (a) a UI open with no prompt and (b) closing its Claude tab (testing agent evidence: `captures\phase4-s3-s1-s1b\`). Name the appended line type(s) in the report.
 - [ ] **Step 1: Failing tests:**
   - `default surface is ui`;
   - `an sdk-cli chat opens in the terminal even with surface ui` (Q23);
-  - `resuming a chat appends <the line type found in Step 1> and the row stays idle, not finished` (Q24; fixture copied from the S3 before/after transcript diff, anonymised);
+  - `closing a Claude tab with no turn leaves the row idle, never working or finished` (Q24);
+  - `resuming a chat appends <the line type found in Step 0> and the row stays idle, not finished` (Q24; fixture copied from the S3 before/after transcript diff, anonymised);
   - `a chat whose cwd is C:\lab\a opens in the UI of a window whose folder is c:\lab\a` (F1; also for new-session availability);
   - `the link fallback uses vscode.env.uriScheme (cursor in Cursor)` (stub `uriScheme = 'cursor'`);
   - `Ctrl+Down sets the marker and the row command, fired without await by a fake list.select, refocuses pitwall.workspacesView after the UI open`;
@@ -523,7 +524,7 @@ Tests: `test/dry/core/chat-commands.test.ts`, `test/dry/core/navigation.test.ts`
   - `terminal path calls show(true) only when the marker is set`;
   - `Ctrl+Down on a repo row still only reveals it` (Q22, Sharif).
 
-  If S1b showed late focus grabs, add: `UI path refocuses on the next focus or tab event, not on a timer`.
+  S1b result (2026-11-18, 3 terminal + 5 ui trials): focus leaves at the open itself (terminal `show()`; webview +65–134 ms, together with the tab), never late. A refocus at about 220 ms or 550 ms held for 6 s. So terminal = `show(true)`, and UI = refocus right after the awaited `openSession`; no event fallback needed.
 - [ ] **Step 2:** `npm run test:dry -- chat-commands navigation terminal manifest` → FAIL.
 - [ ] **Step 3:** Implement. Regenerate `package.json` with `node scripts/build-manifest.mjs`, then run `--check`.
 - [ ] **Step 4:** PASS, then `npm test`. Commit, push, PR.
