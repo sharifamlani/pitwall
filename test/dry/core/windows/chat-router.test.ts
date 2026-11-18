@@ -104,9 +104,12 @@ function windowOn(
     /** The folders the registry has a live window on (Q26); none by default. */
     windowsAt?: string[];
     openHere?: (chat: ChatSession, worktree: Worktree) => Promise<boolean>;
+    /** Whether a chat's tab or terminal is open in this window; never, by default. */
+    isOpenHere?: (chat: ChatSession) => boolean;
   }
 ) {
   const logs: string[] = [];
+  const routeLog: string[] = [];
   const inbox = new HandoffInbox(dir, { pid: options.pid, folder: options.claims }, Date.now, (line) => logs.push(line));
   const registry = {
     windowsFor: async (target: string) =>
@@ -121,7 +124,8 @@ function windowOn(
     worktreeOf: async (chat) => w.worktrees.find((worktree) => worktree.id === chat.worktreeId),
     rootsOf: (worktree) => w.worktrees.filter((candidate) => candidate.repoId === worktree.repoId).map((candidate) => candidate.path),
     repoName: (target) => (target.startsWith(w.other) ? 'other' : 'demo'),
-    isOpenHere: () => false,
+    isOpenHere: (chat) => options.isOpenHere?.(chat) ?? false,
+    log: (line) => routeLog.push(line),
     chatForSession: (sessionId) => w.storage.getChats().find((chat) => chat.harnessSessionId === sessionId),
     openHere: async (chat, worktree) => {
       opened.push({ chat: chat.name, path: worktree.path, worktreeId: worktree.id });
@@ -134,7 +138,7 @@ function windowOn(
     timing: options.timing ?? FAST,
   });
   t.after(() => router.dispose());
-  return { inbox, router, logs, opened, started };
+  return { inbox, router, logs, routeLog, opened, started };
 }
 
 /** Records `vscode.openFolder` calls. */
@@ -582,16 +586,90 @@ test('runClaimed opens chats one at a time in request order and logs handoff ope
   }
 });
 
-test('an sdk-cli chat is never routed for a UI open; it opens here (Q23)', async (t) => {
+test('an sdk-cli chat from another folder routes to its window and opens in a terminal there', async (t) => {
   const w = world(t);
   const dir = tempDir(t);
   const calls = openFolderCalls();
   w.transcript(w.main, ID.sdk, [w.turn(ID.sdk, w.main, 'sdk-cli')]);
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
+  const target = windowOn(t, w, dir, () => w.main, { pid: 1002, claims: w.main });
 
-  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('From claude -p', ID.sdk, w.mainWt)] }), 'here');
-  assert.deepEqual(sender.opened.map((entry) => entry.chat), ['From claude -p']);
-  assert.deepEqual(calls, []);
+  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('From claude -p', ID.sdk, w.mainWt)] }), 'routed');
+  assert.deepEqual(sender.opened, [], 'nothing opens in the sending window');
+  assert.deepEqual(calls.map((call) => call.path), [w.main]);
+  assert.deepEqual(requestsFor(sender.inbox, dir, w.main).map((request) => request.sessionIds), [[ID.sdk]]);
+
+  // The target window opens it locally; the chat commands' local open sends an
+  // sdk-cli chat to a terminal there (Q23, unit-tested in the chat commands).
+  await target.router.runClaimed(await target.inbox.claimAll());
+  assert.deepEqual(target.opened.map((entry) => [entry.chat, entry.path]), [['From claude -p', w.main]]);
+});
+
+// E10 (live): a chat filed under the worktree's project folder opened in the
+// main window with no route line. The decision comes first, and is logged.
+test("a chat filed under the worktree's project dir whose stored worktree is main routes to the worktree window", async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  const wtDir = `${w.main}-wt`;
+  fs.mkdirSync(wtDir);
+  w.transcript(wtDir, ID.t18, [w.turn(ID.t18, w.main), w.turn(ID.t18, wtDir)]);
+  const chat = w.chat('T18 one', ID.t18, w.mainWt);
+  const mainWindow = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main, isOpenHere: () => false });
+
+  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.deepEqual(calls.map((call) => call.path), [wtDir]);
+  assert.deepEqual(mainWindow.opened, []);
+  assert.deepEqual(mainWindow.routeLog, [`[Pitwall] route ${ID.t18.slice(0, 8)} → ${wtDir} (handoff)`]);
+});
+
+test('a stale UI tab binding for a chat of another folder does not open it here', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  const wtDir = `${w.main}-wt`;
+  fs.mkdirSync(wtDir);
+  w.transcript(wtDir, ID.t18, [w.turn(ID.t18, w.main), w.turn(ID.t18, wtDir)]);
+  const chat = w.chat('T18 one', ID.t18, w.mainWt);
+  const mainWindow = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main, isOpenHere: () => true });
+
+  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.deepEqual(mainWindow.opened, [], 'the bound tab is not revealed');
+  assert.deepEqual(calls.map((call) => call.path), [wtDir]);
+});
+
+test('a bound tab here reveals locally only when this window is the launch folder', async (t) => {
+  const w = world(t);
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, isOpenHere: () => true });
+
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Tab here', ID.a, w.mainWt)] }), 'here');
+  assert.deepEqual(here.opened.map((entry) => entry.path), [w.main]);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (tab-here)`]);
+});
+
+test('every routing decision logs one route line', async (t) => {
+  const w = world(t);
+  openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  w.transcript(w.other, ID.b, [w.turn(ID.b, w.other)]);
+  const missing = path.join(w.scratch, 'deleted-worktree');
+  w.transcript(missing, ID.gone, [w.turn(ID.gone, missing)]);
+  const id8 = (id: string) => id.slice(0, 8);
+
+  const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main });
+  await here.router.route({ kind: 'open', chats: [w.chat('Same', ID.a, w.mainWt)] });
+  await here.router.route({ kind: 'open', chats: [w.chat('Other', ID.b, w.otherWt)] });
+  await here.router.route({ kind: 'open', chats: [w.chat('Gone', ID.gone, w.goneWt)] });
+  assert.deepEqual(here.routeLog, [
+    `[Pitwall] route ${id8(ID.a)} → here (same-folder)`,
+    `[Pitwall] route ${id8(ID.b)} → ${w.other} (handoff)`,
+    `[Pitwall] route ${id8(ID.gone)} → ${missing} (gone)`,
+  ]);
+
+  const early = windowOn(t, w, tempDir(t), () => w.other, { pid: 1002, claims: w.other, servicesUp: () => false, timing: { ...FAST, servicesWaitMs: 20 } });
+  await early.router.route({ kind: 'open', chats: [w.chat('Early', ID.a, w.mainWt)] });
+  assert.deepEqual(early.routeLog, [`[Pitwall] route ${id8(ID.a)} → ${w.main} (no-services)`]);
 });
 
 test('launch folder reads a 1 MB head with no cwd without holding the event loop', async (t) => {
