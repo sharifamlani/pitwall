@@ -36,7 +36,7 @@ const ID = {
 };
 
 /** Short timings so the 20 s warning and 120 s expiry run in milliseconds. */
-const FAST = { warnMs: 150, expireMs: 400, pollMs: 10 };
+const FAST = { warnMs: 150, expireMs: 400, pollMs: 10, servicesWaitMs: 300 };
 const GONE = (folder: string) => `That chat's folder is gone: ${folder}`;
 const UNREACHED = (repo: string) => `Pitwall couldn't reach the ${repo} window. Click the chat again.`;
 
@@ -94,14 +94,21 @@ function windowOn(
   w: World,
   dir: string,
   folder: () => string | undefined,
-  options: { pid: number; claims?: string; timing?: typeof FAST; openHere?: (chat: ChatSession, worktree: Worktree) => Promise<boolean> }
+  options: {
+    pid: number;
+    claims?: string;
+    timing?: typeof FAST;
+    /** When the window services are up; always, unless a test says otherwise. */
+    servicesUp?: () => boolean;
+    openHere?: (chat: ChatSession, worktree: Worktree) => Promise<boolean>;
+  }
 ) {
   const logs: string[] = [];
   const inbox = new HandoffInbox(dir, { pid: options.pid, folder: options.claims }, Date.now, (line) => logs.push(line));
   const opened: { chat: string; path: string; worktreeId: string }[] = [];
   const started: string[] = [];
   const router = new ChatRouter({
-    services: () => ({ inbox }),
+    services: () => ((options.servicesUp?.() ?? true) ? { inbox } : undefined),
     windowFolder: folder,
     harnessRegistry: new HarnessRegistry([new ClaudeHarness()]),
     worktreeOf: async (chat) => w.worktrees.find((worktree) => worktree.id === chat.worktreeId),
@@ -495,7 +502,6 @@ test('launch folder reads a 1 MB head with no cwd without holding the event loop
   const chat = w.chat('Huge head', ID.a, w.mainWt);
   await assertNoLongBlock(
     async () => {
-      router.forgetLaunchFolders();
       // No cwd within 1 MB: the project folder's repo wins.
       assert.equal(await router.launchFolder(chat), w.main);
     },
@@ -525,4 +531,49 @@ test('"Open its window" and "Bring its window forward" raise the repo\'s main fo
     { path: w.main, forceNewWindow: true },
     { path: w.main, forceNewWindow: true },
   ]);
+});
+
+test('a chat moved into a worktree after its first click routes to the worktree on the next click', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  const first = w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const chat = w.chat('Moves later', ID.a, w.mainWt);
+  const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
+
+  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.deepEqual(calls.map((call) => call.path), [w.main]);
+
+  // EnterWorktree: Claude moves the transcript into the worktree's project folder.
+  fs.rmSync(first);
+  w.transcript(w.wt, ID.a, [w.turn(ID.a, w.main), w.turn(ID.a, w.wt)]);
+
+  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.deepEqual(calls.map((call) => call.path), [w.main, w.wt], 'the second click goes to the worktree');
+  assert.deepEqual(requestsFor(sender.inbox, dir, w.wt).map((request) => request.sessionIds), [[ID.a]]);
+});
+
+test('a click before window services start waits for them, else warns and opens no window', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const chat = w.chat('Clicked early', ID.a, w.mainWt);
+
+  // The services come up 100 ms after the click: the click waits, then hands off.
+  let up = false;
+  const early = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other, servicesUp: () => up });
+  const timer = setTimeout(() => (up = true), 100);
+  t.after(() => clearTimeout(timer));
+  assert.equal(await early.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.equal(requestsFor(early.inbox, dir, w.main).length, 1, 'the request is written once they are up');
+  assert.deepEqual(calls.map((call) => call.path), [w.main]);
+
+  // They never come up: warn (§3f) and raise no window, which would come up empty.
+  const dir2 = tempDir(t);
+  const never = windowOn(t, w, dir2, () => w.other, { pid: 1002, claims: w.other, servicesUp: () => false });
+  await never.router.route({ kind: 'open', chats: [chat] });
+  assert.deepEqual(warnings(UNREACHED('demo')), [UNREACHED('demo')]);
+  assert.deepEqual(calls.map((call) => call.path), [w.main], 'no second openFolder');
+  assert.equal(requestsFor(never.inbox, dir2, w.main).length, 0);
 });

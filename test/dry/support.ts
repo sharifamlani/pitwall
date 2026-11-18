@@ -130,7 +130,7 @@ interface StubControls {
     __fireWindowState(focused: boolean): void;
     __fireTabsChanged(event?: { opened?: unknown[]; closed?: unknown[]; changed?: unknown[] }): void;
     __fireTabGroupsChanged(): void;
-    /** The user types into a terminal: its state turns interacted-with and `onDidChangeTerminalState` fires once. */
+    /** Data reaches a terminal (typing, or sendText): its state turns interacted-with and `onDidChangeTerminalState` fires once. */
     __typeInTerminal(terminal: unknown): void;
   };
 }

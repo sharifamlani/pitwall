@@ -743,7 +743,10 @@ module.exports = {
       terminalStateListeners.add(listener);
       return { dispose: () => terminalStateListeners.delete(listener) };
     },
-    /** Test helper: the user types into a terminal; its state turns interacted-with once, as in VS Code. */
+    /**
+     * Test helper: data goes to a terminal's process (the user typing, or an
+     * extension's sendText); its state turns interacted-with once, as in VS Code.
+     */
     __typeInTerminal: (terminal) => {
       if (terminal.state.isInteractedWith) return;
       terminal.state = { ...terminal.state, isInteractedWith: true };
@@ -827,6 +830,8 @@ module.exports = {
         },
         sendText(text) {
           this.sent.push(text);
+          // As in VS Code, text an extension sends counts as interaction (QA #51).
+          module.exports.window.__typeInTerminal(this);
           // A shell that has not integrated yet runs typed-ahead text later.
           if (silentExecutionEvents || this.__awaitingIntegration) {
             return;
