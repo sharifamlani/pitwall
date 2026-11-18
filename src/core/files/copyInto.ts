@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { logOperation } from '../services/OperationLog';
 import { offerGitignore } from './envIgnoreCheck';
+import { canonicalRoot } from '../utils/paths';
 
 /** A repo as the sidebar names it. */
 export interface RepoRef {
@@ -37,7 +38,12 @@ export async function copyInto(repoRoot: string, srcPath: string): Promise<{ des
   return { dest, clashed: path.basename(dest) !== name };
 }
 
-/** The §3f "Pasted / Moved" message, with the name-clash sentence when the copy was renamed. */
+/**
+ * The §3f "Pasted / Moved" message, with the name-clash sentence when the copy
+ * was renamed. The folder is shown in its native spelling: a FILES row gives
+ * the editor's lower-case drive, the window folder an upper-case one, and
+ * Windows' own spelling is the upper-case one (T6 follow-up).
+ */
 export function landedMessage(
   verb: 'Pasted' | 'Moved',
   name: string,
@@ -49,7 +55,8 @@ export function landedMessage(
   const destName = path.basename(dest);
   const clash =
     destName !== name ? ` A file with that name was already there, so it was saved as '${destName}'.` : '';
-  return `${verb} ${name} from ${fromRepo} into ${intoName} (${intoPath}).${clash}`;
+  const shownPath = process.platform === 'win32' ? canonicalRoot(intoPath) : intoPath;
+  return `${verb} ${name} from ${fromRepo} into ${intoName} (${shownPath}).${clash}`;
 }
 
 /**
