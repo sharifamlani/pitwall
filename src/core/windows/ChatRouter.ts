@@ -71,6 +71,10 @@ export class ChatRouter implements vscode.Disposable {
   /** The last launch folder read per session; only the search box's meta reads it. */
   private readonly launchFolders = new Map<string, string>();
   private readonly timers = new Set<NodeJS.Timeout>();
+  /** Routes still running, by what they route (kind and chats, or "+" and its folder). */
+  private readonly inFlight = new Map<string, Promise<RouteResult>>();
+  /** Requests this window sent that are not done, failed or expired yet, by folder, kind and chats. */
+  private readonly sent = new Set<string>();
   /** Claimed batches open one after another, never interleaved. */
   private claims: Promise<void> = Promise.resolve();
   private uiActivated = false;
@@ -128,10 +132,35 @@ export class ChatRouter implements vscode.Disposable {
    * this window's folder open here, serially; the rest go to their window,
    * one request per folder. A chat whose folder is gone opens nothing and
    * shows a warning.
+   *
+   * A second route for the same thing while the first is still running (a
+   * fast double click, live E4) joins the first rather than sending its own
+   * request: it is matched synchronously, before anything is awaited.
    */
-  async route(
+  route(
     req: { kind: HandoffKind; chats: ChatSession[]; folder?: string },
     options: { keepListFocus?: boolean } = {}
+  ): Promise<RouteResult> {
+    const key =
+      req.kind === 'new'
+        ? `new|${req.folder ? pathKey(req.folder) : ''}`
+        : `${req.kind}|${req.chats.map((chat) => chat.harnessSessionId ?? chat.id).sort().join(',')}`;
+    const running = this.inFlight.get(key);
+    if (running) {
+      return running;
+    }
+    const run = this.routeNow(req, options).finally(() => {
+      if (this.inFlight.get(key) === run) {
+        this.inFlight.delete(key);
+      }
+    });
+    this.inFlight.set(key, run);
+    return run;
+  }
+
+  private async routeNow(
+    req: { kind: HandoffKind; chats: ChatSession[]; folder?: string },
+    options: { keepListFocus?: boolean }
   ): Promise<RouteResult> {
     const keepListFocus = options.keepListFocus ?? false;
     if (req.kind === 'new') {
@@ -303,10 +332,25 @@ export class ChatRouter implements vscode.Disposable {
       void vscode.window.showWarningMessage(unreachedMessage(this.deps.repoName(folder)));
       return false;
     }
-    const pending = await inbox.pending(folder, kind, ids).catch(() => undefined);
-    if (!pending) {
-      const nonce = await inbox.send(folder, { kind, sessionIds: ids });
-      this.watchOutcome(inbox, folder, nonce);
+    // Checked and marked before anything is awaited, so a request this window
+    // has in flight is never sent twice; the file check below covers the ones
+    // another window, or this one before a reload, sent.
+    const key = `${pathKey(folder)}|${kind}|${[...ids].sort().join(',')}`;
+    if (!this.sent.has(key)) {
+      this.sent.add(key);
+      const release = () => this.sent.delete(key);
+      try {
+        const pending = await inbox.pending(folder, kind, ids).catch(() => undefined);
+        if (pending) {
+          release();
+        } else {
+          const nonce = await inbox.send(folder, { kind, sessionIds: ids });
+          this.watchOutcome(inbox, folder, nonce, release);
+        }
+      } catch (error) {
+        release();
+        throw error;
+      }
     }
     await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(folder), { forceNewWindow: true });
     return true;
@@ -331,9 +375,10 @@ export class ChatRouter implements vscode.Disposable {
   /**
    * Read the request's outcome until a `done` arrives. A failed one warns at
    * once; no `ok` within 20 s warns once; an unclaimed request is expired at
-   * 120 s (Q16). Never toasts on success (Q6).
+   * 120 s (Q16). Never toasts on success (Q6). `settled` runs once the
+   * request is done, failed or expired.
    */
-  private watchOutcome(inbox: HandoffInbox, folder: string, nonce: string): void {
+  private watchOutcome(inbox: HandoffInbox, folder: string, nonce: string, settled: () => void): void {
     const startedAt = Date.now();
     let warned = false;
     const warn = () => {
@@ -351,6 +396,7 @@ export class ChatRouter implements vscode.Disposable {
         if (!outcome.ok) {
           warn();
         }
+        settled();
         return;
       }
       const age = Date.now() - startedAt;
@@ -359,6 +405,7 @@ export class ChatRouter implements vscode.Disposable {
       }
       if (age >= this.timing.expireMs) {
         await inbox.expire(folder, nonce).catch(() => false);
+        settled();
         return;
       }
       this.schedule(tick);
