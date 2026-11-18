@@ -355,6 +355,7 @@ const tabGroupChangeListeners = new Set();
 const windowStateListeners = new Set();
 const configurationChangeListeners = new Set();
 const treeViews = [];
+const statusBarItems = [];
 let treeViewsVisible = false;
 /** How long a tree view created visible waits before the workbench asks for its first rows. */
 let treeViewFirstRenderDelayMs = 0;
@@ -414,6 +415,7 @@ module.exports = {
   MarkdownString,
   RelativePattern,
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+  StatusBarAlignment: { Left: 1, Right: 2 },
   ViewColumn: { Active: -1, Beside: -2, One: 1, Two: 2, Three: 3 },
   TerminalLocation: { Editor: 2, Panel: 1 },
   QuickPickItemKind: { Separator: -1, Default: 0 },
@@ -488,6 +490,30 @@ module.exports = {
     __focusTextEditor: (editor) => {
       activeTextEditor = editor;
       focusedTerminal = undefined;
+    },
+    /** Records each item; `shown` follows show()/hide(), as in the status bar. */
+    createStatusBarItem: (alignment, priority) => {
+      const item = {
+        alignment,
+        priority,
+        text: '',
+        tooltip: undefined,
+        command: undefined,
+        shown: false,
+        disposed: false,
+        show() {
+          this.shown = true;
+        },
+        hide() {
+          this.shown = false;
+        },
+        dispose() {
+          this.shown = false;
+          this.disposed = true;
+        },
+      };
+      statusBarItems.push(item);
+      return item;
     },
     state: { focused: false },
     onDidChangeWindowState: (listener) => {
@@ -867,6 +893,7 @@ module.exports = {
       deletedUris,
       shownDocuments,
       treeViews,
+      statusBarItems,
     ]) {
       list.length = 0;
     }
@@ -920,6 +947,7 @@ module.exports = {
   __contextKeys: contextKeys,
   __outputChannels: outputChannels,
   __fileWatchers: fileWatchers,
+  __statusBarItems: statusBarItems,
   __messages: messages,
   __warningResponses: warningResponses,
   __quickPickResponses: quickPickResponses,

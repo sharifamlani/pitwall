@@ -31,6 +31,7 @@ import { SESSION_SEARCH_VIEW, registerSessionSearchCommands } from './core/comma
 import { commandRegistrar } from './core/commands/common';
 import { debounce } from './core/utils/debounce';
 import { samePath } from './core/utils/paths';
+import { RepoStatusBar } from './core/windows/RepoStatusBar';
 
 /** Panels re-read the worktree this long after its files stop changing. */
 const FILE_CHANGE_DEBOUNCE_MS = 300;
@@ -137,6 +138,13 @@ export async function activate(context: vscode.ExtensionContext) {
   // the extension host most of a reload's activation on Windows; a chat that
   // links meanwhile is caught by their first check.
   afterFirstRender(() => harnessWatcherRegistry.startAll());
+
+  // Bottom bar: this window's `repo · ⎇ branch` (row 4.5).
+  afterFirstRender(() => {
+    const bar = new RepoStatusBar(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, gitService);
+    context.subscriptions.push(bar);
+    void bar.refresh();
+  });
 
   // Reconcile terminals that survived a reload or a quit (ADR 0009), in the
   // background: activation never waits for a PID. A click on a chat whose
