@@ -445,6 +445,74 @@ test('stored repos render before discovery finishes', async (t) => {
   assert.deepEqual(io.syncGit, [], 'no git call blocked activation or the render');
 });
 
+test('a reload with stored repos renders rows before discovery finishes', async (t) => {
+  stub.__setTreeViewsVisible(true);
+  const scratch = tempDir(t);
+  const repositories = Array.from({ length: 3 }, (_, i) => {
+    const rootPath = path.join(scratch, `folder-${i}`);
+    fs.mkdirSync(rootPath);
+    return { id: `repo-folder-${i}`, name: `folder-${i}`, rootPath } as Repository;
+  });
+  const f = await seededActivation(t, [], {}, repositories);
+  for (const repo of repositories) writeTranscript(f.claudeDir, repo.rootPath, `chat-${repo.name}`);
+  // A dismissed folder with three long sessions: discovery looks at them on
+  // every pass; the importer never does.
+  const dismissed = path.join(scratch, 'dismissed');
+  fs.mkdirSync(dismissed);
+  for (let i = 0; i < 3; i++) writeLongTranscript(f.claudeDir, dismissed, `long-${i}`, 16 * 1024 * 1024);
+  await makeStorage(f.context.globalState as never, f.context.workspaceState as never).setDismissed(dismissed, Date.now());
+
+  // The first start leaves its state for the reload.
+  await f.start();
+  await requestRows();
+  await waitFor(() => stub.__contextKeys.get('pitwall.scanned') === true, 'the first start to finish discovery', 30_000);
+  f.context.subscriptions.splice(0).forEach((subscription) => subscription.dispose());
+  stub.__reset();
+  stub.__setTreeViewsVisible(true);
+
+  // The reload, timed from activation until its first discovery pass ends.
+  let maxBlockMs = 0;
+  let last = performance.now();
+  const lag = setInterval(() => {
+    const now = performance.now();
+    maxBlockMs = Math.max(maxBlockMs, now - last);
+    last = now;
+  }, 1);
+  t.after(() => clearInterval(lag));
+  last = performance.now();
+  await f.start();
+  const rows = await requestRows();
+  const scannedAtFirstRender = stub.__contextKeys.get('pitwall.scanned') === true;
+  await waitFor(() => stub.__contextKeys.get('pitwall.scanned') === true, 'the reload to finish discovery', 30_000);
+  clearInterval(lag);
+
+  assert.deepEqual(rows.map((row) => row.label).sort(), ['folder-0', 'folder-1', 'folder-2'], 'the stored rows, so no welcome shows');
+  assert.equal(scannedAtFirstRender, false, 'the rows did not wait for discovery');
+  assert.ok(maxBlockMs <= 50, `the reload blocked the extension host for ${maxBlockMs.toFixed(0)} ms at once`);
+});
+
+/** A long Claude transcript, about `bytes` long, of a session started in `cwd` a day ago. */
+function writeLongTranscript(claudeDir: string, cwd: string, sessionId: string, bytes: number): void {
+  const dir = path.join(claudeDir, 'projects', encodeClaudeProjectPath(cwd));
+  fs.mkdirSync(dir, { recursive: true });
+  const filler = 'lorem ipsum dolor sit amet consectetur adipiscing elit '.repeat(60);
+  const lines: string[] = [];
+  let size = 0;
+  for (let turn = 0; size < bytes; turn++) {
+    const timestamp = new Date(Date.now() - 86_400_000 + turn * 1_000).toISOString();
+    for (const entry of [
+      { type: 'user', message: { role: 'user', content: [{ type: 'text', text: `Prompt ${turn}` }] } },
+      { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `t${turn}`, content: filler.repeat(1 + (turn % 6)) }] } },
+      { type: 'assistant', message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: `Reply ${turn}` }] } },
+    ]) {
+      const line = JSON.stringify({ timestamp, cwd, sessionId, ...entry });
+      lines.push(line);
+      size += line.length + 1;
+    }
+  }
+  fs.writeFileSync(path.join(dir, `${sessionId}.jsonl`), `${lines.join('\n')}\n`);
+}
+
 /** The welcome text the list shows when it has no rows, given the context keys set so far. */
 function shownWelcome(): string[] {
   const holds = (when: string | undefined) =>
