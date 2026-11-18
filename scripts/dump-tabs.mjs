@@ -7,11 +7,15 @@
  *
  *   node scripts/dump-tabs.mjs --repo <name> [--dir <pitwall-dump folder>]
  *   node scripts/dump-tabs.mjs [--dir <pitwall-dump folder>]
+ *   add --include-dead to list dumps from windows that have closed
  *
  * --dir     The `pitwall-dump` folder in the extension's global storage. Default:
  *           $PITWALL_DUMP_DIR, else the newest `*\pitwall-dump` under
  *           %APPDATA%\Cursor\User\globalStorage (or ~/.config on other systems).
  * --repo    A repo's name or root folder. Exits 1 if no window's dump lists it.
+ * --include-dead
+ *           Also list dumps whose window process is gone (by default a dump is
+ *           listed only while its pid is alive).
  *
  * With --repo, stdout is one JSON object:
  *
@@ -38,10 +42,12 @@ function fail(code, message) {
 }
 
 function parseArgs(argv) {
-  const options = { dir: undefined, repo: undefined };
+  const options = { dir: undefined, repo: undefined, includeDead: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === '--dir' || arg === '--repo') {
+    if (arg === '--include-dead') {
+      options.includeDead = true;
+    } else if (arg === '--dir' || arg === '--repo') {
       const value = argv[++i];
       if (!value) {
         fail(2, `${arg} needs a value`);
@@ -73,6 +79,16 @@ function findDumpDir() {
   return found[0]?.dir;
 }
 
+/** Whether a process with this pid is running (signal 0 tests without sending anything). */
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === 'EPERM';
+  }
+}
+
 const key = (folder) => (folder ? path.resolve(folder).replace(/[\\/]+$/, '').toLowerCase() : '');
 
 const options = parseArgs(process.argv.slice(2));
@@ -86,6 +102,7 @@ const dumps = fs
   .filter((name) => /^\d+\.json$/.test(name))
   .map((name) => JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')))
   .filter((dump) => dump.version === 1)
+  .filter((dump) => options.includeDead || isAlive(dump.pid))
   .sort((a, b) => a.pid - b.pid);
 
 const boundTabIds = (dump) => [
