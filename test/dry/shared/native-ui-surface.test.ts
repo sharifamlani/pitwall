@@ -448,3 +448,48 @@ test('a user tab opened long before is not taken for a moved copy on close', asy
   assert.deepEqual(bound(), [[undefined]]);
   service.dispose();
 });
+
+// ---- Round 1 (tester T2): the real orders of a group move ----
+
+test('a moved tab keeps its binding when the copy opens with another title, before the close', async () => {
+  const { world, service, bound } = serialWorld();
+  await service.openSerially(['aaaa'], async () => void world.open(claudeTab(), 'My chat name'));
+  world.groups.push({ isActive: false, activeTab: undefined, tabs: [] });
+  const [left, right] = world.groups;
+  const original = left.tabs[0];
+  // The moved webview comes up with its default title until it sets its own.
+  const copy: FakeTab = { label: 'Claude Code', input: claudeTab(), isActive: true };
+  right.tabs.push(copy);
+  right.activeTab = copy;
+  world.emit([copy]);
+  left.tabs = [];
+  world.emit([], [], [original]);
+  assert.deepEqual(bound(), [[], ['aaaa']]);
+  service.dispose();
+});
+
+test('a moved tab keeps its binding when the close arrives before the open', async () => {
+  const { world, service, bound } = serialWorld();
+  await service.openSerially(['aaaa'], async () => void world.open(claudeTab(), 'My chat name'));
+  world.groups.push({ isActive: false, activeTab: undefined, tabs: [] });
+  const [left, right] = world.groups;
+  const original = left.tabs[0];
+  left.tabs = [];
+  world.emit([], [], [original]);
+  const copy: FakeTab = { label: 'My chat name', input: claudeTab(), isActive: true };
+  right.tabs.push(copy);
+  right.activeTab = copy;
+  world.emit([copy]);
+  assert.deepEqual(bound(), [[], ['aaaa']]);
+  service.dispose();
+});
+
+test('a tab opened long after a close does not inherit the closed tab\'s binding', async () => {
+  const { world, service, bound, clock } = serialWorld();
+  await service.openSerially(['aaaa'], async () => void world.open(claudeTab(), 'Chat'));
+  world.close(world.groups[0].tabs[0]);
+  clock.now = 10_000;
+  world.open(claudeTab(), 'Chat');
+  assert.deepEqual(bound(), [[undefined]]);
+  service.dispose();
+});

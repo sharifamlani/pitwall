@@ -720,9 +720,9 @@ test('a chat open in another window routes to that window, not its launch folder
   assert.deepEqual(sender.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → ${w.wt} (open-there)`]);
 });
 
-test('a chat with no transcript yet opens here and logs no-transcript', async (t) => {
+test("a chat with no transcript yet opens here, in its row's own window, and logs no-transcript", async (t) => {
   const w = world(t);
-  const here = windowOn(t, w, tempDir(t), () => w.other, { pid: 1001, claims: w.other });
+  const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main });
   const chat = w.storage.createChat(w.mainWt.id, 'claude', 'Fresh', {});
 
   await here.router.route({ kind: 'open', chats: [chat] });
@@ -1155,4 +1155,18 @@ test('the Claude harness marks a claude-vscode entry as a panel', async (t) => {
   const harness = new ClaudeHarness({ sessionsFile: new ClaudeSessionsFile({ dir: () => dir }) } as never);
   assert.deepEqual(await harness.liveProcessOf?.(ID.a), { pid: process.pid, panel: true });
   assert.deepEqual(await harness.liveProcessOf?.(ID.b), { pid: process.pid, panel: false });
+});
+
+// ---- Round 1 (tester T1) ----
+
+test('a no-transcript chat whose row folder is not this window never starts here', async (t) => {
+  const w = world(t);
+  const calls = openFolderCalls();
+  const here = windowOn(t, w, tempDir(t), () => w.other, { pid: 1001, claims: w.other });
+  const chat = w.storage.createChat(w.mainWt.id, 'claude', 'New Session', { pendingUiLaunch: true });
+
+  assert.equal(await here.router.route({ kind: 'openAll', chats: [chat] }), 'gone');
+  assert.deepEqual(here.opened, [], 'nothing opened in this window');
+  assert.deepEqual(calls, [], 'and no window raised for a chat with nothing to open');
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${chat.id.slice(0, 8)} → ${w.main} (no-transcript-elsewhere)`]);
 });

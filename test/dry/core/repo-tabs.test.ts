@@ -218,3 +218,16 @@ test('pitwall.dev.dumpState is hidden from the palette', () => {
     assert.ok(palette.some((entry) => entry.command === id && entry.when === 'false'), `${id} is a row action`);
   }
 });
+
+test('a repo click skips pending rows with no session, and the quick pick count leaves them out', async (t) => {
+  const w = repoWorld(t, { main: 10, feat: 0 });
+  w.storage.createChat(w.main.id, 'claude', 'New Session', { pendingUiLaunch: true, lastAccessedAt: Date.now() + 100_000 });
+  w.storage.createChat(w.main.id, 'claude', 'Blank', { lastAccessedAt: Date.now() + 100_000 });
+  assert.equal(w.tree.mainChatsOf(w.repo).length, 10, 'only chats with a session id are in the batch');
+  const { routes, row } = commands(t, w);
+  stub.__quickPickResponses.push(undefined);
+  await runCommand('pitwall.openRepoChats', row);
+  assert.equal(routes[0].chats.length, 8);
+  assert.ok(!routes[0].chats.includes('New Session') && !routes[0].chats.includes('Blank'));
+  assert.deepEqual((stub.__messages.at(-1)![0] as { label: string }[]).map((item) => item.label), ['Open the other 2 chats']);
+});
