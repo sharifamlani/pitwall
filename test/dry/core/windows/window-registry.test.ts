@@ -12,7 +12,7 @@ import * as vscode from 'vscode';
 import { stub, tempDir, waitFor } from '../../support';
 import { STALE_MS, WindowRegistry, ownsFolder } from '../../../../src/core/windows/WindowRegistry';
 import { HandoffInbox } from '../../../../src/core/windows/HandoffInbox';
-import { startWindowServices } from '../../../../src/core/windows/startWindowServices';
+import { startWindowRegistry, startWindowServices } from '../../../../src/core/windows/startWindowServices';
 
 beforeEach(() => stub.__reset());
 
@@ -171,4 +171,34 @@ test('a multi-root window owns no folder', (t) => {
   stub.workspace.workspaceFolders = [folder(one)];
   stub.workspace.workspaceFile = { fsPath: path.join(two, 'lab.code-workspace') };
   assert.equal(ownsFolder(), undefined, 'a .code-workspace window with one folder');
+});
+
+test('a window registers at activation, before its window services (E6): a sender sees it while it is still starting', async (t) => {
+  const storage = path.join(tempDir(t), 'globalStorage');
+  const lab = tempDir(t);
+  stub.workspace.workspaceFolders = [{ uri: { fsPath: lab } }];
+  const context = { subscriptions: [] as { dispose(): unknown }[], globalStorageUri: vscode.Uri.file(storage) };
+  t.after(() => context.subscriptions.forEach((subscription) => subscription.dispose()));
+
+  const early = startWindowRegistry(context as never);
+  assert.ok(early, 'registered');
+  const sender = new WindowRegistry(storage, { pid: process.ppid, folder: undefined });
+  await waitFor(async () => (await sender.windowsFor(lab)).length === 1, 'the window in the registry, with no window services started');
+  assert.equal(fs.existsSync(path.join(storage, 'pitwall-handoff')), false, 'no inbox yet: the window services have not started');
+
+  // The services then reuse that registry: still one record, and one dispose removes it.
+  const services = startWindowServices(context as never, () => undefined, undefined, early);
+  assert.equal(services?.registry, early);
+  assert.equal((await sender.windowsFor(lab)).length, 1);
+  context.subscriptions.forEach((subscription) => subscription.dispose());
+  assert.equal((await sender.windowsFor(lab)).length, 0, 'disposing removes the record');
+  assert.equal(startWindowRegistry({ subscriptions: [] } as never), undefined, 'no global storage');
+});
+
+test('activation registers the window before the first render: extension.ts calls startWindowRegistry and hands it on (E6)', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src', 'extension.ts'), 'utf8');
+  const early = source.indexOf('const earlyRegistry = startWindowRegistry(context)');
+  assert.ok(early > 0, 'the registry is started in activate');
+  assert.ok(early < source.indexOf('afterFirstRender(() => {'), 'before any work is scheduled for after the first render');
+  assert.ok(/startWindowServices\([^;]*earlyRegistry\)/.test(source), 'and the window services reuse it');
 });

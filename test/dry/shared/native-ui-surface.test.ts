@@ -188,14 +188,18 @@ test('a Claude tab dragged to another group stays bound, whether VS Code reports
   service.dispose();
 });
 
-test('settle binds the active Claude tab after a command, but a background link needs a matching title', () => {
+test('settle binds the active Claude tab a command just opened, but a tab already there or a background link needs a matching title', () => {
   const world = tabWorld();
   const service = claudeUiSurfaces(world.options);
 
-  // A command just revealed the tab, so the active tab may be bound even when
-  // its title was truncated differently.
+  // A tab that was there before the open is never "the only expected chat"
+  // (live I1b): the panel's own tab may not have opened yet.
   world.open(claudeTab(), 'Already open', { announce: false });
   service.expect('command', 'A different name');
+  service.settle('command');
+  assert.equal(service.activeSessionId(), undefined, 'the old active tab stays unknown');
+  // The tab the command opened, titled differently from the row, is the one.
+  world.open(claudeTab(), 'Its own title');
   service.settle('command');
   assert.equal(service.activeSessionId(), 'command');
 
@@ -805,4 +809,233 @@ test('whenTabMoved resolves when a Claude tab closes (a move landing), or false 
   timers.fire();
   assert.equal(await nothing, false, 'a move that never lands times out');
   service.dispose();
+});
+
+// ---- T8 (live I1b): a tab that was there before an open is never "the only expected chat" ----
+
+test('a pre-existing unbound tab is never taken as "the only expected chat": each open binds its own new tab (I1b)', async () => {
+  const { world, service, bound } = serialWorld();
+  // b after the relaunch: a restored, pinned "Probe-b1" tab nobody bound, in front.
+  world.open(claudeTab(), 'Probe-b1.txt file creati…', { announce: false });
+  /** T2's single open: expect, the command resolves, settle, and only then the panel's open event (d2 trace). */
+  const openOne = (sessionId: string, rowName: string, tabTitle: string) => {
+    service.expect(sessionId, rowName);
+    service.settle(sessionId, { allowActiveFallback: true });
+    world.open(claudeTab(), tabTitle);
+  };
+  openOne('aa4f8ec3', 'reply with exactly: o2 chat one', 'O2 chat one');
+  openOne('20aa05a6', 'reply with exactly: o2 chat two', 'O2 chat two');
+  openOne('4397131d', 'reply with exactly: probe b1', 'Probe-b1.txt file creati…');
+  assert.deepEqual(bound(), [[undefined, 'aa4f8ec3', '20aa05a6', '4397131d']], 'every open binds the tab it made; the old tab stays unknown');
+  service.dispose();
+});
+
+test('a pre-existing tab losing focus to the new one is not bound to the pending open either (I1b, the changed event)', async () => {
+  const { world, service, bound } = serialWorld();
+  const old = world.open(claudeTab(), 'Lab C two', { announce: false });
+  service.expect('095a88d2', 'reply with exactly: lab c one');
+  world.focus(old);
+  assert.deepEqual(bound(), [[undefined]], 'a changed event on the old tab binds nothing');
+  world.open(claudeTab(), 'Lab C one');
+  assert.deepEqual(bound(), [[undefined, '095a88d2']]);
+  service.dispose();
+});
+
+test('a pre-existing tab still binds when its own title names the chat, and only one unbound tab carries it', async () => {
+  const { world, service, bound } = serialWorld();
+  world.open(claudeTab(), 'O2 chat two', { announce: false });
+  world.open(claudeTab(), 'Claude in Chrome browser…', { announce: false });
+  world.open(claudeTab(), 'Claude in Chrome browser…', { announce: false });
+  service.expect('20aa05a6', 'O2 chat two');
+  service.settle('20aa05a6', { allowActiveFallback: true });
+  service.expect('5b7f5314', 'Claude in Chrome browser automation');
+  service.settle('5b7f5314', { allowActiveFallback: true });
+  assert.deepEqual(bound(), [['20aa05a6', undefined, undefined]], 'two tabs carry the second title, so neither is guessed');
+  service.dispose();
+});
+
+// ---- T8 (live I1): tabs Pitwall did not open are adopted by a title that names one chat ----
+
+const labB = [
+  { sessionId: '20aa05a6', titles: ['O2 chat two', 'reply with exactly: o2 chat two'] },
+  { sessionId: '4397131d', titles: ['Probe-b1.txt file creation'] },
+  { sessionId: 'aa4f8ec3', titles: ['O2 chat one'] },
+  { sessionId: 'c631abb6', titles: ['Lab B ready'] },
+];
+
+test("tabs restored before activation are adopted when their title names exactly one of the folder's chats (I1, R1)", () => {
+  const world = tabWorld();
+  const logs: string[] = [];
+  for (const title of ['O2 chat two', 'Probe-b1.txt file creati…', 'O2 chat one', 'Claude Code']) {
+    world.open(claudeTab(), title, { announce: false });
+  }
+  world.open(fileTab(), 'README.md', { announce: false });
+  const service = claudeUiSurfaces({ ...world.options, log: (line: string) => void logs.push(line) } as never);
+  let changes = 0;
+  service.onDidChange(() => changes++);
+  assert.ok(!service.isOpen('20aa05a6'), 'nothing is adopted before the titles are known');
+  service.setTitleSource(() => labB);
+  assert.deepEqual(
+    service.describeTabs()[0].tabs.map((tab) => tab.sessionId),
+    ['20aa05a6', '4397131d', 'aa4f8ec3', undefined, undefined],
+    'each named tab bound; the default-titled tab and the file stay unknown'
+  );
+  assert.equal(changes, 1, 'one change for the batch');
+  assert.ok(logs.includes('[Pitwall] tab bound 20aa05a6 "O2 chat two"'), logs.join('\n'));
+  service.dispose();
+});
+
+test("a tab whose title fits two chats, or two tabs with one chat's title, stay unknown (never guessed)", () => {
+  const world = tabWorld();
+  world.open(claudeTab(), 'Claude in Chrome browser…', { announce: false });
+  world.open(claudeTab(), 'Lab C one', { announce: false });
+  world.open(claudeTab(), 'Lab C one', { announce: false });
+  world.open(claudeTab(), 'Lab C two', { announce: false });
+  const service = claudeUiSurfaces(world.options);
+  service.setTitleSource(() => [
+    { sessionId: 'chrome-1', titles: ['Claude in Chrome browser automation'] },
+    { sessionId: 'chrome-2', titles: ['Claude in Chrome browser automation'] },
+    { sessionId: '095a88d2', titles: ['Lab C one'] },
+    { sessionId: '23c80023', titles: ['Lab C two'] },
+  ]);
+  assert.deepEqual(service.describeTabs()[0].tabs.map((tab) => tab.sessionId), [undefined, undefined, undefined, '23c80023']);
+  service.dispose();
+});
+
+test('a tab that gets its title later is adopted then, and a waiting serial open takes it without its 5 s wait', async () => {
+  const { world, service, timers } = serialWorld();
+  const tab = world.open(claudeTab(), 'Claude Code', { announce: false });
+  service.setTitleSource(() => [{ sessionId: '095a88d2', titles: ['Lab C one'] }]);
+  assert.ok(!service.isOpen('095a88d2'));
+  const result = service.openSerially(['095a88d2'], async () => {
+    // The panel reveals the tab it already had (no open event); its title arrives.
+    tab.label = 'Lab C one';
+    world.emit([], [tab]);
+  });
+  const map = await result;
+  assert.equal(map.get('095a88d2'), tab as never, 'the open resolves with the adopted tab');
+  assert.deepEqual(timers.delays(), [], 'no 5 s wait is left running');
+  service.dispose();
+});
+
+test('adoption never takes a moved copy, a tab bound by an open, or a binding released into the move window', async () => {
+  const { world, service, bound } = serialWorld();
+  const cursor = cursorWorkbench(world);
+  await service.openSerially(['aaaa', 'bbbb', 'cccc'], async (id) => void world.open(claudeTab(), `Chat ${id}`));
+  service.setTitleSource(() => ['aaaa', 'bbbb', 'cccc'].map((id) => ({ sessionId: id, titles: [`Chat ${id}`] })));
+  for (const order of ['cursor', 'close-first', 'one-event', 'no-resend'] as const) {
+    cursor.move(0, 0, 'new-after', order);
+    cursor.move(1, 0, 0, order);
+  }
+  assert.deepEqual(groupOf(service), { aaaa: 0, bbbb: 0, cccc: 0 });
+  assert.equal(bound().flat().filter(Boolean).length, 3);
+  service.dispose();
+});
+
+test('adoptBeforeOpen waits for the titles (bounded), then adopts', async () => {
+  const world = tabWorld();
+  world.open(claudeTab(), 'Lab C one', { announce: false });
+  const service = claudeUiSurfaces(world.options);
+  let release: () => void = () => undefined;
+  const titles: { sessionId: string; titles: string[] }[] = [];
+  service.setTitleSource(() => titles, new Promise<void>((resolve) => (release = resolve)));
+  const before = service.adoptBeforeOpen(5_000);
+  titles.push({ sessionId: '095a88d2', titles: ['Lab C one'] });
+  release();
+  await before;
+  assert.ok(service.isOpen('095a88d2'));
+  const stuck = claudeUiSurfaces(world.options);
+  stuck.setTitleSource(() => [], new Promise(() => undefined));
+  const startedAt = Date.now();
+  await stuck.adoptBeforeOpen(50);
+  assert.ok(Date.now() - startedAt < 1_000, 'a listing that never ends does not hold the open');
+  service.dispose();
+  stuck.dispose();
+});
+
+// ---- T8 round 2: guards QA showed could be deleted with every test still green ----
+
+test('R2-2: nothing is adopted while the title source is partial; once the listing lands, a title two chats share leaves the tab unknown', async () => {
+  const world = tabWorld();
+  const tab = world.open(claudeTab(), 'Lab C one', { announce: false });
+  const service = claudeUiSurfaces(world.options);
+  let release: () => void = () => undefined;
+  // The listing so far has chat A only; chat B, with the very same title, is not listed yet.
+  const titles = [{ sessionId: 'aaaa', titles: ['Lab C one'] }];
+  service.setTitleSource(() => titles, new Promise<void>((resolve) => (release = resolve)));
+  world.emit([], [tab]);
+  world.emitGroups();
+  service.adopt();
+  assert.ok(!service.isOpen('aaaa'), 'the partial source cannot prove the title is chat A\'s alone');
+  titles.push({ sessionId: 'bbbb', titles: ['Lab C one'] });
+  release();
+  for (let i = 0; i < 3; i++) await nextTurn();
+  assert.ok(!service.isOpen('aaaa') && !service.isOpen('bbbb'), 'listing ready: the shared title stays unknown');
+  assert.deepEqual(service.describeTabs()[0].tabs.map((entry) => entry.sessionId), [undefined]);
+  service.dispose();
+});
+
+test("R2-3 (I1b): a new tab titled as ANOTHER chat of the folder (the user opened it by hand) is not bound to the pending open", () => {
+  const { world, service, bound } = serialWorld();
+  service.setTitleSource(() => [
+    { sessionId: 'aaaa', titles: ['Chat A'] },
+    { sessionId: 'bbbb', titles: ['Chat B'] },
+  ]);
+  service.expect('aaaa', 'reply with exactly: chat a');
+  world.open(claudeTab(), 'Chat B');
+  assert.ok(!service.isOpen('aaaa'), 'chat A is still waiting for its own tab');
+  assert.deepEqual(bound(), [['bbbb']], 'the tab is chat B\'s');
+  service.dispose();
+});
+
+test('R2-4: a title that arrives after the open callback resolved adopts the tab and ends the serial open at once', async () => {
+  const { world, service, timers } = serialWorld();
+  const tab = world.open(claudeTab(), 'Claude Code', { announce: false });
+  service.setTitleSource(() => [{ sessionId: '095a88d2', titles: ['Lab C one'] }]);
+  let opened = false;
+  const result = service.openSerially(['095a88d2'], async () => void (opened = true));
+  await until(() => opened);
+  await nextTurn();
+  assert.equal(timers.delays().length, 1, 'the open is now waiting out its 5 s for the tab');
+  tab.label = 'Lab C one';
+  world.emit([], [tab]);
+  const outcome = await Promise.race([result, new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 1_000))]);
+  assert.notEqual(outcome, 'hung', 'adoption ends the wait; the 5 s timer never has to run');
+  assert.equal((outcome as Map<string, unknown>).get('095a88d2'), tab as never);
+  assert.deepEqual(timers.delays(), [], 'no 5 s wait is left running');
+  service.dispose();
+});
+
+test('R2-5 (F1): a title that arrives only in a re-sent tab model (Cursor) adopts the tab, and bound tabs still pair by place', async () => {
+  const { world, service, bound } = serialWorld();
+  const cursor = cursorWorkbench(world);
+  world.open(claudeTab(), 'Claude Code', { announce: false });
+  await service.openSerially(['bbbb'], async () => void world.open(claudeTab(), 'Chat bbbb'));
+  service.setTitleSource(() => [
+    { sessionId: 'aaaa', titles: ['Lab C one'] },
+    { sessionId: 'bbbb', titles: ['Chat bbbb'] },
+  ]);
+  assert.deepEqual(bound(), [[undefined, 'bbbb']]);
+  // The new model carries the title; a re-send fires a group event only, no tab event.
+  world.groups[0].tabs[0].label = 'Lab C one';
+  cursor.resend();
+  assert.deepEqual(bound(), [['aaaa', 'bbbb']], 'adopted by the group event; the other binding followed its place');
+  service.dispose();
+});
+
+test('R2-6: while the title source is partial, a title proves nothing: a restored tab is not bound by it, nor is a new tab with an unlisted title', () => {
+  const restored = serialWorld();
+  restored.world.open(claudeTab(), 'O2 chat two', { announce: false });
+  restored.service.setTitleSource(() => labB, new Promise(() => undefined));
+  restored.service.expect('20aa05a6', 'O2 chat two');
+  restored.service.settle('20aa05a6', { allowActiveFallback: true });
+  assert.deepEqual(restored.bound(), [[undefined]], 'provenFor is false until the listing is complete');
+  restored.service.dispose();
+
+  const fresh = serialWorld();
+  fresh.service.setTitleSource(() => [], new Promise(() => undefined));
+  fresh.service.expect('aaaa', 'reply with exactly: chat a');
+  fresh.world.open(claudeTab(), 'Title the partial listing lacks');
+  assert.deepEqual(fresh.bound(), [[undefined]], 'namesOther is conservative until the listing is complete');
+  fresh.service.dispose();
 });

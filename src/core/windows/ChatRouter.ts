@@ -7,6 +7,7 @@ import { errorMessage } from '../utils/text';
 import { logOperation } from '../services/OperationLog';
 import type { WindowRegistry } from './WindowRegistry';
 import { EXPIRE_MS, HandoffInbox, HandoffKind, HandoffOutcome, HandoffRequest, WARN_MS } from './HandoffInbox';
+import { OPEN_ITS_WINDOW, raiseFolderWindow } from './raiseWindow';
 
 /** Where a route landed: opened in this window, handed to another, or nowhere (its folder is gone, or no window could be reached). */
 export type RouteResult = 'here' | 'routed' | 'gone';
@@ -18,13 +19,20 @@ export interface RouterTiming {
   coldWarnMs: number;
   /** Expire a request nobody claimed after this long (Q16). */
   expireMs: number;
+  /**
+   * Raise the folder once more when no window has registered for it this
+   * long after the request (live I2: Cursor sometimes drops the first open
+   * of a folder whose window closed minutes before). Never below 45 s: a
+   * new window takes 22–30 s to start Pitwall.
+   */
+  retryOpenMs: number;
   /** How often the sender reads the request's outcome. */
   pollMs: number;
   /** How long a click made before the window services started waits for them. */
   servicesWaitMs: number;
 }
 
-export const ROUTER_TIMING: RouterTiming = { warnMs: WARN_MS, coldWarnMs: 60_000, expireMs: EXPIRE_MS, pollMs: 250, servicesWaitMs: 2_000 };
+export const ROUTER_TIMING: RouterTiming = { warnMs: WARN_MS, coldWarnMs: 60_000, expireMs: EXPIRE_MS, retryOpenMs: 45_000, pollMs: 250, servicesWaitMs: 2_000 };
 /** How often an early click checks whether the window services have started. */
 const SERVICES_CHECK_MS = 50;
 
@@ -47,6 +55,12 @@ export interface ChatRouterDeps {
   windowFolder: () => string | undefined;
   harnessRegistry: Pick<HarnessRegistry, 'has' | 'get' | 'all'>;
   worktreeOf: (chat: ChatSession) => Promise<Worktree | undefined>;
+  /**
+   * The chat's worktree for a request this window claimed, answered without
+   * git (the request names the folder), or undefined when it cannot be.
+   * A worktree window's claim then never waits on a worktree listing (live E6).
+   */
+  worktreeFor?: (chat: ChatSession, folder: string) => Worktree | undefined;
   /** The folders a worktree's repo owns: its main folder and every worktree. */
   rootsOf: (worktree: Worktree) => string[];
   /** The sidebar name of the repo holding a folder, for the warning. */
@@ -368,7 +382,7 @@ export class ChatRouter implements vscode.Disposable {
     const failed: string[] = [];
     await this.openChats(req.kind, req.sessionIds, async (sessionId) => {
       const chat = this.deps.chatForSession(sessionId);
-      const worktree = chat && (await this.deps.worktreeOf(chat));
+      const worktree = chat && (this.deps.worktreeFor?.(chat, req.folder) ?? (await this.deps.worktreeOf(chat)));
       const opened =
         chat && worktree
           ? await this.deps.openHere(chat, { ...worktree, path: req.folder }, { keepListFocus: false })
@@ -473,14 +487,15 @@ export class ChatRouter implements vscode.Disposable {
           const windows = (await services.registry?.windowsFor(folder).catch(() => [])) ?? [];
           const warnMs = windows.length > 0 ? this.timing.warnMs : this.timing.coldWarnMs;
           const nonce = await inbox.send(folder, { kind, sessionIds: ids });
-          this.watchOutcome(inbox, folder, nonce, warnMs, release);
+          this.watchOutcome(inbox, folder, nonce, warnMs, release, services.registry);
         }
       } catch (error) {
         release();
         throw error;
       }
     }
-    await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(folder), { forceNewWindow: true });
+    // The repo menu's "Open its window" makes this same call (I2).
+    await raiseFolderWindow(folder);
     return true;
   }
 
@@ -505,16 +520,41 @@ export class ChatRouter implements vscode.Disposable {
    * once; no `ok` within `warnMs` (20 s, or 60 s for a cold open) warns once;
    * an unclaimed request is expired at 120 s (Q16, Q26). Never toasts on
    * success (Q6). `settled` runs once the request is done, failed or expired.
+   * When no window has registered for the folder `retryOpenMs` (45 s) after
+   * the request, the folder is raised once more (I2). The warning offers
+   * "Open its window", the repo menu's own call.
    */
-  private watchOutcome(inbox: HandoffInbox, folder: string, nonce: string, warnMs: number, settled: () => void): void {
+  private watchOutcome(
+    inbox: HandoffInbox,
+    folder: string,
+    nonce: string,
+    warnMs: number,
+    settled: () => void,
+    registry?: Pick<WindowRegistry, 'windowsFor'>
+  ): void {
     const startedAt = Date.now();
     let warned = false;
+    let retried = false;
+    /** When the retry raised the window; the toast waits `retryOpenMs` more, so the retried window has its 22-30 s to start. */
+    let retriedAt: number | undefined;
     // A closing window (a disposed router) never warns, even when a read it
     // started before closing returns afterwards.
     const warn = () => {
       if (!warned && !this.disposed) {
         warned = true;
-        void vscode.window.showWarningMessage(unreachedMessage(this.deps.repoName(folder)));
+        void Promise.resolve(vscode.window.showWarningMessage(unreachedMessage(this.deps.repoName(folder)), OPEN_ITS_WINDOW)).then((choice) =>
+          choice === OPEN_ITS_WINDOW ? raiseFolderWindow(folder) : undefined
+        );
+      }
+    };
+    /** Raise the folder once more if no window has registered for it. */
+    const retry = async (): Promise<void> => {
+      retried = true;
+      const windows = await registry?.windowsFor(folder).catch(() => undefined);
+      if (windows && windows.length === 0 && !this.disposed) {
+        (this.deps.log ?? logOperation)(`[Pitwall] handoff retry ${nonce.slice(0, 8)} → ${folder} (no window after ${Math.round((Date.now() - startedAt) / 1000)} s)`);
+        await Promise.resolve(raiseFolderWindow(folder)).catch(() => undefined);
+        retriedAt = Date.now();
       }
     };
     const tick = async (): Promise<void> => {
@@ -533,7 +573,10 @@ export class ChatRouter implements vscode.Disposable {
         return;
       }
       const age = Date.now() - startedAt;
-      if (age >= warnMs) {
+      if (!retried && age >= this.timing.retryOpenMs) {
+        await retry();
+      }
+      if (age >= warnMs && (retriedAt === undefined || Date.now() - retriedAt >= this.timing.retryOpenMs)) {
         warn();
       }
       if (age >= this.timing.expireMs) {

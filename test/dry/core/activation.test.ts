@@ -399,6 +399,74 @@ test("the session watchers' file watchers are armed only after the first render"
   await waitFor(() => underProjects().length > 0, 'the watchers once the rows are out');
 });
 
+test('a window started by a handoff claims it before the session scan, repo discovery and the session watchers start (I3, E6)', async (t) => {
+  stub.__setTreeViewsVisible(true);
+  disposeOperationLog();
+  t.after(disposeOperationLog);
+  const lab = labFolder(t);
+  const f = await seededActivation(t, [], {}, [lab.repository]);
+  const storage = tempDir(t, 'pitwall-storage-');
+  (f.context as { globalStorageUri?: vscode.Uri }).globalStorageUri = vscode.Uri.file(storage);
+  (stub.workspace as { workspaceFolders: unknown[] }).workspaceFolders = [{ uri: vscode.Uri.file(lab.repository.rootPath), name: 'lab', index: 0 }];
+  writeTranscript(f.claudeDir, lab.repository.rootPath, 'scan-me');
+  const { HandoffInbox } = await import('../../../src/core/windows/HandoffInbox');
+  await new HandoffInbox(storage, { pid: 1, folder: undefined }, Date.now, () => undefined).send(lab.repository.rootPath, {
+    kind: 'open',
+    sessionIds: ['0a0a0a0a-0000-4000-8000-000000000001'],
+  });
+  const operations = () => (stub.__outputChannels.find((channel) => channel.name === 'Pitwall Operations')?.lines ?? []).join('\n');
+  const projects = path.resolve(f.claudeDir, 'projects');
+  /** For each kind of startup work, whether the handoff was already claimed when it first touched the Claude profile. */
+  const firstTouch = new Map<string, boolean>();
+  const touch = (kind: string) => firstTouch.has(kind) || firstTouch.set(kind, operations().includes('handoff claimed'));
+  const { readdir } = nodeFs.promises;
+  const { watch } = nodeFs;
+  (nodeFs.promises as unknown as Record<string, unknown>).readdir = (dir: unknown, ...rest: unknown[]) => {
+    if (path.resolve(String(dir)) === projects) touch('scan');
+    return (readdir as (...args: unknown[]) => unknown)(dir, ...rest);
+  };
+  (nodeFs as unknown as Record<string, unknown>).watch = (target: unknown, ...rest: unknown[]) => {
+    if (path.resolve(String(target)).startsWith(projects)) touch('watch');
+    return (watch as (...args: unknown[]) => unknown)(target, ...rest);
+  };
+  t.after(() => {
+    Object.assign(nodeFs.promises, { readdir });
+    (nodeFs as unknown as Record<string, unknown>).watch = watch;
+  });
+
+  await f.start();
+  await requestRows();
+  await waitFor(() => operations().includes('handoff claimed'), 'the handoff claim');
+  await waitFor(() => firstTouch.has('scan') && firstTouch.has('watch'), 'the scan and the watchers');
+  assert.deepEqual(Object.fromEntries(firstTouch), { scan: true, watch: true }, 'nothing reads or watches the profile before the claim');
+});
+
+test("the repos' git watchers are made only after the first render, in an empty window too (I3, E16)", async (t) => {
+  stub.__setTreeViewsVisible(true);
+  stub.__setTreeViewFirstRenderDelay(1_000);
+  const lab = labFolder(t);
+  const other = labFolder(t);
+  const f = await seededActivation(t, [], {}, [lab.repository, { ...other.repository, id: 'other-repo', name: 'other' }]);
+  // An empty window: no folder.
+  (stub.workspace as { workspaceFolders: unknown[] }).workspaceFolders = [];
+  const bases: string[] = [];
+  const workspace = stub.workspace as unknown as { createFileSystemWatcher: (pattern: { base?: string }) => unknown };
+  const create = workspace.createFileSystemWatcher;
+  workspace.createFileSystemWatcher = (pattern) => {
+    bases.push(String(pattern?.base ?? pattern));
+    return create(pattern);
+  };
+  t.after(() => (workspace.createFileSystemWatcher = create));
+  const repoWatchers = () => bases.filter((base) => [lab.repository.rootPath, other.repository.rootPath].some((root) => base.startsWith(root)));
+
+  await f.start();
+  stub.__treeViews.find((candidate) => candidate.id === 'pitwall.workspacesView')!.__renderDelayMs = 1_000;
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.deepEqual(repoWatchers(), [], 'activation makes no watcher per repo before the rows are out');
+  await requestRows();
+  await waitFor(() => repoWatchers().length === 6, 'three watchers per repo once the rows are out');
+});
+
 test('stored repos render before discovery finishes', async (t) => {
   stub.__setTreeViewsVisible(true);
   const scratch = tempDir(t);

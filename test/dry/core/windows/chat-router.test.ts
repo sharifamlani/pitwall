@@ -114,6 +114,10 @@ function windowOn(
     serial?: ({ ids: string[]; results?: unknown[] }[] & { recordResults?: boolean });
     /** Record the side-by-side splits the router asks for. */
     splits?: string[][];
+    /** The awaited worktree lookup (default: the world's); a test can make it wait on "git". */
+    worktreeOf?: (chat: ChatSession) => Promise<Worktree | undefined>;
+    /** The git-free lookup a claimed request uses first. */
+    worktreeFor?: (chat: ChatSession, folder: string) => Worktree | undefined;
   }
 ) {
   const logs: string[] = [];
@@ -133,7 +137,8 @@ function windowOn(
     services: () => ((options.servicesUp?.() ?? true) ? { inbox, registry: registryWithOpen } : undefined),
     windowFolder: folder,
     harnessRegistry: new HarnessRegistry([new ClaudeHarness()]),
-    worktreeOf: async (chat) => w.worktrees.find((worktree) => worktree.id === chat.worktreeId),
+    worktreeOf: options.worktreeOf ?? (async (chat) => w.worktrees.find((worktree) => worktree.id === chat.worktreeId)),
+    worktreeFor: options.worktreeFor,
     rootsOf: (worktree) => w.worktrees.filter((candidate) => candidate.repoId === worktree.repoId).map((candidate) => candidate.path),
     repoName: (target) => (target.startsWith(w.other) ? 'other' : 'demo'),
     isOpenHere: (chat) => options.isOpenHere?.(chat) ?? false,
@@ -912,6 +917,108 @@ test('a request to an existing window warns at 20 s', async (t) => {
   await sender.router.route({ kind: 'open', chats: [w.chat('Warm', ID.a, w.mainWt)] });
   await waitFor(() => warnings(UNREACHED('demo')).length > 0, 'the warning at the warm wait', 3_000);
   assert.equal(warnings(UNREACHED('demo')).length, 1);
+});
+
+// ---- T8 (live I2): a handoff to a recently closed folder whose window never came up ----
+
+test('I2: the router raises a window with the same call as "Open its window", and retries a cold open after 45 s', () => {
+  assert.equal(ROUTER_TIMING.retryOpenMs, 45_000, 'never below 45 s: Cursor takes 22-30 s to start a window here');
+  assert.ok(ROUTER_TIMING.retryOpenMs < ROUTER_TIMING.coldWarnMs, 'the retry comes before the warning');
+});
+
+test('I2: no window registers for the folder: the open is retried once, then one "couldn\'t reach" toast whose "Open its window" raises it', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const sender = windowOn(t, w, dir, () => w.other, {
+    pid: 1001,
+    claims: w.other,
+    timing: { ...FAST, warnMs: 50, coldWarnMs: 700, retryOpenMs: 250, expireMs: 5_000 } as typeof FAST,
+  });
+  stub.__warningResponses.push('Open its window');
+
+  await sender.router.route({ kind: 'open', chats: [w.chat('Closed window', ID.a, w.mainWt)] });
+  assert.equal(calls.length, 1);
+  await waitFor(() => calls.length === 2, 'the retry', 3_000);
+  assert.deepEqual(warnings(UNREACHED('demo')), [], 'no toast before the cold wait');
+  assert.deepEqual(calls[1], { path: w.main, forceNewWindow: true }, 'the same call again');
+  await waitFor(() => warnings(UNREACHED('demo')).length > 0, 'the toast', 3_000);
+  const toast = stub.__messages.find((args) => args[0] === UNREACHED('demo'))!;
+  assert.deepEqual(toast.slice(1), ['Open its window'], 'with an "Open its window" button');
+  await waitFor(() => calls.length === 3, 'the button raising the window', 3_000);
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  assert.equal(warnings(UNREACHED('demo')).length, 1, 'the toast fires exactly once');
+  assert.equal(calls.length, 3, 'one retry, one button press, nothing more');
+});
+
+test('I2: the retried window gets its own start time: a window that registers after the old cold-warn time earns no toast', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const windowsAt: string[] = [];
+  const sender = windowOn(t, w, dir, () => w.other, {
+    pid: 1001,
+    claims: w.other,
+    windowsAt,
+    // Production shape: retry 45 s, old toast 60 s (15 s later), expiry 120 s. Here 300 / 400 / 5000.
+    timing: { ...FAST, warnMs: 50, coldWarnMs: 400, retryOpenMs: 300, expireMs: 5_000 } as typeof FAST,
+  });
+  let up = false;
+  const outcome = sender.inbox.outcome.bind(sender.inbox);
+  sender.inbox.outcome = async (...args: Parameters<HandoffInbox['outcome']>) => (up ? { ok: true } : outcome(...args));
+
+  await sender.router.route({ kind: 'open', chats: [w.chat('Slow window', ID.a, w.mainWt)] });
+  await waitFor(() => calls.length === 2, 'the retry', 3_000);
+  const retriedAt = Date.now();
+  // The retried window starts after the old warn time (coldWarnMs 400 from the request, ~100 ms after the retry), before retriedAt + 300.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.ok(Date.now() - retriedAt < 300);
+  windowsAt.push(w.main);
+  up = true;
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert.deepEqual(warnings(UNREACHED('demo')), [], 'no unreached toast: the retried window was still starting');
+});
+
+test('E6: a window a handoff started opens its claimed chats without waiting on a worktree listing', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  w.transcript(w.wt, ID.a, [w.turn(ID.a, w.wt)]);
+  const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
+  // The worktree window: its chat's worktree is a linked one, so the awaited lookup would wait on git (never answers here).
+  const wtWindow = windowOn(t, w, dir, () => w.wt, {
+    pid: 1002,
+    claims: w.wt,
+    worktreeOf: () => new Promise(() => undefined),
+    worktreeFor: (chat, folder) => w.worktrees.find((worktree) => worktree.id === chat.worktreeId && samePath(worktree.path, folder)),
+  });
+  await sender.router.route({ kind: 'open', chats: [w.chat('In worktree', ID.a, w.featWt)] });
+  const claimed = await wtWindow.inbox.claimAll();
+  assert.equal(claimed.length, 1);
+  const outcome = await Promise.race([
+    wtWindow.router.runClaimed(claimed).then(() => 'done' as const),
+    new Promise<'waited on the listing'>((resolve) => setTimeout(() => resolve('waited on the listing'), 1_000)),
+  ]);
+  assert.equal(outcome, 'done');
+  assert.deepEqual(wtWindow.opened.map((entry) => entry.path), [w.wt], 'opened in the worktree window');
+});
+
+test('I2: a window that registers for the folder in time gets no retry', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const sender = windowOn(t, w, dir, () => w.other, {
+    pid: 1001,
+    claims: w.other,
+    windowsAt: [w.main],
+    timing: { ...FAST, warnMs: 5_000, coldWarnMs: 5_000, retryOpenMs: 100, expireMs: 10_000 } as typeof FAST,
+  });
+  await sender.router.route({ kind: 'open', chats: [w.chat('Up', ID.a, w.mainWt)] });
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.equal(calls.length, 1, 'raised once only');
 });
 
 // The flake behind "a click before window services start…": a router disposed

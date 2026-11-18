@@ -117,6 +117,12 @@ export interface WatchOptions {
   backstopMs?: number;
   /** `false` claims on focus and the backstop only (tests). */
   watchFs?: boolean;
+  /**
+   * Called once, when the first claim pass is done, with what `onRequests`
+   * returned for it (settled when the claimed chats have opened), so a
+   * window's other startup work can wait for its handoff (I3).
+   */
+  onFirstPass?: (handled: Promise<unknown>) => void;
 }
 
 export class HandoffInbox {
@@ -304,9 +310,16 @@ export class HandoffInbox {
    * whenever the window gains focus, and every 15 s as a backstop, handing
    * each batch to `onRequests`. Creates the folder so it can be watched.
    */
-  watch(onRequests: (requests: HandoffRequest[]) => void, options: WatchOptions = {}): vscode.Disposable {
+  watch(onRequests: (requests: HandoffRequest[]) => unknown, options: WatchOptions = {}): vscode.Disposable {
     const folder = this.self.folder;
+    let firstPass = options.onFirstPass;
+    const passDone = (handled: unknown): void => {
+      const report = firstPass;
+      firstPass = undefined;
+      report?.(Promise.resolve(handled).catch(() => undefined));
+    };
     if (!folder) {
+      passDone(undefined);
       return { dispose: () => undefined };
     }
     const dir = this.folderDir(folder);
@@ -327,13 +340,15 @@ export class HandoffInbox {
         do {
           again = false;
           const requests = await this.claimAll().catch(() => []);
+          let handled: unknown;
           if (requests.length > 0 && !disposed) {
             try {
-              onRequests(requests);
+              handled = onRequests(requests);
             } catch (error) {
               this.log(`[Pitwall] handoff failed ${id8(requests[0].nonce)} ${(error as Error).message}`);
             }
           }
+          passDone(handled);
         } while (again && !disposed);
       })().finally(() => (running = false));
     };
