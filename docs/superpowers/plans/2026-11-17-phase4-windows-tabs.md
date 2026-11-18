@@ -54,7 +54,7 @@ T8 : Close: walk, evaluator, v0.5.0
 | Q2 | A chat's window folder is its **launch folder**: the first transcript entry that has a `cwd` (read line by line, up to 1 MB), confirmed with `claudeProjectDirMatches(candidate, transcript's project folder)` (`src/harnesses/claude/paths.ts:19`). On a mismatch (fork, resume), the repo or worktree that matches the project folder wins, because that is the folder Claude's panel resumes from (T5/T17). The local open checks availability against this folder, never the latest `cwd` (QA C1, C2) | T18 and recon item 4: a chat that moved into a worktree mid-session stays in the main repo's window | A T18 chat opens blank; E10 catches it |
 | Q3 | `pitwall.defaultSessionSurface` default flips `terminal` → `ui`. The terminal stays one click away (hover icon, setting) | Row 4.1, R48 (Sharif: move off the terminal path) | Users who liked terminals change one setting |
 | Q4 | Ctrl+↓/↑ keep list focus when the chat opens **in this window**, on both surfaces. When it opens in another window, focus goes with that window. Mechanism (QA B1): `moveAndOpen` can't await the row command (the workbench fires it from `list.select` without awaiting), so it sets a one-shot `keepListFocus` marker (expires after 2 s) before `list.select`. The next `openChatPrimary` consumes it: the terminal path uses `show(true)`, and the UI path refocuses the list after the awaited open, or after the next focus or tab event if the S1b repro shows the webview grabs focus late. Never a timer | You can't keep focus in a window that just went behind another; #43 failed on a timer | None; a second Ctrl+↓ in the new window works there |
-| Q5 | Clicking a repo (or pressing Enter on it) opens that repo's **main-folder** chats from the sidebar list (the 14-day set) as tabs in its window. Worktree chats are not opened there. Cap: **pending Sharif (Q18)**. `openSerially` is cancellable. When the repo is this window's and its chats are already open, the click reveals only the last-open tab | D11 says "all"; canvas line 609 keeps worktree chats in their own windows | A busy repo's 20–30 chats load slowly |
+| Q5 | Clicking a repo (or pressing Enter on it) opens that repo's **main-folder** chats from the sidebar list (the 14-day set) as tabs in its window. Worktree chats are not opened there. Cap: the 8 most recent, then a quick pick "Open the other {n} chats" (Q18, Sharif). `openSerially` is cancellable. When the repo is this window's and its chats are already open, the click reveals only the last-open tab | D11 says "all"; canvas line 609 keeps worktree chats in their own windows | A busy repo's 20–30 chats load slowly |
 | Q6 | No toast when a window opens or comes forward (the canvas has none). Log lines only, and a warning only on failure (copy in §3f) | Canvas: the "last action" line is prototype narration, and the only real toast is the needs-you pop-up (Phase 5) | None |
 | Q7 | Repo + branch shows as a bottom-bar item in every window. Pitwall writes no settings (`window.title`, `workbench.editor.labelFormat`) | T9 rules out labels under Claude tabs. D26's fallback is the window title + bottom bar; Cursor's title already names the folder. Writing workspace settings would create `.vscode/settings.json` in the user's repo | The branch is in the bottom bar, not the title |
 | Q8 | FILES always shows **this window's** folder | Row 4.7 replaces Phase 3's "follows the clicked repo", because a click now raises that repo's own window | None |
@@ -65,18 +65,18 @@ T8 : Close: walk, evaluator, v0.5.0
 | Q13 | Row 4.2b is a time-boxed spike (Task 7). A go retires title matching for tagged terminals; a no-go records the evidence in ADR 0009 and keeps titles | Panel by default (Q3) makes terminal identity secondary | Terminal identity stays fragile; terminals are opt-in now |
 | Q14 | Row 4.9 is verify-only. Pitwall never closes, moves or rebuilds a tab, except the one move the user asks for with "Show its open chats side by side" | D16, D32 | None |
 | Q15 | "Show its open chats side by side" puts that repo's open Claude tabs side by side in its window, using Cursor's own split (one group per tab, up to 4) | Canvas: "Side by side · {n} panes (Cursor's own split)", "Only this folder's chats can be split together." | More than 4 tabs: the rest stay as tabs in the last pane |
-| Q16 | Handoff lifecycle (QA B2–B4):<br>• **Expire:** the sender expires an unclaimed request at 120 s by renaming `<nonce>.json` → `<nonce>.expired`. Claim and expire race on the same rename, so exactly one wins (ENOENT = the other won).<br>• **Outcome:** the claimer writes `<nonce>.done-<pid>` with `{ok:true}` or `{ok:false,error}`. The sender warns once unless it sees `ok` within 20 s, so "claimed but failed to open" warns too.<br>• **Sweep:** on activation, every window deletes `.claimed-*`, `.done-*`, `.expired` and `.tmp` files older than 10 min across all folderKey folders.<br>• **Dedupe:** while a request for the same (folder, kind, sessionIds) is pending, the sender writes no second file and only calls `openFolder` again. A double-click, or a re-click after the warning, never makes a second "+" chat or a second openAll | A Cursor cold start is about 10 s; 20 s covers it with margin | A slow machine sees a false warning while the chat still opens |
+| Q16 | Handoff lifecycle (QA B2–B4):<br>• **Expire:** the sender expires an unclaimed request at 120 s by renaming `<nonce>.json` → `<nonce>.expired`. Claim and expire race on the same rename, so exactly one wins (ENOENT = the other won).<br>• **Outcome:** the claimer writes `<nonce>.done-<pid>` with `{ok:true}` or `{ok:false,error}`. The sender warns once unless it sees `ok` within 20 s, so "claimed but failed to open" warns too.<br>• **Sweep:** on activation, every window deletes `.claimed-*`, `.done-*`, `.expired` and `.tmp` files older than 10 min, and `.json` requests older than 120 s, across all folderKey folders.<br>• **Orphans (QA D1):** a claimer treats a request whose `at` is older than 120 s as expired: it renames it to `.expired`, logs `handoff expired` and does not open it. So a request whose sender closed or crashed never opens hours later.<br>• **Dedupe:** while a request for the same (folder, kind, sessionIds) is pending, the sender writes no second file and only calls `openFolder` again. A double-click, or a re-click after the warning, never makes a second "+" chat or a second openAll | A Cursor cold start is about 10 s; 20 s covers it with margin | A slow machine sees a false warning while the chat still opens |
 | Q17 | Only a **single-folder window** (`workspace.workspaceFile === undefined` and exactly 1 folder) claims requests and counts toward `hasWindow` and ` · {k} windows`. A multi-root or `.code-workspace` window still opens its own `[0]`-folder chats locally when they're clicked there (QA B6) | `vscode.openFolder(F)` never raises a workspace window; it opens a new F window, and two claimers would leave one window blank | A user who works in a multi-root window gets a second, single-folder window for routed chats |
-| Q19 | Request files are validated on claim and deleted if: `v ≠ 1`; kind is unknown; any sessionId isn't a UUID; or the folder doesn't `samePath` this window's (QA C5) | Any local process can write into the inbox, and the IDs flow into a command | None |
+| Q19 | Request files are validated on claim and deleted if: `at` is older than 120 s (expired, Q16); `v ≠ 1`; kind is unknown; any sessionId isn't a UUID; or the folder doesn't `samePath` this window's (QA C5) | Any local process can write into the inbox, and the IDs flow into a command | None |
 | Q20 | Drops onto a repo row accept only FILES' own drag mime (`application/vnd.code.tree.pitwall.filesview`), not Explorer's `text/uri-list` (QA C11) | Matches the canvas (drag from FILES); avoids accidental drops of whole folders from the OS | Dragging from Explorer does nothing |
 | Q21 | Row 4.2b's O2 item (after a restart, a row click left two `[shortId]` tabs, one blank) goes into T7's runs: each reload trial also clicks one un-restored row and counts `[shortId]` tabs. If it doesn't reproduce in 10+10 runs, it moves to the Phase 4 handoff's known issues (QA C10) | Its repro is uncertain, and terminals are opt-in after Q3 | A rare duplicate terminal tab survives |
 
-**Waiting on Sharif (QA R1, R2, C10).** The plan is built to the recommended answer; each one changes a single task.
+**Sharif's answers (2026-11-17):** Q18 = cap at 8 (approved). Q22 = expand only (approved; D37 amended). Q7a: Sharif asked whether tabs in one window can be on different branches. Answer: no, a folder has one checked-out branch at a time, and a different branch at the same time means a worktree, which is its own folder and window with its own bottom bar. Waiting on his confirmation; no code depends on it.
 
 | # | Question | Recommended | Changes |
 |---|---|---|---|
-| Q18 | Repo click: open all its chats, or cap? | Cap at the 8 most recent, then a quick pick "Open the other {n} chats" *(new copy)* | T4 `openRepoChats` limit; E5 |
-| Q22 | Ctrl+↓ walking past a repo row: open all its chats (D37 as written), or expand only (Phase 3 P20)? | Expand only; click and Enter open all. Otherwise a keyboard walk pulls each repo's window forward and opens every chat | D37 amendment; T4 navigation tests |
+| Q18 ✅ | Repo click: open all its chats, or cap? | Cap at the 8 most recent, then a quick pick "Open the other {n} chats" *(new copy)* | T4 `openRepoChats` limit; E5 |
+| Q22 ✅ | Ctrl+↓ walking past a repo row: open all its chats (D37 as written), or expand only (Phase 3 P20)? | Expand only; click and Enter open all. Otherwise a keyboard walk pulls each repo's window forward and opens every chat | D37 amendment; T4 navigation tests |
 | Q7a | Row 4.5 says file tabs show repo + branch "via label setting". Drop that (one folder per window, so every tab shares the bottom-bar repo · branch; changing the label setting means writing user settings)? | Drop it; amend row 4.5 | ROADMAP row 4.5 text |
 
 ## Global Constraints
@@ -230,7 +230,8 @@ pitwall/
  sender A: dedupes a pending (folder, kind, ids); no done{ok} in 20 s -> one warning;
            at 120 s renames unclaimed <nonce>.json -> .expired ("handoff expired"; claim and expire can't both win)
  every window: heartbeat 15 s -> pitwall-windows/<pid>.json (deleted on dispose) -> " · {k} windows", label flip
- every activation: sweep .claimed/.done/.expired/.tmp older than 10 min
+ every activation: sweep .claimed/.done/.expired/.tmp older than 10 min and .json older than 120 s
+ claimer: a request older than 120 s is expired, never opened (sender may be gone)
 ```
 
 ## 3. UI wireframes
@@ -467,7 +468,8 @@ Each later PR rebases on main after the earlier merge. `package.json` conflicts 
   - `an empty window claims nothing`;
   - `a multi-root window whose first folder matches does not claim`;
   - `complete writes an outcome the sender reads`;
-  - `old claimed, done, expired and tmp files are swept after 10 min`;
+  - `old claimed, done, expired and tmp files are swept after 10 min, and requests after 120 s`;
+  - `a request whose sender died is not opened by a window that arrives after 120 s`;
   - `a malformed request is deleted and ignored` (bad v, unknown kind, non-UUID id, other folder);
   - `rename retries EPERM once and succeeds` (injected fs);
   - `pending finds an open request for the same folder, kind and ids`;
@@ -511,7 +513,7 @@ Tests: `test/dry/core/chat-commands.test.ts`, `test/dry/core/navigation.test.ts`
   - `the marker is consumed once: a later plain click does not refocus`;
   - `the marker expires after 2 s`;
   - `terminal path calls show(true) only when the marker is set`;
-  - `Ctrl+Down on a repo row still only reveals it` (Q22, recommended answer).
+  - `Ctrl+Down on a repo row still only reveals it` (Q22, Sharif).
 
   If S1b showed late focus grabs, add: `UI path refocuses on the next focus or tab event, not on a timer`.
 - [ ] **Step 2:** `npm run test:dry -- chat-commands navigation terminal manifest` → FAIL.

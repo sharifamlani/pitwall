@@ -4,14 +4,14 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.52 · 2026-11-17
+> v0.53 · 2026-11-17
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 4 — Windows and tabs (one window per folder). Phase 3 closed 2026-11-17 with tag `v0.4.0`.
-- **Current step:** Phase 4 plan written (rows 4.1–4.9 incl. 4.2b), QA review round 1 fixed (6 B + 12 C). Waiting on QA re-review of the diff and on Sharif: go, plus Q18 (repo-click cap), Q22 (Ctrl+↓ on a repo row), Q7a (drop the file-tab label part of row 4.5).
+- **Current step:** Phase 4 plan approved by Sharif (go once QA approves; Q18 cap 8, Q22 Ctrl+↓ on a repo = expand only). QA re-review D1 (orphan requests) fixed. Q7a (drop the file-tab label part of row 4.5) awaits Sharif's confirmation.
 - **Last update:** 2026-11-17
 - **Next action:** On Sharif's go: no-code smokes S3 → S1 → S1b, then wave A (T1, T2, T5, T7). Follow-ups: batch importer chat writes; `list-claude-repos.mjs` to the message clock; a dry test that clicks the inline + / 🕘 commands.
 
@@ -72,7 +72,7 @@ Update §0 every working session. Any commit touching ROADMAP edits §0.
 | D34 | Each repo row gets a session-history button (clock) next to "+": lists every past Claude Code chat in that repo, beyond the 14-day list, and resumes the one you pick in Claude's panel | Sharif 2026-11-16 |
 | D35 | **One window per folder (v1)** — the "one-repo-per-window rule". Claude's panel only resumes chats from its window's folder, and a git worktree counts as its own folder (tests T5, T17). Every window runs the same Pitwall sidebar; clicking a chat from another repo or worktree brings that folder's window forward (opening it if needed) with the chat open. A window's tabs only ever hold its own folder's chats. Supersedes the cross-repo parts of D15, D25, D26 (chat tabs), D31 | Sharif 2026-11-16 · [tests](docs/research/2026-11-16-assumption-tests.md) |
 | D36 | **No repo needs to be open.** You open one Cursor window; Pitwall reads Claude Code's own files (`~/.claude/sessions`, `~/.claude/projects`) to show every repo, chat, status, history and pop-up. Windows for other folders are opened by Pitwall on demand (D35), never by hand. Option "everything in one window via terminal mode" rejected (that is what a switchboard does) | Sharif 2026-11-16 |
-| D37 | Keyboard in the Pitwall list (only while the list has focus): ↓/↑ move the highlight without opening; Ctrl+↓/Ctrl+↑ move and open (chat → added tab; repo → all its chats); Enter opens the highlighted row. Side by side stays Cursor's own split (split button, Split Right, drag a tab) | Sharif 2026-11-16 |
+| D37 | Keyboard in the Pitwall list (only while the list has focus): ↓/↑ move the highlight without opening; Ctrl+↓/Ctrl+↑ move and open (chat → added tab; repo → expand only, amended by Sharif 2026-11-17, Phase 4 Q22); Enter opens the highlighted row. Side by side stays Cursor's own split (split button, Split Right, drag a tab) | Sharif 2026-11-16 |
 | D38 | **Later (backlog 7.3, Sharif: not needed right away).** Remote Control per chat: right-click a Claude chat tab ("Claude: Turn on Remote Control") or a chat row, or press Ctrl+Alt+M on the highlighted row / the chat in front. Rows and tabs show 📡 while on (read from `bridgeSessionId` in the sessions file). Claude Code has no public command for it; route = its own `/remote-control` sent through the link's `prompt` (test T19, in 7.3) | Sharif 2026-11-16 |
 | D39 | **Team + phase-close flow.** Build subagents write code on branches → the Pitwall QA agent reviews it and approves an exact commit → the lead merges that commit to `main` → the Pitwall testing agent runs the real extension in Cursor and tests each feature → when a phase closes, the lead hands it to the Pitwall marketing agent, who drafts a progress post for **LinkedIn and X** (problem first, Sharif's voice, says Pitwall is independent of Anthropic, credits Agntree). The draft goes to the lead, who gets Sharif's approval (Sharif coordinates only through the lead); once approved, the marketing agent posts it **live** on both. Series: a problem-only kickoff post (before Phase 1), one post per phase close, and the v1.0.0 launch post (6.6). Phase-close handoff to marketing: tag + SHA + evaluator scorecard (PASS features only); 1–3 plain bullets of what a user can now do + what still doesn't work; 1–2 screenshots/GIF from the testing agent with demo repo names only; one honest number or moment; anything not to mention yet | Sharif 2026-11-16 |
 ---
@@ -343,3 +343,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.50 · 2026-11-17.** Phase 3 posts live (Sharif-approved, build-in-public update 3): LinkedIn activity `7528652706517954560` (5-image carousel), X `2122887476553338999` (reply 4 in the thread from `2122724368136442262`, 4 images). The Phase 4 post replies to the X post.
 - **v0.51 · 2026-11-17.** Phase 4 plan drafted (`docs/superpowers/plans/2026-11-17-phase4-windows-tabs.md`, `97bb14f`): window registry + handoff inbox in shared global storage, Claude panel by default, repo click opens its chats as tabs, bottom-bar repo · branch, FILES across windows, 4.2b terminal-tag spike; 8 tasks in 4 waves, E1–E19. Next: QA plan review, then Sharif's go.
 - **v0.52 · 2026-11-17.** Phase 4 plan QA round 1 (6 blocking, 12 fixes) applied: handoff outcome file + sender-side expiry and dedupe, single-folder-window claims only, `pathKey()` for `\?\` spellings, one-shot keep-focus marker for Ctrl+↓, sturdier launch-folder read, no-code smokes S3/S1/S1b first, cold-start smoke S2b. Three questions to Sharif (Q18, Q22, Q7a).
+- **v0.53 · 2026-11-17.** Sharif: go on Phase 4 once QA approves; repo click caps at 8 chats (Q18); Ctrl+↓ on a repo row only expands (Q22, D37 amended). QA re-review D1 fixed (a request whose sender died is expired, never opened late).
