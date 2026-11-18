@@ -4,6 +4,7 @@ import { ChatSession, Worktree } from '../types';
 import { HarnessRegistry } from '../harness/HarnessRegistry';
 import { pathKey, samePath } from '../utils/paths';
 import { errorMessage } from '../utils/text';
+import { logOperation } from '../services/OperationLog';
 import type { WindowRegistry } from './WindowRegistry';
 import { EXPIRE_MS, HandoffInbox, HandoffKind, HandoffOutcome, HandoffRequest, WARN_MS } from './HandoffInbox';
 
@@ -57,6 +58,8 @@ export interface ChatRouterDeps {
   openHere: (chat: ChatSession, worktree: Worktree, options: { keepListFocus: boolean }) => Promise<boolean>;
   /** Start a new chat in a folder this window shows. */
   startNew: (folder: string) => Promise<boolean>;
+  /** Where the `[Pitwall] route ...` diagnostic lines go; the Operations log by default. */
+  log?: (line: string) => void;
   timing?: Partial<RouterTiming>;
 }
 
@@ -190,15 +193,19 @@ export class ChatRouter implements vscode.Disposable {
       if (!worktree) {
         continue;
       }
-      if (!(await this.routable(chat))) {
-        local.push({ chat, worktree });
-        continue;
-      }
+      // The launch folder decides first (D35). A chat with no transcript to
+      // read yet (no session, still starting in its UI) has only its worktree.
       const folder = (await this.launchFolder(chat, worktree)) ?? worktree.path;
       if (!fs.existsSync(folder)) {
+        this.logRoute(chat.harnessSessionId ?? chat.id, folder, 'gone');
         gone.add(folder);
       } else if (this.isThisWindow(folder)) {
+        this.logRoute(chat.harnessSessionId ?? chat.id, 'here', this.deps.isOpenHere(chat) ? 'tab-here' : 'same-folder');
         local.push({ chat, worktree: { ...worktree, path: folder } });
+      } else if (!this.canHandOff(chat)) {
+        // Nothing of this chat exists natively to hand over: it stays here.
+        this.logRoute(chat.harnessSessionId ?? chat.id, 'here', 'same-folder');
+        local.push({ chat, worktree });
       } else {
         const key = pathKey(folder);
         const group = remote.get(key) ?? { folder, ids: [] };
@@ -215,7 +222,12 @@ export class ChatRouter implements vscode.Disposable {
     }
     let routed = 0;
     for (const { folder, ids } of remote.values()) {
-      routed += (await this.handOff(folder, req.kind, ids)) ? 1 : 0;
+      const sent = await this.handOff(folder, req.kind, ids);
+      const reason = sent ? 'handoff' : 'no-services';
+      for (const id of ids) {
+        this.logRoute(id, folder, reason);
+      }
+      routed += sent ? 1 : 0;
     }
     if (routed > 0) {
       return 'routed';
@@ -305,26 +317,21 @@ export class ChatRouter implements vscode.Disposable {
     return here !== undefined && samePath(here, folder);
   }
 
+  /** Log one routing decision (`here`, or the folder it went to or was missing). */
+  private logRoute(id: string, where: string, reason: string): void {
+    const line = `[Pitwall] route ${id.slice(0, 8)} → ${where} (${reason})`;
+    (this.deps.log ?? logOperation)(line);
+  }
+
   /**
-   * Whether a click may send this chat to another window. Not when it is
-   * already open here (a click reveals it), has no native session yet, is
-   * still starting in its UI, or is one its UI can't resume (Q23: it opens
-   * in a terminal here and is never routed for a UI open).
+   * Whether this chat has a native session another window can open: a real
+   * session id, not still starting in its UI, a harness this build knows.
+   * Whether its UI can resume it (Q23) is the target window's local open to
+   * decide (a terminal there), never a reason to open it in the wrong window.
    */
-  private async routable(chat: ChatSession): Promise<boolean> {
+  private canHandOff(chat: ChatSession): boolean {
     const sessionId = chat.harnessSessionId;
-    if (!sessionId || !UUID.test(sessionId) || chat.pendingUiLaunch || this.deps.isOpenHere(chat)) {
-      return false;
-    }
-    if (!this.deps.harnessRegistry.has(chat.harness)) {
-      return false;
-    }
-    const ui = this.deps.harnessRegistry.get(chat.harness).nativeUi;
-    try {
-      return !(await ui?.resumeRefusal?.(sessionId));
-    } catch {
-      return true;
-    }
+    return Boolean(sessionId && UUID.test(sessionId) && !chat.pendingUiLaunch && this.deps.harnessRegistry.has(chat.harness));
   }
 
   /** Send a request (unless the same one is pending) and raise the folder's window. */

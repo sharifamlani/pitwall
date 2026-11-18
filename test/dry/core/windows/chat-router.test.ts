@@ -623,6 +623,22 @@ test("a chat filed under the worktree's project dir whose stored worktree is mai
   assert.deepEqual(mainWindow.routeLog, [`[Pitwall] route ${ID.t18.slice(0, 8)} → ${wtDir} (handoff)`]);
 });
 
+test('an exited EnterWorktree chat (filed under main, last cwd = the worktree) routes to the main window', async (t) => {
+  const w = world(t);
+  const calls = openFolderCalls();
+  const wtDir = `${w.main}-wt`;
+  fs.mkdirSync(wtDir);
+  // After /exit Claude files the transcript under main again.
+  w.transcript(w.main, ID.t18, [w.turn(ID.t18, w.main), w.turn(ID.t18, wtDir)]);
+  const chat = w.chat('T18 exited', ID.t18, w.mainWt);
+  const mainWindow = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main });
+
+  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }), 'here');
+  assert.deepEqual(mainWindow.opened.map((entry) => entry.path), [w.main]);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(mainWindow.routeLog, [`[Pitwall] route ${ID.t18.slice(0, 8)} → here (same-folder)`]);
+});
+
 test('a stale UI tab binding for a chat of another folder does not open it here', async (t) => {
   const w = world(t);
   const dir = tempDir(t);
