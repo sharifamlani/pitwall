@@ -6,6 +6,11 @@
  * chats, and their transcripts at realistic sizes (about 1 MB on average,
  * from 50 KB to 5 MB). Real git, real files; only the editor is a stub.
  *
+ * Discovery is on, as installed: besides the stored repos, the profile has 3
+ * repos only discovery finds (5 transcripts each) and a dismissed folder with
+ * 2 long sessions (16 MB each) that discovery looks at on every pass and the
+ * importer never reads. `discoveryPass` times discovery alone.
+ *
  * What it measures, from the moment `activate()` is called:
  *   - activateMs: until `activate()` settles (the exthost "activate call").
  *   - firstRenderMs: until the Repos list answers the workbench's first
@@ -14,7 +19,9 @@
  *   - maxBlockMs: the longest the event loop was blocked (the largest gap
  *     between runs of a 1 ms interval) until the first import scan ended. Nothing else, a
  *     render included, can run while the loop is blocked.
- *   - scanMs: until every transcript has been parsed once (the first scan).
+ *   - scanMs: until every stored chat's transcript has been parsed once (the first scan).
+ *   - discoveryMs: until discovery's first pass ends (`pitwall.scanned`).
+ *   maxBlockMs runs until both the scan and discovery's first pass ended.
  */
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
@@ -23,8 +30,10 @@ import * as vscode from 'vscode';
 import { activate } from '../../src/extension';
 import { worktreeId } from '../../src/core/services/GitService';
 import { encodeClaudeProjectPath } from '../../src/harnesses/claude/paths';
+import { ClaudeRepoDiscovery } from '../../src/harnesses/claude/ClaudeRepoDiscovery';
+import { ClaudeSessionService } from '../../src/harnesses/claude/ClaudeSessionService';
 import { disposeOperationLog } from '../../src/core/services/OperationLog';
-import { makeStorage, memento } from '../dry/support';
+import { makeStorage, memento, watchEventLoopBlocks } from '../dry/support';
 
 interface FixtureRepo {
   name: string;
@@ -36,8 +45,15 @@ interface FixtureRepo {
 export interface Fixture {
   dir: string;
   configDir: string;
+  /** The stored repos. */
   repos: FixtureRepo[];
+  /** The stored chats' transcripts. */
   transcripts: { sessionId: string; cwd: string; file: string; bytes: number }[];
+  /** Repos only discovery finds, and their transcripts. */
+  discoverable: FixtureRepo[];
+  discoverableTranscripts: { file: string; bytes: number }[];
+  /** A dismissed folder with long sessions: discovery reads them, the importer never does. */
+  dismissed: string;
 }
 
 /** Pitwall's stored state, carried from one activation to the next like a reload. */
@@ -54,12 +70,17 @@ export interface BenchRun {
   firstRenderRows: number;
   maxBlockMs: number;
   scanMs: number;
+  discoveryMs: number;
 }
 
 const GIT_REPOS = 12;
 const PLAIN_FOLDERS = 5;
 const LINKED_WORKTREES = 3;
 const CHATS = 129;
+const DISCOVERABLE_REPOS = 3;
+const DISCOVERABLE_TRANSCRIPTS_EACH = 5;
+const DISMISSED_LONG_TRANSCRIPTS = 2;
+const LONG_TRANSCRIPT_BYTES = 16 * 1024 * 1024;
 
 const git = (args: string[], cwd: string) =>
   execFileSync('git', ['-c', 'user.email=bench@example.com', '-c', 'user.name=Bench', ...args], { cwd, stdio: 'pipe' });
@@ -130,7 +151,33 @@ export function buildFixture(dir: string): Fixture {
     fs.writeFileSync(file, transcript(sessionId, cwd, bytes, now - (i + 1) * 3_600_000));
     transcripts.push({ sessionId, cwd, file, bytes: fs.statSync(file).size });
   }
-  return { dir, configDir, repos, transcripts };
+  // Repos only discovery finds, and a dismissed folder with long sessions.
+  const discoverable: FixtureRepo[] = [];
+  const discoverableTranscripts: Fixture['discoverableTranscripts'] = [];
+  const writeSession = (cwd: string, id: string, bytes: number, startedAt: number) => {
+    const projectDir = path.join(projects, encodeClaudeProjectPath(cwd));
+    fs.mkdirSync(projectDir, { recursive: true });
+    const file = path.join(projectDir, `${id}.jsonl`);
+    fs.writeFileSync(file, transcript(id, cwd, bytes, startedAt));
+    return { file, bytes: fs.statSync(file).size };
+  };
+  for (let i = 0; i < DISCOVERABLE_REPOS; i++) {
+    const root = path.join(work, `found-${i}`);
+    fs.mkdirSync(root, { recursive: true });
+    discoverable.push({ name: `found-${i}`, root, worktrees: [root] });
+    for (let j = 0; j < DISCOVERABLE_TRANSCRIPTS_EACH; j++) {
+      const n = CHATS + i * DISCOVERABLE_TRANSCRIPTS_EACH + j;
+      discoverableTranscripts.push(
+        writeSession(root, `${String(n).padStart(8, '0')}-found-4000-8000-000000000000`, transcriptBytes(n), now - (n + 1) * 3_600_000)
+      );
+    }
+  }
+  const dismissed = path.join(work, 'dismissed');
+  fs.mkdirSync(dismissed, { recursive: true });
+  for (let i = 0; i < DISMISSED_LONG_TRANSCRIPTS; i++) {
+    writeSession(dismissed, `${String(i).padStart(8, '0')}-long-4000-8000-000000000000`, LONG_TRANSCRIPT_BYTES, now - 2 * 86_400_000);
+  }
+  return { dir, configDir, repos, transcripts, discoverable, discoverableTranscripts, dismissed };
 }
 
 /**
@@ -152,8 +199,45 @@ export async function storedRepos(fixture: Fixture): Promise<BenchState> {
       autoImported: true,
     });
   }
+  await storage.setDismissed(fixture.dismissed, Date.now());
   await new Promise((resolve) => setTimeout(resolve, 10));
   return { globalState, workspaceState };
+}
+
+/**
+ * The longest the event loop is blocked while `run` runs (counted as far as
+ * this process burned CPU, so other load on the machine does not count), how
+ * long it takes, and the CPU time this process spent on it.
+ */
+async function timed<T>(run: () => Promise<T>): Promise<{ value: T; ms: number; maxBlockMs: number; cpuMs: number }> {
+  const blocks = watchEventLoopBlocks();
+  try {
+    const cpu = process.cpuUsage();
+    const start = performance.now();
+    const value = await run();
+    const ms = performance.now() - start;
+    const used = process.cpuUsage(cpu);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return { value, ms, maxBlockMs: blocks.stop().maxBlockMs, cpuMs: (used.user + used.system) / 1000 };
+  } finally {
+    blocks.stop();
+  }
+}
+
+export interface DiscoveryBench {
+  folders: number;
+  cold: { ms: number; maxBlockMs: number; cpuMs: number };
+  warm: { ms: number; maxBlockMs: number; cpuMs: number };
+}
+
+/** Discovery alone over the profile: a cold pass, as after a start, then a warm one, as every minute. */
+export async function discoveryPass(fixture: Fixture): Promise<DiscoveryBench> {
+  process.env.CLAUDE_CONFIG_DIR = fixture.configDir;
+  const discovery = new ClaudeRepoDiscovery(path.join(fixture.configDir, 'projects'), new ClaudeSessionService());
+  const since = Date.now() - 14 * 86_400_000;
+  const cold = await timed(() => discovery.discoverRecentFolders(since));
+  const warm = await timed(() => discovery.discoverRecentFolders(since));
+  return { folders: cold.value.length, cold, warm };
 }
 
 /** Records the transcripts read in full, by path. */
@@ -192,8 +276,10 @@ export async function runOnce(fixture: Fixture, state: BenchState): Promise<Benc
     __reset(): void;
     __treeViews: { id: string; visible: boolean; options: { treeDataProvider: { getChildren(): Promise<unknown[]> } } }[];
     window: { createTreeView: (...args: unknown[]) => { visible: boolean } };
+    __contextKeys: Map<string, unknown>;
   };
   stub.__reset();
+  const contextKeys = stub.__contextKeys;
   disposeOperationLog();
   // The sidebar is showing, as on a reload with Pitwall open. The workbench
   // asks for rows over IPC, so the stub's synchronous first render is off.
@@ -235,16 +321,28 @@ export async function runOnce(fixture: Fixture, state: BenchState): Promise<Benc
     while (!firstRender) await new Promise((resolve) => setImmediate(resolve));
     const rendered = await firstRender;
     const deadline = Date.now() + 300_000;
-    while (watch.reads.size < fixture.transcripts.length && Date.now() < deadline) {
+    const stored = fixture.transcripts.map((t) => t.file);
+    let scanMs: number | undefined;
+    let discoveryMs: number | undefined;
+    while ((scanMs === undefined || discoveryMs === undefined) && Date.now() < deadline) {
+      if (scanMs === undefined && stored.every((file) => watch.reads.has(file))) scanMs = performance.now() - start;
+      if (discoveryMs === undefined && contextKeys.get('pitwall.scanned') === true) discoveryMs = performance.now() - start;
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
-    const scanMs = performance.now() - start;
     // Let the interval take its sample after the last block.
     await new Promise((resolve) => setTimeout(resolve, 20));
     // Let background listings and writes that follow the scan land, as they
     // would before a later reload.
     await new Promise((resolve) => setTimeout(resolve, 500));
-    return { state, activateMs, firstRenderMs: rendered.at - start, firstRenderRows: rendered.rows, maxBlockMs, scanMs };
+    return {
+      state,
+      activateMs,
+      firstRenderMs: rendered.at - start,
+      firstRenderRows: rendered.rows,
+      maxBlockMs,
+      scanMs: scanMs ?? NaN,
+      discoveryMs: discoveryMs ?? NaN,
+    };
   } finally {
     clearInterval(lag);
     watch.restore();

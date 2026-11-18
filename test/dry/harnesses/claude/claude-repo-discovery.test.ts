@@ -12,6 +12,7 @@ import { ClaudeHarness } from '../../../../src/harnesses/claude/ClaudeHarness';
 import { ClaudeSessionService } from '../../../../src/harnesses/claude/ClaudeSessionService';
 import { DiscoveryCounts } from '../../../../src/core/harness/types';
 import { claudeProfile } from './claudeFixture';
+import { watchEventLoopBlocks } from '../../support';
 
 const DAY = 24 * 60 * 60 * 1000;
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -113,6 +114,201 @@ test('a cwd past the first megabyte is not looked for, and the file counts as sk
   const counts: DiscoveryCounts = { skipped: 0 };
   assert.deepEqual(await discovery().discoverRecentFolders(Date.now() - DAY, counts), []);
   assert.equal(counts.skipped, 1);
+});
+
+/**
+ * A transcript shaped like Claude Code's, about `bytes` long: prompts,
+ * tool calls, long tool results and replies, one turn a minute up to `lastAt`.
+ */
+function realisticTranscript(cwd: string, sessionId: string, bytes: number, lastAt: number): string {
+  const filler = 'lorem ipsum dolor sit amet consectetur adipiscing elit '.repeat(60);
+  const turns: string[][] = [];
+  let size = 0;
+  for (let turn = 0; size < bytes; turn++) {
+    const lines = [
+      { type: 'user', message: { role: 'user', content: [{ type: 'text', text: `Prompt ${turn}` }] } },
+      { type: 'assistant', message: { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id: `t${turn}`, name: 'Read', input: {} }] } },
+      { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `t${turn}`, content: filler.repeat(1 + (turn % 6)) }] } },
+      { type: 'assistant', message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: `Reply ${turn}` }] } },
+    ].map((line) => JSON.stringify({ cwd, sessionId, ...line }));
+    size += lines.reduce((sum, line) => sum + line.length + 1, 0);
+    turns.push(lines);
+  }
+  // Timestamps run up to `lastAt`, one turn a minute.
+  return turns
+    .flatMap((lines, turn) => {
+      const at = iso(lastAt - (turns.length - 1 - turn) * 60_000);
+      return lines.map((line) => line.replace(/^\{/, `{"timestamp":"${at}",`));
+    })
+    .map((line) => `${line}\n`)
+    .join('');
+}
+
+/** A profile like the E16 one: 20 repos, 140 transcripts of about 20 KB, and 3 of 16 MB. */
+function e16Profile(t: { after(fn: () => void): void }) {
+  const { profile } = setup(t);
+  const repos = Array.from({ length: 20 }, (_, i) => profile.dir(`repo-${String(i).padStart(2, '0')}`));
+  let n = 0;
+  const write = (cwd: string, bytes: number) => {
+    const sessionId = `${String(n++).padStart(8, '0')}-e16`;
+    const dir = profile.projectDir(cwd);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${sessionId}.jsonl`), realisticTranscript(cwd, sessionId, bytes, Date.now() - n * 60_000));
+  };
+  for (let i = 0; i < 140; i++) write(repos[i % repos.length], 20_000);
+  for (let i = 0; i < 3; i++) write(repos[i], 16 * 1024 * 1024);
+  return { profile, repos };
+}
+
+/** Calls made through `fs` to read transcripts, while `run` runs. */
+async function transcriptReads(t: { after(fn: () => void): void }, run: () => Promise<unknown>) {
+  const nodeFs = require('fs') as typeof fs;
+  const reads: { whole: string[]; opened: string[] } = { whole: [], opened: [] };
+  const { readFile, open } = nodeFs.promises;
+  const { createReadStream, readFileSync } = nodeFs;
+  const isTranscript = (file: unknown) => String(file).endsWith('.jsonl');
+  const promises = nodeFs.promises as unknown as Record<string, unknown>;
+  const sync = nodeFs as unknown as Record<string, unknown>;
+  const restore = () => {
+    Object.assign(promises, { readFile, open });
+    Object.assign(sync, { createReadStream, readFileSync });
+  };
+  t.after(restore);
+  promises.readFile = (file: unknown, ...rest: unknown[]) => {
+    if (isTranscript(file)) reads.whole.push(String(file));
+    return (readFile as (...args: unknown[]) => unknown)(file, ...rest);
+  };
+  sync.readFileSync = (file: unknown, ...rest: unknown[]) => {
+    if (isTranscript(file)) reads.whole.push(String(file));
+    return (readFileSync as (...args: unknown[]) => unknown)(file, ...rest);
+  };
+  promises.open = (file: unknown, ...rest: unknown[]) => {
+    if (isTranscript(file)) reads.opened.push(String(file));
+    return (open as (...args: unknown[]) => unknown)(file, ...rest);
+  };
+  sync.createReadStream = (file: unknown, ...rest: unknown[]) => {
+    if (isTranscript(file)) reads.opened.push(String(file));
+    return (createReadStream as (...args: unknown[]) => unknown)(file, ...rest);
+  };
+  try {
+    await run();
+  } finally {
+    restore();
+  }
+  return reads;
+}
+
+test('discovery does not block the host for more than 50 ms at a time', async (t) => {
+  const { profile, repos } = e16Profile(t);
+  const blocks = watchEventLoopBlocks();
+  t.after(() => blocks.stop());
+  const folders = await new ClaudeRepoDiscovery(profile.projects, new ClaudeSessionService()).discoverRecentFolders(Date.now() - 14 * DAY);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const { maxBlockMs, maxGapMs } = blocks.stop();
+
+  assert.deepEqual(folders.map((folder) => folder.cwd).sort(), [...repos].sort(), 'every repo is found');
+  assert.ok(
+    maxBlockMs <= 50,
+    `discovery blocked the extension host for ${maxBlockMs.toFixed(0)} ms at once (longest gap ${maxGapMs.toFixed(0)} ms)`
+  );
+});
+
+test('discovery never reads a whole transcript', async (t) => {
+  const { profile, repos } = e16Profile(t);
+  let found: string[] = [];
+  const reads = await transcriptReads(t, async () => {
+    const folders = await new ClaudeRepoDiscovery(profile.projects, new ClaudeSessionService()).discoverRecentFolders(Date.now() - 14 * DAY);
+    found = folders.map((folder) => folder.cwd);
+  });
+
+  assert.deepEqual(found.sort(), [...repos].sort());
+  assert.deepEqual(reads.whole, [], 'only heads and tails are read');
+});
+
+test('a second pass over 600 unchanged transcripts opens none of them', async (t) => {
+  const { profile, user } = setup(t);
+  // More transcripts than the session cache holds (500): 14 days of a busy profile.
+  for (let i = 0; i < 600; i++) {
+    const cwd = profile.dir(`r${i % 30}`);
+    const dir = profile.projectDir(cwd);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `s${i}.jsonl`), `${JSON.stringify(user(cwd, Date.now() - i * 60_000))}\n`);
+  }
+  const discovery = new ClaudeRepoDiscovery(profile.projects, new ClaudeSessionService());
+  assert.equal((await discovery.discoverRecentFolders(Date.now() - 14 * DAY)).length, 30);
+
+  const reads = await transcriptReads(t, () => discovery.discoverRecentFolders(Date.now() - 14 * DAY));
+
+  assert.deepEqual(reads.whole, [], 'nothing is read in full');
+  assert.equal(reads.opened.length, 0, 'every transcript is answered from the first pass');
+});
+
+test("discovery's clock is the last user entry, as import's is, even with later replies", async (t) => {
+  const { profile, transcript, user, discovery } = setup(t);
+  const quiet = profile.dir('quiet');
+  const live = profile.dir('live');
+  const reply = (cwd: string, timestamp: number) => ({
+    type: 'assistant',
+    cwd,
+    timestamp: iso(timestamp),
+    message: { role: 'assistant', content: [{ type: 'text', text: 'x'.repeat(40 * 1024) }] },
+  });
+  // The last user entry is 20 days old; replies after it do not date the session.
+  transcript('quiet', 'q1', [user(quiet, Date.now() - 20 * DAY), reply(quiet, Date.now() - 2 * DAY), reply(quiet, Date.now() - DAY)], DAY);
+  // A recent user entry behind 200 KB of replies still counts.
+  const replies = Array.from({ length: 5 }, () => reply(live, Date.now() - DAY));
+  transcript('live', 'l1', [user(live, Date.now() - 30 * DAY), user(live, Date.now() - 3 * DAY), ...replies], DAY);
+
+  const folders = await discovery().discoverRecentFolders(Date.now() - 14 * DAY);
+
+  assert.deepEqual(folders.map((folder) => folder.cwd), [live]);
+});
+
+test('a transcript whose last user entry is over 1 MB from its end counts as recent, read no further', async (t) => {
+  const { profile, transcript, user, discovery } = setup(t);
+  const busy = profile.dir('busy');
+  // The last user entry is 31 days old, then about 3 MB of replies: past the
+  // 1 MB tail window, so the date is unknown and the mtime (today) stands.
+  const reply = (i: number) => ({
+    type: 'assistant',
+    cwd: busy,
+    timestamp: iso(Date.now() - DAY + i),
+    message: { role: 'assistant', content: [{ type: 'text', text: `${i} `.padEnd(100 * 1024, 'x') }] },
+  });
+  transcript('busy', 'b1', [user(busy, Date.now() - 31 * DAY), ...Array.from({ length: 30 }, (_, i) => reply(i))], 60_000);
+
+  // Every read of a transcript, by the bytes it asked for.
+  const nodeFs = require('fs') as typeof fs;
+  const reads: { file: string; bytes: number }[] = [];
+  const { open, readFile } = nodeFs.promises;
+  const promises = nodeFs.promises as unknown as Record<string, unknown>;
+  t.after(() => Object.assign(promises, { open, readFile }));
+  promises.readFile = async (file: unknown, ...rest: unknown[]) => {
+    if (String(file).endsWith('.jsonl')) reads.push({ file: String(file), bytes: (await fs.promises.stat(String(file))).size });
+    return (readFile as (...args: unknown[]) => unknown)(file, ...rest);
+  };
+  promises.open = async (file: unknown, ...rest: unknown[]) => {
+    const handle = (await (open as (...args: unknown[]) => Promise<fs.promises.FileHandle>)(file, ...rest)) as fs.promises.FileHandle;
+    if (String(file).endsWith('.jsonl')) {
+      const read = handle.read.bind(handle) as (...args: unknown[]) => Promise<unknown>;
+      (handle as unknown as Record<string, unknown>).read = (buffer: unknown, offset: unknown, length: number, ...more: unknown[]) => {
+        reads.push({ file: String(file), bytes: length });
+        return read(buffer, offset, length, ...more);
+      };
+    }
+    return handle;
+  };
+  const blocks = watchEventLoopBlocks();
+  t.after(() => blocks.stop());
+
+  const folders = await discovery().discoverRecentFolders(Date.now() - 14 * DAY);
+  const { maxBlockMs } = blocks.stop();
+
+  assert.deepEqual(folders.map((folder) => folder.cwd), [busy], 'an unknown date counts as recent');
+  assert.ok(reads.length > 0, 'the tail was read');
+  const largest = Math.max(...reads.map((read) => read.bytes));
+  assert.ok(largest <= 1024 * 1024, `one read asked for ${largest} bytes, past the 1 MB tail window`);
+  assert.ok(maxBlockMs <= 50, `discovery blocked the extension host for ${maxBlockMs.toFixed(0)} ms at once`);
 });
 
 test('a repo whose newest transcript has no message in the last 14 days is not discovered', async (t) => {

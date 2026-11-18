@@ -12,7 +12,7 @@ import {
   readTurnStateTail,
 } from './ClaudeTurnState';
 import { RecordPathCatalog, StatCache } from '../../core/harness/kit/recordCache';
-import { parseJsonLine, scanJsonlLines } from '../../core/utils/jsonlTail';
+import { parseJsonLine, readJsonlTail, scanJsonlLines } from '../../core/utils/jsonlTail';
 import { claudeConfigDir, claudeProjectDirOverride } from './claudeConfig';
 
 /**
@@ -50,6 +50,14 @@ export interface ClaudeSession {
  */
 export class ClaudeSessionService {
   private static readonly CACHE_LIMIT = 500;
+  /** Discovery dates every transcript of the last 14 days each pass: ~500 on a busy profile (2026-11-17). */
+  private static readonly ACTIVITY_CACHE_LIMIT = 5_000;
+  /**
+   * How far from a transcript's end its last user entry is looked for. A
+   * window this size parses in a few milliseconds; past it the file counts as
+   * recent (its mtime is), never as a full read on the extension host (E16).
+   */
+  private static readonly ACTIVITY_TAIL_MAX_BYTES = 1024 * 1024;
 
   private readonly claudeDir: string;
   private readonly projectsDir: string;
@@ -65,6 +73,10 @@ export class ClaudeSessionService {
   /** Tail readings keyed by file path, invalidated by mtime+size. */
   private readonly tailCache = new StatCache<ClaudeTurnReading | null>(
     ClaudeSessionService.CACHE_LIMIT
+  );
+  /** Last-activity readings keyed by file path, invalidated by mtime+size. */
+  private readonly activityCache = new StatCache<number | null>(
+    ClaudeSessionService.ACTIVITY_CACHE_LIMIT
   );
 
   constructor() {
@@ -195,12 +207,35 @@ export class ClaudeSessionService {
 
   /**
    * When a transcript's last message was written: the value import and
-   * listing use (`toHarnessSession`'s `lastActivity`). Null when the file
-   * names no folder or cannot be read.
+   * listing use (`toHarnessSession`'s `lastActivity`), the last user entry's
+   * time, else the file's mtime. Read from the transcript's tail, never the
+   * whole file: discovery asks this of every recent transcript each pass,
+   * and a full parse blocked the extension host for the largest file's
+   * length (E16). Null when it cannot tell: the file cannot be read, or no
+   * user entry is in its last megabyte.
    */
   async lastActivityOfFile(filePath: string): Promise<number | null> {
-    const session = await this.parseSessionFileCached(filePath, path.basename(filePath, '.jsonl'));
-    return session ? toHarnessSession(session).lastActivity : null;
+    return this.activityCache.get(filePath, async (stats) => {
+      // A parse the scan already made answers it as import would.
+      const parsed = this.sessionFileCache.peek(filePath, stats);
+      if (parsed) {
+        return parsed.value ? toHarnessSession(parsed.value).lastActivity : null;
+      }
+      return readJsonlTail(
+        filePath,
+        (entries) => {
+          for (let i = entries.length - 1; i >= 0; i--) {
+            const promptAt = promptClockOf(entries[i]);
+            if (promptAt !== null) {
+              return { value: promptAt, decided: true };
+            }
+          }
+          // No user entry up to the file's start: the mtime, as a parse gives.
+          return { value: stats.mtimeMs, decided: false };
+        },
+        { maxBytes: ClaudeSessionService.ACTIVITY_TAIL_MAX_BYTES }
+      );
+    });
   }
 
   /**
@@ -521,8 +556,9 @@ class TranscriptParser {
       }
     }
 
-    if (entry.type === 'user' && !isNaN(timestamp)) {
-      session.lastPromptAt = timestamp;
+    const promptAt = promptClockOf(entry);
+    if (promptAt !== null) {
+      session.lastPromptAt = promptAt;
     }
 
     // Assistant text is the closest thing to a "last reply"; tool-only turns
@@ -567,6 +603,20 @@ class TranscriptParser {
     // Discovery maps sessions by cwd; one without it cannot be placed.
     return session.cwd ? session : null;
   }
+}
+
+/**
+ * The time a user entry dates its session by (`lastPromptAt`, the session's
+ * last activity), or null for any other entry. Any user entry counts, tool
+ * results included; the full parse and the tail reader share this rule.
+ */
+function promptClockOf(entry: unknown): number | null {
+  const record = entry as { type?: unknown; timestamp?: unknown } | null;
+  if (!record || typeof record !== 'object' || record.type !== 'user' || !record.timestamp) {
+    return null;
+  }
+  const timestamp = new Date(record.timestamp as string).getTime();
+  return isNaN(timestamp) ? null : timestamp;
 }
 
 /**
