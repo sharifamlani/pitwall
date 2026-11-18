@@ -31,7 +31,8 @@ Also merged: #45 (v0.4.1, drive-letter case fix on Windows) and #49 (load-tolera
 - A window with several folders open is not found when looking for a chat's window; the chat opens in the current window.
 - Text typed into a new chat before it gets its name can land before the rename.
 - A terminal flickers for about a quarter of a second when a chat opens in one.
-- A chat running in a terminal outside the editor is guarded, but a click on a chat with no transcript anywhere else does nothing visible.
+- A click on a chat that has no transcript yet and belongs to another window's folder does nothing visible; Pitwall won't start it here, and says nothing.
+- The needs-you check turns off after a single 5-second timeout.
 - A handoff that timed out can still be claimed for up to 30 seconds.
 - On a slow machine the lookup of a terminal's parent process can take over 2 seconds, so the chat opens in the current window.
 - A default-titled tab opened within 2 seconds of closing another can take that tab's chat binding.
