@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.62 · 2026-11-18
+> v0.63 · 2026-11-19
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 4 — Windows and tabs (one window per folder). Phase 3 closed 2026-11-17 with tag `v0.4.0`.
-- **Current step:** Phase 4 rows 4.1, 4.2, 4.2b, 4.3, 4.4, 4.6, 4.8 ✅; 4.5, 4.7, 4.9 ~ (W7 walk; the manual drag checks at T8). All feature tasks merged (T4 = PR #52 → `0c623a0`). Weekly usage about 81%.
-- **Last update:** 2026-11-18
-- **Next action:** T8: walk W1–W12 (incl. the human drag step and "ready to type" for the post), independent evaluator E1–E19 on a fresh clone, scorecard + phase4-handoff.md, stale docs, CHANGELOG/README/version 0.5.0, tag `v0.5.0`, then the approved Phase 4 post. Follow-ups: QA probes P3/P5 as tests; claude-repo-discovery.test.ts:301 to assertNoLongBlock; the "Open the other N chats" pick doesn't take keyboard focus on a cold click.
+- **Current step:** Phase 4 rows 4.1–4.4, 4.6, 4.8, 4.9 ✅; 4.5, 4.7 ~. T8 walk found 4 failures (restored and handoff-opened tabs unbound, a misbind, an intermittent no-window click, slow claims, the FILES drop); fixed in PR #54 → `852c4c4` and re-walked live (all pass). Release PR #53 (docs, version 0.5.0) approved, waiting on the scorecard.
+- **Last update:** 2026-11-19
+- **Next action:** independent evaluator grades E1–E19 on a fresh clone of `852c4c4` → `docs/progress_reports/phase4-scorecard.md` on #53 → QA diff → merge #53 → tag `v0.5.0` → Phase 4 ✅ → the approved Phase 4 post (clip). Follow-ups are in `docs/progress_reports/phase4-handoff.md`.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -205,7 +205,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 4.6 | T18: a chat that moved into a worktree mid-session opens in the window of the folder its transcript is filed under right now (amended 2026-11-18 by live data: Claude files it under the worktree while the session runs there after EnterWorktree and back under main after /exit; a plain `cd` never moves it) (was 2.7) | ✅ | ✅ | 2026-11-18 · PR #51 → `d12d768` (live: exited EnterWorktree → main, killed-in-worktree → worktree window, plain cd → main) | D35 |
 | 4.7 | FILES follows the window's folder; file click = normal tab; copy/paste across repos, "Copy to another repo", drag onto a repo row, `.env` gitignore check | ~ | ✅ | PR #50 → merged (live 7/8 PASS; real drag needs a manual check at T8) | D19, D22, D23, T14 |
 | 4.8 | "+" starts the chat in that repo's window | ✅ | ✅ | 2026-11-18 · PR #51 → `d12d768` (live: "+" from another window starts the chat in that repo's window; double "+" → 1 chat) | D28, T15 |
-| 4.9 | Pin, split, drag-reorder: confirm Cursor's own behaviour is untouched | ~ | ✅ | PR #52 → `0c623a0` (live: pin, keyboard reorder, Split Editor Right, Join All Groups keep bindings; drag needs the manual check at T8) | D16, D32 |
+| 4.9 | Pin, split, drag-reorder: confirm Cursor's own behaviour is untouched | ✅ | ✅ | 2026-11-18 · PR #52 → `0c623a0` (live: pin, keyboard reorder, Split Editor Right, Join All Groups keep bindings; T8: real CUA tab drags, reorder + move to another group, keep bindings) | D16, D32 |
 
 ### Phase 5 — Status + pop-ups
 **Goal:** You find out the moment a chat needs you or finishes, without looking.
@@ -352,4 +352,5 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.59 · 2026-11-18.** Row 4.6 amended by live evidence: Claude's EnterWorktree moves a session's transcript into the worktree's project folder, so such a chat belongs in the worktree window (the old premise "stays in the main window" was wrong); a plain `cd` keeps it under main. The plan's Q2/E10 now say the project folder decides. T3 (router) in build.
 - **v0.60 · 2026-11-18.** Row 4.6 refined again by live data: Claude files a transcript under the session's current folder (the worktree while it runs there after EnterWorktree, main again after /exit), so the router follows wherever the file is now. T3 router PR #51: E3 shape, E6, E11, menus, the cold open (Pitwall's part 2.0–2.5 s), the line-clear 12/12 and E8 pass live; a fresh builder is closing the sdk-cli bypass and adding a route log line. Weekly usage about 76%.
 - **v0.61 · 2026-11-18.** Rows 4.2, 4.6, 4.8 ✅: the router merged (PR #51 → `d12d768`, 4 QA rounds plus 3 live walks). A click on any chat lands in its folder's window (opened if needed); sdk-cli chats route and then open in a terminal there; a chat already open stays where it is (one process per session); "+" starts in the repo's window; cold-open warning at 60 s; a line-clear before the typed resume line. Known issues for the handoff: a moved chat's row stays under main; multi-root windows are invisible to open-there; type-ahead before the late rename; a ~270 ms terminal flicker. T4 owns the outside-terminal second-process guard.
+- **v0.63 · 2026-11-19.** Row 4.9 ✅. T8 live walk on `14b8347`: 8/12 walks passed; failures were tabs Cursor restores (reload, relaunch, session restore) and tabs opened in a handoff-started window not bound, an unbound tab taken for the next open (misbind), an intermittent handoff that never opened a window, a 6.25 s worktree-window claim, a 1.56 s empty-window first render, and a FILES drop onto a repo row doing nothing. PR #54 → `852c4c4` (2 QA rounds, 2 live re-walks): restored tabs bound by a unique title, pre-existing tabs never bound without proof, registry entry written at activate, a git-free worktree claim, one re-raise at 45 s plus an "Open its window" toast, its own FILES drag mime. Real CUA tab drags keep bindings. "Ready to type" holds for terminal chats, not panel chats. Next: evaluator, then `v0.5.0`.
 - **v0.62 · 2026-11-18.** Rows 4.3, 4.4 ✅ and 4.9 ~: T4 merged (PR #52 → `0c623a0`, 3 QA rounds plus 3 live walks). A repo click opens its 8 newest main-folder chats as Claude tabs and offers the rest; Claude tabs bind serially (moves between groups keep their chat: Cursor re-sends its whole tab model on every active-editor change); side by side up to 4 panes; the outside-terminal guard warns instead of starting a second process (this window's own panel chats open here); "+" logs its route; `pitwall.dev.dumpState` / `pitwall.dev.traceTabs` + scripts/dump-tabs.mjs. Next: T8 and `v0.5.0`.
