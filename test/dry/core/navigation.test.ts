@@ -233,7 +233,33 @@ test('Ctrl+Down on a repo row still only reveals it (Q22)', async (t) => {
     workspacesView.reveals.map((reveal) => [(reveal.item as WorkspaceTreeItem).label, reveal.options]),
     [['a', { select: true, focus: true, expand: true }]]
   );
-  assert.equal(consumeKeepListFocus(), false, 'no marker is left for a later click');
+  // The repo row now has a click command (T4). The key leaves the marker for
+  // that command to read, so a keyboard walk only expands; it lives 250 ms.
+  assert.equal(consumeKeepListFocus(), true, 'the marker waits for the row command, which reads it and opens nothing');
+  assert.equal(consumeKeepListFocus(), false, 'and is single-use');
+});
+
+test('Enter on a repo runs openRepoChats; a Ctrl+↓ landing on it does not (Q22)', async (t) => {
+  const { workspacesView, tree, context } = setup(t);
+  const [aRow] = await tree.getChildren();
+  assert.equal(aRow.command?.command, 'pitwall.openRepoChats', 'the row command is what Enter (list.select) and a click run');
+  assert.deepEqual(aRow.command?.arguments, [aRow]);
+  const keyboard: boolean[] = [];
+  context.subscriptions.push(
+    vscode.commands.registerCommand('pitwall.openRepoChats', () => void keyboard.push(consumeKeepListFocus())),
+    vscode.commands.registerCommand('list.focusDown', () => undefined),
+    vscode.commands.registerCommand('list.select', async () => {
+      workspacesView.__select([aRow]);
+      await vscode.commands.executeCommand(aRow.command!.command, ...(aRow.command!.arguments ?? []));
+    })
+  );
+  // Enter: the workbench selects the focused row, which fires its command with no marker.
+  await runCommand('list.select');
+  assert.deepEqual(keyboard, [false], 'Enter opens its chats');
+  // Ctrl+↓ onto the same row: the key's marker is there, so it only expands.
+  await runCommand('pitwall.list.moveDownAndOpen');
+  assert.deepEqual(keyboard, [false, true], 'a keyboard walk reads the marker and opens nothing');
+  assert.deepEqual(workspacesView.reveals.map((reveal) => reveal.options), [{ select: true, focus: true, expand: true }]);
 });
 
 test('a repo tooltip names its keys only for positions 1–9', async (t) => {

@@ -88,3 +88,17 @@ test('core reaches no harness folder, directly or transitively, in any import sy
 test('src/ holds only core, harnesses and extension.ts', () => {
   assert.deepEqual(fs.readdirSync(SRC).sort(), ['core', 'extension.ts', 'harnesses']);
 });
+
+test('no code path calls tabGroups.close or moveEditor outside side by side and the user-requested closes', () => {
+  // Q14: Pitwall never closes, moves or rebuilds a tab unless the user asked: the split, "switch to terminal" (closeSurface) and the changes view's own tab.
+  const allowed = new Set(['src/core/windows/sideBySide.ts', 'src/core/harness/kit/NativeUiTabSurfaceService.ts', 'src/core/commands/changes.ts']);
+  const offenders = tsFiles(SRC)
+    .map((file) => path.relative(ROOT, file).split(path.sep).join('/'))
+    .filter((file) => !allowed.has(file) && /tabGroups\s*\.\s*close|moveEditor/.test(fs.readFileSync(path.join(ROOT, file), 'utf8')));
+  assert.deepEqual(offenders, []);
+  const split = fs.readFileSync(path.join(SRC, 'core', 'windows', 'sideBySide.ts'), 'utf8');
+  assert.ok(/moveEditor/.test(split) && !/tabGroups\s*\.\s*close/.test(split), 'the split only moves editors, never closes them');
+  const tracker = fs.readFileSync(path.join(SRC, 'core', 'harness', 'kit', 'NativeUiTabSurfaceService.ts'), 'utf8');
+  assert.equal((tracker.match(/tabGroups\s*\.\s*close/g) ?? []).length, 1, 'the tracker closes a tab only in closeSurface');
+  assert.ok(!/moveEditor/.test(tracker));
+});

@@ -208,3 +208,192 @@ test('settle binds the active Claude tab after a command, but a background link 
   assert.equal(service.activeSessionId(), 'truncated');
   service.dispose();
 });
+
+// ---- Phase 4 Task 4: serial open, reliable binding (rows 4.3, 4.4, 4.9) ----
+
+/** A timer the test fires by hand, and the delays it was asked for. */
+function manualTimers() {
+  const pending: { fn: () => void; ms: number; live: boolean }[] = [];
+  return {
+    schedule: (fn: () => void, ms: number) => {
+      const entry = { fn, ms, live: true };
+      pending.push(entry);
+      return { dispose: () => void (entry.live = false) };
+    },
+    delays: () => pending.filter((entry) => entry.live).map((entry) => entry.ms),
+    fire: () => {
+      const next = pending.find((entry) => entry.live);
+      if (next) {
+        next.live = false;
+        next.fn();
+      }
+    },
+  };
+}
+
+/** A cancellation token the test cancels by hand. */
+function manualToken() {
+  const listeners = new Set<() => void>();
+  const token = {
+    isCancellationRequested: false,
+    onCancellationRequested: (listener: () => void) => {
+      listeners.add(listener);
+      return { dispose: () => listeners.delete(listener) };
+    },
+  };
+  return {
+    token,
+    cancel() {
+      token.isCancellationRequested = true;
+      listeners.forEach((listener) => listener());
+    },
+  };
+}
+
+const nextTurn = () => new Promise<void>((resolve) => setImmediate(resolve));
+/** Wait (without a real timer) until `condition` holds. */
+async function until(condition: () => boolean): Promise<void> {
+  for (let i = 0; i < 50 && !condition(); i++) {
+    await nextTurn();
+  }
+}
+
+function serialWorld() {
+  const world = tabWorld();
+  const timers = manualTimers();
+  const logs: string[] = [];
+  const service = claudeUiSurfaces({ ...world.options, schedule: timers.schedule, log: (line: string) => void logs.push(line) } as never);
+  /** Which session each tab is bound to, per group. */
+  const bound = () => service.describeTabs().map((group) => group.tabs.map((tab) => tab.sessionId));
+  return { world, timers, logs, service, bound };
+}
+
+test('serial opens bind each new tab to the session just requested', async () => {
+  const { world, service, logs } = serialWorld();
+  const tabs = new Map<string, FakeTab>();
+  const result = await service.openSerially(['aaaa1111', 'bbbb2222', 'cccc3333'], async (id) => {
+    tabs.set(id, world.open(claudeTab(), `Chat ${id}`));
+  });
+  for (const id of ['aaaa1111', 'bbbb2222', 'cccc3333']) {
+    assert.ok(service.isOpen(id), `${id} is bound`);
+    assert.equal(result.get(id), tabs.get(id) as never, `${id} maps to its own tab`);
+  }
+  assert.deepEqual(
+    logs,
+    ['aaaa1111', 'bbbb2222', 'cccc3333'].map((id) => `[Pitwall] tab bound ${id.slice(0, 8)} "Chat ${id}"`)
+  );
+  service.dispose();
+});
+
+test('two new chats both titled "Claude Code" bind to the right sessions', async () => {
+  const { world, service, bound } = serialWorld();
+  const tabs: FakeTab[] = [];
+  const result = await service.openSerially(['aaaa', 'bbbb'], async () => void tabs.push(world.open(claudeTab(), 'Claude Code')));
+  assert.equal(result.get('aaaa'), tabs[0] as never);
+  assert.equal(result.get('bbbb'), tabs[1] as never);
+  assert.deepEqual(bound(), [['aaaa', 'bbbb']]);
+  service.dispose();
+});
+
+test('a Claude tab the user opened stays unknown', async () => {
+  const { world, service, bound } = serialWorld();
+  world.open(claudeTab(), 'Claude Code');
+  assert.deepEqual(bound(), [[undefined]], 'nothing was waiting for it');
+  let mine: FakeTab | undefined;
+  const result = await service.openSerially(['mine'], async () => void (mine = world.open(claudeTab(), 'Claude Code')));
+  assert.equal(result.get('mine'), mine as never);
+  assert.deepEqual(bound(), [[undefined, 'mine']], 'only the tab opened for the request binds');
+  world.open(claudeTab(), 'Claude Code');
+  assert.deepEqual(bound(), [[undefined, 'mine', undefined]], 'a tab opened after the request is unknown again');
+  service.dispose();
+});
+
+test('an already-bound session is revealed, not reopened', async () => {
+  const { world, service, timers } = serialWorld();
+  let opened = 0;
+  await service.openSerially(['a'], async () => void (opened++, world.open(claudeTab(), 'Claude Code')));
+  const revealed: string[] = [];
+  const result = await service.openSerially(['a'], async (id) => {
+    revealed.push(`${id} open=${service.isOpen(id)}`);
+  });
+  assert.deepEqual(revealed, ['a open=true'], 'the open callback is told it is open, so it reveals');
+  assert.equal(opened, 1);
+  assert.equal(world.groups[0].tabs.length, 1, 'no second tab');
+  assert.equal(result.get('a'), world.groups[0].tabs[0] as never);
+  assert.deepEqual(timers.delays(), [], 'a reveal waits for no new tab');
+  service.dispose();
+});
+
+test('a 5 s timeout leaves the session unbound and continues', async () => {
+  const { world, service, timers } = serialWorld();
+  const asked: string[] = [];
+  const promise = service.openSerially(['slow', 'next'], async (id) => {
+    asked.push(id);
+    if (id === 'next') {
+      world.open(claudeTab(), 'Claude Code');
+    }
+  });
+  await until(() => timers.delays().length > 0);
+  assert.deepEqual(timers.delays(), [5000], 'waits at most 5 s for the tab');
+  assert.deepEqual(asked, ['slow'], 'the next open waits for this one');
+  timers.fire();
+  const result = await promise;
+  assert.deepEqual(asked, ['slow', 'next']);
+  assert.equal(result.get('slow'), undefined);
+  assert.ok(!service.isOpen('slow'));
+  assert.ok(service.isOpen('next'), 'the next session still binds');
+  service.dispose();
+});
+
+test('cancel stops before the next open', async () => {
+  const { world, service } = serialWorld();
+  const control = manualToken();
+  const asked: string[] = [];
+  const result = await service.openSerially(
+    ['one', 'two', 'three'],
+    async (id) => {
+      asked.push(id);
+      world.open(claudeTab(), `Chat ${id}`);
+      control.cancel();
+    },
+    control.token as never
+  );
+  assert.deepEqual(asked, ['one']);
+  assert.deepEqual([...result.keys()], ['one']);
+  assert.ok(service.isOpen('one') && !service.isOpen('two'));
+  service.dispose();
+});
+
+test("serial bind replaces T2's interim title re-match: two \"Claude Code\" tabs survive a group rebuild without swapping bindings", async () => {
+  const { world, service, bound } = serialWorld();
+  await service.openSerially(['aaaa', 'bbbb'], async () => void world.open(claudeTab(), 'Claude Code'));
+  // VS Code replaces every Tab object when it rebuilds its model (a group
+  // added or removed) and fires a group event only.
+  const rebuilt = world.groups[0].tabs.map((tab) => ({ ...tab }));
+  world.groups[0].tabs = rebuilt;
+  world.groups[0].activeTab = rebuilt[1];
+  world.focusGroup(0);
+  assert.deepEqual(bound(), [['aaaa', 'bbbb']], 'order, not the shared title, keeps each binding');
+  assert.ok(service.isOpen('aaaa') && service.isOpen('bbbb'));
+  // A later close names the rebuilt object and releases the right session.
+  world.close(rebuilt[0]);
+  assert.ok(!service.isOpen('aaaa') && service.isOpen('bbbb'));
+  service.dispose();
+});
+
+test('a moved tab keeps its own session when another tab shares its title', async () => {
+  const { world, service, bound } = serialWorld();
+  await service.openSerially(['aaaa', 'bbbb'], async () => void world.open(claudeTab(), 'Claude Code'));
+  world.groups.push({ isActive: false, activeTab: undefined, tabs: [] });
+  const [left, right] = world.groups;
+  const original = left.tabs[1];
+  // Drag the second tab: opened in the target group first, then closed in the source.
+  const copy: FakeTab = { label: original.label, input: claudeTab(), isActive: true };
+  right.tabs.push(copy);
+  right.activeTab = copy;
+  world.emit([copy]);
+  left.tabs = left.tabs.filter((tab) => tab !== original);
+  world.emit([], [], [original]);
+  assert.deepEqual(bound(), [['aaaa'], ['bbbb']]);
+  service.dispose();
+});
