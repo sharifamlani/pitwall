@@ -6,6 +6,7 @@
  */
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { stub, tempDir, waitFor } from '../../support';
@@ -17,7 +18,7 @@ import {
   SWEEP_AGE_MS,
   renameRetrying,
 } from '../../../../src/core/windows/HandoffInbox';
-import { ownsFolder } from '../../../../src/core/windows/WindowRegistry';
+import { WindowRegistry, ownsFolder } from '../../../../src/core/windows/WindowRegistry';
 
 beforeEach(() => stub.__reset());
 
@@ -315,4 +316,36 @@ test('watch creates a missing folder and the beat backstop claims without an fs 
   assert.equal(received.flat().length, 1, 'losing focus claims nothing');
   stub.window.__fireWindowState(true);
   await waitFor(() => received.flat().some((request) => request.nonce === second), 'the focus claim');
+});
+
+test('the dump script finds only allowed keys in the files the inbox and registry write (E17)', async (t) => {
+  const dir = tempDir(t);
+  const lab = tempDir(t);
+  const clock = fakeClock(Date.now());
+  await new WindowRegistry(dir, { pid: process.pid, folder: lab }, clock.read).beat([A]);
+  const sender = inbox(dir, undefined, clock);
+  const claimer = inbox(dir, lab, clock);
+  const opened = await sender.send(lab, { kind: 'open', sessionIds: [A] });
+  await claimer.claimAll();
+  await claimer.complete(opened, { ok: false, error: 'Claude Code is not active' });
+  const expired = await sender.send(lab, { kind: 'new', sessionIds: [] });
+  await sender.expire(lab, expired);
+  await sender.send(lab, { kind: 'openAll', sessionIds: [A, B] });
+
+  // The bundle runs from test/dry/.build, so the repo root is three levels up.
+  const script = path.resolve(__dirname, '..', '..', '..', 'scripts', 'dump-pitwall-windows.mjs');
+  const run = (...args: string[]) => spawnSync(process.execPath, [script, '--dir', dir, ...args], { encoding: 'utf8' });
+  const ok = run('--check-privacy');
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  assert.match(ok.stdout, /privacy ok: 5 files checked/);
+  assert.match(ok.stdout, new RegExp(`${process.pid} .+ open=1`));
+  assert.match(ok.stdout, /pending [0-9a-f]{8} openAll/);
+  assert.match(ok.stdout, new RegExp(`claimed by ${process.pid} ${opened.slice(0, 8)} open .+ -> failed: Claude Code is not active`));
+  assert.match(ok.stdout, new RegExp(`expired ${expired.slice(0, 8)} new`));
+
+  const folderDir = path.join(dir, 'pitwall-handoff', sender.folderKey(lab));
+  fs.writeFileSync(path.join(folderDir, `${opened}.done-1`), JSON.stringify({ ok: true, at: 1, text: 'a transcript line' }));
+  const leak = run('--check-privacy');
+  assert.equal(leak.status, 1, leak.stdout);
+  assert.match(leak.stdout, /keys outside the outcome allow-list: text/);
 });
