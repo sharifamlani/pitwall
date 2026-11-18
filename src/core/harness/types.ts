@@ -390,6 +390,13 @@ export interface HarnessAdapter {
   liveSessionIds?(): Promise<Set<string> | undefined>;
 
   /**
+   * The folder a session's window is (Q2): the one its agent's UI resumes it
+   * from, among `roots` (its repo's main folder and worktrees). Undefined when
+   * the harness can't tell; the caller then uses the chat's worktree.
+   */
+  launchFolder?(sessionId: string, roots: readonly string[]): Promise<string | undefined>;
+
+  /**
    * Metadata for a chat row. Implementations should prefer cached data and
    * return quickly; opencode previews are populated by getPreview lazily.
    * `cwd` lets the adapter locate a session that is not in its cache.
