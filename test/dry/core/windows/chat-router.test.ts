@@ -114,6 +114,10 @@ function windowOn(
     serial?: ({ ids: string[]; results?: unknown[] }[] & { recordResults?: boolean });
     /** Record the side-by-side splits the router asks for. */
     splits?: string[][];
+    /** The awaited worktree lookup (default: the world's); a test can make it wait on "git". */
+    worktreeOf?: (chat: ChatSession) => Promise<Worktree | undefined>;
+    /** The git-free lookup a claimed request uses first. */
+    worktreeFor?: (chat: ChatSession, folder: string) => Worktree | undefined;
   }
 ) {
   const logs: string[] = [];
@@ -133,7 +137,8 @@ function windowOn(
     services: () => ((options.servicesUp?.() ?? true) ? { inbox, registry: registryWithOpen } : undefined),
     windowFolder: folder,
     harnessRegistry: new HarnessRegistry([new ClaudeHarness()]),
-    worktreeOf: async (chat) => w.worktrees.find((worktree) => worktree.id === chat.worktreeId),
+    worktreeOf: options.worktreeOf ?? (async (chat) => w.worktrees.find((worktree) => worktree.id === chat.worktreeId)),
+    worktreeFor: options.worktreeFor,
     rootsOf: (worktree) => w.worktrees.filter((candidate) => candidate.repoId === worktree.repoId).map((candidate) => candidate.path),
     repoName: (target) => (target.startsWith(w.other) ? 'other' : 'demo'),
     isOpenHere: (chat) => options.isOpenHere?.(chat) ?? false,
@@ -974,6 +979,30 @@ test('I2: the retried window gets its own start time: a window that registers af
   up = true;
   await new Promise((resolve) => setTimeout(resolve, 500));
   assert.deepEqual(warnings(UNREACHED('demo')), [], 'no unreached toast: the retried window was still starting');
+});
+
+test('E6: a window a handoff started opens its claimed chats without waiting on a worktree listing', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  w.transcript(w.wt, ID.a, [w.turn(ID.a, w.wt)]);
+  const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
+  // The worktree window: its chat's worktree is a linked one, so the awaited lookup would wait on git (never answers here).
+  const wtWindow = windowOn(t, w, dir, () => w.wt, {
+    pid: 1002,
+    claims: w.wt,
+    worktreeOf: () => new Promise(() => undefined),
+    worktreeFor: (chat, folder) => w.worktrees.find((worktree) => worktree.id === chat.worktreeId && samePath(worktree.path, folder)),
+  });
+  await sender.router.route({ kind: 'open', chats: [w.chat('In worktree', ID.a, w.featWt)] });
+  const claimed = await wtWindow.inbox.claimAll();
+  assert.equal(claimed.length, 1);
+  const outcome = await Promise.race([
+    wtWindow.router.runClaimed(claimed).then(() => 'done' as const),
+    new Promise<'waited on the listing'>((resolve) => setTimeout(() => resolve('waited on the listing'), 1_000)),
+  ]);
+  assert.equal(outcome, 'done');
+  assert.deepEqual(wtWindow.opened.map((entry) => entry.path), [w.wt], 'opened in the worktree window');
 });
 
 test('I2: a window that registers for the folder in time gets no retry', async (t) => {

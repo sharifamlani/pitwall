@@ -36,7 +36,7 @@ import { commandRegistrar } from './core/commands/common';
 import { debounce } from './core/utils/debounce';
 import { samePath } from './core/utils/paths';
 import { RepoStatusBar } from './core/windows/RepoStatusBar';
-import { WindowServices, startWindowServices } from './core/windows/startWindowServices';
+import { WindowServices, startWindowRegistry, startWindowServices } from './core/windows/startWindowServices';
 import { ChatRouter } from './core/windows/ChatRouter';
 import { SIDE_BY_SIDE_MOVE_WAIT_MS, splitSideBySide } from './core/windows/sideBySide';
 import { outsideProcessOf } from './core/windows/outsideProcess';
@@ -175,6 +175,7 @@ export async function activate(context: vscode.ExtensionContext) {
   // Clicking a chat lands in its folder's window (rows 4.2, 4.6, 4.8). The
   // local open is the chat commands' own, bound once they are registered.
   let windowServices: WindowServices | undefined;
+  const earlyRegistry = startWindowRegistry(context);
   let openChatHere: ChatCommands['openChatHere'] = async () => 'failed';
   /** The first harness UI whose tab tracker can open sessions serially and describe its tabs. */
   const tabTracker = () => harnessRegistry.all().find((adapter) => adapter.nativeUi?.surfaces?.openSerially)?.nativeUi?.surfaces;
@@ -184,6 +185,7 @@ export async function activate(context: vscode.ExtensionContext) {
     windowFolder: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
     harnessRegistry,
     worktreeOf: (chat) => workspacesProvider.getWorktreeByIdAsync(chat.worktreeId),
+    worktreeFor: (chat, folder) => workspacesProvider.worktreeWithoutGit(chat.worktreeId, folder),
     rootsOf: (worktree) => workspacesProvider.rootsOf(worktree),
     repoName: (folder) => workspacesProvider.repoContaining(folder)?.name ?? path.basename(folder),
     isOpenHere: isChatOpen,
@@ -273,10 +275,12 @@ export async function activate(context: vscode.ExtensionContext) {
   };
 
   // The window registry and handoff inbox (ADR 0020); nothing awaits them.
+  // This window's registry entry was written at activation, so a sender
+  // that raised it sees it before its 45 s retry (I2, live E6).
   // Requests this window claims open through the router (T3). First of the
   // work after the first render (I3).
   afterFirstRender(() => {
-    windowServices = startWindowServices(context, logOperation, (requests, inbox) => router.runClaimed(requests, inbox));
+    windowServices = startWindowServices(context, logOperation, (requests, inbox) => router.runClaimed(requests, inbox), earlyRegistry);
     if (windowServices) {
       publishWindows(windowServices.registry);
       void windowServices.claimed.then(firstClaimed);

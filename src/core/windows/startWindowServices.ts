@@ -18,7 +18,28 @@ export interface WindowServices {
 const NO_OPENER = 'this build cannot open handed-off chats';
 
 /**
- * Start the window registry and the handoff inbox (ADR 0020). Runs after the
+ * Register this window in the shared registry (ADR 0020), at activation,
+ * before the first render: a sender that raised this window must see it as
+ * soon as its extension runs, not after the list has rendered, or its
+ * "no window registered" retry (I2) races a window that is just starting.
+ * One small file write in the background; undefined when there is no global
+ * storage to share. Pass the result to `startWindowServices`.
+ */
+export function startWindowRegistry(context: vscode.ExtensionContext): WindowRegistry | undefined {
+  try {
+    if (!context.globalStorageUri) {
+      return undefined;
+    }
+    const registry = new WindowRegistry(sharedDir(context), { pid: process.pid, folder: ownsFolder() });
+    context.subscriptions.push(registry.start());
+    return registry;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Start the window registry (unless `early` already did) and the handoff inbox (ADR 0020). Runs after the
  * list's first render and returns at once: the first beat and the first claim
  * run in the background, and failures are logged, never thrown. The sweep of
  * old files waits for the first claim, so a window a handoff started claims
@@ -27,7 +48,8 @@ const NO_OPENER = 'this build cannot open handed-off chats';
 export function startWindowServices(
   context: vscode.ExtensionContext,
   log: (line: string) => void,
-  onRequests?: (requests: HandoffRequest[], inbox: HandoffInbox) => unknown
+  onRequests?: (requests: HandoffRequest[], inbox: HandoffInbox) => unknown,
+  early?: WindowRegistry
 ): WindowServices | undefined {
   try {
     if (!context.globalStorageUri) {
@@ -35,13 +57,13 @@ export function startWindowServices(
     }
     const dir = sharedDir(context);
     const self = { pid: process.pid, folder: ownsFolder() };
-    const registry = new WindowRegistry(dir, self);
+    const registry = early ?? new WindowRegistry(dir, self);
     const inbox = new HandoffInbox(dir, self, Date.now, log);
     context.subscriptions.push(
       registry.onDidChange(() => {
         void registry.windows().then((windows) => log(`[Pitwall] window registry ${windows.length} windows`));
       }),
-      registry.start()
+      ...(early ? [] : [registry.start()])
     );
     const handle =
       onRequests ??

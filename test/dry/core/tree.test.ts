@@ -8,6 +8,7 @@ import { SessionStatus } from '../../../src/core/providers/sessionStatus';
 import { ChatSession, Repository, RepositoryWorktrees, Worktree } from '../../../src/core/types';
 import { disposeOperationLog } from '../../../src/core/services/OperationLog';
 import { claudeUiSurfaces } from '../../../src/harnesses/claude/claudeUi';
+import { worktreeId } from '../../../src/core/services/GitService';
 import { fakeAdapter, fakeNativeUi, fakeWorktreeListing, makeStorage, memento, flush, stub, waitFor, worktreeRecord } from '../support';
 
 beforeEach(() => stub.__reset());
@@ -810,4 +811,19 @@ test('no git watcher is made before the first render, even when a refresh lands 
   await tree.getChildren();
   await waitFor(() => watchers() === 6, 'the watchers once the rows are out');
   assert.equal(watchers(), 6, 'three per repo');
+});
+
+test("a linked worktree's chat resolves for a claimed request without git: the repo and folder derive its id (E6)", async (t) => {
+  const storage = makeStorage();
+  const app = storage.addRepository('app', '/work/app');
+  storage.addRepository('notes', '/work/notes');
+  const { tree, calls } = heldListings(t, storage);
+  const folder = '/work/app-fiu';
+  const id = worktreeId(app.id, folder);
+
+  const found = tree.worktreeWithoutGit(id, folder);
+  assert.deepEqual(found && { id: found.id, repoId: found.repoId, path: found.path, isMain: found.isMain }, { id, repoId: app.id, path: folder, isMain: false });
+  assert.equal(tree.worktreeWithoutGit('wt-unknown', folder), undefined, 'a worktree no stored repo derives is left to the awaited lookup');
+  assert.equal(tree.worktreeWithoutGit(worktreeId(app.id, '/work/app'), '/work/app')?.isMain, true, 'the main folder is the main worktree');
+  assert.equal(calls.filter((call) => call.urgent).length, 0, 'no urgent git listing was started for it');
 });

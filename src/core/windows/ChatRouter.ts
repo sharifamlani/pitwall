@@ -55,6 +55,12 @@ export interface ChatRouterDeps {
   windowFolder: () => string | undefined;
   harnessRegistry: Pick<HarnessRegistry, 'has' | 'get' | 'all'>;
   worktreeOf: (chat: ChatSession) => Promise<Worktree | undefined>;
+  /**
+   * The chat's worktree for a request this window claimed, answered without
+   * git (the request names the folder), or undefined when it cannot be.
+   * A worktree window's claim then never waits on a worktree listing (live E6).
+   */
+  worktreeFor?: (chat: ChatSession, folder: string) => Worktree | undefined;
   /** The folders a worktree's repo owns: its main folder and every worktree. */
   rootsOf: (worktree: Worktree) => string[];
   /** The sidebar name of the repo holding a folder, for the warning. */
@@ -376,7 +382,7 @@ export class ChatRouter implements vscode.Disposable {
     const failed: string[] = [];
     await this.openChats(req.kind, req.sessionIds, async (sessionId) => {
       const chat = this.deps.chatForSession(sessionId);
-      const worktree = chat && (await this.deps.worktreeOf(chat));
+      const worktree = chat && (this.deps.worktreeFor?.(chat, req.folder) ?? (await this.deps.worktreeOf(chat)));
       const opened =
         chat && worktree
           ? await this.deps.openHere(chat, { ...worktree, path: req.folder }, { keepListFocus: false })

@@ -846,6 +846,23 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     return this.findWorktreeAsync((worktree) => worktree.id === worktreeId, options);
   }
 
+  /**
+   * A chat's worktree without waiting on git: the one the listings (or the
+   * stored snapshots) already know, else the one a stored repo's id and
+   * `folder` derive (a worktree's id is derived from both), so a window a
+   * handoff started in a linked worktree opens its chats without a listing.
+   */
+  worktreeWithoutGit(worktreeIdOfChat: string, folder: string): Worktree | undefined {
+    const known = this.getWorktreeById(worktreeIdOfChat);
+    if (known) {
+      return known;
+    }
+    const repo = this.storageService.getRepositories().find((candidate) => worktreeId(candidate.id, folder) === worktreeIdOfChat);
+    return repo
+      ? { id: worktreeIdOfChat, repoId: repo.id, name: path.basename(folder), path: folder, isMain: samePath(repo.rootPath, folder) }
+      : undefined;
+  }
+
   /** `findWorktreeByPath` for a caller that can wait (see `getWorktreeByIdAsync`). */
   findWorktreeByPathAsync(targetPath: string, options: { urgent?: boolean } = {}): Promise<Worktree | undefined> {
     return this.findWorktreeAsync((worktree) => samePath(worktree.path, targetPath), options);
