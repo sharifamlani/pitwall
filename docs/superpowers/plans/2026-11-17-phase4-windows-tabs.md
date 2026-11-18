@@ -497,6 +497,7 @@ Each later PR rebases on main after the earlier merge. `package.json` conflicts 
 - `src/core/commands/navigation.ts:107-128` (`moveAndOpen`): sets the marker.
 - `src/core/commands/chat.ts`: `openChatPrimary` consumes the marker.
 - `src/core/terminal/TerminalManager.ts:238,254,266,291`: `show(preserveFocus)`.
+- `src/core/harness/kit/nativeUiWorkspace.ts:24`: compare with `samePath()`, not `canonicalPath() !==` (S3 finding F1, 2026-11-17: `workspaceFolders[0].uri.fsPath` gives `c:\…` while terminal-started chats record `C:\…`, so every terminal-started chat on Windows was refused in its own window).
 
 Tests: `test/dry/core/chat-commands.test.ts`, `test/dry/core/navigation.test.ts`, `test/dry/core/terminal.test.ts`, `test/dry/core/manifest.test.ts`, and the Claude native-UI test that covers the URI.
 
@@ -508,6 +509,7 @@ Tests: `test/dry/core/chat-commands.test.ts`, `test/dry/core/navigation.test.ts`
 
 - [ ] **Step 1: Failing tests:**
   - `default surface is ui`;
+  - `a chat whose cwd is C:\lab\a opens in the UI of a window whose folder is c:\lab\a` (F1; also for new-session availability);
   - `the link fallback uses vscode.env.uriScheme (cursor in Cursor)` (stub `uriScheme = 'cursor'`);
   - `Ctrl+Down sets the marker and the row command, fired without await by a fake list.select, refocuses pitwall.workspacesView after the UI open`;
   - `the marker is consumed once: a later plain click does not refocus`;
