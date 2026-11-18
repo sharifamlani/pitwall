@@ -16,6 +16,8 @@ export interface ClaudeSessionFileState {
   statusUpdatedAt: number;
   pid: number;
   cwd: string;
+  /** Where the session was started (`cli`, `claude-vscode`, ...), when the file says. */
+  entrypoint?: string;
 }
 
 /** One read of the sessions folder. */
@@ -79,7 +81,7 @@ export async function localPidDomain(): Promise<string> {
 
 type Parsed =
   | { kind: 'malformed' }
-  | { kind: 'record'; sessionId: string; pid: number; pidDomain?: string; status?: string; waitingFor?: string; statusUpdatedAt: number; cwd: string };
+  | { kind: 'record'; sessionId: string; pid: number; pidDomain?: string; status?: string; waitingFor?: string; statusUpdatedAt: number; cwd: string; entrypoint?: string };
 
 function parseSessionFile(text: string): Parsed {
   let raw: unknown;
@@ -107,6 +109,7 @@ function parseSessionFile(text: string): Parsed {
     waitingFor: typeof record.waitingFor === 'string' ? record.waitingFor.trim() : undefined,
     statusUpdatedAt: typeof record.statusUpdatedAt === 'number' ? record.statusUpdatedAt : 0,
     cwd: typeof record.cwd === 'string' ? record.cwd : '',
+    ...(typeof record.entrypoint === 'string' ? { entrypoint: record.entrypoint } : {}),
   };
 }
 
@@ -208,6 +211,7 @@ export class ClaudeSessionsFile {
         statusUpdatedAt: entry.statusUpdatedAt,
         pid: entry.pid,
         cwd: entry.cwd,
+        ...(entry.entrypoint ? { entrypoint: entry.entrypoint } : {}),
       });
     }
     for (const sessionId of unknown) {

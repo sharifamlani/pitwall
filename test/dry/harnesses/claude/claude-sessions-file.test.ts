@@ -89,6 +89,7 @@ test('reads status, waitingFor and pid from each .json and never opens .key file
     statusUpdatedAt: 1_800_000_000_123,
     pid: 4242,
     cwd: '/work/demo',
+    entrypoint: 'cli',
   });
   assert.deepEqual(snapshot.states.get('session-b')?.status, 'busy');
   assert.equal(snapshot.states.get('session-b')?.waitingFor, undefined, 'only a waiting session has a reason');
@@ -194,7 +195,7 @@ test('two files for one sessionId: the newest statusUpdatedAt wins', async (t) =
   writeSession(dir, { pid: 801, sessionId: 'dup', status: 'busy', statusUpdatedAt: 3_000 });
   writeSession(dir, { pid: 802, sessionId: 'dup', status: 'idle', statusUpdatedAt: 1_000 });
   const snapshot = await sessionsFile(dir).snapshot();
-  assert.deepEqual(snapshot.states.get('dup'), { status: 'busy', statusUpdatedAt: 3_000, pid: 801, cwd: '/work/demo' });
+  assert.deepEqual(snapshot.states.get('dup'), { status: 'busy', statusUpdatedAt: 3_000, pid: 801, cwd: '/work/demo', entrypoint: 'cli' });
 });
 
 test('concurrent snapshots share one folder read', async (t) => {

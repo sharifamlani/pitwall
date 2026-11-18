@@ -33,10 +33,12 @@ export const folderGoneMessage = (folder: string): string => `That chat's folder
 /** §3f, new copy. */
 export const unreachedMessage = (repo: string): string => `Pitwall couldn't reach the ${repo} window. Click the chat again.`;
 /** Q28, new copy: a chat a terminal outside Pitwall is running is never opened a second time. */
-export const outsideTerminalMessage = (pid: number): string =>
-  `That chat is already running in another terminal (pid ${pid}). Switch to it there.`;
+export const outsideTerminalMessage = (pid: number, panel = false): string =>
+  panel
+    ? `That chat is already running in another window or terminal (pid ${pid}). Switch to it there.`
+    : `That chat is already running in another terminal (pid ${pid}). Switch to it there.`;
 
-const UUID =/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface ChatRouterDeps {
   /** The handoff inbox, once the window services have started (after first render). */
@@ -56,9 +58,9 @@ export interface ChatRouterDeps {
   /**
    * Open a chat in this window (T2's path). `worktree.path` is the launch
    * folder, which availability is checked against (Q2). Resolves false when
-   * nothing opened.
+   * nothing opened, and 'terminal' when it opened in a terminal (no tab).
    */
-  openHere: (chat: ChatSession, worktree: Worktree, options: { keepListFocus: boolean }) => Promise<boolean>;
+  openHere: (chat: ChatSession, worktree: Worktree, options: { keepListFocus: boolean }) => Promise<boolean | 'terminal'>;
   /** Start a new chat in a folder this window shows. */
   startNew: (folder: string) => Promise<boolean>;
   /**
@@ -66,7 +68,7 @@ export interface ChatRouterDeps {
    * Pitwall owns (a terminal the user started), if any (Q28). Asked only for a
    * chat that is not open here or in another Pitwall window: those are Pitwall's.
    */
-  outsideTerminal?: (sessionId: string) => Promise<number | undefined>;
+  outsideTerminal?: (sessionId: string) => Promise<{ pid: number; panel?: boolean } | undefined>;
   /**
    * Open sessions one at a time, binding each new tab to its session (the tab
    * tracker's `openSerially`). Used for `openAll` and `sideBySide`; a single
@@ -209,7 +211,7 @@ export class ChatRouter implements vscode.Disposable {
     const remote = new Map<string, { folder: string; ids: string[]; reasons: Map<string, string> }>();
     const gone = new Set<string>();
     let blocked = 0;
-    const hand =(folder: string, id: string, reason: string) => {
+    const hand = (folder: string, id: string, reason: string) => {
       const key = pathKey(folder);
       const group = remote.get(key) ?? { folder, ids: [] as string[], reasons: new Map<string, string>() };
       group.ids.push(id);
@@ -242,7 +244,7 @@ export class ChatRouter implements vscode.Disposable {
       const outside = chat.harnessSessionId ? await this.deps.outsideTerminal?.(chat.harnessSessionId).catch(() => undefined) : undefined;
       if (outside !== undefined) {
         this.logRoute(id, 'elsewhere', 'outside-terminal');
-        void vscode.window.showWarningMessage(outsideTerminalMessage(outside));
+        void vscode.window.showWarningMessage(outsideTerminalMessage(outside.pid, outside.panel));
         blocked++;
         continue;
       }
@@ -270,7 +272,7 @@ export class ChatRouter implements vscode.Disposable {
     }
     const idOf = (chat: ChatSession) => chat.harnessSessionId ?? chat.id;
     const byId = new Map(local.map((entry) => [idOf(entry.chat), entry]));
-    const openLocal = async (id: string): Promise<boolean> => {
+    const openLocal = async (id: string): Promise<boolean | 'terminal'> => {
       const entry = byId.get(id)!;
       return this.deps.openHere(entry.chat, entry.worktree, { keepListFocus });
     };
@@ -296,14 +298,19 @@ export class ChatRouter implements vscode.Disposable {
    * requested; `sideBySide` then splits what opened (Q15). A single open
    * keeps T2's own binding.
    */
-  private async openChats(kind: HandoffKind, ids: string[], open: (id: string) => Promise<boolean>): Promise<string[]> {
+  private async openChats(kind: HandoffKind, ids: string[], open: (id: string) => Promise<boolean | 'terminal'>): Promise<string[]> {
     const opened: string[] = [];
+    const inTab: string[] = [];
     const openOne = async (id: string): Promise<boolean> => {
-      const ok = await open(id);
-      if (ok) {
+      const result = await open(id);
+      if (result) {
         opened.push(id);
       }
-      return ok;
+      // A terminal open makes no tab, so the tracker has nothing to wait for.
+      if (result === true) {
+        inTab.push(id);
+      }
+      return result === true;
     };
     if ((kind === 'openAll' || kind === 'sideBySide') && this.deps.openSerially) {
       await this.deps.openSerially(ids, openOne);
@@ -312,9 +319,9 @@ export class ChatRouter implements vscode.Disposable {
         await openOne(id);
       }
     }
-    if (kind === 'sideBySide' && opened.length > 0) {
+    if (kind === 'sideBySide' && inTab.length > 0) {
       // In the order asked, whatever order the opens finished in.
-      await this.deps.sideBySide?.(ids.filter((id) => opened.includes(id)));
+      await this.deps.sideBySide?.(ids.filter((id) => inTab.includes(id)));
     }
     return opened;
   }

@@ -65,6 +65,8 @@ interface Claim {
   sessionId: string;
   tab: vscode.Tab | undefined;
   arrived: () => void;
+  /** Set when its wait timed out: a tab arriving later is still its, until then. */
+  lateUntil?: number;
 }
 
 /**
@@ -86,6 +88,8 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   private lastActiveSessionId: string | undefined;
   /** The serial open waiting for a new tab, if any (one at a time). */
   private claim: Claim | undefined;
+  /** Opens whose 5 s wait ran out, oldest first: a late tab belongs to the oldest of them, not the next open. */
+  private late: Claim[] = [];
   /** Serial opens run one after another, never interleaved. */
   private serialQueue: Promise<unknown> = Promise.resolve();
   /** When an unbound Claude tab appeared, so a move's copy can be told from an older tab. */
@@ -193,6 +197,10 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
         const opened = await open(sessionId);
         if (!claim.tab && opened !== false && !token?.isCancellationRequested) {
           await this.waitFor(tabArrived, token);
+          if (!claim.tab) {
+            claim.lateUntil = this.now() + PENDING_TTL_MS;
+            this.late.push(claim);
+          }
         }
       } finally {
         this.claim = undefined;
@@ -379,7 +387,9 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
 
   /** A serial open's new tab binds to the session it requested. */
   private claimTab(tab: vscode.Tab): boolean {
-    const claim = this.claim;
+    const now = this.now();
+    this.late = this.late.filter((entry) => !entry.tab && (entry.lateUntil ?? 0) > now);
+    const claim = this.late[0] ?? (this.claim?.tab ? undefined : this.claim);
     if (!claim || claim.tab || !this.isUiTab(tab) || this.tabs.has(tab) || this.sessionIdForTab?.(tab)) {
       return false;
     }

@@ -39,6 +39,8 @@ import { RepoStatusBar } from './core/windows/RepoStatusBar';
 import { WindowServices, startWindowServices } from './core/windows/startWindowServices';
 import { ChatRouter } from './core/windows/ChatRouter';
 import { splitSideBySide } from './core/windows/sideBySide';
+import { outsideProcessOf } from './core/windows/outsideProcess';
+import { parentPidOf } from './core/utils/parentPid';
 import { WindowRegistry } from './core/windows/WindowRegistry';
 
 /** Panels re-read the worktree this long after its files stop changing. */
@@ -166,7 +168,8 @@ export async function activate(context: vscode.ExtensionContext) {
       for (const adapter of harnessRegistry.all()) {
         const live = await adapter.liveProcessOf?.(sessionId);
         if (live) {
-          return live.pid;
+          // This window's own panel (its process is a child of this extension host) is not an outsider.
+          return outsideProcessOf(live, { hostPid: process.pid, parentPidOf });
         }
       }
       return undefined;
@@ -196,7 +199,10 @@ export async function activate(context: vscode.ExtensionContext) {
     },
     chatForSession: (sessionId) =>
       storageService.getChats().find((chat) => harnessRegistry.has(chat.harness) && chatNativeSessionIds(chat).includes(sessionId)),
-    openHere: async (chat, worktree, { keepListFocus }) => (await openChatHere(chat, worktree, keepListFocus)) !== 'failed',
+    openHere: async (chat, worktree, { keepListFocus }) => {
+      const opened = await openChatHere(chat, worktree, keepListFocus);
+      return opened === 'failed' ? false : opened === 'terminal' ? 'terminal' : true;
+    },
     startNew: async (folder) => {
       const worktree = await workspacesProvider.findWorktreeByPathAsync(folder);
       if (!worktree) {

@@ -411,10 +411,11 @@ export interface HarnessAdapter {
   /**
    * The live agent process running a native session on this machine, by the
    * harness's own record (Claude: a `~/.claude/sessions/*.json` entry whose
-   * pid is alive). Only the pid is returned. Pitwall uses it to refuse a
+   * pid is alive). Only the pid is returned, and whether the harness's own
+   * editor panel (not a terminal) started it. Pitwall uses it to refuse a
    * second process for a chat that runs in a terminal it doesn't own (Q28).
    */
-  liveProcessOf?(sessionId: string): Promise<{ pid: number } | undefined>;
+  liveProcessOf?(sessionId: string): Promise<{ pid: number; panel: boolean } | undefined>;
 
   /**
    * The folder a session's window is (Q2): the one its agent's UI resumes it

@@ -176,9 +176,9 @@ export class ClaudeHarness implements HarnessAdapter {
    * terminal outside Pitwall and a panel in some window look alike here; the
    * caller tells them apart by what Pitwall owns (Q28).
    */
-  async liveProcessOf(sessionId: string): Promise<{ pid: number } | undefined> {
+  async liveProcessOf(sessionId: string): Promise<{ pid: number; panel: boolean } | undefined> {
     const state = (await this.sessionsFile.snapshot()).states.get(sessionId);
-    return state ? { pid: state.pid } : undefined;
+    return state ? { pid: state.pid, panel: state.entrypoint === 'claude-vscode' } : undefined;
   }
 
   /**

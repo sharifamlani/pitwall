@@ -330,19 +330,20 @@ test('a 5 s timeout leaves the session unbound and continues', async () => {
   const asked: string[] = [];
   const promise = service.openSerially(['slow', 'next'], async (id) => {
     asked.push(id);
-    if (id === 'next') {
-      world.open(claudeTab(), 'Claude Code');
-    }
   });
   await until(() => timers.delays().length > 0);
   assert.deepEqual(timers.delays(), [5000], 'waits at most 5 s for the tab');
   assert.deepEqual(asked, ['slow'], 'the next open waits for this one');
   timers.fire();
-  const result = await promise;
-  assert.deepEqual(asked, ['slow', 'next']);
-  assert.equal(result.get('slow'), undefined);
-  assert.ok(!service.isOpen('slow'));
-  assert.ok(service.isOpen('next'), 'the next session still binds');
+  await until(() => asked.length === 2);
+  assert.deepEqual(asked, ['slow', 'next'], 'the next open goes ahead');
+  // The one tab that arrives belongs to the oldest open still waiting (QA #52 C2), not to the next one.
+  world.open(claudeTab(), 'Claude Code');
+  await until(() => timers.delays().length > 0);
+  timers.fire();
+  await promise;
+  assert.ok(service.isOpen('slow'));
+  assert.ok(!service.isOpen('next'));
   service.dispose();
 });
 
@@ -413,7 +414,7 @@ test('a late tab for a timed-out open does not take the next session', async () 
   await until(() => timers.delays().length > 0);
   timers.fire();
   await promise;
-  assert.deepEqual(bound(), [['slow', 'next']], 'the first tab to arrive is the oldest outstanding open's');
+  assert.deepEqual(bound(), [['slow', 'next']], 'the first tab to arrive is the oldest outstanding open');
   service.dispose();
 });
 
