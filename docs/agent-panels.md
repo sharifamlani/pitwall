@@ -25,6 +25,8 @@ The panel opens in the editor group you are in, where the terminal or your files
 
 A session needs at least one prompt before a panel can open it. A session that is still `new` starts in the terminal first.
 
+Claude Code's panel can only resume chats started in a terminal or in the panel. A chat made with `claude -p` or the SDK opens in a terminal instead, and **Open in Claude Code UI** says so.
+
 ## Go back to the terminal
 
 Choose **Open Session in Terminal** on the row. Pitwall asks before closing the panel tab, then resumes the session in the CLI.
@@ -35,12 +37,14 @@ In the **New Session** menu, choose **New Claude Code Session in Claude Code UI*
 
 ## Choose what a click does
 
-By default, clicking a session opens its terminal. To prefer the panel, set [`pitwall.defaultSessionSurface`](reference/settings.md#sessions) to **Agent's VS Code panel**.
+By default, clicking a session opens it in the agent's panel. To prefer terminals, set [`pitwall.defaultSessionSurface`](reference/settings.md#sessions) to **Terminal**.
 
 | Setting | A click on a session |
 | --- | --- |
-| **Terminal** (default) | Opens or focuses its terminal |
-| **Agent's VS Code panel** | Opens the panel when it can, otherwise the terminal |
+| **Terminal** | Opens or focuses its terminal |
+| **Agent's VS Code panel** (default) | Opens the panel when it can, otherwise the terminal |
+
+Ctrl+↓ and Ctrl+↑ in the list open the session they land on and keep the keyboard in the list, on either surface, so you can keep moving.
 
 Whatever the setting, a click on a session that is already open goes to where it is open: a live terminal is focused, an open panel is revealed. The **Open Session in Terminal** and panel actions always do what they say.
 

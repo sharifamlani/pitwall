@@ -104,7 +104,7 @@ Claude Code 2.1.310 or newer. Pitwall relies on that version's session, fork, an
 
 ### Can I use the Claude Code or Codex chat panel instead of a terminal?
 
-Yes. A Claude Code or Codex session can open in its extension's chat panel, move back to a terminal, or start in the panel. Set `pitwall.defaultSessionSurface` to make the panel the default. See [Agent panels](agent-panels.md).
+Yes. A Claude Code or Codex session can open in its extension's chat panel, move back to a terminal, or start in the panel. The panel is the default; set `pitwall.defaultSessionSurface` to **Terminal** to prefer terminals. See [Agent panels](agent-panels.md).
 
 ### Does Pitwall work with GitHub Copilot, Cline, or Aider?
 

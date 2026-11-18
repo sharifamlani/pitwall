@@ -72,7 +72,7 @@ surface a capability with an explicit default.
   new session than for an existing one: Claude uses its first folder, while Codex requires
   the worktree to be the only workspace folder.
 - **The default is a preference with a safe fallback.** `pitwall.defaultSessionSurface`
-  (`terminal` or `ui`, default `terminal`) decides what a row click and the default New
+  (`terminal` or `ui`; default `terminal`, `ui` since Phase 4 Q3) decides what a row click and the default New
   Session command prefer. If the UI cannot open that session or worktree, the row click
   and the default command fall back to the terminal. The explicit UI commands explain the
   reason instead and do not start a CLI.

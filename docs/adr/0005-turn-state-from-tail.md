@@ -22,6 +22,12 @@ window missed.
 - Derive state with one shared function, also used by the full parser: a user entry, an
   assistant entry with a null or `tool_use` stop reason, or a positive pending-agent count means
   working; otherwise the turn ended at that entry's timestamp.
+- Claude's own interrupt marker (a user entry that is only `[Request interrupted by user]` or
+  `[Request interrupted by user for tool use]`) ends the turn at its timestamp. Claude writes no
+  reply or `turn_duration` after it. Read as working, an interrupted chat turned "working" whenever
+  no live status covered it, and "finished" whenever Claude's panel restarted its process (Phase 4
+  Q24). Metadata lines (`last-prompt`, `ai-title`, `mode`, `permission-mode`, `session-owner`,
+  `atis-latch`, `cost-state`, `tools-used`) are not conversation entries and never decide.
 - Do not fall back to a full parse; the reader expands to the start of the file instead.
 - Do not keep the pre-`turn_duration` marker fallback ([0002](0002-claude-2-1-310-only.md)).
 
