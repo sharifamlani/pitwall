@@ -822,6 +822,35 @@ test('after closing its Claude tab, a terminal-surface open uses the terminal', 
   assert.equal(f.claudeUi.opened.length, 1, 'not the closed panel again');
 });
 
+test("a click on a chat whose tab the editor restored binds that tab, waiting for the folder's titles, and binds no other tab (I1, I1b)", async (t) => {
+  const f = setup(t, { surface: 'ui' });
+  const chat = f.chat('claude', 'reply with exactly: lab c one', 'claude-1');
+  const surfaces = claudeUiSurfaces();
+  t.after(() => surfaces.dispose());
+  (f.claudeUi.nativeUi as { surfaces?: unknown }).surfaces = surfaces;
+  const panelTab = (label: string) => ({ label, input: new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel'), isActive: false });
+  // After a reload: the other chat's restored tab is in front; this chat's is behind it.
+  const mine = panelTab('Lab C one');
+  const other = panelTab('Lab C two');
+  const group = { isActive: true, viewColumn: 1, activeTab: other, tabs: [mine, other] };
+  stub.window.tabGroups.all = [group];
+  // The folder's listing is still running when the click lands.
+  let land: () => void = () => undefined;
+  const titles: { sessionId: string; titles: string[] }[] = [];
+  surfaces.setTitleSource(() => titles, new Promise<void>((resolve) => (land = resolve)));
+  f.claudeUi.nativeUi.openSession = async () => ({ kind: 'opened', via: 'command' }); // the panel reveals the tab it has
+  const click = runCommand('pitwall.openChat', f.row(chat));
+  await flush();
+  titles.push({ sessionId: 'claude-1', titles: ['Lab C one'] }, { sessionId: 'claude-2', titles: ['Lab C two'] });
+  land();
+  await click;
+  assert.deepEqual(
+    surfaces.describeTabs()[0].tabs.map((tab) => tab.sessionId),
+    ['claude-1', 'claude-2'],
+    'each restored tab bound to its own chat, never the front one to the clicked chat'
+  );
+});
+
 test('a new UI session is a placeholder the importer links; a failed open leaves no row behind', async (t) => {
   const f = setup(t);
   await runCommand('pitwall.newClaudeChatInUi', f.worktreeRow(f.main));

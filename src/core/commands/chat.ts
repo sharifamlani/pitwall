@@ -438,6 +438,10 @@ export function registerChatCommands(
       return false;
     }
 
+    // A tab the editor restored (or the user opened) is adopted first, by a
+    // title that names one chat of this folder, so its chat is revealed and
+    // bound rather than expected (I1). Waits at most 1 s for the titles.
+    await surfaces?.adoptBeforeOpen?.();
     // Revealing an open panel needs neither a resume check nor a terminal close.
     let open = surfaces?.isOpen(sessionId) ?? false;
     if (!open && terminalManager.isResuming(chat.id)) {
