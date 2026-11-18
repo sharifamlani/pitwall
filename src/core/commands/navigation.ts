@@ -13,6 +13,11 @@ export interface NavigationDeps {
 /** How long a keyboard move waits for the list to report the row it landed on. */
 const LANDING_TIMEOUT_MS = 500;
 
+/** Gives the Pitwall list keyboard focus. */
+const FOCUS_LIST = 'pitwall.workspacesView.focus';
+/** A chat opened by a list key may take focus a moment after the select returns. */
+const REFOCUS_DELAY_MS = 300;
+
 /** Reveal, expand, select and focus a row. */
 const REVEAL_ROW = { select: true, focus: true, expand: true } as const;
 
@@ -118,6 +123,13 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
       const row = await landed;
       if (row?.itemType === 'repository') {
         await workspacesTreeView.reveal(row, REVEAL_ROW);
+      } else if (row) {
+        // Opening a chat moves keyboard focus into it; the next Ctrl+↓ has to
+        // reach the list again (D37). The open may finish after select
+        // returns, so focus is taken back once more shortly after.
+        await run(FOCUS_LIST);
+        const again = setTimeout(() => void run(FOCUS_LIST), REFOCUS_DELAY_MS);
+        again.unref?.();
       }
     } finally {
       subscription?.dispose();

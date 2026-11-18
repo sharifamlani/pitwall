@@ -172,6 +172,7 @@ test('move-and-open moves focus one row and opens it; on a repo row it expands a
   context.subscriptions.push(
     vscode.commands.registerCommand('list.focusDown', () => void focused.push('down')),
     vscode.commands.registerCommand('list.focusUp', () => void focused.push('up')),
+    vscode.commands.registerCommand('pitwall.workspacesView.focus', () => undefined),
     vscode.commands.registerCommand('list.select', async () => {
       workspacesView.__select([landsOn]);
       // Selecting a row opens it: the workbench runs the row's own command.
@@ -196,6 +197,29 @@ test('move-and-open moves focus one row and opens it; on a repo row it expands a
     workspacesView.reveals.map((reveal) => [(reveal.item as WorkspaceTreeItem).label, reveal.options]),
     [['a', { select: true, focus: true, expand: true }]]
   );
+});
+
+test('Ctrl+Down opens the next chat and keeps focus in the list', async (t) => {
+  const { workspacesView, calls, tree, context } = setup(t);
+  const [, bRow] = await tree.getChildren();
+  const [oneRow] = await tree.getChildren(bRow);
+  const order: string[] = [];
+  context.subscriptions.push(
+    vscode.commands.registerCommand('list.focusDown', () => void 0),
+    vscode.commands.registerCommand('pitwall.workspacesView.focus', () => void order.push('list-focus')),
+    vscode.commands.registerCommand('list.select', async () => {
+      workspacesView.__select([oneRow]);
+      // Opening the chat takes keyboard focus into it.
+      const { command } = oneRow;
+      if (command) {
+        await vscode.commands.executeCommand(command.command, ...(command.arguments ?? []));
+        order.push('chat-focus');
+      }
+    })
+  );
+  await runCommand('pitwall.list.moveDownAndOpen');
+  assert.deepEqual(calls.map((call) => call.id), ['pitwall.openChat']);
+  assert.deepEqual(order, ['chat-focus', 'list-focus'], 'the list takes focus back after the chat opens');
 });
 
 test('a repo tooltip names its keys only for positions 1–9', async (t) => {
