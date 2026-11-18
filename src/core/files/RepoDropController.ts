@@ -1,38 +1,64 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { FILES_MIME } from '../providers/FilesTreeProvider';
+import { FILES_MIME, FILES_TREE_MIME, FILES_VIEW_ID } from '../providers/FilesTreeProvider';
+import { logOperation } from '../services/OperationLog';
 import { isWithin, samePath } from '../utils/paths';
 import type { WorkspaceTreeItem } from '../providers/WorkspacesTreeProvider';
 import { RepoRef, copyIntoRepo } from './copyInto';
 
-/** The dragged paths: our own list of strings, or the tree's FILES rows. */
-async function draggedPaths(item: vscode.DataTransferItem | undefined): Promise<string[]> {
-  if (!item) {
-    return [];
-  }
-  let value: unknown = item.value;
+/** A FILES row's tree handle (`1/file:<path>`, its id under the handle prefix) back to its path. */
+const ROW_HANDLE = /^\d+\/file:(.+)$/;
+
+/** An item's value, parsed when it arrived as a JSON string. */
+function parsed(item: vscode.DataTransferItem | undefined): unknown {
+  let value: unknown = item?.value;
   if (typeof value === 'string') {
     try {
       value = JSON.parse(value);
     } catch {
-      return [];
+      return undefined;
     }
   }
-  if (!Array.isArray(value)) {
+  return value;
+}
+
+/** Paths from a list of paths, FILES rows, or FILES row handles; anything else is dropped. */
+function pathsIn(list: unknown): string[] {
+  if (!Array.isArray(list)) {
     return [];
   }
-  return value
+  return list
     .map((entry) => (typeof entry === 'string' ? entry : (entry as { uri?: { fsPath?: unknown } })?.uri?.fsPath))
-    .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+    .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+    .map((entry) => ROW_HANDLE.exec(entry)?.[1] ?? entry)
+    .filter((entry) => path.isAbsolute(entry));
+}
+
+/**
+ * The dragged paths: FILES' own list, else the FILES tree's drag (the
+ * workbench's `{ id, itemHandles }`, or the rows themselves within the
+ * view). A drag from another tree carries nothing.
+ */
+function draggedPaths(dataTransfer: vscode.DataTransfer): string[] {
+  const own = pathsIn(parsed(dataTransfer.get(FILES_MIME)));
+  if (own.length > 0) {
+    return own;
+  }
+  const tree = parsed(dataTransfer.get(FILES_TREE_MIME));
+  if (Array.isArray(tree)) {
+    return pathsIn(tree);
+  }
+  const source = tree as { id?: unknown; itemHandles?: unknown } | undefined;
+  return typeof source?.id === 'string' && source.id.toLowerCase() === FILES_VIEW_ID.toLowerCase() ? pathsIn(source.itemHandles) : [];
 }
 
 /**
  * Drops of FILES rows on a repo row copy each file into that repo's root
- * (row 4.7). Only FILES' own mime is accepted, never Explorer's
+ * (row 4.7). Only FILES' own mimes are accepted, never Explorer's
  * `text/uri-list` (Q20). The repo list itself drags nothing.
  */
 export class RepoDropController implements vscode.TreeDragAndDropController<WorkspaceTreeItem> {
-  readonly dropMimeTypes = [FILES_MIME];
+  readonly dropMimeTypes = [FILES_MIME, FILES_TREE_MIME];
   readonly dragMimeTypes: string[] = [];
 
   constructor(
@@ -50,7 +76,9 @@ export class RepoDropController implements vscode.TreeDragAndDropController<Work
       return;
     }
     const repo = target.data as RepoRef;
-    for (const src of await draggedPaths(dataTransfer.get(FILES_MIME))) {
+    const dragged = draggedPaths(dataTransfer);
+    logOperation(`[Pitwall] drop on ${repo.name}: ${dragged.length} file(s)`);
+    for (const src of dragged) {
       const from = this.repoOf(src);
       // Q25: "already there" only when the file sits in the repo's main
       // folder itself; a file from one of its worktrees is another folder,
