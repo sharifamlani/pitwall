@@ -330,6 +330,9 @@ export class ChatRouter implements vscode.Disposable {
   /** Send a request (unless the same one is pending) and raise the folder's window. */
   private async handOff(folder: string, kind: HandoffKind, ids: string[]): Promise<boolean> {
     const services = await this.servicesReady();
+    if (this.disposed) {
+      return false;
+    }
     const inbox = services?.inbox;
     if (!services || !inbox) {
       // Raising the window without a request would bring it up with no chat.
@@ -388,8 +391,10 @@ export class ChatRouter implements vscode.Disposable {
   private watchOutcome(inbox: HandoffInbox, folder: string, nonce: string, warnMs: number, settled: () => void): void {
     const startedAt = Date.now();
     let warned = false;
+    // A closing window (a disposed router) never warns, even when a read it
+    // started before closing returns afterwards.
     const warn = () => {
-      if (!warned) {
+      if (!warned && !this.disposed) {
         warned = true;
         void vscode.window.showWarningMessage(unreachedMessage(this.deps.repoName(folder)));
       }
@@ -399,6 +404,9 @@ export class ChatRouter implements vscode.Disposable {
         return;
       }
       const outcome = await inbox.outcome(folder, nonce).catch(() => undefined);
+      if (this.disposed) {
+        return;
+      }
       if (outcome) {
         if (!outcome.ok) {
           warn();
