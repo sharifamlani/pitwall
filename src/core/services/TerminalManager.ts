@@ -225,17 +225,23 @@ export class TerminalManager {
     ];
   }
 
-  /** Focus a chat's live terminal, or launch (or resume) it in a new one. */
+  /**
+   * Focus a chat's live terminal, or launch (or resume) it in a new one.
+   * `preserveFocus` shows the terminal without taking keyboard focus (a
+   * Ctrl+↓/↑ in the list keeps the list focused, Q4).
+   */
   async openChat(
     chat: ChatSession,
-    worktree: Worktree
+    worktree: Worktree,
+    options: { preserveFocus?: boolean } = {}
   ): Promise<vscode.Terminal | undefined> {
+    const preserveFocus = options.preserveFocus ?? false;
     // Only a terminal still in the in-memory map is this chat's session. A
     // same-named terminal is not: after a quit it is a revived shell.
     const existingTerminal = this.terminals.get(chat.id);
     if (existingTerminal) {
       if (isLiveTerminal(existingTerminal)) {
-        existingTerminal.show();
+        existingTerminal.show(preserveFocus);
         return existingTerminal;
       }
       // The process exited or VS Code dropped the terminal; its tab may
@@ -251,7 +257,7 @@ export class TerminalManager {
     const restoring = this.restoringChats.get(chat.id);
     if (restoring) {
       if (isLiveTerminal(restoring)) {
-        restoring.show();
+        restoring.show(preserveFocus);
         return restoring;
       }
       this.restoringChats.delete(chat.id);
@@ -263,7 +269,7 @@ export class TerminalManager {
     if (await this.waitForPendingAdoption(chat.id)) {
       const adopted = this.terminals.get(chat.id);
       if (adopted && isLiveTerminal(adopted)) {
-        adopted.show();
+        adopted.show(preserveFocus);
         return adopted;
       }
     }
@@ -288,7 +294,7 @@ export class TerminalManager {
       launchLine(launch.command),
       COMMAND_START_TIMEOUT_MS
     );
-    terminal.show();
+    terminal.show(preserveFocus);
 
     // A rename is only persisted by VS Code after the shell has reported its
     // cwd for the running command. A shell without integration reports no

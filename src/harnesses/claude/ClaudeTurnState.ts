@@ -6,6 +6,8 @@ export interface ClaudeConversationEntry {
   type: string;
   stopReason: string | null;
   timestamp: number | null;
+  /** A user entry that is Claude's own interrupt marker: the turn ended there. */
+  interrupted?: boolean;
 }
 
 /** The two transcript facts that decide whether a Claude turn is over. */
@@ -26,7 +28,30 @@ interface ClaudeTranscriptEntry {
   isSidechain?: unknown;
   timestamp?: unknown;
   pendingBackgroundAgentCount?: unknown;
-  message?: { stop_reason?: unknown };
+  message?: { stop_reason?: unknown; content?: unknown };
+}
+
+/**
+ * The text Claude writes as a user entry when the user stops a turn: Esc
+ * while it streams, or a rejected tool call ("... for tool use"). Claude
+ * writes no assistant entry or `turn_duration` after it, and the process goes
+ * idle, so the turn ended at this entry (Q24).
+ */
+const INTERRUPT_MARKERS: ReadonlySet<string> = new Set([
+  '[Request interrupted by user]',
+  '[Request interrupted by user for tool use]',
+]);
+
+/** Whether a user entry's content is only Claude's interrupt marker. */
+function isInterruptMarker(content: unknown): boolean {
+  if (typeof content === 'string') {
+    return INTERRUPT_MARKERS.has(content.trim());
+  }
+  if (!Array.isArray(content) || content.length !== 1) {
+    return false;
+  }
+  const [block] = content as { type?: unknown; text?: unknown }[];
+  return block?.type === 'text' && typeof block.text === 'string' && INTERRUPT_MARKERS.has(block.text.trim());
 }
 
 /**
@@ -64,27 +89,34 @@ export function observeClaudeTurnEntry(
       type: record.type,
       stopReason: typeof stopReason === 'string' ? stopReason : null,
       timestamp: Number.isNaN(timestamp) ? null : timestamp,
+      ...(record.type === 'user' && isInterruptMarker(record.message?.content) ? { interrupted: true } : {}),
     };
   }
+}
+
+/** Whether the last conversation entry closes a turn: a final assistant reply or an interrupt. */
+function endsTurn(last: ClaudeConversationEntry | null): boolean {
+  if (!last) {
+    return false;
+  }
+  if (last.interrupted) {
+    return true;
+  }
+  return last.type === 'assistant' && Boolean(last.stopReason) && last.stopReason !== 'tool_use';
 }
 
 /**
  * Turn state from the transcript's deciding entries. A user entry (including
  * a tool result) or a still-streaming/tool-using assistant entry means the
- * turn is open. A terminal assistant entry means done unless a background
- * agent is still pending.
+ * turn is open. A terminal assistant entry, or Claude's interrupt marker,
+ * means done unless a background agent is still pending.
  */
 export function deriveClaudeTurnState(
   signals: ClaudeTurnSignals
 ): ClaudeTurnReading {
   const pending = signals.pendingBackgroundAgents ?? 0;
   const last = signals.lastConversation;
-  if (
-    pending <= 0 &&
-    last?.type === 'assistant' &&
-    last.stopReason &&
-    last.stopReason !== 'tool_use'
-  ) {
+  if (pending <= 0 && last && endsTurn(last)) {
     return { turnState: 'done', turnEndedAt: last.timestamp };
   }
   return { turnState: 'working', turnEndedAt: null };
@@ -101,16 +133,12 @@ function scanEntries(entries: unknown[]): JsonlTailScan<ClaudeTurnReading> {
   }
 
   const lastConversation = signals.lastConversation;
-  const terminalAssistant =
-    lastConversation?.type === 'assistant' &&
-    Boolean(lastConversation.stopReason) &&
-    lastConversation.stopReason !== 'tool_use';
 
   return {
     value: deriveClaudeTurnState(signals),
     decided:
       lastConversation !== null &&
-      (!terminalAssistant || signals.pendingBackgroundAgents !== null),
+      (!endsTurn(lastConversation) || signals.pendingBackgroundAgents !== null),
   };
 }
 

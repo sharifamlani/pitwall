@@ -42,6 +42,12 @@ export interface ClaudeSession {
   lastAsk: PreviewMessage | null;
   /** Most recent assistant text; tool-only turns are skipped. */
   lastReply: PreviewMessage | null;
+  /**
+   * Where the session was started, from the transcript's first `entrypoint`:
+   * `cli` (a terminal), `claude-vscode` (Claude's panel), `sdk-cli`
+   * (`claude -p` or the SDK). Null when no line carries one.
+   */
+  entrypoint: string | null;
 }
 
 /**
@@ -410,6 +416,15 @@ export class ClaudeSessionService {
     return session !== null && session.hasMessages;
   }
 
+  /**
+   * The transcript's first `entrypoint`, from the cached parse; undefined
+   * when there is no transcript.
+   */
+  async getEntrypoint(sessionId: string): Promise<string | null | undefined> {
+    const session = await this.getSessionById(sessionId);
+    return session ? session.entrypoint : undefined;
+  }
+
   /** The last few user prompts, from the cached parse. */
   async getSessionPreview(sessionId: string, maxMessages = 3): Promise<PreviewMessage[]> {
     const session = await this.getSessionById(sessionId);
@@ -503,6 +518,7 @@ class TranscriptParser {
       recentUserPrompts: [],
       lastAsk: null,
       lastReply: null,
+      entrypoint: null,
     };
   }
 
@@ -581,6 +597,12 @@ class TranscriptParser {
     // The session's cwd is the source of truth for discovery.
     if (entry.cwd && !session.cwd) {
       session.cwd = entry.cwd;
+    }
+
+    // The first entrypoint is how the session started; a later resume from
+    // another surface stamps its own on new lines.
+    if (session.entrypoint === null && typeof entry.entrypoint === 'string' && entry.entrypoint) {
+      session.entrypoint = entry.entrypoint;
     }
   }
 

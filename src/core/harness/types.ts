@@ -193,6 +193,13 @@ export interface NativeUiCapability {
   /** Open an existing, resumable session in the UI. */
   openSession(sessionId: string, cwd: string): Promise<NativeUiOpenResult>;
   /**
+   * Why this UI cannot resume a session the agent's CLI can (for Claude, a
+   * chat started by `claude -p` or the SDK), as a sentence for the user;
+   * undefined when it can, or when the session is unknown. A click then
+   * opens the terminal instead, and the explicit UI command says why (Q23).
+   */
+  resumeRefusal?(sessionId: string): Promise<string | undefined>;
+  /**
    * Tracks native-UI tabs for this adapter's sessions. A tracker either reads
    * the session ID from the tab (Codex's conversation editor) or binds a tab
    * to an expectation registered before a handoff (Claude's webview tab has
