@@ -70,6 +70,8 @@ function tabWorld() {
       for (const listener of groupListeners) listener();
     },
     groups,
+    /** Fire a tab event after a test rearranged `groups` itself. */
+    emit: event,
   };
 }
 
@@ -137,6 +139,41 @@ test('a Claude tab binds to the expectation whose title it carries; cancelled on
   const [bound] = world.groups[0].tabs;
   world.close(bound);
   assert.ok(!service.isOpen('second'));
+  service.dispose();
+});
+
+test('a Claude tab dragged to another group stays bound, whether VS Code reports the move as one tab event or two (D16)', () => {
+  const world = tabWorld();
+  const service = claudeUiSurfaces(world.options);
+  world.groups.push({ isActive: false, activeTab: undefined, tabs: [] });
+  const [left, right] = world.groups;
+  /** A move across groups closes the tab in one group and opens a new Tab object in the other. */
+  const moveTo = (tab: FakeTab, from: FakeGroup, to: FakeGroup): FakeTab => {
+    from.tabs = from.tabs.filter((candidate) => candidate !== tab);
+    from.activeTab = undefined;
+    const moved: FakeTab = { label: tab.label, input: claudeTab(), isActive: true };
+    to.tabs.push(moved);
+    to.activeTab = moved;
+    return moved;
+  };
+
+  service.expect('dragged', 'Dragged chat');
+  const tab = world.open(claudeTab(), 'Dragged chat');
+  assert.ok(service.isOpen('dragged'));
+
+  const once = moveTo(tab, left, right);
+  world.emit([once], [], [tab]);
+  assert.ok(service.isOpen('dragged'), 'one event (closed + opened): still bound');
+
+  const twice = moveTo(once, right, left);
+  world.emit([], [], [once]);
+  world.emit([twice]);
+  assert.ok(service.isOpen('dragged'), 'two events: bound again once the moved tab appears');
+
+  left.tabs = [];
+  left.activeTab = undefined;
+  world.emit([], [], [twice]);
+  assert.ok(!service.isOpen('dragged'), 'a real close releases it');
   service.dispose();
 });
 

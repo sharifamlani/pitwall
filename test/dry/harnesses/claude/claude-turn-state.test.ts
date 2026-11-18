@@ -126,6 +126,8 @@ test('an interrupt marker ends the turn at its time; the metadata a resume or cl
     ['a new prompt opens the next turn', user(5), 'working', null],
     ['an Esc while streaming ends it too', marker(6, '[Request interrupted by user]'), 'done', Date.parse(at(6))],
     ['typed text that only quotes the marker is a prompt', marker(7, 'what does [Request interrupted by user] mean?'), 'working', null],
+    // Every marker seen in real transcripts is a text block; a string body is the same message, so it reads the same.
+    ['the marker as a plain string body ends it too', user(8, '[Request interrupted by user]'), 'done', Date.parse(at(8))],
   ];
 
   for (const [step, entry, turnState, turnEndedAt] of steps) {

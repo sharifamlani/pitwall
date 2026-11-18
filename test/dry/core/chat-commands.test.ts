@@ -16,6 +16,7 @@ import { SessionImportService } from '../../../src/core/services/SessionImportSe
 import { WorkspaceTreeItem } from '../../../src/core/providers/WorkspacesTreeProvider';
 import { registerChatCommands } from '../../../src/core/commands/chat';
 import { registerNavigationCommands } from '../../../src/core/commands/navigation';
+import { claudeUiSurfaces } from '../../../src/harnesses/claude/claudeUi';
 import { registerSessionImportCommands } from '../../../src/core/commands/sessionImport';
 import { registerRepositoryCommands } from '../../../src/core/commands/repository';
 import { ForkResult, HarnessSession, NativeUiOpenResult } from '../../../src/core/harness/types';
@@ -496,11 +497,88 @@ test('terminal path calls show(true) only when the marker is set', async (t) => 
   const keyed = f.lastTerminal();
   assert.equal(keyed.sent[0], 'claude --resume claude-1');
   assert.equal(stub.window.__focusedTerminal, undefined, 'Ctrl+Down keeps the list focused');
-  assert.deepEqual(keys.events, [], 'show(true) is enough; no refocus');
+
+  keys.events.length = 0;
+  await keys.press();
+  assert.deepEqual([stub.window.terminals.length, keyed.shown], [1, 2], 'the live terminal is revealed');
+  assert.deepEqual(keys.events, [], 'an existing terminal: show(true) is enough, no refocus');
 
   await runCommand('pitwall.openChat', f.row(second));
   assert.equal(stub.window.__focusedTerminal, f.lastTerminal(), 'a click focuses its terminal');
   assert.notEqual(f.lastTerminal(), keyed);
+});
+
+test('Ctrl+Down onto a chat with no terminal creates it, renames it, then refocuses the list', async (t) => {
+  const f = setup(t, { surface: 'terminal' });
+  const chat = f.chat('claude', 'Reply', 'claude-1');
+  const other = f.chat('claude', 'Other', 'claude-2');
+  const keys = listKeys(f.row(chat));
+  // As live (E8): creating a terminal focuses it despite show(true).
+  const create = stub.window.createTerminal;
+  stub.window.createTerminal = (options) => {
+    const terminal = create(options);
+    stub.window.__focusTerminal(terminal);
+    return terminal;
+  };
+  t.after(() => {
+    stub.window.createTerminal = create;
+  });
+  // renameWithArg renames the terminal with keyboard focus, so it must run before the refocus (F4).
+  vscode.commands.registerCommand('workbench.action.terminal.renameWithArg', (arg: { name: string }) => {
+    keys.events.push(`rename ${stub.window.__focusedTerminal?.name ?? 'nothing'} -> ${arg.name}`);
+    const target = stub.window.__focusedTerminal ?? stub.window.activeTerminal;
+    if (target) target.name = arg.name;
+  });
+
+  await keys.press();
+  const created = f.lastTerminal();
+  assert.equal(created.sent[0], 'claude --resume claude-1');
+  const order = keys.events.join(' | ');
+  assert.ok(keys.events.some((event) => /^rename .* -> Pitwall: Reply/.test(event)), `the new terminal is renamed: ${order}`);
+  assert.deepEqual(keys.events.filter((event) => event === 'focus list'), ['focus list'], `refocused once: ${order}`);
+  assert.equal(keys.events.at(-1), 'focus list', `the refocus comes after every rename: ${order}`);
+  assert.match(created.name, /^Pitwall: Reply/);
+
+  keys.events.length = 0;
+  await runCommand('pitwall.openChat', f.row(other));
+  assert.ok(!keys.events.includes('focus list'), 'a plain click onto a new terminal leaves focus there');
+});
+
+test('after closing its Claude tab, a terminal-surface open uses the terminal', async (t) => {
+  const f = setup(t, { surface: 'terminal' });
+  const chat = f.chat('claude', 'Lab ready', 'claude-1');
+  const surfaces = claudeUiSurfaces();
+  t.after(() => surfaces.dispose());
+  (f.claudeUi.nativeUi as { surfaces?: unknown }).surfaces = surfaces;
+  const panelTab = () => ({ label: 'Lab ready', input: new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel'), isActive: true });
+  const group: { isActive: boolean; viewColumn: number; activeTab: unknown; tabs: unknown[] } = { isActive: true, viewColumn: 1, activeTab: undefined, tabs: [] };
+  stub.window.tabGroups.all = [group];
+  const open = f.claudeUi.nativeUi.openSession;
+  f.claudeUi.nativeUi.openSession = async (sessionId, cwd) => {
+    const tab = panelTab();
+    group.tabs = [tab];
+    group.activeTab = tab;
+    stub.window.__fireTabsChanged({ opened: [tab] });
+    return open(sessionId, cwd);
+  };
+
+  await runCommand('pitwall.openClaudeUi', f.row(chat));
+  assert.ok(surfaces.isOpen('claude-1'), 'the panel tab is bound');
+
+  // A tab-model refresh rebuilds the Tab objects; then the user closes the tab.
+  const rebuilt = panelTab();
+  group.tabs = [rebuilt];
+  group.activeTab = rebuilt;
+  stub.window.__fireTabGroupsChanged();
+  group.tabs = [];
+  group.activeTab = undefined;
+  stub.window.__fireTabsChanged({ closed: [rebuilt] });
+  assert.equal(surfaces.isOpen('claude-1'), false);
+
+  const keys = listKeys(f.row(chat));
+  await keys.press();
+  assert.equal(f.lastTerminal()?.sent[0], 'claude --resume claude-1', 'Ctrl+Down opens a terminal');
+  assert.equal(f.claudeUi.opened.length, 1, 'not the closed panel again');
 });
 
 test('a new UI session is a placeholder the importer links; a failed open leaves no row behind', async (t) => {

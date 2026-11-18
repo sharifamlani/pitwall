@@ -529,9 +529,21 @@ module.exports = {
     },
     /** Test helper: `__setWindowState({ focused })`, by its focus flag alone. */
     __fireWindowState: (focused) => module.exports.window.__setWindowState({ focused }),
-    /** Test helper: announce a tab change after a test rearranged `tabGroups.all`. */
-    __fireTabsChanged: () => {
+    /**
+     * Test helper: announce a tab change after a test rearranged `tabGroups.all`,
+     * optionally naming the opened, closed or changed tabs.
+     */
+    __fireTabsChanged: (event = {}) => {
       for (const listener of [...tabChangeListeners]) {
+        listener({ opened: [], closed: [], changed: [], ...event });
+      }
+    },
+    /**
+     * Test helper: a tab-model refresh. VS Code rebuilds every group and Tab
+     * object when groups are added or removed, and fires only a group event.
+     */
+    __fireTabGroupsChanged: () => {
+      for (const listener of [...tabGroupChangeListeners]) {
         listener({ opened: [], closed: [], changed: [] });
       }
     },

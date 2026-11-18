@@ -7,6 +7,7 @@ import { HarnessAdapter, SessionMetadata } from '../../../src/core/harness/types
 import { SessionStatus } from '../../../src/core/providers/sessionStatus';
 import { ChatSession, Repository, RepositoryWorktrees, Worktree } from '../../../src/core/types';
 import { disposeOperationLog } from '../../../src/core/services/OperationLog';
+import { claudeUiSurfaces } from '../../../src/harnesses/claude/claudeUi';
 import { fakeAdapter, fakeNativeUi, fakeWorktreeListing, makeStorage, memento, flush, stub, waitFor, worktreeRecord } from '../support';
 
 beforeEach(() => stub.__reset());
@@ -161,6 +162,40 @@ test('an open chat, by terminal or native UI, keeps its running context and show
 
   tree.setTurnStateProvider(() => 'working');
   assert.equal(mark((await rows()).get('claude')!), 'claude-light-working.svg');
+});
+
+test("closing a bound Claude tab clears isOpen and the row's open marker", async (t) => {
+  const { tree, rows } = sessionRows(t);
+  const surfaces = claudeUiSurfaces();
+  t.after(() => surfaces.dispose());
+  tree.setChatOpenProvider((chat) => Boolean(chat.harnessSessionId && surfaces.isOpen(chat.harnessSessionId)));
+  const description = async () => String((await rows()).get('claude')!.description);
+  const panelTab = () => ({ label: 'claude', input: new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel'), isActive: true });
+  const group: { isActive: boolean; viewColumn: number; activeTab: unknown; tabs: unknown[] } = { isActive: true, viewColumn: 1, activeTab: undefined, tabs: [] };
+  stub.window.tabGroups.all = [group];
+
+  // Open in Claude Code UI: the expectation binds the tab the command opened.
+  surfaces.expect('claude-1', 'claude');
+  const opened = panelTab();
+  group.tabs = [opened];
+  group.activeTab = opened;
+  stub.window.__fireTabsChanged({ opened: [opened] });
+  assert.ok(surfaces.isOpen('claude-1'));
+  assert.match(await description(), / · open$/);
+
+  // A group added or removed elsewhere rebuilds every Tab object.
+  const rebuilt = panelTab();
+  group.tabs = [rebuilt];
+  group.activeTab = rebuilt;
+  stub.window.__fireTabGroupsChanged();
+  assert.ok(surfaces.isOpen('claude-1'), 'the binding follows the rebuilt tab');
+
+  // The user closes the tab; VS Code names the rebuilt object.
+  group.tabs = [];
+  group.activeTab = undefined;
+  stub.window.__fireTabsChanged({ closed: [rebuilt] });
+  assert.equal(surfaces.isOpen('claude-1'), false);
+  assert.doesNotMatch(await description(), / · open/);
 });
 
 test('tooltips brief the last exchange; a lazy harness fetches its preview only on hover', async (t) => {
