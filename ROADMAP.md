@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.50 · 2026-11-17
+> v0.51 · 2026-11-17
 
 ---
 
@@ -191,8 +191,8 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 **Goal:** Clicking anything in Pitwall lands you in the right Cursor window with the chat open in Claude's panel; files and tabs behave like Cursor.
 **Entry gate:** Phase 3 ✅ (`v0.4.0`).
 **Exit gate:** Live walk: from one window, open chats in 3 repos + 1 worktree; each lands in its folder's window, no duplicates, no blank chats; tag `v0.5.0`.
-**Status:** ⏸ planned.
-**Plan:** ⏸ to write
+**Status:** ⏸ planned (plan drafted, in QA review, then Sharif).
+**Plan:** [2026-11-17-phase4-windows-tabs.md](docs/superpowers/plans/2026-11-17-phase4-windows-tabs.md)
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
@@ -341,3 +341,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.48 · 2026-11-17.** E16 fix PR #37 → `1522010`: first render no longer waits on git or the session scan; stored repos draw at once, "Scanning for repositories…" replaces the false "No repositories yet", linked-worktree chats resolve on first click and on restore. Live: first start 0.619 s, reloads 0.367–0.687 s (was 7.2 s / 1.04 s). Remaining: polish PR, T10 close.
 - **v0.49 · 2026-11-17.** **Phase 3 closed, tag `v0.4.0`.** Row 3.10 ✅. Release PR #39 → `8ddd887` (CHANGELOG [0.4.0], README, version 0.4.0, package author Sharif Amlani). Close-out fixes: #40 tooltip copy (`2d2f07c`, ruling P26 approved by Sharif), #42 discovery reads transcript tails (`ce03203`, live E16 5/5: first start 0.317 s, reloads 0.215–0.808 s). Closed without merge: #41 (E6 by design: seen needs a focused window), #43 (Ctrl+↓ focus timer; proper fix moved to Phase 4 row 4.1). Independent evaluator: E1–E19 19/19 PASS on `ce03203`. Phase 4 unblocked.
 - **v0.50 · 2026-11-17.** Phase 3 posts live (Sharif-approved, build-in-public update 3): LinkedIn activity `7528652706517954560` (5-image carousel), X `2122887476553338999` (reply 4 in the thread from `2122724368136442262`, 4 images). The Phase 4 post replies to the X post.
+- **v0.51 · 2026-11-17.** Phase 4 plan drafted (`docs/superpowers/plans/2026-11-17-phase4-windows-tabs.md`, `97bb14f`): window registry + handoff inbox in shared global storage, Claude panel by default, repo click opens its chats as tabs, bottom-bar repo · branch, FILES across windows, 4.2b terminal-tag spike; 8 tasks in 4 waves, E1–E19. Next: QA plan review, then Sharif's go.
