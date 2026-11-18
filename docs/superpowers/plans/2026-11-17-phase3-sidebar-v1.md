@@ -67,6 +67,7 @@ Phase 7 : After v1
 | P23 | A window's list redraws from storage when the window gains focus and on each 60 s scan, so stars, names and dismissals written by another window show up (testing S1 finding: window B kept stale stars and names until it wrote or reloaded; the stored data was current) | `globalState` has no cross-window change event; refreshing on focus covers the moment a user can act on a row | A window left unfocused shows other windows' edits up to 60 s late |
 | P24 | The claude status icons are circles only (no brand mark), and the `new` icon becomes a dashed hollow ring in the idle grey (canvas brand book Don'ts: no Claude mark, no Claude clay #D97757; row anatomy = 9 px status dot). Checks assert circles-only and no #D97757 (QA PR #27) | Today's `new` icon is the Claude mark in #D97757, which the brand book forbids | none |
 | P25 | The overlay resolves conflicts by write stamps, not a hold time: per-field stamps on chats, per-record stamps elsewhere, timed tombstones for removals (pruned after 14 days); the newest stamp wins, and an own write is released once the store shows a stamp ≥ its own (QA PR #28: the 30 s hold let an earlier write from one window permanently revive over a later one from another) | One machine, one clock, so stamps order writes correctly; stale echoes carry older stamps and lose | Equal-ms ties break by a per-window id |
+| P26 | Native limits of row-icon and FILES hover text (Sharif, 2026-11-17, approved after the canvas page "Phase 3 decisions"): the repo row hover icons show fixed text, "New Claude Code session in this repo" and "Session history for this repo: every past chat", where the canvas names the repo (and the 🕘 text drops the canvas's trailing "in this repo" so it isn't said twice); the FILES header has no hover text, so "Show or hide files" with Ctrl+Alt+F appears in the Command Palette and the keyboard shortcuts list. E19 grades the rest of §3i byte for byte | A contributed action's title is static and a view header has no tooltip API; the repo-named versions return with the custom card panel (7.2) | Three hover strings differ from the canvas |
 | P15 | The live walk on Sharif's real `~/.claude` is **read-only**: list, order, status, search and history only. Open / new-chat / dismiss flows run on the testing agent's lab repos | Resuming a real session appends to its transcript; the testing agent must not touch Sharif's work | none |
 
 ## Global Constraints
@@ -346,7 +347,7 @@ Checked 2026-11-17 against the canvas boards Navigation, SidebarOptions, StatusR
 | Header search icon, `Search repos and chats (Ctrl+Alt+R)` | ✅ | T9 |
 | Header folder icon, `Add a repository` | ✅ (exists) | T4 keeps it at navigation@1 |
 | Header bell, `Sound alerts`, sound popover | → Phase 5 (5.3) | P14 |
-| Repo row: chevron, name, `{n} open`, hover 🕘 and `+` | ✅ | T5, T7 |
+| Repo row: chevron, name, `{n} open`, hover 🕘 and `+` | ✅ (hover text per P26) | T5, T7 |
 | Repo row ` · {k} windows` suffix | → Phase 4 (needs the window registry) | 4.2 |
 | Collapsed repo summary (`2 sessions`, `1 needs you`) | ✅ | T5 |
 | Repo tooltip with Ctrl+Alt+{n} / Ctrl+Alt+Shift+{n} | ✅ | T5, T8 |
@@ -371,7 +372,7 @@ Checked 2026-11-17 against the canvas boards Navigation, SidebarOptions, StatusR
 | Search quick pick (placeholder, REPOS / CHATS / INSIDE CHATS, metas, empties, ✨ footer) | ✅ (INSIDE CHATS = header + note only; 7.1) | T9 |
 | Hotkeys Ctrl+Alt+1–9, again = next chat, 0, R, O, F, Shift+1–9 | ✅ | T8 |
 | List keys ↓/↑, Ctrl+↓/↑, Enter | ✅ | T8 |
-| FILES: collapsed, Ctrl+Alt+F, follows the clicked repo / opened chat, header with repo ⎇ branch + path | ✅ | T4 (collapsed), T5 (follow + header) |
+| FILES (header hover text per P26): collapsed, Ctrl+Alt+F, follows the clicked repo / opened chat, header with repo ⎇ branch + path | ✅ | T4 (collapsed), T5 (follow + header) |
 | FILES clipboard line, Copy to another repo, drag onto a repo row | → Phase 4 (4.7) | |
 | Hide Changes, worktree create/delete, PR badges; keep Find Session, Fork | ✅ | T4 |
 | No sideways scroll, resizable edge, resizable line above FILES | ✅ (native) | E17 |
