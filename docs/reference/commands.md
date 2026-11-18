@@ -29,8 +29,8 @@ Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pit
 | Command | What it does |
 | --- | --- |
 | **Pitwall: New Session** | Start a session with your default agent in the current worktree. Asks which agent when none is set |
-| **Pitwall: New Claude Code session in this repo** | Start a Claude Code session in a repository's main worktree. The **+** on a repository row |
-| **Pitwall: Session history for this repo: every past chat** | List a repository's chats: those in the sidebar, then older ones that are not. Picking an older one brings it back and opens it |
+| **Pitwall: New Claude Code session** | Start a Claude Code session in a repository's main worktree. The **+** on a repository row |
+| **Pitwall: Session history…** | List a repository's chats: those in the sidebar, then older ones that are not. Picking an older one brings it back and opens it |
 | **Pitwall: Open Session That Needs You** | The bell on a session row that needs you. Opens that session |
 | **Pitwall: Set Default Agent…** | Choose the agent **New Session** starts, or go back to asking every time |
 | **Pitwall: New Claude Code Session** | Start a Claude Code session where your settings say sessions open |
@@ -111,8 +111,10 @@ The view's title bar has **Add a repository**. Its `…` menu has:
 
 | Action | Where | Notes |
 | --- | --- | --- |
-| **Session history for this repo: every past chat** | Hover icon, right-click | Chats in the sidebar, then older ones that are not; picking an older one brings it back |
-| **New Claude Code session in this repo** | Hover **+**, right-click | A Claude Code session in the repo's main worktree |
+| **Session history…** | Right-click | Chats in the sidebar, then older ones that are not; picking an older one brings it back |
+| **New Claude Code session** | Right-click | A Claude Code session in the repo's main worktree |
+| **New Claude Code session in this repo** | Hover **+** | The same action as the menu item; this is the hover text |
+| **Session history for this repo: every past chat** | Hover clock icon | The same action as **Session history…**; this is the hover text |
 | **Open its window** | Right-click | Opens the repo's folder in its own window |
 | **Copy Path** | Right-click | |
 | **Reveal in File Explorer** | Right-click | |

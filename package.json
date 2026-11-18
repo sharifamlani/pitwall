@@ -220,12 +220,24 @@
       },
       {
         "command": "pitwall.newSessionInRepository",
+        "title": "New Claude Code session",
+        "category": "Pitwall",
+        "icon": "$(add)"
+      },
+      {
+        "command": "pitwall.newSessionInRepositoryInline",
         "title": "New Claude Code session in this repo",
         "category": "Pitwall",
         "icon": "$(add)"
       },
       {
         "command": "pitwall.sessionHistory",
+        "title": "Session history…",
+        "category": "Pitwall",
+        "icon": "$(history)"
+      },
+      {
+        "command": "pitwall.sessionHistoryInline",
         "title": "Session history for this repo: every past chat",
         "category": "Pitwall",
         "icon": "$(history)"
@@ -1121,12 +1133,12 @@
           "group": "9_destructive@9"
         },
         {
-          "command": "pitwall.sessionHistory",
+          "command": "pitwall.sessionHistoryInline",
           "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
           "group": "inline@1"
         },
         {
-          "command": "pitwall.newSessionInRepository",
+          "command": "pitwall.newSessionInRepositoryInline",
           "when": "view == pitwall.workspacesView && viewItem =~ /^(repository|folderRepository)$/",
           "group": "inline@2"
         },
@@ -1374,6 +1386,14 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "pitwall.newSessionInRepositoryInline",
+          "when": "false"
+        },
+        {
+          "command": "pitwall.sessionHistoryInline",
+          "when": "false"
+        },
         {
           "command": "pitwall.copySessionId",
           "when": "false"
