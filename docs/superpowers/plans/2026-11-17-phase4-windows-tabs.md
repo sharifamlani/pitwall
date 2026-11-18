@@ -79,6 +79,8 @@ T8 : Close: walk, evaluator, v0.5.0
 | Q26 | Cold-open warning: when the registry has no window for F at send time, the sender warns at 60 s (an existing window keeps 20 s); expiry stays 120 s (T3 live: a new Cursor window takes 22–30 s on Sharif's machine before Pitwall activates there) | The 20 s warning fired falsely on every cold open | A truly lost cold request warns 40 s later |
 | Q27 | The line Pitwall types into a new terminal is prefixed with a shell-appropriate line-clear (PowerShell/cmd Esc, POSIX Ctrl+U), so keys the user typed first can't corrupt it (T3 live: `xyclaude --resume …`) | Stray input made Claude never start | A shell that treats the clear char oddly; tested per shell |
 
+| Q28 | One process per session (QA #51): a chat open here (live Pitwall terminal or bound UI tab) reveals here whatever its launch folder (`open-here`); a chat open in another window routes to that window's folder (`open-there`); only a chat open nowhere follows its launch folder. E10 case (b) means "filed under -wt and open nowhere" | Claude files the transcript under the session's current folder, so a live session's file can sit under a folder whose window isn't running it; a handoff there would start a second process on the same session | A live chat keeps running where it is until closed |
+
 **Sharif's answers (2026-11-17):** Q18 = cap at 8 (approved). Q22 = expand only (approved; D37 amended). Q7a: Sharif asked whether tabs in one window can be on different branches. Answer: no, a folder has one checked-out branch at a time, and a different branch at the same time means a worktree, which is its own folder and window with its own bottom bar. Waiting on his confirmation; no code depends on it.
 
 | # | Question | Recommended | Changes |
