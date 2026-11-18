@@ -129,6 +129,8 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   private tracing = false;
   /** Every Tab object (any kind) as of the last event, while tracing: tells a re-send from a plain group event. */
   private traceSeen = new Set<vscode.Tab>();
+  /** `whenTabMoved` calls waiting for one of this harness's tabs to close. */
+  private readonly moveWaiters = new Set<() => void>();
 
   private readonly isUiTab: (tab: vscode.Tab) => boolean;
   private readonly sessionIdForTab:
@@ -195,6 +197,24 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     this.traceSeen = this.tracing ? this.allTabs() : new Set();
     this.log(`[Pitwall] tab trace ${this.tracing ? 'on' : 'off'}`);
     return this.tracing;
+  }
+
+  /**
+   * Resolve true when one of this harness's tabs closes, the last step of a
+   * move (the copy opens first), or false after `timeoutMs`. Side by side
+   * arms it before each move so the next waits for this one to land.
+   */
+  whenTabMoved(timeoutMs: number): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      const done = (landed: boolean) => {
+        this.moveWaiters.delete(waiter);
+        timer.dispose();
+        resolve(landed);
+      };
+      const waiter = () => done(true);
+      const timer = this.schedule(() => done(false), timeoutMs);
+      this.moveWaiters.add(waiter);
+    });
   }
 
   /**
@@ -432,6 +452,11 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     const activeChanged = this.updateActiveSession();
     if (mappingChanged || activeChanged) {
       this._onDidChange.fire();
+    }
+    if (event.closed.some((tab) => this.isUiTab(tab))) {
+      for (const waiter of [...this.moveWaiters]) {
+        waiter();
+      }
     }
   }
 

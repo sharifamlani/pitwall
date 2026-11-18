@@ -38,7 +38,7 @@ import { samePath } from './core/utils/paths';
 import { RepoStatusBar } from './core/windows/RepoStatusBar';
 import { WindowServices, startWindowServices } from './core/windows/startWindowServices';
 import { ChatRouter } from './core/windows/ChatRouter';
-import { splitSideBySide } from './core/windows/sideBySide';
+import { SIDE_BY_SIDE_MOVE_WAIT_MS, splitSideBySide } from './core/windows/sideBySide';
 import { outsideProcessOf } from './core/windows/outsideProcess';
 import { parentPidOf } from './core/utils/parentPid';
 import { WindowRegistry } from './core/windows/WindowRegistry';
@@ -195,6 +195,7 @@ export async function activate(context: vscode.ExtensionContext) {
           }
         },
         exec: (command) => Promise.resolve(vscode.commands.executeCommand(command)),
+        whenMoved: () => tabTracker()?.whenTabMoved?.(SIDE_BY_SIDE_MOVE_WAIT_MS) ?? Promise.resolve(false),
       });
     },
     chatForSession: (sessionId) =>

@@ -512,6 +512,7 @@ test('side by side: every moved tab keeps its own session, and panes = min(n, 4)
     throw new Error(`no tab for ${id}`);
   };
   const move = (command: string) => {
+    if (!command.startsWith('workbench.action.moveEditorTo')) return; // evenEditorWidths moves nothing
     const from = world.groups.find((group) => group.isActive)!;
     const tab = from.activeTab!;
     let to: FakeGroup;
