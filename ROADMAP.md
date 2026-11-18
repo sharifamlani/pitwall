@@ -4,14 +4,14 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.60 · 2026-11-18
+> v0.61 · 2026-11-18
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 4 — Windows and tabs (one window per folder). Phase 3 closed 2026-11-17 with tag `v0.4.0`.
-- **Current step:** Phase 4 plan approved by Sharif (go once QA approves; Q18 cap 8, Q22 Ctrl+↓ on a repo = expand only). QA re-review D1 (orphan requests) fixed. Q7a (drop the file-tab label part of row 4.5) awaits Sharif's confirmation.
+- **Current step:** Phase 4 rows 4.1, 4.2, 4.2b, 4.6, 4.8 ✅; 4.5, 4.7 ~ (bottom bar and FILES merged; W7 / the manual drag at T8). Next: T4 (repo click opens 8 chats as tabs, serial tab binding, side by side, outside-terminal guard), then T8 (walk, evaluator, v0.5.0). Weekly usage about 76%+.
 - **Last update:** 2026-11-17
 - **Next action:** On Sharif's go: no-code smokes S3 → S1 → S1b, then wave A (T1, T2, T5, T7). Follow-ups: batch importer chat writes; `list-claude-repos.mjs` to the message clock; a dry test that clicks the inline + / 🕘 commands.
 
@@ -197,14 +197,14 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
 | 4.1 | Chats open in Claude's panel by default; link uses `vscode.env.uriScheme` (Agntree hardcodes `vscode://`) (was 3.1). Also: Ctrl+↓/↑ keep focus in the Pitwall list (deferred from Phase 3; QA design: keepListFocus → show(true), refocus after the UI open resolves; live repro on both surfaces first) | ✅ | ✅ | 2026-11-18 · PR #47 → `7b5ba34` (panel default, `uriScheme` link, Ctrl+↓ keeps focus E8 live 3/3 both surfaces; sdk-cli → terminal; an open/close no longer marks finished). Edge: an editor click within ~600 ms → T3 | D3, D37 |
-| 4.2 | Click a chat → Pitwall focuses (or opens) its folder's window, then opens the chat there (was 3.2) | ⏳ | ✅ | registry + handoff inbox PR #46 → `a79fadd`; router T3 next | D35, D36, T5, T6 |
+| 4.2 | Click a chat → Pitwall focuses (or opens) its folder's window, then opens the chat there (was 3.2) | ✅ | ✅ | 2026-11-18 · registry + inbox PR #46 → `a79fadd`; router PR #51 → `d12d768` (live: 4 windows from 1, 0 blank; handoffs 41–106 ms; cold open Pitwall part 2.0–2.5 s; one process per session) | D35, D36, T5, T6 |
 | 4.2b | Terminal ↔ chat identity without titles (finding F4, Phase 2 Task 6b): `renameWithArg` renames the terminal with keyboard focus, not the target, so title-based identity is fragile. Spike tagging Pitwall terminals (e.g. `creationOptions.env`) and whether revived terminals keep it on reload and quit, in Cursor and VS Code; if so, match on the tag and retire title matching (amends ADR 0009). Also: chats don't restore when a FILE is in front at quit, because VS Code and Cursor drop the revived terminals' names (editor limitation, reproduced without Pitwall); and a plain panel terminal in front can leave the last chat in front. Parked branch `phase2/task-6d-restore-file-front` has the e2e coverage (R48). Also (Phase 3 testing, T2 walk O2): after a Cursor restart where a chat's Claude wasn't restored, clicking its row left two tabs with the same `[shortId]` title, one live and one blank terminal (repro uncertain; evidence `phase3-t2-evidence\duplicate-fork-tabs.*`). Data points: the name drop is a race, not deterministic. Live, it kept the name once (UJ run 11 on `9765de0`) and lost it 3/3 (run 12 on `718068a`). In the e2e, 1/5 (`9765de0`) vs 0/6 (`718068a`) restores kept the names, and only failed runs carry the editor's "Attach to process failed" warning | ✅ | — | 2026-11-18 · no-go spike, ADR 0009 amendment PR #48 → `f58740e` (env tag 0/10 Cursor, 0/10 VS Code; title matching stays; O2 not reproduced 10/10) | Task 6b/6d reports, rulings R39, R48 |
 | 4.3 | Repo click opens all its chats as tabs; chat clicks add tabs; never duplicates | ⏸ | ⏸ | — | D11, T6 |
 | 4.4 | Match Claude tabs to chats reliably (titles are truncated, new chats all say "Claude Code") | ⏸ | ⏸ | — | T10 |
 | 4.5 | Repo + branch under tabs: file tabs via label setting; find a way for Claude tabs, else window title + bottom bar (was 2.5) | ~ | ✅ | bottom bar PR #44 → `246f015` (walk W7 pending; file-tab label part awaits Sharif, Q7a) | D26, T9 |
-| 4.6 | T18: a chat that moved into a worktree mid-session opens in the window of the folder its transcript is filed under right now (amended 2026-11-18 by live data: Claude files it under the worktree while the session runs there after EnterWorktree and back under main after /exit; a plain `cd` never moves it) (was 2.7) | ⏸ | ⏸ | — | D35 |
+| 4.6 | T18: a chat that moved into a worktree mid-session opens in the window of the folder its transcript is filed under right now (amended 2026-11-18 by live data: Claude files it under the worktree while the session runs there after EnterWorktree and back under main after /exit; a plain `cd` never moves it) (was 2.7) | ✅ | ✅ | 2026-11-18 · PR #51 → `d12d768` (live: exited EnterWorktree → main, killed-in-worktree → worktree window, plain cd → main) | D35 |
 | 4.7 | FILES follows the window's folder; file click = normal tab; copy/paste across repos, "Copy to another repo", drag onto a repo row, `.env` gitignore check | ~ | ✅ | PR #50 → merged (live 7/8 PASS; real drag needs a manual check at T8) | D19, D22, D23, T14 |
-| 4.8 | "+" starts the chat in that repo's window | ⏸ | ⏸ | — | D28, T15 |
+| 4.8 | "+" starts the chat in that repo's window | ✅ | ✅ | 2026-11-18 · PR #51 → `d12d768` (live: "+" from another window starts the chat in that repo's window; double "+" → 1 chat) | D28, T15 |
 | 4.9 | Pin, split, drag-reorder: confirm Cursor's own behaviour is untouched | ⏸ | ⏸ | — | D16, D32 |
 
 ### Phase 5 — Status + pop-ups
@@ -351,3 +351,4 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.58 · 2026-11-18.** Row 4.1 ✅ (PR #47 → `7b5ba34`, 3 fix rounds): chats open in Claude's panel by default; the link uses `vscode.env.uriScheme`; Ctrl+↓ keeps list focus on both surfaces (a new terminal's rename no longer drops focus); `claude -p`/SDK chats open in a terminal; an interrupt marker ends the turn, so opening or closing a chat no longer shows working/finished. T3 (router) next.
 - **v0.59 · 2026-11-18.** Row 4.6 amended by live evidence: Claude's EnterWorktree moves a session's transcript into the worktree's project folder, so such a chat belongs in the worktree window (the old premise "stays in the main window" was wrong); a plain `cd` keeps it under main. The plan's Q2/E10 now say the project folder decides. T3 (router) in build.
 - **v0.60 · 2026-11-18.** Row 4.6 refined again by live data: Claude files a transcript under the session's current folder (the worktree while it runs there after EnterWorktree, main again after /exit), so the router follows wherever the file is now. T3 router PR #51: E3 shape, E6, E11, menus, the cold open (Pitwall's part 2.0–2.5 s), the line-clear 12/12 and E8 pass live; a fresh builder is closing the sdk-cli bypass and adding a route log line. Weekly usage about 76%.
+- **v0.61 · 2026-11-18.** Rows 4.2, 4.6, 4.8 ✅: the router merged (PR #51 → `d12d768`, 4 QA rounds plus 3 live walks). A click on any chat lands in its folder's window (opened if needed); sdk-cli chats route and then open in a terminal there; a chat already open stays where it is (one process per session); "+" starts in the repo's window; cold-open warning at 60 s; a line-clear before the typed resume line. Known issues for the handoff: a moved chat's row stays under main; multi-root windows are invisible to open-there; type-ahead before the late rename; a ~270 ms terminal flicker. T4 owns the outside-terminal second-process guard.
