@@ -106,6 +106,8 @@ function windowOn(
     openHere?: (chat: ChatSession, worktree: Worktree) => Promise<boolean>;
     /** Whether a chat's tab or terminal is open in this window; never, by default. */
     isOpenHere?: (chat: ChatSession) => boolean;
+    /** Other windows' open sessions, as the registry's heartbeats list them. */
+    openIn?: { folder: string; sessionIds: string[]; pid?: number }[];
   }
 ) {
   const logs: string[] = [];
@@ -115,10 +117,14 @@ function windowOn(
     windowsFor: async (target: string) =>
       (options.windowsAt ?? []).filter((folder) => samePath(folder, target)).map((folder, index) => ({ pid: 9000 + index, folder, beatAt: Date.now(), openSessionIds: [] })),
   };
+  const registryWithOpen = {
+    ...registry,
+    windows: async () => (options.openIn ?? []).map((entry, index) => ({ pid: entry.pid ?? 8000 + index, folder: entry.folder, beatAt: Date.now(), openSessionIds: entry.sessionIds })),
+  };
   const opened: { chat: string; path: string; worktreeId: string }[] = [];
   const started: string[] = [];
   const router = new ChatRouter({
-    services: () => ((options.servicesUp?.() ?? true) ? { inbox, registry } : undefined),
+    services: () => ((options.servicesUp?.() ?? true) ? { inbox, registry: registryWithOpen } : undefined),
     windowFolder: folder,
     harnessRegistry: new HarnessRegistry([new ClaudeHarness()]),
     worktreeOf: async (chat) => w.worktrees.find((worktree) => worktree.id === chat.worktreeId),
@@ -639,7 +645,7 @@ test('an exited EnterWorktree chat (filed under main, last cwd = the worktree) r
   assert.deepEqual(mainWindow.routeLog, [`[Pitwall] route ${ID.t18.slice(0, 8)} → here (same-folder)`]);
 });
 
-test('a stale UI tab binding for a chat of another folder does not open it here', async (t) => {
+test('a chat whose tab is open here reveals here even when its transcript is now filed under another folder', async (t) => {
   const w = world(t);
   const dir = tempDir(t);
   const calls = openFolderCalls();
@@ -649,9 +655,52 @@ test('a stale UI tab binding for a chat of another folder does not open it here'
   const chat = w.chat('T18 one', ID.t18, w.mainWt);
   const mainWindow = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main, isOpenHere: () => true });
 
-  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }), 'routed');
-  assert.deepEqual(mainWindow.opened, [], 'the bound tab is not revealed');
-  assert.deepEqual(calls.map((call) => call.path), [wtDir]);
+  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }), 'here');
+  assert.deepEqual(mainWindow.opened.map((entry) => entry.path), [w.main], 'revealed in this window, never a second process');
+  assert.deepEqual(calls, []);
+  assert.deepEqual(filesIn(mainWindow.inbox, dir, wtDir), []);
+  assert.deepEqual(mainWindow.routeLog, [`[Pitwall] route ${ID.t18.slice(0, 8)} → here (open-here)`]);
+});
+
+// isOpenHere is true for a live Pitwall terminal as well as a bound UI tab.
+test("a chat whose Pitwall terminal is live here reveals it here even when its transcript is filed under another folder", async (t) => {
+  const w = world(t);
+  const calls = openFolderCalls();
+  const wtDir = `${w.main}-wt`;
+  fs.mkdirSync(wtDir);
+  w.transcript(wtDir, ID.t18, [w.turn(ID.t18, w.main), w.turn(ID.t18, wtDir)]);
+  const chat = w.chat('T18 terminal', ID.t18, w.mainWt);
+  const live = new Set([chat.id]);
+  const mainWindow = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, isOpenHere: (c) => live.has(c.id) });
+
+  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }), 'here');
+  assert.deepEqual(mainWindow.opened.map((entry) => entry.chat), ['T18 terminal']);
+  assert.deepEqual(calls, []);
+});
+
+test('a chat open in another window routes to that window, not its launch folder', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const chat = w.chat('Open there', ID.a, w.mainWt);
+  const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other, openIn: [{ folder: w.wt, sessionIds: [ID.a] }] });
+
+  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.deepEqual(calls.map((call) => call.path), [w.wt]);
+  assert.deepEqual(requestsFor(sender.inbox, dir, w.wt).map((request) => request.sessionIds), [[ID.a]]);
+  assert.deepEqual(filesIn(sender.inbox, dir, w.main), []);
+  assert.deepEqual(sender.opened, []);
+  assert.deepEqual(sender.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → ${w.wt} (open-there)`]);
+});
+
+test('a chat with no transcript yet opens here and logs no-transcript', async (t) => {
+  const w = world(t);
+  const here = windowOn(t, w, tempDir(t), () => w.other, { pid: 1001, claims: w.other });
+  const chat = w.storage.createChat(w.mainWt.id, 'claude', 'Fresh', {});
+
+  await here.router.route({ kind: 'open', chats: [chat] });
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${chat.id.slice(0, 8)} → here (no-transcript)`]);
 });
 
 test('a bound tab here reveals locally only when this window is the launch folder', async (t) => {
@@ -661,7 +710,7 @@ test('a bound tab here reveals locally only when this window is the launch folde
 
   assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Tab here', ID.a, w.mainWt)] }), 'here');
   assert.deepEqual(here.opened.map((entry) => entry.path), [w.main]);
-  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (tab-here)`]);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (open-here)`]);
 });
 
 test('every routing decision logs one route line', async (t) => {
