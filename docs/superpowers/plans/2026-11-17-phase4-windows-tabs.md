@@ -76,6 +76,9 @@ T8 : Close: walk, evaluator, v0.5.0
 
 | Q25 | Dropping a FILES file from a worktree window onto its own repo's row copies it into the repo's main folder; "That file is already in {repo}…" shows only when the file is already under the repo's main folder (QA #50) | The file really is in a different folder; copying from a worktree to main is a real use | None |
 
+| Q26 | Cold-open warning: when the registry has no window for F at send time, the sender warns at 60 s (an existing window keeps 20 s); expiry stays 120 s (T3 live: a new Cursor window takes 22–30 s on Sharif's machine before Pitwall activates there) | The 20 s warning fired falsely on every cold open | A truly lost cold request warns 40 s later |
+| Q27 | The line Pitwall types into a new terminal is prefixed with a shell-appropriate line-clear (PowerShell/cmd Esc, POSIX Ctrl+U), so keys the user typed first can't corrupt it (T3 live: `xyclaude --resume …`) | Stray input made Claude never start | A shell that treats the clear char oddly; tested per shell |
+
 **Sharif's answers (2026-11-17):** Q18 = cap at 8 (approved). Q22 = expand only (approved; D37 amended). Q7a: Sharif asked whether tabs in one window can be on different branches. Answer: no, a folder has one checked-out branch at a time, and a different branch at the same time means a worktree, which is its own folder and window with its own bottom bar. Waiting on his confirmation; no code depends on it.
 
 | # | Question | Recommended | Changes |
@@ -697,7 +700,7 @@ Create `scripts/dump-tabs.mjs`. Tests: `test/dry/shared/native-ui-surface.test.t
 **Files:** `docs/progress_reports/phase4-scorecard.md`, `docs/progress_reports/phase4-handoff.md`, `CHANGELOG.md` [0.5.0], `README.md`, `package.json` version `0.5.0`, ROADMAP.
 
 - [ ] **Step 1:** Testing agent walk on the merged sha. Lab repos: `uj-lab-a`, `uj-lab-b`, `uj-lab-c`, plus worktree `uj-lab-a-wt` (create any that are missing), plus one T18 chat.
-  - **W1** — Panel default and startup timing (E2, E16).
+  - **W1** — Panel default and startup timing (E2, E16). Note: Claude Code shows its own "Trust this folder in Claude Code?" modal once per newly opened lab window; answer Trust (not Pitwall's).
   - **W2** — 3 repos + 1 worktree from one window (E3, E6).
   - **W3** — Re-clicks and a double-click (E4).
   - **W4** — Repo click opens all chats (E5).
