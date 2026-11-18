@@ -27,6 +27,7 @@ to learn how a subsystem works today, and the ADR to learn why it is shaped that
 | [0017](0017-opencode-find-session-source-only.md) | opencode stays a Find Session source, not a runner | Proposed |
 | [0018](0018-live-status-from-sessions-file.md) | Live status comes from `~/.claude/sessions`, with `claude agents` as the fallback | Proposed |
 | [0019](0019-repos-discovered-and-dismissed.md) | Repos are found from `~/.claude` and dismissed by right-click | Proposed |
+| [0020](0020-window-per-folder-handoff.md) | One window per folder, with a file handoff between windows | Proposed |
 
 ## Writing one
 

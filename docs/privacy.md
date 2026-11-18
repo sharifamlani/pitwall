@@ -36,6 +36,19 @@ Pitwall keeps a small amount of state in VS Code's extension storage:
 
 It does not copy conversations. A session's content stays in the agent's own storage, which is why removing a row never deletes a conversation and uninstalling Pitwall loses nothing.
 
+### Files shared between windows
+
+Each Cursor or VS Code window runs its own copy of Pitwall. So that one window can open a chat in another (one window per folder, [ADR 0020](adr/0020-window-per-folder-handoff.md)), the windows share a few small files in the extension's global storage folder (`globalStorageUri`) and nowhere else. They hold only session IDs, folder paths, process IDs and timestamps, never conversation text:
+
+| File | Where | What it holds |
+| --- | --- | --- |
+| Window record | `pitwall-windows/<pid>.json` | `pid`, `folder`, `beatAt`, `openSessionIds`: the window's folder and the chats it has open as tabs. Deleted when the window closes; ignored 45 s after its last update |
+| Handoff request | `pitwall-handoff/<folder key>/<id>.json` (renamed `.claimed-<pid>` or `.expired`) | `v`, `kind`, `sessionIds`, `folder`, `at`, `nonce`: which chats to open in which folder. A `<id>.lock` file, always empty, exists only while a request is being claimed |
+| Handoff outcome | `pitwall-handoff/<folder key>/<id>.done-<pid>` | `ok`, `error`, `at`: whether the other window opened the chats |
+| Clipboard | `pitwall-clipboard.json` | `path`, `cut`, `at`: the one file path copied or cut in the FILES panel, shared by all windows |
+
+Unclaimed handoff requests are deleted after 2 minutes, and the other handoff files after 10. To see what is there, run `node scripts/dump-pitwall-windows.mjs`; `--check-privacy` fails if any file holds a key outside the lists above.
+
 ## When something leaves your machine
 
 Pitwall itself makes no network requests. Network traffic comes only from tools you already use, when you ask for them:

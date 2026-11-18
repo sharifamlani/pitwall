@@ -121,3 +121,19 @@ export function samePath(a: string, b: string): boolean {
   }
   return canonicalPath(a) === canonicalPath(b);
 }
+
+/**
+ * One key per folder, for file names and maps: the spelling `samePath`
+ * compares, so two paths have one key exactly when `samePath` says they match.
+ * On Windows that is the native real path, lower-cased: drive case, a trailing
+ * slash, forward slashes and a `\\?\` prefix all give one key. (`canonicalPath`
+ * throws EISDIR on `\\?\` paths, so keys never use it.) A path that doesn't
+ * exist keys by its normalised spelling.
+ */
+export function pathKey(value: string): string {
+  if (process.platform !== 'win32') {
+    return canonicalPath(value);
+  }
+  const unprefixed = /^\\\\\?\\(?!UNC\\)/i.test(value) ? value.slice(4) : value;
+  return comparablePath(unprefixed).toLowerCase();
+}

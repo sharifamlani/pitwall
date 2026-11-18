@@ -110,7 +110,7 @@ interface StubControls {
   __setTreeViewsVisible(visible: boolean): void;
   /** A visible tree view created from now on is first drawn this long after it is created. */
   __setTreeViewFirstRenderDelay(ms: number): void;
-  workspace: { workspaceFolders: { uri: { fsPath: string } }[] };
+  workspace: { workspaceFolders: { uri: { fsPath: string } }[]; workspaceFile?: { fsPath: string } };
   window: {
     terminals: FakeTerminal[];
     activeTerminal: FakeTerminal | undefined;
