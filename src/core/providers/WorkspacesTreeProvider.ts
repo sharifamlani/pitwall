@@ -6,6 +6,7 @@ import { GitService, worktreeId } from '../services/GitService';
 import { TerminalManager } from '../services/TerminalManager';
 import { HarnessRegistry } from '../harness/HarnessRegistry';
 import { harnessIconPath } from '../harness/treeIcons';
+import { chatNativeSessionIds } from '../harness/sessionUtils';
 import { HarnessAdapter, SessionMetadata, TurnState } from '../harness/types';
 import { formatRelativeTime } from '../utils/text';
 import { debounce } from '../utils/debounce';
@@ -75,6 +76,17 @@ export function repoSummary(needs: number, open: number, sessions: number): stri
   return summary || `${sessions} ${sessions === 1 ? 'session' : 'sessions'}`;
 }
 
+/** What the tree needs from one window in the registry (ADR 0020): its folder and the chats it has open. */
+export interface WindowView {
+  folder: string | undefined;
+  openSessionIds: readonly string[];
+}
+
+/** The repo row's context value: `.hasWindow` flips its menu to "Bring its window forward" (§3b). */
+export function repoContextValue(isGit: boolean, hasWindow: boolean): string {
+  return `${isGit ? 'repository' : 'folderRepository'}${hasWindow ? '.hasWindow' : ''}`;
+}
+
 /** One session row before it is drawn. */
 interface SessionEntry {
   chat: ChatSession;
@@ -132,6 +144,10 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   private statusSource: StatusSource | undefined;
   private statusSubscription: vscode.Disposable | undefined;
   private view: Pick<vscode.TreeView<WorkspaceTreeItem>, 'description' | 'badge'> | undefined;
+  /** Every live Pitwall window, from the registry; empty until it reports. */
+  private windows: readonly WindowView[] = [];
+  /** Sessions open as a tab in any window (Q12). */
+  private openAnywhere = new Set<string>();
 
   /** Inbox order, recomputed only on a status change or a row added or removed (P6). */
   private sortDirty = true;
@@ -240,6 +256,22 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   /** Whether a chat is waiting on the user, used only without a status source. */
   setNeedsYouProvider(provider: (chatId: string) => boolean): void {
     this.needsYouProvider = provider;
+  }
+
+  /**
+   * The live windows from the registry: a repo row counts its single-folder
+   * windows (` · {k} windows`, Q17), flips its menu when its main folder has
+   * one, and ` · open` covers tabs in any window (Q12).
+   */
+  setWindows(windows: readonly WindowView[]): void {
+    this.windows = windows;
+    this.openAnywhere = new Set(windows.flatMap((window) => window.openSessionIds));
+    this.softRefresh();
+  }
+
+  /** Open in this window (a terminal or a tab) or as a tab in any other (Q12). */
+  private isOpenAnywhere(chat: ChatSession): boolean {
+    return this.chatOpenProvider(chat) || chatNativeSessionIds(chat).some((id) => this.openAnywhere.has(id));
   }
 
   /** The one "is this chat open" predicate: a live terminal or a mapped native-UI tab. */
@@ -537,7 +569,14 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
 
   private repositoryItem(repo: Repository, state: vscode.TreeItemCollapsibleState): WorkspaceTreeItem {
     const { isGit } = this.getRepoWorktrees(repo);
-    return new WorkspaceTreeItem(repo.name, state, 'repository', repo, isGit ? 'repository' : 'folderRepository');
+    const hasWindow = this.windows.some((window) => window.folder !== undefined && samePath(window.folder, repo.rootPath));
+    return new WorkspaceTreeItem(repo.name, state, 'repository', repo, repoContextValue(isGit, hasWindow));
+  }
+
+  /** How many single-folder windows show the repo's main folder or one of its worktrees. */
+  private windowCount(repo: Repository): number {
+    const roots = [repo.rootPath, ...this.getRepoWorktrees(repo).worktrees.map((worktree) => worktree.path)];
+    return this.windows.filter((window) => window.folder !== undefined && roots.some((root) => samePath(root, window.folder!))).length;
   }
 
   private repositoryRow(entry: RepoEntry, position: number): WorkspaceTreeItem {
@@ -547,8 +586,9 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       sessions.length > 0 ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
     );
     const needs = sessions.filter((session) => session.status === 'needs').length;
-    const open = sessions.filter((session) => this.chatOpenProvider(session.chat)).length;
-    item.description = repoSummary(needs, open, sessions.length);
+    const open = sessions.filter((session) => this.isOpenAnywhere(session.chat)).length;
+    const windows = this.windows.length > 0 ? this.windowCount(repo) : 0;
+    item.description = `${repoSummary(needs, open, sessions.length)}${windows > 1 ? ` · ${windows} windows` : ''}`;
     item.tooltip = repoTooltip(repo.name, position);
     return item;
   }
@@ -700,7 +740,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       const branch = entry.isGit ? `⎇ ${worktree.branch ?? worktree.name}${worktree.isMain ? '' : ' ⧉'}  ` : '';
       // Starring lives in the right-click menu, so the row carries the mark.
       const star = starredIds.has(chat.id) ? '★ ' : '';
-      item.description = `${star}${branch}${statusLine}${isOpen ? ' · open' : ''}`;
+      item.description = `${star}${branch}${statusLine}${this.isOpenAnywhere(chat) ? ' · open' : ''}`;
 
       item.tooltipHeader = {
         status: statusLine,
