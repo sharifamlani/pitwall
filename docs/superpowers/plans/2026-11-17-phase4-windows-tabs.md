@@ -689,7 +689,7 @@ Create `scripts/dump-tabs.mjs`. Tests: `test/dry/shared/native-ui-surface.test.t
   - **W4** — Repo click opens all chats (E5).
   - **W5** — ` · open` matches tabs (E7).
   - **W6** — Ctrl+↓ ×3 (E8).
-  - **W7** — Bottom bar (E9).
+  - **W7** — Bottom bar (E9), including a `git switch` inside the worktree window: the bar updates ≤ 5 s (its HEAD lives outside that window's folder, QA #44).
   - **W8** — T18 chat (E10).
   - **W9** — "+" in another repo (E11).
   - **W10** — FILES (E12).
