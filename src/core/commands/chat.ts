@@ -243,10 +243,12 @@ export function registerChatCommands(
    * again, so it restores the list. Both run only while the list is still
    * held, and any move since the press lets go of it (QA #47): a text editor,
    * another terminal or a non-terminal tab (a Claude panel tab, in this
-   * group or another) becoming active, typing into the new terminal, the
-   * window losing focus, or another Pitwall open. A missed restore is
-   * harmless; a stolen focus is not. The new terminal itself becoming
-   * active, and Pitwall's own activations to rename tabs, are not moves.
+   * group or another) becoming active, the window losing focus, or another
+   * Pitwall open. A missed restore is harmless; a stolen focus is not. The
+   * new terminal itself becoming active, and Pitwall's own activations to
+   * rename tabs, are not moves. Typing into the new terminal can't be seen:
+   * `isInteractedWith` turns true when Pitwall sends the launch line (QA #51),
+   * so type-ahead before the late rename is a known issue.
    */
   const listRefocusAfterTitle = (chat: ChatSession) => {
     heldList?.dispose();
@@ -278,11 +280,6 @@ export function registerChatCommands(
     const watches = [
       vscode.window.onDidChangeActiveTextEditor((editor) => editor && letGo()),
       vscode.window.onDidChangeActiveTerminal((terminal) => terminal && terminalMoved(terminal)),
-      vscode.window.onDidChangeTerminalState((terminal) => {
-        if (terminal.state.isInteractedWith && terminalManager.getChatIdForTerminal(terminal) === chat.id) {
-          letGo();
-        }
-      }),
       vscode.window.tabGroups.onDidChangeTabs(tabMoved),
       vscode.window.tabGroups.onDidChangeTabGroups(tabMoved),
       vscode.window.onDidChangeWindowState((state) => !state.focused && letGo()),
