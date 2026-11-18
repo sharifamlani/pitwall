@@ -80,6 +80,8 @@ Pitwall deletes very little, and says what it will delete before it does:
 
 - Removing a session row or a repository from the sidebar deletes no files and no conversations.
 - Deleting a file in the All Files panel, or discarding an untracked file, moves it to the Trash.
+- Pasting a file, **Copy to another repo (Pitwall)**, or dropping a FILES row on a repo row writes a copy into that folder and never overwrites: a name clash is saved as `{name} copy`. A cut moves the file and then empties the clipboard.
+- When a copied `.env` or `.env.*` file (not `.env.example`, `.env.sample` or `.env.template`) is not ignored by the repo it lands in, which Pitwall asks `git check-ignore`, Pitwall offers to add it to that repo's `.gitignore`. It changes `.gitignore`, appending one `/path` line, only when you click **Add to .gitignore**.
 - Deleting a worktree removes its directory, after a confirmation that names what will be lost.
 - These actions are logged in the **Pitwall Operations** output channel.
 

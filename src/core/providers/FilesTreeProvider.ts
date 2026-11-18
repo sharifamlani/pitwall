@@ -32,31 +32,43 @@ export class FileTreeItem extends vscode.TreeItem {
   }
 }
 
+/** The drag mime of FILES rows; a repo row accepts drops of this mime only (Q20). */
+export const FILES_MIME = 'application/vnd.code.tree.pitwall.filesview';
+
+/** The FILES banner while something is on the clipboard (§3e, canvas line 94). */
+export function clipboardBanner(file: string, repo: string): string {
+  return `On the clipboard: ${file} from ${repo}. Right-click → Paste, or Ctrl+V, in any repo.`;
+}
+
 /**
- * The All Files view: one worktree's files, without build output and VCS
- * metadata. The extension refreshes it when the worktree's files change.
+ * Drags FILES rows onto a repo row (row 4.7). Only file rows are carried, as
+ * their paths; FILES itself accepts no drops.
+ */
+export class FilesDragController implements vscode.TreeDragAndDropController<vscode.TreeItem> {
+  readonly dragMimeTypes = [FILES_MIME];
+  readonly dropMimeTypes: string[] = [];
+
+  handleDrag(source: readonly vscode.TreeItem[], dataTransfer: vscode.DataTransfer, _token?: vscode.CancellationToken): void {
+    const paths = source
+      .filter((item): item is FileTreeItem => item instanceof FileTreeItem && (item.fileType & vscode.FileType.Directory) === 0)
+      .map((item) => item.uri.fsPath);
+    if (paths.length > 0) {
+      dataTransfer.set(FILES_MIME, new vscode.DataTransferItem(paths));
+    }
+  }
+}
+
+/**
+ * The All Files view: this window's folder (Q8), without build output and VCS
+ * metadata. The extension refreshes it when the folder's files change.
  */
 export class FilesTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.changeEmitter.event;
 
   private activeWorktree: Worktree | undefined;
-  private clipboard: { uri: vscode.Uri; isCut: boolean } | undefined;
 
-  setClipboard(uri: vscode.Uri, isCut: boolean): void {
-    this.clipboard = { uri, isCut };
-    void vscode.commands.executeCommand('setContext', 'pitwall.hasFileClipboard', true);
-  }
-
-  getClipboard(): { uri: vscode.Uri; isCut: boolean } | undefined {
-    return this.clipboard;
-  }
-
-  clearClipboard(): void {
-    this.clipboard = undefined;
-    void vscode.commands.executeCommand('setContext', 'pitwall.hasFileClipboard', false);
-  }
-
+  /** Point FILES at this window's folder (Q8); undefined in an empty window. */
   setActiveWorktree(worktree: Worktree | undefined): void {
     this.activeWorktree = worktree;
     this.refresh();
@@ -80,15 +92,8 @@ export class FilesTreeProvider implements vscode.TreeDataProvider<vscode.TreeIte
 
   async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
     if (!this.activeWorktree) {
-      const placeholder = new vscode.TreeItem(
-        'Select a worktree or chat',
-        vscode.TreeItemCollapsibleState.None
-      );
-      placeholder.iconPath = new vscode.ThemeIcon(
-        'info',
-        new vscode.ThemeColor('descriptionForeground')
-      );
-      return [placeholder];
+      // An empty window: no rows, so the view shows its welcome text.
+      return [];
     }
 
     const rootPath = this.activeWorktree.path;

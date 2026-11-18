@@ -179,6 +179,11 @@
         "icon": "$(clippy)"
       },
       {
+        "command": "pitwall.files.copyToRepo",
+        "title": "Copy to another repo (Pitwall)",
+        "category": "Pitwall"
+      },
+      {
         "command": "pitwall.files.rename",
         "title": "Rename...",
         "category": "Pitwall"
@@ -1272,6 +1277,11 @@
           "group": "4_clipboard@3"
         },
         {
+          "command": "pitwall.files.copyToRepo",
+          "when": "view == pitwall.filesView && viewItem == file",
+          "group": "4_clipboard@4"
+        },
+        {
           "command": "pitwall.files.newFile",
           "when": "view == pitwall.filesView && viewItem == folder",
           "group": "5_create@1"
@@ -1427,6 +1437,10 @@
         },
         {
           "command": "pitwall.files.cut",
+          "when": "false"
+        },
+        {
+          "command": "pitwall.files.copyToRepo",
           "when": "false"
         },
         {

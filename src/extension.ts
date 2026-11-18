@@ -1,4 +1,5 @@
 import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { ChatSession, Worktree } from './core/types';
 import { HarnessSession } from './core/harness/types';
@@ -18,7 +19,10 @@ import { HarnessRegistry } from './core/harness/HarnessRegistry';
 import { enabledHarnesses } from './harnesses';
 import { chatNativeSessionIds } from './core/harness/sessionUtils';
 import { WorkspacesTreeProvider } from './core/providers/WorkspacesTreeProvider';
-import { FilesTreeProvider, FileTreeItem } from './core/providers/FilesTreeProvider';
+import { FilesDragController, FilesTreeProvider, FileTreeItem, clipboardBanner } from './core/providers/FilesTreeProvider';
+import { SharedClipboard } from './core/files/SharedClipboard';
+import { RepoDropController } from './core/files/RepoDropController';
+import { RepoRef } from './core/files/copyInto';
 import { SessionSearchTreeProvider } from './core/providers/SessionSearchTreeProvider';
 import { registerRepositoryCommands } from './core/commands/repository';
 import { registerWorktreeRowCommands } from './core/commands/worktree-rows';
@@ -159,52 +163,104 @@ export async function activate(context: vscode.ExtensionContext) {
   void restore.complete.catch((error) => console.error('Pitwall: restoring terminals failed', error));
 
   const filesProvider = new FilesTreeProvider();
+  /** The sidebar repo holding a path, for FILES messages and drops. */
+  const repoOf = (filePath: string): RepoRef | undefined => {
+    const repo = workspacesProvider.repoContaining(filePath);
+    return repo && { name: repo.name, rootPath: repo.rootPath };
+  };
   const workspacesTreeView = vscode.window.createTreeView('pitwall.workspacesView', {
     treeDataProvider: workspacesProvider,
     showCollapseAll: true,
     // Session rows can be removed, closed, and starred several at a time.
     canSelectMany: true,
+    // A FILES row dropped on a repo row is copied into that repo (row 4.7).
+    // The controller can only be given here, at creation.
+    dragAndDropController: new RepoDropController(repoOf),
   });
   const filesTreeView = vscode.window.createTreeView('pitwall.filesView', {
     treeDataProvider: filesProvider,
     showCollapseAll: true,
+    dragAndDropController: new FilesDragController(),
   });
   context.subscriptions.push(workspacesTreeView, filesTreeView);
   // The header description and the needs-you badge.
   workspacesProvider.bindView(workspacesTreeView);
   const refreshTree = () => workspacesProvider.refresh();
 
-  // The worktree the Files panel shows, and one watcher on its files that
-  // refreshes it.
+  // The worktree the user last picked in the list: a new session with no row
+  // starts there. FILES no longer follows it; it shows this window's folder (Q8).
   let shownWorktree: Worktree | undefined;
-  let worktreeWatcher: vscode.FileSystemWatcher | undefined;
+  const showWorktree = (worktree: Worktree | undefined): void => {
+    shownWorktree = worktree;
+  };
+
+  // FILES: always this window's folder (Q8, `workspaceFolders[0]`), with one
+  // watcher on its files that refreshes it. An empty window shows no rows.
+  const windowFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  let filesWatcher: vscode.FileSystemWatcher | undefined;
   const refreshPanels = debounce(() => {
     filesProvider.refresh();
   }, FILE_CHANGE_DEBOUNCE_MS);
-  const showWorktree = (worktree: Worktree | undefined): void => {
-    if (worktree?.id !== shownWorktree?.id) {
-      shownWorktree = worktree;
-      worktreeWatcher?.dispose();
-      worktreeWatcher = undefined;
-      if (worktree) {
-        worktreeWatcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(worktree.path, '**/*'));
-        worktreeWatcher.onDidChange(refreshPanels);
-        worktreeWatcher.onDidCreate(refreshPanels);
-        worktreeWatcher.onDidDelete(refreshPanels);
-      }
-      filesProvider.setActiveWorktree(worktree);
-    }
-    // The FILES header: "{repo} ⎇ {branch}" (no branch for a plain folder),
-    // and the folder path. A view has no header tooltip, so the path is the
-    // view's message line.
+  /** The clipboard banner (§3e) while anything is on the clipboard. */
+  let clipboardLine: string | undefined;
+  // The FILES header: "{repo} ⎇ {branch}" (no branch for a plain folder),
+  // and the folder path, or the clipboard banner while the clipboard holds a
+  // file. A view has no header tooltip, so the path is the view's message line.
+  const updateFilesHeader = (): void => {
+    const worktree = filesProvider.getActiveWorktree();
     const owner = worktree && workspacesProvider.repositoryFor(worktree);
     filesTreeView.description = !worktree
       ? undefined
       : owner?.isGit
         ? `${owner.repo.name} ⎇ ${worktree.branch ?? worktree.name}`
         : owner?.repo.name ?? worktree.name;
-    filesTreeView.message = worktree?.path;
+    filesTreeView.message = worktree ? clipboardLine ?? worktree.path : undefined;
   };
+  /** Show the window folder as the list knows it; before the list does, as a plain folder. */
+  const showWindowFolder = (): void => {
+    if (!windowFolder) {
+      return;
+    }
+    const listed = workspacesProvider.findWorktreeByPath(windowFolder);
+    const next: Worktree = listed ?? {
+      id: `folder:${windowFolder}`,
+      repoId: '',
+      name: path.basename(windowFolder),
+      path: windowFolder,
+      isMain: true,
+    };
+    const shown = filesProvider.getActiveWorktree();
+    if (!shown || shown.id !== next.id || shown.branch !== next.branch || shown.name !== next.name) {
+      filesProvider.setActiveWorktree(next);
+    }
+    updateFilesHeader();
+  };
+  if (windowFolder) {
+    filesWatcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(windowFolder, '**/*'));
+    filesWatcher.onDidChange(refreshPanels);
+    filesWatcher.onDidCreate(refreshPanels);
+    filesWatcher.onDidDelete(refreshPanels);
+    showWindowFolder();
+    // A relisting can name the folder's repo or a new branch: the header follows.
+    context.subscriptions.push(workspacesProvider.onDidChangeTreeData(() => showWindowFolder()));
+  }
+
+  // One FILES clipboard for every window (Q9), in global storage.
+  const clipboard = new SharedClipboard(context.globalStorageUri?.fsPath);
+  const updateClipboardLine = async (): Promise<void> => {
+    const entry = await clipboard.get();
+    clipboardLine = entry
+      ? clipboardBanner(path.basename(entry.path), repoOf(entry.path)?.name ?? path.basename(path.dirname(entry.path)))
+      : undefined;
+    setContext('pitwall.hasFileClipboard', entry !== undefined);
+    updateFilesHeader();
+  };
+  context.subscriptions.push(clipboard, clipboard.onDidChange(() => void updateClipboardLine()));
+  // Another window's copy shows here once the list has first rendered (E16).
+  afterFirstRender(() => {
+    context.subscriptions.push(clipboard.watch());
+    void updateClipboardLine();
+  });
 
   /** Close chats' terminals and delete their rows; a removed selection is cleared. */
   const removeChats = (chatIds: string[], options?: { rememberSession?: boolean; closeTerminals?: boolean }): string[] => {
@@ -376,10 +432,19 @@ export async function activate(context: vscode.ExtensionContext) {
     refreshTree,
   });
   registerSessionImportCommands(context, storageService, gitService, worktreeCatalog, workspacesProvider, harnessRegistry, refreshTree);
-  registerFileCommands(context, filesProvider, () => {
-    const [row] = filesTreeView.selection;
-    return row instanceof FileTreeItem ? row : undefined;
-  });
+  registerFileCommands(
+    context,
+    filesProvider,
+    () => {
+      const [row] = filesTreeView.selection;
+      return row instanceof FileTreeItem ? row : undefined;
+    },
+    {
+      clipboard,
+      repos: () => storageService.getRepositories().map((repo) => ({ name: repo.name, rootPath: repo.rootPath })),
+      repoOf,
+    }
+  );
 
   registerNavigationCommands(context, { workspacesProvider, workspacesTreeView, filesTreeView });
   registerSearchCommands(context, { workspacesProvider });
@@ -553,7 +618,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({
     dispose: () => {
       refreshPanels.cancel();
-      worktreeWatcher?.dispose();
+      filesWatcher?.dispose();
       attentionService.dispose();
       terminalManager.dispose();
       filesProvider.dispose();
