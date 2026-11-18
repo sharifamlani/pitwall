@@ -84,6 +84,14 @@ interface StubControls {
     __fireCreate(): void;
     __fireDelete(): void;
   }[];
+  __statusBarItems: {
+    alignment: number;
+    text: string;
+    tooltip?: string;
+    command?: string;
+    shown: boolean;
+    disposed: boolean;
+  }[];
   __deleted: { path: string; options?: { useTrash?: boolean } }[];
   __setQuickPickHandler(handler: ((items: any[], options?: any) => unknown) | null): void;
   __setConfiguration(key: string, value: unknown): void;
