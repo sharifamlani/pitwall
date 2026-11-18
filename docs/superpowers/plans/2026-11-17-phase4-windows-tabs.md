@@ -1,0 +1,603 @@
+# Phase 4 — Windows and Tabs Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Clicking anything in Pitwall lands you in the right Cursor window, with the chat open in Claude Code's chat panel. Each repo and each worktree has its own window, which Pitwall opens or brings forward. Tabs never duplicate, and files and tabs behave like Cursor's. Tag `v0.5.0`.
+
+**Architecture:**
+- **Window registry.** Every Pitwall window writes a small heartbeat file (its folder, extension-host pid, open session IDs) into the extension's shared `globalStorageUri`. All windows of one Cursor profile share that folder. The registry answers "does repo X have a window?" and "is chat Y open anywhere?".
+- **Handoff inbox.** Chat C lives in folder F. If F is this window's folder, the chat opens here through `claude-vscode.editor.open` (ADR 0010). Otherwise:
+  1. Pitwall writes a request file into F's inbox in the same shared folder.
+  2. It calls `vscode.openFolder(F, {forceNewWindow: true})`. That brings F's window forward if one exists, or opens one.
+  3. F's Pitwall claims the request (an atomic rename) and opens the chat locally.
+
+  The Claude link alone is not enough: it goes to whichever window is focused (T6), so it races against a window that is still starting.
+- **Tab binding.** Pitwall opens Claude tabs one at a time and binds each new `claudeVSCodePanel` tab to the session it just asked for. Unmatched tabs stay unknown (T10 rule).
+- **Window folder.** The bottom bar shows the window's `repo · ⎇ branch` (T9: nothing can be written under Claude's tabs). FILES shows the window's folder. One clipboard is shared across windows.
+
+**Tech Stack:** TypeScript 5, esbuild, `node --test` dry tests with the `vscode` stub (`test/dry/run.js`), `@vscode/test-electron` (integration + terminal-restore e2e), GitHub Actions (`ubuntu-latest`, `windows-latest`, privacy job). No new runtime dependencies.
+
+**Spec:**
+- [ROADMAP](../../../ROADMAP.md) v0.50 §3, Phase 4, rows 4.1–4.9 including 4.2b. §2 decisions:
+  - Window and tab design: D3, D11, D16, D19, D22, D23, D26, D28, D32, D35, D36, D37.
+- Spec canvas https://claude.ai/artifact/XhYy9L747DwQzBsQDpaFF2, boards Navigation, NavigationSteps, Decisions, Hotkeys, Inherited and Fallback. UI strings below are copied verbatim from it unless marked *(new copy)*.
+- [Assumption tests](../../research/2026-11-16-assumption-tests.md):
+  - T5 and T17 FAIL: the panel only resumes chats of the window's first folder, and a worktree is its own folder.
+  - T6 PASS: re-opening focuses the existing tab, and the link brings the window that holds the chat forward.
+  - T9: no label is possible under Claude tabs.
+  - T10: tabs carry only a truncated title.
+  - Code recon, lines 42–61.
+- [Phase 3 handoff](../../progress_reports/phase3-handoff.md): known issues (Ctrl+↓ focus), P10–P12 (open-in-own-window keys), P23 (redraw on focus).
+- [Phase 2 handoff](../../progress_reports/phase2-handoff.md): F4 and R48 (terminal identity, restore race) → row 4.2b.
+
+## Phase tracker
+
+```
+PITWALL PHASE 4 — task plan
+─────────────────────────────────────────────
+T1 : Window registry + handoff inbox [....................]
+T2 : Claude panel by default + Ctrl+↓ [....................]
+T5 : Bottom bar repo · branch        [....................]
+T7 : Terminal tag spike (4.2b)       [....................]
+T3 : Click → its folder's window     [....................]
+T6 : FILES across windows            [....................]
+T4 : Repo click = all chats as tabs  [....................]
+T8 : Close: walk, evaluator, v0.5.0  [....................]
+```
+
+## Rulings made while planning (lead; spec silent or ambiguous)
+
+| # | Ruling | Why | Cost if wrong |
+|---|---|---|---|
+| Q1 | Cross-window opens go through a file inbox in `globalStorageUri`, plus `vscode.openFolder` to raise the window. The Claude link stays as the in-window fallback only | T6: the link lands in the focused window, which races against a new window that is still starting; a claimed file request is deterministic and survives that startup | One extra module; if `globalStorageUri` turned out not to be shared, S2 fails first and we fall back to a `~/.pitwall` folder |
+| Q2 | A chat's window folder is its **launch folder**: the `cwd` of the first transcript entry (the project folder Claude filed it under), not the latest `cwd` | T18 and recon item 4: a chat that moved into a worktree mid-session stays in the main repo's window | A T18 chat opens blank; E10 catches it |
+| Q3 | `pitwall.defaultSessionSurface` default flips `terminal` → `ui`. The terminal stays one click away (hover icon, setting) | Row 4.1, R48 (Sharif: move off the terminal path) | Users who liked terminals change one setting |
+| Q4 | Ctrl+↓/↑ keep list focus when the chat opens **in this window**. When it opens in another window, focus goes with that window | You can't keep focus in a window that just went behind another | None; a second Ctrl+↓ in the new window works there |
+| Q5 | Clicking a repo (or Ctrl+↓ / Enter on it) opens that repo's **main-folder** chats from the sidebar list (the 14-day set) as tabs in its window. Worktree chats are not opened there. No cap | D11 says "all"; canvas line 609 keeps worktree chats in their own windows | Many tabs on a busy repo; Sharif can ask for a cap later |
+| Q6 | No toast when a window opens or comes forward (the canvas has none). Log lines only, and a warning only on failure (copy in §3f) | Canvas: the "last action" line is prototype narration, and the only real toast is the needs-you pop-up (Phase 5) | None |
+| Q7 | Repo + branch shows as a bottom-bar item in every window. Pitwall writes no settings (`window.title`, `workbench.editor.labelFormat`) | T9 rules out labels under Claude tabs. D26's fallback is the window title + bottom bar; Cursor's title already names the folder. Writing workspace settings would create `.vscode/settings.json` in the user's repo | The branch is in the bottom bar, not the title |
+| Q8 | FILES always shows **this window's** folder | Row 4.7 replaces Phase 3's "follows the clicked repo", because a click now raises that repo's own window | None |
+| Q9 | One clipboard for all windows, stored in `globalStorageUri/pitwall-clipboard.json`. A cut clears it after the paste | Canvas line 722: "Pitwall keeps one clipboard across all its windows" | None |
+| Q10 | "Copy to another repo (Pitwall)" opens a quick pick of the other repos, and the file lands in the target repo's root | Native menus can't list repos dynamically; the root is the canvas's default paste target | A file meant for a subfolder needs a move afterwards |
+| Q11 | The .gitignore offer covers copied files named `.env` or `.env.*`, except `.env.example`, `.env.sample` and `.env.template`. It is decided by `git check-ignore -q` in the target repo | D23; template files are meant to be committed | A missed secret name; the rule is one list to extend |
+| Q12 | The ` · open` marker means open as a tab in **any** window (from the registry) | Phase 3 deferred other windows' tabs to Phase 4 | None |
+| Q13 | Row 4.2b is a time-boxed spike (Task 7). A go retires title matching for tagged terminals; a no-go records the evidence in ADR 0009 and keeps titles | Panel by default (Q3) makes terminal identity secondary | Terminal identity stays fragile; terminals are opt-in now |
+| Q14 | Row 4.9 is verify-only. Pitwall never closes, moves or rebuilds a tab, except the one move the user asks for with "Show its open chats side by side" | D16, D32 | None |
+| Q15 | "Show its open chats side by side" puts that repo's open Claude tabs side by side in its window, using Cursor's own split (one group per tab, up to 4) | Canvas: "Side by side · {n} panes (Cursor's own split)", "Only this folder's chats can be split together." | More than 4 tabs: the rest stay as tabs in the last pane |
+| Q16 | Handoff requests expire after 120 s unclaimed. If the sender sees no claim within 20 s, it warns once (§3f) | A Cursor cold start is about 10 s; 20 s covers it with margin | A slow machine sees a false warning while the chat still opens |
+
+## Global Constraints
+
+- **Privacy:**
+  - `~/.claude` stays read-only, and the Phase 3 rules for `~/.claude/sessions` hold (never read `*.key`).
+  - Registry, inbox and clipboard files hold only session IDs, folder paths, pids, timestamps and (clipboard) one file path. They never hold transcript text.
+  - These files live only in `globalStorageUri`. `docs/privacy.md` lists all three.
+- **Never track** `.packages/`, `transcripts/`, `.claude/` (except `.claude/skills/pitwall-*`), `.superpowers/` or `.env`. Run `bash scripts/verify.sh` before every push.
+- **Claude Code** is driven only through `claude-vscode.editor.open` and its `/open` link built from `vscode.env.uriScheme`. It is never copied, embedded or modified. No "Claude" in the product name.
+- **User files and settings:** Pitwall writes into a user's repo only when the user pastes, copies or drops a file, or accepts the .gitignore offer. It writes no user or workspace settings.
+- **Tabs (D16):** switching repos never closes, reorders or rebuilds tabs. Pin, split and drag-reorder stay Cursor's own.
+- **Window folder:** this window's folder is `workspaceFolders[0]`, Claude's own rule. An empty window has none, so it routes every chat elsewhere and never claims a request. Paths compare with `samePath()` and key with `canonicalPath()` (`src/core/utils/paths.ts`).
+- **Exact values:**
+  - heartbeat every 15 s and on every change; a window is stale after 45 s without a beat or when its pid is dead;
+  - a request expires after 120 s; the sender warns after 20 s with no claim;
+  - side by side is at most 4 panes;
+  - inbox and registry paths:
+    - `<globalStorage>/pitwall-windows/<pid>.json`;
+    - `<globalStorage>/pitwall-handoff/<folderKey>/<nonce>.json`, where `folderKey` = the first 16 hex characters of sha1(`canonicalPath(folder)`, lower-cased on win32).
+- **Log lines** (to the "Pitwall Operations" channel, which the evaluator greps):
+  - `[Pitwall] handoff sent <id8> → <folder>`
+  - `[Pitwall] handoff claimed <id8> after <ms> ms`
+  - `[Pitwall] handoff expired <id8>`
+  - `[Pitwall] tab bound <id8> "<label>"`
+  - `[Pitwall] window registry <n> windows`
+- **Activation:** the registry and inbox start after first render. `[Pitwall] activate` → `[Pitwall] first render` stays ≤ 1 s with real `~/.claude` (E16 from Phase 3 is held).
+- **Copy:** UI strings in §3 are verbatim from the canvas or marked *(new copy)*. Sentence case, no exclamation marks.
+- **Windows parity:** every new test passes on the windows CI job; skips ≤ 9.
+- **Flywheel:**
+  - one PR per task on branch `phase4/task-N-<slug>`;
+  - QA approves an exact sha, and the lead merges only with `gh pr checks` green at that sha, using `--match-head-commit`, then confirms main CI;
+  - the testing agent walks each merge in its isolated profile (`$LOCALAPPDATA/pitwall-uj`), never in Sharif's windows.
+
+## Review Focus
+
+1. **The target window closes, or Cursor cold-starts slowly, between send and claim.** The request expires at 120 s with `handoff expired`. The sender warns once after 20 s with no claim, and nothing opens twice when the window finally arrives. Test in Task 1 and Task 3.
+2. **Two claimers for one request** (a double-click, or two windows on the same folder that the user opened by hand): exactly one claim wins the rename, so one tab opens. Test in Task 1.
+3. **A chat whose folder is gone** (deleted worktree or repo): no window opens; the warning in §3f shows instead. Test in Task 3.
+4. **Path spellings:**
+   - drive-letter case, trailing slash, `\\?\` prefix, forward slashes;
+   - each gives one `folderKey`, and the registry match uses `samePath`.
+
+   Test in Task 1.
+5. **Empty window or multi-root workspace:** an empty window claims nothing and routes everything elsewhere. A multi-root window owns only `workspaceFolders[0]`. Test in Task 3.
+
+---
+
+## 1. Folder / file structure (paths this plan touches)
+
+```
+pitwall/
+├── src/
+│   ├── core/windows/                         NEW folder: one-window-per-folder machinery
+│   │   ├── WindowRegistry.ts                 T1 heartbeat files; windowsFor(folder), openSessionIds(), isStale()
+│   │   ├── HandoffInbox.ts                   T1 folderKey(), send(), claim() via atomic rename, expiry sweep
+│   │   ├── ChatRouter.ts                     T3 launchFolder(chat) → local open | send + openFolder; failure warnings
+│   │   └── RepoStatusBar.ts                  T5 bottom-bar "$(repo) {repo} · ⎇ {branch}" for this window
+│   ├── core/files/
+│   │   ├── SharedClipboard.ts                T6 cross-window clipboard file (copy/cut, clear after cut-paste)
+│   │   ├── RepoDropController.ts             T6 TreeDragAndDropController: file dropped on a repo row → copy
+│   │   └── envIgnoreCheck.ts                 T6 isEnvLike(name), checkIgnored(repo, rel) via git check-ignore
+│   ├── core/commands/
+│   │   ├── chat.ts                           T2 default ui; T3 openChatPrimary → ChatRouter
+│   │   ├── navigation.ts                     T2 moveAndOpen refocuses the list; T3 window keys use the registry
+│   │   ├── repository.ts                     T3 "+" via router, window label flip; T4 open all, side by side
+│   │   └── files.ts                          T6 shared clipboard, cross-repo paste, "Copy to another repo"
+│   ├── core/harness/kit/NativeUiTabSurfaceService.ts   T4 serial open + bind-next-new-tab
+│   ├── core/providers/WorkspacesTreeProvider.ts        T3 " · {k} windows", open-anywhere, hasWindow; T4 repo click command; T6 drop
+│   ├── core/providers/FilesTreeProvider.ts             T6 this window's folder; clipboard banner (view.message)
+│   ├── harnesses/claude/claudeUi.ts          T2 link uses vscode.env.uriScheme
+│   ├── core/terminal/TerminalManager.ts      T7 (go only) env tag on Pitwall terminals
+│   └── extension.ts                          T1/T3/T5/T6 wiring after first render
+├── manifest/core.contributes.json            T2 setting default; T3/T4/T6 commands, menus, when-clauses
+├── package.json                              generated by scripts/build-manifest.mjs
+├── test/dry/core/windows/                    NEW
+│   ├── window-registry.test.ts               T1
+│   ├── handoff-inbox.test.ts                 T1
+│   ├── chat-router.test.ts                   T3
+│   └── repo-status-bar.test.ts               T5
+├── test/dry/core/files-cross-repo.test.ts    T6 NEW
+├── test/dry/shared/native-ui-surface.test.ts T4 serial binding cases
+├── test/dry/core/{chat-commands,navigation,menus,manifest,tree}.test.ts   updated per task
+├── scripts/dump-pitwall-windows.mjs          T1 NEW: prints registry + pending inbox (walk + ground truth)
+├── docs/adr/0020-window-per-folder-handoff.md          T1 NEW
+├── docs/adr/0009-restored-terminals-keep-their-chat.md T7 amended (go or no-go evidence)
+├── docs/privacy.md                           T1/T6 new local files listed
+├── docs/progress_reports/phase4-scorecard.md T8 NEW (evaluator)
+├── docs/progress_reports/phase4-handoff.md   T8 NEW
+├── CHANGELOG.md, README.md                   T8 [0.5.0]
+└── ROADMAP.md                                every merge: row flip, §0, §6, version
+```
+
+## 2. Flowchart
+
+```
+ click chat row / Ctrl+↓ / Enter / "+" / repo click        (window A)
+            |
+            v
+ +------------------------+   launchFolder(chat) = first transcript cwd (Q2)
+ | ChatRouter.route()     |---------------------------------------------+
+ +------------------------+                                             |
+    | F == A's folder?                                                  |
+    | yes                                no                             |
+    v                                    v                              |
+ +-------------------------+   +-------------------------------+  folder gone?
+ | open here:              |   | HandoffInbox.send(F, request) |  -> warning (§3f)
+ | claude-vscode.editor    |   |  globalStorage/pitwall-handoff|
+ | .open (serial, bind tab)|   |  /<folderKey>/<nonce>.json    |
+ +-------------------------+   +-------------------------------+
+    |                                    |
+    | Ctrl+↓? refocus list (Q4)          v
+    v                          vscode.openFolder(F, forceNewWindow)
+ tab bound -> registry beat       |                    |
+ (open IDs) -> rows " · open"     | F has window       | no window
+                                  v                    v
+                        window B comes forward   Cursor opens window B
+                                  |                    | Pitwall activates
+                                  +---------+----------+ (after first render)
+                                            v
+                         B: claim() = rename <nonce>.json -> .claimed-<pid>
+                            (fs.watch | window focus | activation sweep)
+                                            |
+                                            v
+                         B: open here (same box as left) -> tab bound
+                                            |
+                                            v
+                         B: registry beat -> every window's rows refresh
+
+ sender A: no claim in 20 s -> one warning; request expires at 120 s -> "handoff expired"
+ every window: heartbeat 15 s -> pitwall-windows/<pid>.json -> " · {k} windows", label flip
+```
+
+## 3. UI wireframes
+
+### 3a. Pitwall sidebar (repo row and session rows)
+
+```
+BEFORE (v0.4.0)                                   AFTER (v0.5.0)
++----------------------------------------------+  +----------------------------------------------+
+| v job-market     1 needs you · 2 open        |  | v job-market     1 needs you · 3 open · 2 windows |  <- " · {k} windows" when k > 1
+|    ● One-off apply   ⎇ main  needs you · 2m  |  |    ● One-off apply   ⎇ main  needs you · 2m  |
+|    ● Networking…     ⎇ main  working · now · open |  |    ● Networking…  ⎇ main  working · now · open |  <- open = open in ANY window (Q12)
+|    ○ Wt test  ⧉ ⎇ feat/wt  idle · 1h         |  |    ○ Wt test  ⧉ ⎇ feat/wt  idle · 1h · open  |  <- open in its own window counts
++----------------------------------------------+  +----------------------------------------------+
+ click repo label = expand + FILES follows         click repo label = open its main-folder chats as tabs
+                                                   in its window (Q5); the twistie still only expands
+ click chat = terminal in THIS window              click chat = Claude panel tab in ITS folder's window
+```
+
+### 3b. Repo right-click menu (label flip)
+
+```
+BEFORE                                  AFTER (repo has no window)        AFTER (repo has a window)
++------------------------------+        +------------------------------+  +------------------------------+
+| New Claude Code session      |        | New Claude Code session      |  | New Claude Code session      |
+| Session history…             |        | Session history…             |  | Session history…             |
+| Open in New Window           |        | Show its open chats side by side |  | Show its open chats side by side |
+| Copy Path                    |        | Open its window              |  | Bring its window forward     |  <- flips on registry
+| Reveal in File Explorer      |        | Copy Path                    |  | Copy Path                    |
+| Dismiss from Pitwall         |        | Reveal in File Explorer      |  | Reveal in File Explorer      |
++------------------------------+        | Dismiss from Pitwall         |  | Dismiss from Pitwall         |
+                                        +------------------------------+  +------------------------------+
+```
+"Show its open chats side by side" is hidden when the repo has fewer than 2 open chats. Two command ids with `when` clauses on `viewItem =~ /hasWindow/` give the flip.
+
+### 3c. Window journey (NavigationSteps board)
+
+```
+STEP 1  window job-market                STEP 2  click "Fix map" (wynwood)       STEP 3  click a job-market chat
++--------------------------------+       +--------------------------------+      +--------------------------------+
+| PITWALL  | [Apply][Network][Wt]|       | PITWALL  | [Fix map]           |      | PITWALL  | [Apply][Network][Wt]|
+| ...      |  Claude panel tabs  |  -->  | ...      | wynwood window,     | -->  | ...      | job-market window   |
+|          |  job-market only    |       |          | brought forward or  |      |          | back in front, same |
++--------------------------------+       |          | opened by Pitwall   |      |          | tabs, chats kept    |
+| $(repo) job-market · ⎇ main    |       +--------------------------------+      +--------------------------------+
++--------------------------------+       | $(repo) wynwood · ⎇ main       |      | $(repo) job-market · ⎇ main    |
+                                         +--------------------------------+      +--------------------------------+
+ job-market's window is untouched in step 2: nothing closes, its chats keep running (D16).
+```
+
+### 3d. Bottom bar (row 4.5, Q7)
+
+```
+BEFORE: [⎇ main ⟳] [⊗ 0 ⚠ 0]                          (Cursor's own git item)
+AFTER:  [$(repo) job-market · ⎇ main] [⎇ main ⟳] ...    main-folder window
+        [$(repo) job-market · ⎇ feat/wt ⧉] ...           worktree window
+tooltip: the folder path, e.g. C:\code\job-market-wt      click: focus the Pitwall list
+hidden: empty window or folder outside git
+```
+
+### 3e. FILES (row 4.7)
+
+```
+BEFORE                                             AFTER
+> FILES  job-market ⎇ main  C:\code\job-market     > FILES  job-market ⎇ main  C:\code\job-market   <- always this window's folder (Q8)
+  (follows the clicked repo / chat)                  On the clipboard: notes.md from wynwood. Right-click → Paste,
+                                                     or Ctrl+V, in any repo.                        <- view.message banner (canvas line 94)
+right-click a file                                 right-click a file
+  Copy · Cut · Paste · ...                           Copy · Cut · Paste · Copy to another repo (Pitwall) · ...
+                                                       └─ quick pick, placeholder (new copy): "Copy {file} to which repo?"
+                                                          items: one per other repo, "{repoName}", detail = path
+drag a FILES row onto a Pitwall repo row          -> copy into that repo's root
+  same repo -> info: "That file is already in {repo}. Drop it on a different repo to copy it there."
+```
+
+### 3f. Messages (info / warning, no modals)
+
+| Moment | Text | Kind |
+|---|---|---|
+| Copy / cut | `Copied {file} ({repo}). Now click another repo: its window comes up and the copy waits on the clipboard (Pitwall keeps one clipboard across all its windows). Right-click in FILES → Paste, or press Ctrl+V.` (cut: `Cut … the cut waits …`) | status bar 5 s |
+| Paste / move done | `Pasted {name} from {repo} into {winName} ({path}).` / `Moved {name} from {repo} into {winName} ({path}).` | info |
+| Name clash | appended: ` A file with that name was already there, so it was saved as '{destName}'.` | same message |
+| .env not ignored | `⚠ {repo}'s .gitignore does not cover {destName}, so it could get committed.` buttons `Add to .gitignore` *(new copy)* · `Not now` *(new copy)* | warning |
+| Added | `Added {destName} to {repo}'s .gitignore.` *(new copy)* | info |
+| No claim after 20 s | `Pitwall couldn't reach the {repo} window. Click the chat again.` *(new copy)* | warning |
+| Folder gone | `That chat's folder is gone: {path}` *(new copy)* | warning |
+
+### State summary
+
+| UI piece | BEFORE | AFTER |
+|---|---|---|
+| Chat click | terminal in this window | Claude panel tab in its folder's window |
+| Repo label click | expand + FILES follows | all main-folder chats as tabs in its window |
+| Ctrl+↓ after opening | focus lost to the chat | stays in the list (same window) |
+| ` · open` | open in this window | open in any window |
+| Repo description | `{k} need you · {n} open` | + ` · {k} windows` when k > 1 |
+| Repo menu | Open in New Window | Open its window / Bring its window forward; Show its open chats side by side |
+| "+" on a repo | new chat in this window | new chat in that repo's window |
+| Bottom bar | Cursor's git item only | + `$(repo) {repo} · ⎇ {branch}` |
+| FILES folder | clicked repo / chat | this window's folder |
+| Clipboard | per window, paste only in active worktree | one across windows, banner, paste anywhere |
+| File menu | Copy · Cut · Paste | + Copy to another repo (Pitwall) |
+| Drag file onto repo row | nothing | copies into that repo |
+| .env copy | nothing | warning with Add to .gitignore |
+
+### 3g. Canvas coverage check (window and tab elements → where they land)
+
+| Canvas element | Phase 4 | Where |
+|---|---|---|
+| Chat opens in its folder's window, brought forward or opened (NavigationSteps 2) | ✅ | T1, T3 |
+| Other window untouched, chats keep running (NavigationSteps 2, D16) | ✅ | T3, E13 |
+| Back to a window = its tabs, last chat (NavigationSteps 3) | ✅ (Cursor native) | E13 |
+| Already open → jump to its tab, no duplicate (D10) | ✅ | T3, T4 |
+| Repo click → all chats as tabs; worktree chats in own window (line 609) | ✅ | T4 |
+| Repo row ` · {k} windows` (line 799) | ✅ | T3 |
+| Menu "Open its window" / "Bring its window forward" (line 973) | ✅ | T3 |
+| Menu "Show its open chats side by side" (line 970s) | ✅ | T4 |
+| "+" starts the chat in that repo's window (line 682) | ✅ | T3 |
+| Search meta "· this window" / "· its own window" (line 955) | ✅ | T3 |
+| Ctrl+↓ keeps the list focused (line 848) | ✅ | T2 |
+| Bottom bar repo + branch (D26 fallback, lines 241–242) | ✅ (one item) | T5 |
+| FILES clipboard banner, toasts, "Copy to another repo", drag onto a repo row, .env warning | ✅ | T6 |
+| Taskbar strip "YOUR CURSOR WINDOWS ({n})" (lines 295–296) | ✗ prototype-only; Windows' own taskbar | — |
+| Needs-you jump list (line 892) | → Phase 5 (bottom-bar counts) | — |
+| Windows pop-up "Open chat" opens the repo's window (line 1044) | → Phase 5 (uses T3's router) | — |
+
+## 4. Derisking (run in order; don't start N+1 until N passes)
+
+| # | What it proves | Command | Expected | If it fails → |
+|---|---|---|---|---|
+| S1 | `vscode.openFolder(F, {forceNewWindow:true})` raises an existing F window and opens one only when none exists | Testing agent, own profile: window on `uj-lab-a`, press Ctrl+Alt+Shift+{pos of uj-lab-b} twice, then the same for `uj-lab-a` | Window count 1 → 2 → 2 → 2 (CUA `list_windows`); uj-lab-a press leaves 2 | Look up the folder's window in the registry and skip `openFolder` when it exists; raise it with the Claude link on a chat it holds (T6) |
+| S2 | Two windows share `globalStorageUri`, and B sees A's file fast | T1's dry tests, then live: `node scripts/dump-pitwall-windows.mjs --dir <profile globalStorage>` with 2 windows open | 2 windows listed with the right folders; after a click in A, B's log has `handoff claimed` ≤ 1 s after A's `handoff sent` | Move the shared dir to `~/.pitwall` (Q1 fallback), ruling recorded |
+| S3 | `claude-vscode.editor.open` resumes a same-folder chat with history and doesn't duplicate (on today's Claude extension) | Testing agent: in `uj-lab-a`, run "Pitwall: Open in UI" on a lab chat twice | Panel tab shows the chat's last message; tab count +1 then +0 | Re-run T6 by link; if the command changed, update `claudeUi.ts` before T2 |
+| S4 | Serial opens bind the right tab, even for two "Claude Code" new chats | T4 dry tests + live: "+" twice in `uj-lab-a`, then open 3 existing chats | 5 `tab bound` lines, each id matching the chat opened; 0 binds to a tab Pitwall didn't open | Keep tabs unknown (T10 rule); ` · open` falls back to registry-reported launches only |
+| S5 | Repo label click runs the command and the twistie only expands | Testing agent: click the twistie of `uj-lab-b`, then its label | Twistie: 0 tabs opened; label: its main-folder chats open | Move "open all" to Enter / Ctrl+↓ and the menu only; ruling recorded |
+| S6 | Each task's code is green on both OSes | `npm test` locally + `gh pr checks <N>` | 0 fail; skips ≤ 9; ubuntu + windows + privacy green | Fix in the task's PR; no merge |
+| S7 | End to end in real Cursor (E15, exit gate) | Testing agent walk W1–W12 (Task 8) on the release sha | Every step PASS with evidence files | Route each FAIL to its task owner; re-walk |
+| GT | System-says ≠ correct | After S7: `dump-pitwall-windows.mjs` vs CUA `list_windows` vs each window's tab strip screenshot | Registry windows = real windows (folder by folder); each tab's chat = the session the registry says is open there; 0 extra | Open a finding; Phase 4 stays open |
+
+## 5. Evaluation criteria (definition of done; graded by an independent evaluator sub-agent on a fresh clone)
+
+| # | Criterion | Metric + threshold | How measured | Evidence |
+|---|---|---|---|---|
+| E1 | The full suite passes on both OSes | 0 fail on ubuntu + windows; skips ≤ 9, each with a reason | `gh run view` of main CI at the release sha | run id |
+| E2 | A chat opens in Claude's panel by default, with its history | 3/3 same-folder chats open as `claudeVSCodePanel` tabs showing the transcript's last message; 0 new terminals | walk W1 | captures |
+| E3 | **Exit gate:** from one window, chats in 3 repos + 1 worktree each land in their folder's window | 4/4 land in the right window; window count = 4 distinct folders (no duplicate window); 0 blank "Claude Code" chats | walk W2 + `dump-pitwall-windows.mjs` + `list_windows` | captures + dump |
+| E4 | Nothing ever duplicates | Re-clicking each of the 4 chats and re-clicking 2 repos: tab count in every window unchanged, 6/6; concurrent double-click → 1 tab (dry + live) | walk W3 + dry `handoff-inbox` claim race test | captures; test name |
+| E5 | Repo click opens its main-folder chats, and only those | Tabs opened = the sidebar's main-folder chats of that repo, n/n; 0 worktree chats opened there | walk W4 vs storage count by the evaluator | captures |
+| E6 | Handoffs are quick | Existing window: click → chat tab active, p95 ≤ 3 s over 10 trials. New window: ≤ 20 s, 3/3 | `handoff sent` → `handoff claimed` + tab-active timestamps in logs | log excerpt |
+| E7 | Pitwall knows which tab is which chat | Dry: serial binding, two "Claude Code" new chats, user-opened tab stays unknown, 3/3. Live: rows marked ` · open` = chats with a tab in any window, exact match over 5 tabs in 2 windows, 0 false | `npm test -- native-ui-surface` + walk W5 | test names; captures |
+| E8 | Ctrl+↓ keeps the list focused | Ctrl+↓ ×3 opens 3 same-window chats with no click between, 3/3 | walk W6 | captures |
+| E9 | Every window shows its repo + branch | Bottom bar text = `{repo} · ⎇ {branch}` in 4/4 windows (worktree shows its branch and `⧉`); updates ≤ 5 s after `git switch` | walk W7 | screenshots |
+| E10 | A chat that moved into a worktree mid-session opens in the main window with history (T18) | 1/1 lab chat; dry test `launch folder is the first transcript cwd` | walk W8 + `npm test -- chat-router` | capture; test name |
+| E11 | "+" starts the chat in that repo's window | "+" on `uj-lab-b` from the uj-lab-a window: 1 new transcript under lab-b's project dir, 0 under lab-a's | walk W9 + evaluator's own `~/.claude/projects` count (read-only) | counts |
+| E12 | Files move between repos like the canvas says | 7/7 checks, each in walk W10 with `sha256sum` and `git check-ignore` output: FILES = window folder (4/4 windows), file click = editor tab, copy in A + paste in B (sha256 equal), cut = moved, clash → `{name} copy{.ext}`, "Copy to another repo" + drag each copy 1 file, .env offer → accepted → `git check-ignore` exit 0 | walk W10 + `npm test -- files-cross-repo` | outputs |
+| E13 | Cursor's own tab behaviour is untouched | In a window with 3 Claude tabs + 1 file: pin 1, split right, drag-reorder; visit 2 other repos and return → tab order, pins and groups identical | walk W11 (before/after screenshots + tab dump) | 2 screenshots |
+| E14 | Menu flip and window count are right | Dry: label flip on `hasWindow`, ` · {k} windows` only when k > 1. Live: flip within 20 s of opening/closing the window, 2/2 | `npm test -- tree menus` + walk W12 | test names; captures |
+| E15 | End to end: the Phase 4 flows work in real Cursor | Walk W1–W12 all PASS on the release sha (lab repos; real `~/.claude` read-only for W1 timing only) | testing agent walk | `captures/phase4-walk-evidence/` |
+| E16 | Startup stays fast | `[Pitwall] activate` → `[Pitwall] first render` ≤ 1 s, 5/5 starts with real `~/.claude`, quiet machine | exthost log | log excerpt |
+| E17 | New local files carry no private content | `node scripts/dump-pitwall-windows.mjs --check-privacy` exit 0: every field in registry, inbox and clipboard files is in the allow-list (sessionId, folder, pid, beatAt, at, kind, nonce, path, cut); `docs/privacy.md` names all three files | script + grep | output |
+| E18 | 4.2b decided with evidence | ADR 0009 has a dated amendment with ≥ 5 reload and ≥ 5 quit trials in Cursor and in VS Code, and states go or no-go | file check | ADR diff |
+| E19 | The package ships only what it should | `npm run package` on windows CI; archive entry count updated for new files; privacy job green | CI run | run id |
+
+## 6. Implementation tasks
+
+Waves (parallel within a wave, one PR per task):
+- **A:** T1, T2, T5, T7
+- **B:** T3 (consumes T1 + T2), T6 (consumes T1's shared dir helper)
+- **C:** T4 (consumes T3's router)
+- **D:** T8
+
+Rebase order where files overlap: T2 before T3 (`chat.ts`, `navigation.ts`), T3 before T6 (`WorkspacesTreeProvider.ts`, `extension.ts`, manifest), T3 before T4 (`repository.ts`, tree, manifest). Each later PR rebases on main after the earlier merge.
+
+### Task 1: Window registry and handoff inbox (row 4.2 foundation, `phase4/task-1-registry-inbox`)
+
+**Files:** Create `src/core/windows/WindowRegistry.ts`, `src/core/windows/HandoffInbox.ts`, `scripts/dump-pitwall-windows.mjs`, `docs/adr/0020-window-per-folder-handoff.md`, `test/dry/core/windows/window-registry.test.ts`, `test/dry/core/windows/handoff-inbox.test.ts`. Modify `src/extension.ts` (start both after first render), `docs/privacy.md`.
+
+**Interfaces:**
+- Produces:
+  - `sharedDir(context): string` (= `context.globalStorageUri.fsPath`).
+  - `class WindowRegistry`:
+    - `constructor(dir: string, self: { pid: number; folder: string | undefined }, clock?: () => number)`.
+    - `beat(openSessionIds: string[]): Promise<void>` and `start(): Disposable` (15 s timer).
+    - `windows(): Promise<WindowRecord[]>` (non-stale only).
+    - `windowsFor(folder: string): Promise<WindowRecord[]>` (`samePath`).
+    - `openSessionIds(): Promise<Set<string>>`.
+    - `onDidChange: Event<void>`.
+  - `WindowRecord = { pid: number; folder: string | undefined; beatAt: number; openSessionIds: string[] }`.
+  - `class HandoffInbox`:
+    - `constructor(dir: string, self: { pid: number; folder: string | undefined }, clock?)`.
+    - `folderKey(folder: string): string`.
+    - `send(folder: string, req: HandoffRequest): Promise<string /*nonce*/>`.
+    - `isClaimed(folder: string, nonce: string): Promise<boolean>`.
+    - `claimAll(): Promise<HandoffRequest[]>` (own folder only, rename-to-claim, sweeps expired).
+    - `watch(onRequests: (r: HandoffRequest[]) => void): Disposable` (fs.watch on own folderKey dir + `onDidChangeWindowState` focused).
+  - `HandoffRequest = { v: 1; kind: 'open' | 'openAll' | 'new' | 'sideBySide'; sessionIds: string[]; folder: string; at: number; nonce: string }`.
+
+- [ ] **Step 1: Write failing tests** in `window-registry.test.ts`:
+  - `a window appears after one beat and disappears 45 s after its last beat`;
+  - `a dead pid is stale at once`;
+  - `windowsFor matches C:\\Code\\Lab and c:/code/lab/ as one folder`;
+  - `openSessionIds unions every live window`.
+
+  In `handoff-inbox.test.ts`:
+  - `folderKey is the same for drive-case, trailing-slash, \\\\?\\ and forward-slash spellings`;
+  - `only the window whose folder matches claims a request`;
+  - `two concurrent claimAll calls return the request exactly once`;
+  - `an empty window claims nothing`;
+  - `a request older than 120 s is deleted, not returned, and logs handoff expired`;
+  - `isClaimed turns true after the claim`.
+
+  Use a temp dir and an injected clock.
+- [ ] **Step 2:** `npm run test:dry -- windows` → FAIL (modules missing).
+- [ ] **Step 3:** Implement both classes.
+  - Writes: write to `<name>.tmp`, then rename.
+  - Claim: `fs.promises.rename(<nonce>.json, <nonce>.claimed-<pid>)`. ENOENT means another window won.
+  - Log lines exactly as in Global Constraints.
+  - Wire in `extension.ts` after `[Pitwall] first render`. Nothing on the activation path awaits them.
+- [ ] **Step 4:** `npm run test:dry -- windows` → PASS. `npm test` → 0 fail, skips ≤ 9.
+- [ ] **Step 5:** Write `scripts/dump-pitwall-windows.mjs [--dir <globalStorage>] [--check-privacy]`.
+  - It prints one line per window, `pid folder beatAge open=<n>`, then pending requests.
+  - `--check-privacy` exits 1 on any field outside the E17 allow-list.
+  - Write ADR 0020 (decision Q1, alternatives: link-only, `~/.pitwall`). Update `docs/privacy.md`.
+- [ ] **Step 6:** Commit, push, open the PR. Run `bash scripts/verify.sh` first.
+
+### Task 2: Claude's panel by default, link scheme, Ctrl+↓ keeps focus (row 4.1, `phase4/task-2-panel-default`)
+
+**Files:** Modify `manifest/core.contributes.json` (`pitwall.defaultSessionSurface` default `"ui"`), `src/harnesses/claude/claudeUi.ts:11` (build `${vscode.env.uriScheme}://anthropic.claude-code/open`), `src/core/commands/navigation.ts:107-128` (`moveAndOpen`), `src/core/commands/chat.ts` (return a promise that resolves after `surfaces.settle`). Tests: `test/dry/core/chat-commands.test.ts`, `test/dry/core/navigation.test.ts`, `test/dry/core/manifest.test.ts`, the Claude native-UI test that covers the URI.
+
+**Interfaces:**
+- Produces: `openChatPrimary(chat, opts?: { keepListFocus?: boolean }): Promise<'here' | 'routed' | 'terminal'>`. T3 adds `'routed'`; T2 returns `'here' | 'terminal'`.
+- Consumes: nothing new.
+
+- [ ] **Step 1: Live repro first (testing agent, both surfaces).** Ctrl+↓ on a session row with surface `ui`, then with surface `terminal`. Record where focus lands (log the focus owner every 150 ms). Evidence goes in `captures/t2-focus-repro/`.
+- [ ] **Step 2: Failing tests:**
+  - `default surface is ui`;
+  - `the link fallback uses vscode.env.uriScheme (cursor in Cursor)` (stub `uriScheme = 'cursor'`);
+  - `Ctrl+Down opens the chat and then focuses pitwall.workspacesView`;
+  - `a plain click does not refocus the list`;
+  - `Ctrl+Down on a repo row still only reveals it (T4 changes this)`.
+- [ ] **Step 3:** `npm run test:dry -- chat-commands navigation manifest` → FAIL.
+- [ ] **Step 4:** Implement.
+  - `moveAndOpen` passes `keepListFocus: true`. When the open resolves `'here'`, run `pitwall.workspacesView.focus`.
+  - Regenerate `package.json` with `node scripts/build-manifest.mjs`, then run `--check`.
+- [ ] **Step 5:** PASS, then `npm test`. Commit, push, PR.
+
+### Task 3: Click a chat → its folder's window (rows 4.2, 4.6, 4.8, `phase4/task-3-router`)
+
+**Files:** Create `src/core/windows/ChatRouter.ts` and `test/dry/core/windows/chat-router.test.ts`. Modify:
+- `src/core/commands/chat.ts` (`openChatPrimary` → router).
+- `src/core/commands/repository.ts` ("+" via router; "Open its window" / "Bring its window forward").
+- `src/core/commands/navigation.ts` (the open-in-own-window keys use `openFolder` unchanged, per S1).
+- `src/core/providers/WorkspacesTreeProvider.ts`:
+  - ` · {k} windows`, counting windows of the repo and its worktrees;
+  - ` · open` from `registry.openSessionIds()`;
+  - `hasWindow` in the repo row's contextValue.
+- The search meta `· this window` / `· its own window`.
+- `src/extension.ts`, which runs the claimed requests through the router's local path.
+- Manifest: two menu entries with `when` on `viewItem =~ /hasWindow/`; "Open in New Window" leaves the repo menu.
+- Tests: `tree.test.ts`, `menus.test.ts`, `search.test.ts`.
+
+**Interfaces:**
+- Consumes:
+  - T1: `HandoffInbox`, `WindowRegistry`.
+  - T2: `openChatPrimary` (used for the local path).
+- Produces:
+  - `class ChatRouter`:
+    - `launchFolder(chat: ChatSession): Promise<string | undefined>`: the first transcript entry's `cwd`, as `canonicalPath`.
+    - `route(req: { kind: HandoffRequest['kind']; chats: ChatSession[]; folder?: string; keepListFocus?: boolean }): Promise<'here' | 'routed' | 'gone'>`.
+    - `runClaimed(reqs: HandoffRequest[]): Promise<void>`: opens serially in this window.
+
+- [ ] **Step 1: Failing tests** in `chat-router.test.ts`:
+  - `same-folder chat opens here without writing a request`;
+  - `other-folder chat writes one request and calls vscode.openFolder with forceNewWindow`;
+  - `launch folder is the first transcript cwd` (T18 fixture: first cwd main, later cwd worktree → main);
+  - `worktree chat routes to the worktree folder` (T17);
+  - `missing folder shows "That chat's folder is gone: {path}" and opens no window`;
+  - `no claim within 20 s warns once with "Pitwall couldn't reach the {repo} window. Click the chat again."`;
+  - `"+" on another repo sends kind new to that repo`;
+  - `an empty window routes every chat`;
+  - `multi-root window owns only workspaceFolders[0]`;
+  - `runClaimed opens chats one at a time in request order`.
+
+  In `tree.test.ts`:
+  - `repo description adds " · 2 windows" only when k > 1`;
+  - `" · open" counts tabs in other windows`.
+
+  In `menus.test.ts`:
+  - `repo menu shows "Open its window" without a window and "Bring its window forward" with one`.
+
+  In `search.test.ts`:
+  - `chat meta says "· this window" or "· its own window"`.
+- [ ] **Step 2:** FAIL.
+- [ ] **Step 3:** Implement.
+  - `launchFolder` reads the transcript head through the existing Claude harness reader (head only, ≤ 64 KB).
+  - The registry `onDidChange` triggers a tree refresh, debounced to 500 ms.
+- [ ] **Step 4:** PASS, then `npm test`. Commit, push, PR.
+
+### Task 4: Repo click opens all its chats as tabs; reliable tab binding; side by side (rows 4.3, 4.4, 4.9, `phase4/task-4-repo-tabs`)
+
+**Files:** Modify `src/core/harness/kit/NativeUiTabSurfaceService.ts`, `src/core/commands/repository.ts` (`pitwall.openRepoChats`, `pitwall.showRepoChatsSideBySide`), `src/core/providers/WorkspacesTreeProvider.ts` (repo item `command` = `pitwall.openRepoChats`), `src/core/commands/navigation.ts` (Ctrl+↓ / Enter on a repo → `openRepoChats`), and the manifest. Tests: `test/dry/shared/native-ui-surface.test.ts`, `test/dry/core/navigation.test.ts`, `test/dry/core/menus.test.ts`.
+
+**Interfaces:**
+- Consumes: T3 `ChatRouter.route({kind:'openAll' | 'sideBySide'})` and `runClaimed`.
+- Produces: `NativeUiTabSurfaceService.openSerially(ids: string[], open: (id) => Promise<void>): Promise<Map<string, Tab | undefined>>`. It opens one, waits ≤ 5 s for a new `claudeVSCodePanel` tab or a reveal of the bound one, binds it, then opens the next.
+
+- [ ] **Step 1: Failing tests:**
+  - `serial opens bind each new tab to the session just requested`;
+  - `two new chats both titled "Claude Code" bind to the right sessions`;
+  - `a Claude tab the user opened stays unknown`;
+  - `an already-bound session is revealed, not reopened`;
+  - `a 5 s timeout leaves the session unbound and continues`;
+  - `repo click opens the repo's main-folder sidebar chats and no worktree chats`;
+  - `Enter and Ctrl+Down on a repo run openRepoChats`;
+  - `side by side splits up to 4 open tabs, one group each, and is hidden below 2`;
+  - `no code path calls tabGroups.close or moveEditor outside side by side` (an architecture test greps `src/`).
+- [ ] **Step 2:** FAIL.
+- [ ] **Step 3:** Implement.
+  - Side by side uses `workbench.action.moveEditorToNextGroup` / `splitEditorRight` on the bound tabs in that window only.
+  - Log `tab bound` per bind.
+- [ ] **Step 4:** PASS, then `npm test`. Commit, push, PR.
+
+### Task 5: Bottom bar repo · branch (row 4.5, `phase4/task-5-status-bar`)
+
+**Files:** Create `src/core/windows/RepoStatusBar.ts` and `test/dry/core/windows/repo-status-bar.test.ts`. Modify `src/extension.ts`.
+
+**Interfaces:**
+- Consumes: the existing git branch reader (the one the tree uses for `⎇`), and `workspaceFolders[0]`.
+- Produces: `class RepoStatusBar { constructor(folder, repoInfo); refresh(): Promise<void>; dispose() }`.
+
+- [ ] **Step 1: Failing tests:**
+  - `main folder shows "$(repo) {repo} · ⎇ {branch}"`;
+  - `worktree folder adds " ⧉" and shows its own branch`;
+  - `tooltip is the folder path`;
+  - `hidden in an empty window and outside git`;
+  - `refreshes after the HEAD watcher fires`;
+  - `click runs pitwall.workspacesView.focus`.
+- [ ] **Step 2:** FAIL. **Step 3:** Implement. It is a left-aligned item, refreshed by the existing git watcher. **Step 4:** PASS, then `npm test`. Commit, push, PR.
+
+### Task 6: FILES across windows (row 4.7, `phase4/task-6-files`)
+
+**Files:** Create `src/core/files/SharedClipboard.ts`, `src/core/files/RepoDropController.ts`, `src/core/files/envIgnoreCheck.ts` and `test/dry/core/files-cross-repo.test.ts`. Modify:
+- `src/core/providers/FilesTreeProvider.ts`: root = this window's folder, `view.message` banner.
+- `src/core/commands/files.ts`: clipboard → `SharedClipboard`; remove the "Refusing to paste outside the active worktree" guard (the target is always this window's folder); add `pitwall.files.copyToRepo`.
+- `src/core/providers/WorkspacesTreeProvider.ts` registration: `dragAndDropController` on `pitwall.workspacesView`; FILES gets a drag mime.
+- The manifest and `docs/privacy.md`.
+
+**Interfaces:**
+- Consumes: T1 `sharedDir()`; T3 registry (for `{winName}`).
+- Produces:
+  - `SharedClipboard`: `set(path, cut)`, `get()`, `clear()`, `onDidChange`;
+  - `isEnvLike(name): boolean`;
+  - `checkIgnored(repoRoot, relPath): Promise<boolean>`;
+  - `copyInto(repoRoot, srcPath): Promise<{ dest: string; clashed: boolean }>`.
+
+- [ ] **Step 1: Failing tests:**
+  - `FILES shows this window's folder, not the clicked repo`;
+  - `copy in window A is visible to paste in window B` (two `SharedClipboard` instances, one dir);
+  - `cut then paste moves the file and clears the clipboard`;
+  - `name clash saves as "{name} copy{.ext}"`;
+  - `Copy to another repo lists other repos only and copies into the chosen root`;
+  - `dropping a file on a repo row copies it there`;
+  - `dropping on the same repo shows "That file is already in {repo}. Drop it on a different repo to copy it there."`;
+  - `isEnvLike: .env, .env.local yes; .env.example, .env.sample, .env.template, env.txt no`;
+  - `an un-ignored .env copy warns with Add to .gitignore and Not now; accepting appends "/{rel}" and re-checks`;
+  - `banner text matches §3e`.
+- [ ] **Step 2:** FAIL. **Step 3:** Implement. Copy strings come from §3f exactly. **Step 4:** PASS, then `npm test`. Commit, push, PR.
+
+### Task 7: Terminal tag spike (row 4.2b, `phase4/task-7-terminal-tag`)
+
+**Files:** Spike notes in the PR body. Amend `docs/adr/0009-restored-terminals-keep-their-chat.md`. On a go only: `src/core/terminal/TerminalManager.ts` + `test/dry/core/terminal.test.ts`.
+
+- [ ] **Step 1:** In the testing profile, create Pitwall terminals with `env: { PITWALL_CHAT_ID: <id> }`. After a reload, read `terminal.creationOptions.env` on each revived terminal. Run 5 reloads + 5 quits in Cursor and the same in VS Code, with a file in front at quit on half the runs.
+- [ ] **Step 2:** **Go** if the tag survives in ≥ 9/10 per editor: match revived terminals by tag first and fall back to the title. Add tests: `a revived terminal with PITWALL_CHAT_ID binds to that chat regardless of its title`; `an untagged terminal falls back to title matching`. **No-go:** amend ADR 0009 with the table and keep titles.
+- [ ] **Step 3:** Commit the ADR amendment (and the code on a go), then push and open the PR.
+
+### Task 8: Close: walk, evaluator, v0.5.0 (`phase4/task-8-close`)
+
+**Files:** `docs/progress_reports/phase4-scorecard.md`, `docs/progress_reports/phase4-handoff.md`, `CHANGELOG.md` [0.5.0], `README.md`, `package.json` version `0.5.0`, ROADMAP.
+
+- [ ] **Step 1:** Testing agent walk on the merged sha. Lab repos: `uj-lab-a`, `uj-lab-b`, `uj-lab-c`, plus worktree `uj-lab-a-wt` (create any that are missing), plus one T18 chat.
+  - **W1** — Panel default and startup timing (E2, E16).
+  - **W2** — 3 repos + 1 worktree from one window (E3, E6).
+  - **W3** — Re-clicks and a double-click (E4).
+  - **W4** — Repo click opens all chats (E5).
+  - **W5** — ` · open` matches tabs (E7).
+  - **W6** — Ctrl+↓ ×3 (E8).
+  - **W7** — Bottom bar (E9).
+  - **W8** — T18 chat (E10).
+  - **W9** — "+" in another repo (E11).
+  - **W10** — FILES (E12).
+  - **W11** — Pin, split and reorder survive (E13).
+  - **W12** — Menu flip and ` · {k} windows`, plus negative paths (E14 and Review Focus 1–5):
+    - close the target window mid-handoff;
+    - a stale request;
+    - a deleted worktree;
+    - an empty window.
+- [ ] **Step 2:** Run the GT row of §4.
+- [ ] **Step 3:** The independent evaluator grades E1–E19 on a fresh clone and writes `phase4-scorecard.md`. The loop repeats until 19/19 PASS; after 3 rounds stuck on one criterion, escalate to Sharif.
+- [ ] **Step 4:** Release PR (CHANGELOG, README, version 0.5.0). After the merge, tag the annotated `v0.5.0`, push it, and flip ROADMAP Phase 4 (rows, §0, §6, version). Then send the marketing handoff.
+
+## Out of scope (later phases)
+
+- Pop-ups, sound and bottom-bar counts, including the needs-you jump list: Phase 5. That phase reuses T3's router for "Open chat".
+- Everything in one window (terminal mode, a Claude feature request): v2.
+- Search inside chats: 7.1.
