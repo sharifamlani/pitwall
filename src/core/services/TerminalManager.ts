@@ -102,6 +102,23 @@ export interface RestoreSync {
 }
 
 /**
+ * The key that empties a shell's input line before Pitwall types into it
+ * (Q27), from the shell the terminal reports, else the default profile's.
+ * cmd and PowerShell on Windows: Esc (PSReadLine's Windows edit mode reverts
+ * the line). Everything else, PowerShell elsewhere included (its default
+ * there is Emacs mode, where Esc is a meta prefix): Ctrl+U, which empties
+ * the line in bash, zsh, fish and Emacs-mode PSReadLine.
+ */
+export function lineClearFor(terminal: vscode.Terminal): string {
+  const reported = (terminal.state as { shell?: string } | undefined)?.shell;
+  const shell = (reported ?? (vscode.env.shell ?? '').split(/[\\/]/).pop() ?? '').toLowerCase().replace(/\.exe$/, '');
+  if (shell === 'cmd' || (process.platform === 'win32' && (shell === 'pwsh' || shell === 'powershell'))) {
+    return '\x1b';
+  }
+  return '\x15';
+}
+
+/**
  * Owns the editor terminals that run chat sessions, for every harness.
  *
  * A terminal that maps to a chat always carries the chat's title. That title
@@ -361,7 +378,9 @@ export class TerminalManager {
 
     this.terminals.set(chat.id, terminal);
     this.terminalToChatId.set(terminal, chat.id);
-    terminal.sendText(command);
+    // Keys the user typed into the new terminal first would prefix the line
+    // (`xyclaude --resume …`, T3 live): clear the shell's line first (Q27).
+    terminal.sendText(`${lineClearFor(terminal)}${command}`);
     this.markOpened(chat);
 
     return { terminal, integrated, started };
