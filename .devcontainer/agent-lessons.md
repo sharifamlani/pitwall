@@ -42,6 +42,9 @@ check enforces it.
 - Never exit, kill or restart the app by process name or globally; stop only the test profile's own
   instance, found by its `--user-data-dir`, and confirm it isn't the owner's. (Pitwall 0.6.0 walk:
   "Exit Cursor; relaunch" crashed Sharif's Cursor.)
+- Write launch and stop scripts with the file tool, never a shell heredoc, and before launching
+  assert the profile folder exists and no non-test app profile is running. (Pitwall 0.6.0 walk: a
+  heredoc dropped a backslash and launched a stray profile.)
 
 ## Marketing (Marketing reads before drafting)
 
