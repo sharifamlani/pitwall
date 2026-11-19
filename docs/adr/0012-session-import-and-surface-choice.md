@@ -59,6 +59,8 @@ surface a capability with an explicit default.
     (`ai-title` for Claude, thread name for Codex, title for opencode). Claude's
     `ClaudeSessionService` now parses `ai-title`; the first prompt remains a fallback.
     The user's rename sets `customName`, which stops automatic renames.
+    (v0.6.0: a Claude `custom-title`, the user's `/rename` and the name Claude's tab shows,
+    outranks `ai-title`, and it renames any linked chat without `customName`.)
 - **Retention is policy, not deletion.** Every row, whether Pitwall started it or the
   importer created it, is removed from the tree after `pitwall.autoImport.retentionDays`
   (default 7) quiet days, based on the later of the native session's last activity and the

@@ -26,8 +26,14 @@ export interface ClaudeSession {
   sessionId: string;
   /** Where the session runs; a `relocated` entry overrides the first stamp. */
   cwd: string;
-  /** The `ai-title`, else the last `summary`, else the first prompt. */
+  /**
+   * The latest `custom-title` (the user's /rename, the name Claude's tab
+   * shows), else the latest `ai-title`, else the last `summary`, else the
+   * first prompt.
+   */
   summary: string | null;
+  /** Whether `summary` is a name the user gave the session in Claude (a `custom-title`). */
+  userTitled: boolean;
   /** The transcript's mtime. */
   lastUpdated: Date | null;
   lastPromptAt: number | null;
@@ -496,9 +502,11 @@ type TranscriptEntry = Record<string, any>;
 class TranscriptParser {
   private readonly session: ClaudeSession;
   private firstUserPrompt: string | null = null;
-  // Claude stores the session's display name as `ai-title` entries. They are
-  // the name shown by /status and the extension UI, so they outrank a summary
-  // or the first prompt as the chat's name.
+  // Claude stores the name it generates as `ai-title` entries and the user's
+  // /rename as `custom-title` entries, rewritten all through the transcript.
+  // A custom title is what Claude's tab shows, so the latest one outranks the
+  // latest ai-title, which outranks a summary or the first prompt.
+  private customTitle: string | null = null;
   private aiTitle: string | null = null;
   // The shared turn observer reads the last conversational entry and the
   // authoritative pending-agent count the attention tick also uses.
@@ -519,6 +527,7 @@ class TranscriptParser {
       lastAsk: null,
       lastReply: null,
       entrypoint: null,
+      userTitled: false,
     };
   }
 
@@ -538,6 +547,11 @@ class TranscriptParser {
 
   private observe(entry: TranscriptEntry): void {
     const session = this.session;
+
+    if (entry.type === 'custom-title' && typeof entry.customTitle === 'string') {
+      // An empty one clears the rename: the generated name shows again.
+      this.customTitle = entry.customTitle.trim() || null;
+    }
 
     if (entry.type === 'ai-title' && typeof entry.aiTitle === 'string') {
       const title = entry.aiTitle.trim();
@@ -615,9 +629,12 @@ class TranscriptParser {
     session.turnState = turn.turnState;
     session.turnEndedAt = turn.turnEndedAt;
 
-    // Prefer the harness-assigned session name, then a summary, then the
-    // first prompt.
-    if (this.aiTitle) {
+    // The user's own name for the session, then Claude's, then a summary,
+    // then the first prompt.
+    if (this.customTitle) {
+      session.summary = this.customTitle;
+      session.userTitled = true;
+    } else if (this.aiTitle) {
       session.summary = this.aiTitle;
     } else if (!session.summary && this.firstUserPrompt) {
       session.summary = truncateName(this.firstUserPrompt);
@@ -701,5 +718,6 @@ export function toHarnessSession(session: ClaudeSession): HarnessSession {
     messageCount: 0,
     turnState: session.turnState,
     turnEndedAt: session.turnEndedAt,
+    ...(session.userTitled ? { userTitled: true } : {}),
   };
 }

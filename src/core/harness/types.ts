@@ -34,6 +34,12 @@ export interface HarnessSession {
   cwd: string;
   /** Title/summary shown in the UI. */
   summary: string | null;
+  /**
+   * The summary is a name the user gave the session in the agent itself
+   * (Claude's /rename), the name its own tab shows. It renames a chat that
+   * otherwise keeps its first name, but never one renamed in Pitwall.
+   */
+  userTitled?: boolean;
   gitBranch: string | null;
   lastUpdated: Date | null;
   /** Timestamp of the last user prompt, when available. */
@@ -199,6 +205,12 @@ export interface NativeUiCapability {
   openNewSession(cwd: string): Promise<NativeUiOpenResult>;
   /** Open an existing, resumable session in the UI. */
   openSession(sessionId: string, cwd: string): Promise<NativeUiOpenResult>;
+  /**
+   * Bring forward a session already live in this window's UI, by a route
+   * known to reveal its existing tab rather than start a process. Absent, or
+   * not 'opened', when that can't be guaranteed: the caller opens nothing.
+   */
+  revealOpenSession?(sessionId: string, cwd: string): Promise<NativeUiOpenResult>;
   /**
    * Why this UI cannot resume a session the agent's CLI can (for Claude, a
    * chat started by `claude -p` or the SDK), as a sentence for the user;

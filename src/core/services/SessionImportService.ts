@@ -675,11 +675,14 @@ export class SessionImportService implements vscode.Disposable {
       }
       // A user-started chat picks up its first harness name once. An
       // auto-imported one may have been named from the first prompt before
-      // the harness wrote its title, so keep it current.
-      if (!chat.autoImported && !hasDefaultName(chat)) {
+      // the harness wrote its title, so keep it current. A name the user gave
+      // the session in the agent (Claude's /rename, its tab's title) renames
+      // either, so the row and the tab match; a Pitwall rename (customName,
+      // above) always wins.
+      const session = sessionsById.get(chat.harnessSessionId);
+      if (!chat.autoImported && !hasDefaultName(chat) && !session?.userTitled) {
         continue;
       }
-      const session = sessionsById.get(chat.harnessSessionId);
       const name = session?.summary?.trim();
       if (!name) {
         continue;
