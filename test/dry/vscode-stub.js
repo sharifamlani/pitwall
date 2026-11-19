@@ -167,6 +167,8 @@ class FakeQuickPick {
     this.matchOnDescription = false;
     this.matchOnDetail = false;
     this.sortByLabel = true;
+    this.canSelectMany = false;
+    this.buttons = [];
     this.activeItems = [];
     this.selectedItems = [];
     this.shown = false;
@@ -174,7 +176,28 @@ class FakeQuickPick {
     this.changeListeners = new Set();
     this.acceptListeners = new Set();
     this.hideListeners = new Set();
+    this.buttonListeners = new Set();
     quickPicks.push(this);
+  }
+
+  onDidTriggerButton(listener) {
+    this.buttonListeners.add(listener);
+    return { dispose: () => this.buttonListeners.delete(listener) };
+  }
+
+  /** Test helper: click the title-bar button at `index`. */
+  __triggerButton(index = 0) {
+    for (const listener of [...this.buttonListeners]) {
+      listener(this.buttons[index]);
+    }
+  }
+
+  /** Test helper: tick exactly `items` (a many-pick) and press Enter. */
+  __acceptSelected(items) {
+    this.selectedItems = items;
+    for (const listener of [...this.acceptListeners]) {
+      listener();
+    }
   }
 
   onDidChangeValue(listener) {

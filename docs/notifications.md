@@ -55,11 +55,24 @@ On Windows the notification is a Windows pop-up sent by **Pitwall**, so you see 
 - **Dismiss** closes the pop-up. The row keeps its dot and its count.
 - A newer pop-up for the same chat and kind replaces the older one. Action Center keeps pop-ups under "Pitwall" until you clear them.
 - A chat running in a terminal Pitwall didn't open shows the usual warning ("That chat is already running in another terminal …") instead of opening a second copy; it is still marked seen.
-- Pop-ups are silent by default.
+- Pop-ups are silent by default. See [Sound](#sound).
 - The first click may make Cursor ask "Allow 'Pitwall' to open this URI?". Allow it; **Do not ask me again** stops the question for good.
 - If Windows can't show the pop-up (Pitwall's pop-ups are switched off in Windows, or the pop-up host fails), the message inside the window shows instead.
 
-To show the name "Pitwall", Pitwall writes one per-user registry key, `HKCU\Software\Classes\AppUserModelId\sharifamlani.pitwall`, after the window starts. It needs no admin rights. **Pitwall: Remove Pop-up Registration** in the Command Palette deletes it (pop-ups then show inside the window until Pitwall starts again), and uninstalling Pitwall deletes it too. See [Privacy](privacy.md#on-windows).
+To show the name "Pitwall", Pitwall writes one per-user registry key, `HKCU\Software\Classes\AppUserModelId\sharifamlani.pitwall`, after the window starts. It needs no admin rights. **Pitwall: Remove Pop-up Registration** in the Command Palette deletes it, together with Windows' own entry for Pitwall under `HKCU\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\sharifamlani.pitwall` (so Pitwall leaves Settings → System → Notifications), and uninstalling Pitwall deletes both too. After a removal, every other running window notices the missing key on its next pop-up, shows the message inside the window instead, and logs `[Pitwall] toast failed unregistered`. See [Privacy](privacy.md#on-windows).
+
+## Sound
+
+Pop-ups are silent until you ask for sound. Two switches, both off by default:
+
+| Setting | Plays a sound when |
+| --- | --- |
+| `pitwall.sound.needsYou` | A session needs you |
+| `pitwall.sound.finished` | A session finishes its turn |
+
+On Windows the pop-up plays the system notification sound (`Notification.Default`); on macOS the banner plays "Glass". Each kind follows its own switch.
+
+The bell in the Repos header (a slashed bell when both are off, a plain bell when either is on) opens a checkbox list of the two switches. **Enter** applies the ticks. The **Test sound** button shows one pop-up, "Pitwall: test sound", with sound, whatever the switches say, and the menu stays open. The bell writes only `pitwall.sound.*`, only when you click, to your user settings. The same switches are under Settings → Pitwall → Sound.
 
 ## Go to the next session that needs you
 

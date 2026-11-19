@@ -4,7 +4,7 @@ import { ChatSession } from '../types';
 import type { PopupKey } from '../notify/PopupLedger';
 import { popupCopy, ToastPayload } from '../notify/toastXml';
 import { AUMID } from '../notify/WindowsToast';
-import { isOpenableSessionId, openUri } from '../notify/PopupUriHandler';
+import { isOpenableSessionId, openUri, OPEN_PATH, URI_AUTHORITY } from '../notify/PopupUriHandler';
 
 export type AttentionKind = 'finished' | 'needs-input';
 
@@ -62,8 +62,12 @@ export interface NotificationOptions {
    * message shows instead, once (Q35).
    */
   toast?: { show(p: ToastPayload): Promise<'shown' | 'failed'> };
-  /** Whether a kind's pop-up plays a sound (Task 4's switches, Q41). Default: silent. */
+  /** Whether a kind's pop-up plays a sound (the sound switches, Q41). Default: silent. */
   sound?: (kind: 'needs' | 'finished') => boolean;
+  /** The platform the macOS banner checks. Default: this one. (Tests.) */
+  platform?: NodeJS.Platform;
+  /** Runs one AppleScript for the macOS banner. Default: `/usr/bin/osascript`. (Tests.) */
+  osascript?: (script: string) => void;
 }
 
 /** Escape text for an AppleScript double-quoted string literal. */
@@ -223,7 +227,9 @@ export class NotificationService {
       }
     });
 
-    const sound = !windowFocused && this.showNativeBanner(title, target, detail, config);
+    // Only the macOS banner can play a sound here; the in-window message is silent.
+    const wantsSound = this.options.sound?.(popKind) ?? false;
+    const sound = !windowFocused && this.showNativeBanner(title, target, detail, config, wantsSound) && wantsSound;
     this.options.log?.(
       `[Pitwall] popup ${popKind} ${id8(target.sessionId)} shown lag=${Math.max(0, Date.now() - at)} sound=${sound ? 'on' : 'off'} via=in-window`
     );
@@ -242,28 +248,62 @@ export class NotificationService {
     return `skipped-${reason}` as NotifyResult;
   }
 
-  /** The macOS banner, when it is on; true when it played its sound. */
+  /**
+   * "Pitwall: test sound" from the bell's Test sound button (§3d, QA N3): one
+   * pop-up with sound, whatever the switches say. Windows shows it through the
+   * pop-up host; elsewhere the in-window message (and on macOS the banner with
+   * "Glass") stands in.
+   */
+  async testSound(): Promise<void> {
+    const toast = this.options.toast;
+    if (toast) {
+      const payload: ToastPayload = {
+        aumid: AUMID,
+        title: 'Pitwall: test sound',
+        body: 'This is how a pop-up sounds.',
+        sound: true,
+        openUri: `${vscode.env.uriScheme}://${URI_AUTHORITY}${OPEN_PATH}`,
+        tag: 'pitwall-test',
+      };
+      if ((await toast.show(payload).catch(() => 'failed' as const)) === 'shown') {
+        this.options.log?.('[Pitwall] popup test shown sound=on');
+        return;
+      }
+    }
+    void vscode.window.showInformationMessage('Pitwall: test sound');
+    const played = this.runBanner('Pitwall: test sound', 'Pitwall', '', true);
+    this.options.log?.(`[Pitwall] popup test shown sound=${played ? 'on' : 'off'}`);
+  }
+
+  /** The macOS banner, when it is on; true when it was shown (it plays "Glass" only when `withSound`). */
   private showNativeBanner(
     title: string,
     target: NotificationTarget,
     detail: string | undefined,
-    config: vscode.WorkspaceConfiguration
+    config: vscode.WorkspaceConfiguration,
+    withSound: boolean
   ): boolean {
-    if (process.platform !== 'darwin') {
-      return false;
-    }
     if (!config.get<boolean>('notifications.nativeBanner', true)) {
       return false;
     }
 
-    const body = detail ? `${target.chat.name}: ${detail}` : title;
-    const subtitle = target.context;
+    return this.runBanner(detail ? `${target.chat.name}: ${detail}` : title, 'Pitwall', target.context, withSound);
+  }
+
+  /** Run the macOS banner's AppleScript; false on any other platform. */
+  private runBanner(body: string, heading: string, subtitle: string, withSound: boolean): boolean {
+    if ((this.options.platform ?? process.platform) !== 'darwin') {
+      return false;
+    }
     const script =
       `display notification "${escapeAppleScript(body)}" ` +
-      `with title "Pitwall"` +
+      `with title "${escapeAppleScript(heading)}"` +
       (subtitle ? ` subtitle "${escapeAppleScript(subtitle)}"` : '') +
-      ` sound name "Glass"`;
-
+      (withSound ? ' sound name "Glass"' : '');
+    if (this.options.osascript) {
+      this.options.osascript(script);
+      return true;
+    }
     execFile('/usr/bin/osascript', ['-e', script], (error) => {
       if (error) {
         console.error('[Pitwall] Native notification failed:', error.message);

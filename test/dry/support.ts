@@ -65,11 +65,17 @@ export interface FakeQuickPick {
   placeholder: string;
   matchOnDescription: boolean;
   sortByLabel: boolean;
+  title: string;
+  canSelectMany: boolean;
+  buttons: { tooltip?: string; iconPath?: unknown }[];
   activeItems: FakeQuickPick['items'];
+  selectedItems: FakeQuickPick['items'];
   shown: boolean;
   hidden: boolean;
   __type(value: string): void;
   __accept(item?: FakeQuickPick['items'][number]): void;
+  __acceptSelected(items: FakeQuickPick['items']): void;
+  __triggerButton(index?: number): void;
 }
 
 interface StubControls {

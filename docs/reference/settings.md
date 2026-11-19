@@ -25,6 +25,15 @@ Pitwall works without any configuration. To change how it behaves, choose **Pitw
 
 See [Notifications](../notifications.md).
 
+## Sound
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `pitwall.sound.needsYou` | `false` | Play a sound with the pop-up when a session needs you: the Windows notification sound on Windows, "Glass" on the macOS banner. |
+| `pitwall.sound.finished` | `false` | The same for a session that finishes its turn. |
+
+Both are off by default. The bell in the Repos header flips them and has a **Test sound** button. See [Notifications](../notifications.md#sound).
+
 ## Find Session
 
 | Setting | Default | What it does |

@@ -283,7 +283,6 @@ test('register writes DisplayName Pitwall under HKCU and unregister removes it',
   assert.equal(calls.length, 3);
   const removal = calls[2].host.stdinText;
   assert.ok(removal.includes(`Remove-Item -LiteralPath '${AUMID_KEY}'`), 'the key is removed');
-  assert.ok(!/Notifications\\Settings|PushNotifications/.test(removal), "Windows' own notification settings are left alone");
 
   // A pop-up after removal does not spawn a host: the in-window message takes over.
   assert.equal(await toast.show(payload()), 'failed');
@@ -311,6 +310,20 @@ test('register writes DisplayName Pitwall under HKCU and unregister removes it',
   const afterRender = source.slice(source.indexOf('afterFirstRender(() => {\n    context.subscriptions.push(attentionService.watchLive());'));
   assert.match(afterRender.slice(0, 600), /windowsToast\.registerAumid\(/, 'registration starts in the after-first-render block');
   assert.equal((source.match(/\.registerAumid\(/g) ?? []).length, 1, 'and nowhere else');
+});
+
+test("unregister removes the AppUserModelId key and Windows' Notifications\\Settings entry for Pitwall only", async () => {
+  const { spawn, calls } = spy((call) => setImmediate(() => call.host.finish('removed\r\n')));
+  await new WindowsToast(spawn, 'win32').unregisterAumid();
+  assert.equal(calls.length, 1);
+  const script = calls[0].host.stdinText;
+  const removed = [...script.matchAll(/Remove-Item -LiteralPath '([^']+)'/g)].map((m) => m[1]);
+  assert.deepEqual(removed, [
+    'HKCU:\\Software\\Classes\\AppUserModelId\\sharifamlani.pitwall',
+    'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings\\sharifamlani.pitwall',
+  ]);
+  assert.equal((script.match(/Remove-Item/g) ?? []).length, 2, 'two keys, nothing else');
+  assert.ok(!/[*?]|HKLM|Get-ChildItem|\$/.test(script.replace(/-ErrorAction SilentlyContinue/g, '')), 'constant paths: no wildcard, no variable, no other hive');
 });
 
 test('the uninstall script removes the key', async () => {

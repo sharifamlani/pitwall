@@ -301,6 +301,23 @@
       "category": "Pitwall"
     },
     {
+      "command": "pitwall.soundMenu",
+      "title": "Sound alerts",
+      "category": "Pitwall",
+      "icon": "$(bell-slash)"
+    },
+    {
+      "command": "pitwall.soundMenuOn",
+      "title": "Sound alerts",
+      "category": "Pitwall",
+      "icon": "$(bell)"
+    },
+    {
+      "command": "pitwall.testSound",
+      "title": "Test Sound",
+      "category": "Pitwall"
+    },
+    {
       "command": "pitwall.switchToWorkspace",
       "title": "Open in This Window",
       "category": "Pitwall",
@@ -886,9 +903,28 @@
       }
     },
     {
+      "id": "pitwall.sound",
+      "title": "Sound",
+      "order": 3,
+      "properties": {
+        "pitwall.sound.needsYou": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Play a sound with the pop-up when a session needs you: the Windows notification sound on Windows, \"Glass\" on the macOS banner. Off by default. Also on the bell in the Repos header.",
+          "order": 1
+        },
+        "pitwall.sound.finished": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Play a sound with the pop-up when a session finishes its turn: the Windows notification sound on Windows, \"Glass\" on the macOS banner. Off by default. Also on the bell in the Repos header.",
+          "order": 2
+        }
+      }
+    },
+    {
       "id": "pitwall.findSession",
       "title": "Find Session",
-      "order": 3,
+      "order": 4,
       "properties": {
         "pitwall.sessionSearch.harness": {
           "type": "string",
@@ -950,7 +986,7 @@
     {
       "id": "pitwall.window",
       "title": "Window",
-      "order": 4,
+      "order": 5,
       "properties": {
         "pitwall.autoSwitchWorkspaceFolder": {
           "type": "boolean",
@@ -969,7 +1005,7 @@
     {
       "id": "pitwall.agentCommands",
       "title": "Agent Commands",
-      "order": 5,
+      "order": 6,
       "properties": {}
     }
   ],
@@ -984,6 +1020,16 @@
         "command": "pitwall.addRepository",
         "when": "view == pitwall.workspacesView",
         "group": "navigation@1"
+      },
+      {
+        "command": "pitwall.soundMenu",
+        "when": "view == pitwall.workspacesView && !pitwall.soundOn",
+        "group": "navigation@2"
+      },
+      {
+        "command": "pitwall.soundMenuOn",
+        "when": "view == pitwall.workspacesView && pitwall.soundOn",
+        "group": "navigation@2"
       },
       {
         "command": "pitwall.cloneRepository",
@@ -1326,6 +1372,10 @@
       }
     ],
     "commandPalette": [
+      {
+        "command": "pitwall.soundMenuOn",
+        "when": "false"
+      },
       {
         "command": "pitwall.newSessionInRepositoryInline",
         "when": "false"
