@@ -81,11 +81,12 @@ test('it runs once per profile; two windows starting together show one prompt', 
   assert.equal(shownMessages().length, 1);
   assert.equal(reads(), 1);
   assert.equal(profile.get(NOTIFY_CHECK_KEY, false), true);
-  assert.equal(fs.existsSync(path.join(dir, NOTIFY_CHECK_LOCK)), false, 'the lock is released');
+  assert.ok(fs.existsSync(path.join(dir, NOTIFY_CHECK_LOCK)), 'the file stays as the durable once-asked marker');
   // Next start of the same profile: skipped, no read.
   assert.equal(await build(profile).run(), 'skipped');
   assert.equal(reads(), 1);
-  // A lock held by another window (two profiles at once) also skips.
+  // A fresh lock held by another window (taken, marker not yet written) also skips.
+  fs.rmSync(path.join(dir, NOTIFY_CHECK_LOCK));
   fs.writeFileSync(path.join(dir, NOTIFY_CHECK_LOCK), '');
   assert.equal(await build(memento()).run(), 'skipped');
 });
@@ -134,4 +135,26 @@ test('non-win32 never runs', async (t) => {
   assert.deepEqual(shownMessages(), []);
   assert.equal(profile.get(NOTIFY_CHECK_KEY, false), false);
   assert.equal(fs.readdirSync(dir).length, 0);
+});
+
+test("two windows whose globalState hasn't synced (separate mementos, one dir) show one prompt", async (t) => {
+  const { make: build, reads } = make(t, { toasts: 'off', app: 'on', focus: 'off' });
+  // Staggered starts: the later windows' globalState still reads the flag as false.
+  assert.equal(await build(memento()).run(), 'shown');
+  assert.equal(await build(memento()).run(), 'skipped');
+  assert.equal(await build(memento()).run(), 'skipped');
+  assert.equal(shownMessages().length, 1);
+  assert.equal(reads(), 1);
+});
+
+test('a stale lock with no marker is replaced, and the check runs once', async (t) => {
+  const { make: build, dir, reads } = make(t, { toasts: 'off', app: 'on', focus: 'off' });
+  const lock = path.join(dir, NOTIFY_CHECK_LOCK);
+  fs.writeFileSync(lock, '');
+  const old = new Date(Date.now() - 5 * 60_000);
+  fs.utimesSync(lock, old, old);
+  assert.equal(await build(memento()).run(), 'shown');
+  assert.equal(await build(memento()).run(), 'skipped');
+  assert.equal(shownMessages().length, 1);
+  assert.equal(reads(), 1);
 });

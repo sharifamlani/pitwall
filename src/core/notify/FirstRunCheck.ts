@@ -10,7 +10,9 @@ import { notificationState } from './notificationState';
  */
 export const NOTIFY_CHECK_KEY = 'pitwall.notifyCheckDone';
 export const NOTIFY_CHECK_LOCK = 'pitwall-notify-check.lock';
-/** A lock this old is a crashed window's; it is replaced. */
+/** What the file holds once the check was claimed: the once-asked marker. An empty file is only a lock. */
+const DONE = 'done';
+/** An empty lock (no marker) this old is a crashed window's; it is replaced. */
 const STALE_LOCK_MS = 60_000;
 
 export const TEXT_TOASTS_OFF = "Windows notifications are off, so Pitwall's pop-ups can't show.";
@@ -84,16 +86,16 @@ export class FirstRunCheck {
     } catch {
       return false;
     }
-    try {
-      // Another window may have finished between our flag read and our lock.
-      if (this.state.get<boolean>(NOTIFY_CHECK_KEY, false)) {
-        return false;
-      }
-      await this.state.update(NOTIFY_CHECK_KEY, true);
-      return true;
-    } finally {
-      await fs.promises.rm(lock, { force: true }).catch(() => undefined);
+    // The file stays: once it holds DONE it is the durable "already asked" marker, whatever
+    // globalState has synced to this window yet (staggered starts).
+    const markDone = () => fs.promises.writeFile(lock, DONE).catch(() => undefined);
+    if (this.state.get<boolean>(NOTIFY_CHECK_KEY, false)) {
+      await markDone();
+      return false;
     }
+    await this.state.update(NOTIFY_CHECK_KEY, true);
+    await markDone();
+    return true;
   }
 
   private async take(lock: string): Promise<boolean> {
@@ -104,6 +106,9 @@ export class FirstRunCheck {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
           throw error;
+        }
+        if ((await fs.promises.readFile(lock, 'utf8').catch(() => '')) === DONE) {
+          return false;
         }
         const age = await fs.promises.stat(lock).then(
           (st) => Date.now() - st.mtimeMs,
