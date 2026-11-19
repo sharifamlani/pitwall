@@ -1133,6 +1133,44 @@ test('a first visit follows a re-sent tab model (Cursor) and ends when the tab c
   service.dispose();
 });
 
+test('followHeldTab: a held tab is itself while present, its replacement after each re-send, nothing once it closed', () => {
+  const { world, service, logs } = serialWorld();
+  const cursor = cursorWorkbench(world);
+  world.open(fileTab(), 'file.ts', { announce: false });
+  const held = world.open(claudeTab(), 'Held chat');
+  world.open(claudeTab(), 'Other chat', { active: false });
+  const follow = (tab: FakeTab) => service.followHeldTab(tab as unknown as vscode.Tab) as unknown as FakeTab | undefined;
+  service.toggleTrace();
+  logs.length = 0;
+
+  assert.equal(follow(held), held, 'not replaced: the same Tab');
+  assert.deepEqual(logs.filter((line) => line.includes('hold follows')), [], 'nothing followed, nothing logged');
+  cursor.resend();
+  const once = world.groups[0].tabs[1];
+  assert.notEqual(once, held);
+  assert.equal(follow(held), once, 'the replacement by place');
+  cursor.resend();
+  const twice = world.groups[0].tabs[1];
+  assert.equal(follow(held), twice, 'across two re-sends');
+  assert.equal(follow(once), twice);
+  const followed = logs.filter((line) => line.includes('hold follows re-sent tab'));
+  assert.equal(followed.length, 3, followed.join('\n'));
+  assert.ok(followed.every((line) => line.startsWith('[Pitwall] trace ') && !line.includes('Held chat')), 'trace channel, no titles');
+  world.close(twice);
+  assert.equal(follow(held), undefined, 'a closed tab has no successor');
+  service.dispose();
+});
+
+test('followHeldTab with the trace off logs nothing', () => {
+  const { world, service, logs } = serialWorld();
+  const held = world.open(claudeTab(), 'Held chat');
+  cursorWorkbench(world).resend();
+  logs.length = 0;
+  assert.equal(service.followHeldTab(held as unknown as vscode.Tab), world.groups[0].tabs[0] as unknown as vscode.Tab);
+  assert.deepEqual(logs, []);
+  service.dispose();
+});
+
 test('a tab Pitwall opened is never a first visit', async () => {
   const { world, service } = serialWorld();
   const background = world.open(claudeTab(), 'Opened later', { active: false });

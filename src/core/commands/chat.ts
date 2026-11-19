@@ -359,7 +359,10 @@ export function registerChatCommands(
    * The held tab changing again with the active tab unchanged is the host's
    * doing, not the user's (S1: once 77-162 ms after the activation, then a
    * burst at about +2.3 s), so it is ignored; a switch, open or close still
-   * lets go (Q43a). On the first visit since launch of a restored tab, whose
+   * lets go (Q43a). Cursor re-sends the whole tab model inside the hold,
+   * replacing every Tab object (live E12), so the held tab is followed to its
+   * replacement before each check, and the re-send itself is not a move.
+   * On the first visit since launch of a restored tab, whose
    * webview loads now and takes focus late, the retry waits until
    * RESTORED_DEADLINE_MS after the press, never past RESTORED_DEADLINE_CAP_MS
    * (E11). `pressedAt` is when the reveal started.
@@ -372,11 +375,19 @@ export function registerChatCommands(
     let tabChanges = 0;
     let timer: NodeJS.Timeout | undefined;
     const watches: vscode.Disposable[] = [];
+    /** The held tab as the editor has it now: after a re-sent model, its replacement (E12). */
+    const follow = (): void => {
+      const current = settled && surfaces?.followHeldTab?.(settled);
+      if (current) {
+        settled = current;
+      }
+    };
     const watch: vscode.Disposable = {
       dispose: () => {
         clearTimeout(timer);
         watches.forEach((entry) => entry.dispose());
         // Whether the retry fired or the hold let go, this tab's first visit is over (QA C1).
+        follow();
         if (settled) {
           surfaces?.endFirstVisit?.(settled);
         }
@@ -401,6 +412,7 @@ export function registerChatCommands(
     const arm = (): void => {
       clearTimeout(timer);
       timer = setTimeout(() => {
+        follow();
         const stillHeld = heldList === watch && pitwallOpens === opensAtPress && activeTab() === settled;
         letGo();
         if (stillHeld) {
@@ -420,6 +432,7 @@ export function registerChatCommands(
       vscode.window.onDidChangeActiveTerminal((terminal) => terminal && letGo()),
       vscode.window.onDidChangeWindowState((state) => !state.focused && letGo()),
       vscode.window.tabGroups.onDidChangeTabs((event) => {
+        follow();
         if (sameTabAgain(event)) {
           return;
         }
