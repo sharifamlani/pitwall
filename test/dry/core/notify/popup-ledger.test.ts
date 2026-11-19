@@ -49,6 +49,9 @@ if (child) {
       await assert.rejects(ledger.claim({ sessionId: SESSION, kind: 'needs', at }), /stamp/, String(at));
     }
     await assert.rejects(ledger.claim({ sessionId: '../escape', kind: 'needs', at: 5 }), /session/);
+    await assert.rejects(ledger.claim({ sessionId: 'a\\b', kind: 'needs', at: 5 }), /session/);
+    assert.equal(await ledger.claim({ sessionId: 'ses_01JABCdef', kind: 'finished', at: 5 }), true, "opencode's IDs are IDs too");
+    fs.rmSync(path.join(dir, 'ses_01JABCdef.finished.5.lock'));
     assert.deepEqual(fs.existsSync(dir) ? fs.readdirSync(dir) : [], [], 'no .0 (or any) lock was written');
   });
 

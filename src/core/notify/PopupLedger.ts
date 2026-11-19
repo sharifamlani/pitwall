@@ -14,8 +14,9 @@ export interface PopupKey {
   at: number;
 }
 
-const SESSION_ID = /^[A-Za-z0-9-]{1,64}$/;
-const LOCK_NAME = /^[A-Za-z0-9-]{1,64}\.(needs|finished)\.[1-9]\d*\.lock$/;
+/** Every harness's session IDs (UUIDs, opencode's `ses_…`), and never a path separator. */
+const SESSION_ID = /^[A-Za-z0-9_.-]{1,128}$/;
+const LOCK_NAME = /^[A-Za-z0-9_.-]{1,128}\.(needs|finished)\.[1-9]\d*\.lock$/;
 
 /**
  * Exactly one window shows each pop-up (Q32). Every Pitwall window sees the

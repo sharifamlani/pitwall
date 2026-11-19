@@ -852,7 +852,8 @@ export class SessionAttentionService {
           if (result === 'shown') {
             this.lastNeedsInputAt.set(chatId, now);
           }
-          if (result && USES_UP.has(result) && this.pendingWaits.get(chatId) === wait) {
+          // A judgement that threw is not retried every tick.
+          if ((!result || USES_UP.has(result)) && this.pendingWaits.get(chatId) === wait) {
             this.pendingWaits.delete(chatId);
           }
         })
@@ -866,7 +867,7 @@ export class SessionAttentionService {
       }
       jobs.push(
         this.judge('finished', chat, { at: endedAt, inFront: openIds.has(chatId) && this.isChatVisible(chatId) }).then((result) => {
-          if (result && USES_UP.has(result) && this.pendingFinished.get(chatId) === endedAt) {
+          if ((!result || USES_UP.has(result)) && this.pendingFinished.get(chatId) === endedAt) {
             this.pendingFinished.delete(chatId);
           }
         })

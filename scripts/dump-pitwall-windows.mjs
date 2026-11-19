@@ -40,7 +40,7 @@ const ALLOWED = {
   dump: ['version', 'pid', 'windowFolder', 'tabGroups', 'repos', 'statuses', 'counts'],
 };
 /** A pop-up lock (Phase 5, Q32): `<sessionId>.<needs|finished>.<stamp>.lock`, always empty. */
-const POPUP_LOCK = /^[A-Za-z0-9-]{1,64}\.(needs|finished)\.[1-9]\d*\.lock$/;
+const POPUP_LOCK = /^[A-Za-z0-9_.-]{1,128}\.(needs|finished)\.[1-9]\d*\.lock$/;
 
 function parseArgs(argv) {
   const args = { dir: null, checkPrivacy: false };
