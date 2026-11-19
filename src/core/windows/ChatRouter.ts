@@ -9,8 +9,12 @@ import type { WindowRegistry } from './WindowRegistry';
 import { EXPIRE_MS, HandoffInbox, HandoffKind, HandoffOutcome, HandoffRequest, WARN_MS } from './HandoffInbox';
 import { OPEN_ITS_WINDOW, raiseFolderWindow } from './raiseWindow';
 
-/** Where a route landed: opened in this window, handed to another, or nowhere (its folder is gone, or no window could be reached). */
-export type RouteResult = 'here' | 'routed' | 'gone';
+/**
+ * Where a route landed: opened in this window, handed to another, held back
+ * because every chat is live in a terminal Pitwall doesn't own (Q28, Q48), or
+ * nowhere (its folder is gone, nothing to hand over, or no window could be reached).
+ */
+export type RouteResult = 'here' | 'routed' | 'outside' | 'gone';
 
 export interface RouterTiming {
   /** Warn once when no `done` with `ok` arrives within this long, when the folder had a window (Q16). */
@@ -225,6 +229,8 @@ export class ChatRouter implements vscode.Disposable {
     const remote = new Map<string, { folder: string; ids: string[]; reasons: Map<string, string> }>();
     const gone = new Set<string>();
     let blocked = 0;
+    /** Chats held back by the outside-terminal guard (Q28): counted apart, so a route of only those is 'outside' (Q48). */
+    let outsideTerminal = 0;
     const hand = (folder: string, id: string, reason: string) => {
       const key = pathKey(folder);
       const group = remote.get(key) ?? { folder, ids: [] as string[], reasons: new Map<string, string>() };
@@ -259,7 +265,7 @@ export class ChatRouter implements vscode.Disposable {
       if (outside !== undefined) {
         this.logRoute(id, 'elsewhere', 'outside-terminal');
         void vscode.window.showWarningMessage(outsideTerminalMessage(outside.pid, outside.panel));
-        blocked++;
+        outsideTerminal++;
         continue;
       }
       if (!this.canHandOff(chat)) {
@@ -310,7 +316,14 @@ export class ChatRouter implements vscode.Disposable {
     if (routed > 0) {
       return 'routed';
     }
-    return local.length > 0 || (gone.size === 0 && remote.size === 0 && blocked === 0) ? 'here' : 'gone';
+    if (local.length > 0) {
+      return 'here';
+    }
+    const elsewhere = gone.size > 0 || remote.size > 0 || blocked > 0;
+    if (outsideTerminal > 0 && !elsewhere) {
+      return 'outside';
+    }
+    return elsewhere ? 'gone' : 'here';
   }
 
   /**
