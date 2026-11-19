@@ -119,13 +119,19 @@ export function parseClaudeAgents(
   return states;
 }
 
+/** After a failed call, the next one waits this long (Q44): one failing call a minute while broken, never off for good. */
+export const RETRY_AFTER_FAILURE_MS = 60_000;
+
 /**
  * Reads the live process state Claude Code exposes through
  * `claude agents --json`. The attention tick uses it for needs-you reasons.
  *
  * One call is shared by concurrent callers and cached for 10 seconds. A
- * failure disables the interface until the extension host restarts: turn-end
- * notifications and everything else keep working.
+ * failure (a missing CLI, a 5 s timeout, bad output) pauses calls for 60 s,
+ * then they retry (Q44): turn-end notifications and everything else keep
+ * working meanwhile. A change to Pitwall's settings (the CLI path, the
+ * needs-you switch) takes effect on the next call, with no restart: it drops
+ * the cache and the pause.
  */
 export class ClaudeAgentsService {
   private readonly command: () => string;
@@ -136,7 +142,11 @@ export class ClaudeAgentsService {
 
   private cache: { at: number; snapshot: ClaudeAgentsSnapshot } | undefined;
   private inFlight: Promise<ClaudeAgentsSnapshot> | undefined;
-  private unavailable = false;
+  /** When the last call failed; calls pause until 60 s after it. */
+  private failedAt: number | undefined;
+  /** Bumped by a settings change, so a call that started before it can't restore stale state. */
+  private generation = 0;
+  private readonly settings: vscode.Disposable;
 
   constructor(options: ClaudeAgentsServiceOptions = {}) {
     this.command =
@@ -150,6 +160,17 @@ export class ClaudeAgentsService {
     this.exec = options.exec ?? execClaudeAgents;
     this.env = options.env ?? process.env;
     this.now = options.now ?? (() => Date.now());
+    this.settings = vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration('pitwall')) {
+        this.generation++;
+        this.cache = undefined;
+        this.failedAt = undefined;
+      }
+    });
+  }
+
+  dispose(): void {
+    this.settings.dispose();
   }
 
   async getStates(): Promise<Map<string, ClaudeAgentState>> {
@@ -162,7 +183,7 @@ export class ClaudeAgentsService {
    * "waiting" row may be.
    */
   async getSnapshot(): Promise<ClaudeAgentsSnapshot> {
-    if (!this.enabled() || this.unavailable) {
+    if (!this.enabled() || (this.failedAt !== undefined && this.now() - this.failedAt < RETRY_AFTER_FAILURE_MS)) {
       return { observedAt: this.now(), states: new Map() };
     }
 
@@ -174,18 +195,21 @@ export class ClaudeAgentsService {
     }
 
     const observedAt = this.now();
-    const request = this.fetchStates().then((states) => ({ observedAt, states }));
+    const generation = this.generation;
+    const request = this.fetchStates(generation).then((states) => ({ observedAt, states }));
     this.inFlight = request;
     try {
       const snapshot = await request;
-      this.cache = { at: this.now(), snapshot };
+      if (generation === this.generation) {
+        this.cache = { at: this.now(), snapshot };
+      }
       return snapshot;
     } finally {
       this.inFlight = undefined;
     }
   }
 
-  private async fetchStates(): Promise<Map<string, ClaudeAgentState>> {
+  private async fetchStates(generation: number): Promise<Map<string, ClaudeAgentState>> {
     try {
       const cli = harnessInvocation(this.command(), ['agents', '--json']);
       const stdout = await this.exec(cli.command, cli.args, {
@@ -195,14 +219,18 @@ export class ClaudeAgentsService {
         windowsHide: true,
         shell: cli.shell,
       });
-      return parseClaudeAgents(stdout);
+      const states = parseClaudeAgents(stdout);
+      this.failedAt = undefined;
+      return states;
     } catch (error) {
-      // Log once; retrying a missing/broken CLI on every tick is noise.
-      this.unavailable = true;
-      console.error(
-        '[Pitwall] Could not read `claude agents --json`; needs-you notifications are off until the extension restarts:',
-        error
-      );
+      // Logged once per failing streak; a retry a minute is quiet enough.
+      const first = this.failedAt === undefined;
+      if (generation === this.generation) {
+        this.failedAt = this.now();
+      }
+      if (first) {
+        console.error('[Pitwall] Could not read `claude agents --json`; retrying in 60 s:', error);
+      }
       return new Map();
     }
   }

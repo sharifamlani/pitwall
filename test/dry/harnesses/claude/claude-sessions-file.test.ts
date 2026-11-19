@@ -7,7 +7,7 @@ import {
   ClaudeSessionsFile,
   localPidDomain,
 } from '../../../../src/harnesses/claude/ClaudeSessionsFile';
-import { tempDir } from '../../support';
+import { tempDir, waitFor } from '../../support';
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const DOMAIN = 'test:pitwall-domain';
@@ -255,6 +255,73 @@ wrap(fs.promises, ['readFile', 'open', 'stat', 'lstat', 'access']);
   assert.ok(lines.includes('dead-session dropped (pid not alive)'), result.stdout);
   assert.ok(!result.stdout.includes('foreign-session busy'), 'another pidDomain is not listed as live');
   assert.ok(!/SECRET/.test(result.stdout + result.stderr), 'no other field is printed');
+});
+
+/** Wait `ms` of real time. */
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test('watch fires once per burst of .json writes within 150 ms', async (t) => {
+  const dir = path.join(tempDir(t), 'sessions');
+  fs.mkdirSync(dir, { recursive: true });
+  let fired = 0;
+  const watching = sessionsFile(dir).watch(() => fired++);
+  t.after(() => watching.dispose());
+  await sleep(50);
+
+  // A burst: several writes, each well inside 150 ms of the last.
+  for (let i = 0; i < 5; i++) {
+    writeSession(dir, { pid: 1000 + i, sessionId: `s-${i}`, status: 'busy', statusUpdatedAt: i });
+    await sleep(20);
+  }
+  assert.equal(fired, 0, 'nothing fires while the burst is still going');
+  await waitFor(() => fired > 0, 'the debounced change', 2_000);
+  await sleep(300);
+  assert.equal(fired, 1, 'one change for the whole burst');
+
+  // A second burst after a quiet gap is a second change.
+  writeSession(dir, { pid: 1000, sessionId: 's-0', status: 'idle', statusUpdatedAt: 99 });
+  await waitFor(() => fired === 2, 'the second burst', 2_000);
+  watching.dispose();
+});
+
+test('a .key file event never fires and a .key file is never opened', async (t) => {
+  const dir = path.join(tempDir(t), 'sessions');
+  fs.mkdirSync(dir, { recursive: true });
+  const touched = spyOnFileAccess(t);
+  let fired = 0;
+  const watching = sessionsFile(dir).watch(() => fired++);
+  t.after(() => watching.dispose());
+  await sleep(50);
+
+  fs.writeFileSync(path.join(dir, '4242.0123456789abcdef.key'), 'not for pitwall');
+  fs.appendFileSync(path.join(dir, '4242.0123456789abcdef.key'), ' still not');
+  await sleep(400);
+  assert.equal(fired, 0, 'a .key write is not a sessions change');
+  assert.deepEqual(touched.filter((p) => p.endsWith('.key')), [], 'no fs call ever names a .key file');
+
+  writeSession(dir, { pid: 4242, sessionId: 's', status: 'busy', statusUpdatedAt: 1 });
+  await waitFor(() => fired === 1, 'the .json change', 2_000);
+  watching.dispose();
+});
+
+test('watch survives the folder being created after start', async (t) => {
+  const dir = path.join(tempDir(t), 'sessions');
+  let fired = 0;
+  const file = new ClaudeSessionsFile({ dir: () => dir, isAlive: () => true, pidDomain: async () => DOMAIN, rewatchMs: 50 });
+  const watching = file.watch(() => fired++);
+  t.after(() => watching.dispose());
+  await sleep(120);
+
+  // An older CLI, or a first run: the folder appears later.
+  writeSession(dir, { pid: 77, sessionId: 's', status: 'busy', statusUpdatedAt: 1 });
+  await sleep(200);
+  writeSession(dir, { pid: 77, sessionId: 's', status: 'idle', statusUpdatedAt: 2 });
+  await waitFor(() => fired > 0, 'a change once the folder exists', 3_000);
+  watching.dispose();
+  const after = fired;
+  writeSession(dir, { pid: 77, sessionId: 's', status: 'busy', statusUpdatedAt: 3 });
+  await sleep(300);
+  assert.equal(fired, after, 'nothing fires after dispose');
 });
 
 test('the S2 recorder writes one line per change with only t, sid8, status, waitingFor and statusUpdatedAt, and never touches .key files', async (t) => {

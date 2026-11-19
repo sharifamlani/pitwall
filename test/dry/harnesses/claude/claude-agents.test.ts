@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ClaudeAgentsService, parseClaudeAgents } from '../../../../src/harnesses/claude/ClaudeAgentsService';
-import { fakeCli, tempDir } from '../../support';
+import { fakeCli, stub, tempDir } from '../../support';
 
 const fixture = () => fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'claude-agents.json'), 'utf8');
 const parse = (rows: object[]) => parseClaudeAgents(JSON.stringify(rows));
@@ -91,7 +91,70 @@ test('a snapshot is stamped with the start of its call, and a cached answer keep
   assert.equal((await service.getSnapshot()).observedAt, 1_000, 'the cached answer keeps its age');
 });
 
-test('a disabled setting never spawns; a failure or malformed output stops further calls', async () => {
+test('after a failed call, the next call retries after 60 s, not never', async () => {
+  let now = 1_000;
+  let spawns = 0;
+  let fail = true;
+  const service = new ClaudeAgentsService({
+    command: () => 'fake-claude',
+    enabled: () => true,
+    now: () => now,
+    exec: async () => {
+      spawns++;
+      if (fail) {
+        throw new Error('timed out after 5 s');
+      }
+      return fixture();
+    },
+  });
+  assertEmpty(await service.getStates());
+  now += 59_999;
+  assertEmpty(await service.getStates());
+  assert.equal(spawns, 1, 'no retry inside the 60 s back-off');
+
+  fail = false;
+  now += 1;
+  assert.equal((await service.getStates()).size, 3, 'retried 60 s after the failure, and it worked');
+  assert.equal(spawns, 2);
+});
+
+const assertEmpty = (states: Map<string, unknown>) => assert.equal(states.size, 0);
+
+test('a settings change takes effect without a restart', async () => {
+  stub.__reset();
+  let spawns = 0;
+  let command = 'missing-claude';
+  const service = new ClaudeAgentsService({
+    command: () => command,
+    enabled: () => true,
+    exec: async (cli) => {
+      spawns++;
+      if (cli.includes('missing')) {
+        throw new Error('ENOENT');
+      }
+      return fixture();
+    },
+  });
+  assertEmpty(await service.getStates());
+  assert.equal(spawns, 1);
+
+  // The user fixes the CLI path in Settings: the next tick uses it, no restart, no 60 s wait.
+  command = 'fake-claude';
+  stub.__setConfiguration('harnessCommands', { claude: 'fake-claude' });
+  assert.equal((await service.getStates()).size, 3);
+  assert.equal(spawns, 2);
+
+  // Turning needs-you off stops the calls at once, and the cache does not outlive the change.
+  stub.__setConfiguration('notifications.onNeedsInput', false);
+  const reading = new ClaudeAgentsService({ command: () => 'fake-claude', exec: async () => (spawns++, fixture()) });
+  assertEmpty(await reading.getStates());
+  stub.__setConfiguration('notifications.onNeedsInput', true);
+  assert.equal((await reading.getStates()).size, 3);
+  service.dispose();
+  reading.dispose();
+});
+
+test('a disabled setting never spawns; a failure or malformed output stops further calls until the 60 s back-off', async () => {
   for (const [label, enabled, exec] of [
     ['disabled', false, async () => fixture()],
     ['failing', true, async () => { throw new Error('CLI failed'); }],
