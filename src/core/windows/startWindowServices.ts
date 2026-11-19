@@ -81,6 +81,8 @@ export function startWindowServices(
     void claimed.then(() => inbox.sweep()).catch((error) => log(`[Pitwall] handoff sweep failed: ${(error as Error).message}`));
     return { registry, inbox, claimed, opened };
   } catch (error) {
+    // The early entry would tell senders this window can claim their requests; it can't.
+    early?.dispose();
     log(`[Pitwall] window services did not start: ${(error as Error).message}`);
     return undefined;
   }

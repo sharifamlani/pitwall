@@ -46,6 +46,22 @@ export function chatIdInFront(sources: ChatVisibilitySources): string | undefine
   if (!vscode.window.state.focused) {
     return undefined;
   }
+  return chatIdOfActiveTab(sources);
+}
+
+/**
+ * The native session in front of this window, whether or not the window has
+ * focus: its chat's tab is the active tab of the active editor group. The
+ * window registry publishes it as the record's `front`, beside `focused`
+ * (Q33), so another window can tell that this chat is in front here.
+ */
+export function frontSessionId(sources: ChatVisibilitySources): string | undefined {
+  const chatId = chatIdOfActiveTab(sources);
+  return (chatId && sources.getChats().find((chat) => chat.id === chatId)?.harnessSessionId) || undefined;
+}
+
+/** The chat whose terminal or native-UI tab is the active tab of the active group, focus aside. */
+function chatIdOfActiveTab(sources: ChatVisibilitySources): string | undefined {
   const activeTab = vscode.window.tabGroups.activeTabGroup?.activeTab;
   if (!activeTab) {
     return undefined;

@@ -81,7 +81,8 @@ view-box`), which Chromium plays in tree-icon `background-image`; honor
 - **ClaudeSessionsFile** - Reads `<configDir>/sessions/*.json` (never the `.key` files beside
   them) each tick: status, `waitingFor` and `statusUpdatedAt` for live sessions whose
   `pidDomain` is this machine's and whose pid is alive. The live source for `getLiveStates`
-  ([ADR 0018](docs/adr/0018-live-status-from-sessions-file.md)).
+  ([ADR 0018](docs/adr/0018-live-status-from-sessions-file.md)); `watch()` re-polls 150 ms
+  after a `*.json` event ([ADR 0021](docs/adr/0021-status-and-popups-for-every-session.md)).
 - **ClaudeRepoDiscovery** + **RepoDiscoveryService** - Repos found from the sessions: the
   folder each recent transcript names in its head, mapped to its main repo root through the
   git common dir (`GitService.getMainRepoRoot`), stored with `origin: 'discovered'`; a
@@ -557,22 +558,32 @@ single-folder workspace), `openSession()` for an existing session, and
 - **"Needs you" comes from `~/.claude/sessions`, else `claude agents --json`.**
   `ClaudeSessionsFile` reads each live session's `status` and `waitingFor` fresh every tick
   ([ADR 0018](docs/adr/0018-live-status-from-sessions-file.md)). When no file counts, or a
-  session's status is unknown, `ClaudeAgentsService` reads the same fields, cached for 10s. When
+  session's status is unknown, `ClaudeAgentsService` reads the same fields, cached for 10s;
+  after a failed call it retries 60 s later, and a `pitwall.*` settings change takes effect on
+  the next call (Q44). When
   `pitwall.notifications.onNeedsInput` is off it returns nothing without spawning the CLI.
   Claude-only today: opencode, Codex, and Pi expose no pending-permission state through
   their implementations. `waitingFor` is passed to the notifier as-is; `status: waiting`
   without a reason becomes `input needed`.
-- **No spam.** Notifications are skipped for the terminal you are looking at, re-armed by the
-  next prompt, and rate-limited to one "needs you" per session per minute. A waiting
-  session suppresses its turn-end notification.
-- **Needs-you queue.** The same tick records when an open chat finished a turn or began
-  waiting while the user was not looking at it (`sessionsNeedingYou()`, oldest first). An
-  entry goes when the chat is visited (`activateChat` or a row selection calls
-  `markSeen`), the agent starts working again, or the chat closes, so the queue is bounded
-  by the open chats and is not persisted. **Go to Next Session That Needs You**
+- **Every listed chat, watched (row 5.1).** The tick polls open chats plus closed chats the
+  live record lists; `ClaudeSessionsFile.watch` re-polls 150 ms after a `*.json` change
+  (`HarnessAdapter.watchLive`). Each row-status change is a `StatusTransition`
+  (`onDidTransition`, logged `[Pitwall] status <id8> <from>→<to> lag=<ms>`)
+  ([ADR 0021](docs/adr/0021-status-and-popups-for-every-session.md)).
+- **One pop-up per transition, from one window.** Pop-ups are judged for every chat in the
+  sidebar list, open or not. `NotificationService.notify` checks, in order: the kind is
+  enabled, the chat is listed, the transition has a stamp, it is not pre-existing (R45), the
+  chat is not in front of a focused window anywhere (`WindowRegistry.frontAnywhere`), and this
+  window wins the `wx` lock in `<globalStorage>/pitwall-popups/` (`PopupLedger`). Shown,
+  locked, in front and pre-existing use up the wait; disabled keeps it. A waiting session
+  suppresses its turn-end pop-up, and a process that dies mid-turn is idle, never finished.
+- **Needs-you queue.** Every listed chat that is waiting, in front or not
+  (`needsYouOrder()`, `sessionsNeedingYou()`, oldest wait first; `counts()` for the bar). An
+  entry goes when the agent stops waiting. **Go to Next Session That Needs You**
   (`pitwall.openNextSessionNeedingYou`) opens its head through the same path as a row
-  click. It does not depend on the notification settings, except that waiting reasons are
-  only read while `pitwall.notifications.onNeedsInput` is on.
+  click; a routed open selects nothing here. It does not depend on the notification
+  settings, except that `claude agents --json` (the fallback) is only read while
+  `pitwall.notifications.onNeedsInput` is on.
 
 ## Destructive Operations
 

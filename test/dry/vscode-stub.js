@@ -416,6 +416,8 @@ let lateShellIntegration = false;
 const shellIntegrationListeners = new Set();
 const terminalStateListeners = new Set();
 const warningResponses = [];
+/** Answers for showInformationMessage, in order; undefined (dismissed) once empty. */
+const informationResponses = [];
 const quickPickResponses = [];
 const inputResponses = [];
 const openDialogResponses = [];
@@ -915,7 +917,7 @@ module.exports = {
     },
     showInformationMessage: async (...args) => {
       messages.push(args);
-      return undefined;
+      return informationResponses.shift();
     },
     showOpenDialog: async (options) => {
       messages.push([options]);
@@ -990,6 +992,7 @@ module.exports = {
     for (const list of [
       messages,
       warningResponses,
+      informationResponses,
       quickPickResponses,
       inputResponses,
       openDialogResponses,
@@ -1065,6 +1068,7 @@ module.exports = {
   __statusBarMessages: statusBarMessages,
   __messages: messages,
   __warningResponses: warningResponses,
+  __informationResponses: informationResponses,
   __quickPickResponses: quickPickResponses,
   __inputResponses: inputResponses,
   __openDialogResponses: openDialogResponses,

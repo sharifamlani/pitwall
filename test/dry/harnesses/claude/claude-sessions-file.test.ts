@@ -7,7 +7,7 @@ import {
   ClaudeSessionsFile,
   localPidDomain,
 } from '../../../../src/harnesses/claude/ClaudeSessionsFile';
-import { tempDir } from '../../support';
+import { tempDir, waitFor } from '../../support';
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const DOMAIN = 'test:pitwall-domain';
@@ -255,4 +255,121 @@ wrap(fs.promises, ['readFile', 'open', 'stat', 'lstat', 'access']);
   assert.ok(lines.includes('dead-session dropped (pid not alive)'), result.stdout);
   assert.ok(!result.stdout.includes('foreign-session busy'), 'another pidDomain is not listed as live');
   assert.ok(!/SECRET/.test(result.stdout + result.stderr), 'no other field is printed');
+});
+
+/** Wait `ms` of real time. */
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test('watch fires once per burst of .json writes within 150 ms', async (t) => {
+  const dir = path.join(tempDir(t), 'sessions');
+  fs.mkdirSync(dir, { recursive: true });
+  let fired = 0;
+  const watching = sessionsFile(dir).watch(() => fired++);
+  t.after(() => watching.dispose());
+  await sleep(50);
+
+  // A burst: several writes, each well inside 150 ms of the last.
+  for (let i = 0; i < 5; i++) {
+    writeSession(dir, { pid: 1000 + i, sessionId: `s-${i}`, status: 'busy', statusUpdatedAt: i });
+    await sleep(20);
+  }
+  assert.equal(fired, 0, 'nothing fires while the burst is still going');
+  await waitFor(() => fired > 0, 'the debounced change', 2_000);
+  await sleep(300);
+  assert.equal(fired, 1, 'one change for the whole burst');
+
+  // A second burst after a quiet gap is a second change.
+  writeSession(dir, { pid: 1000, sessionId: 's-0', status: 'idle', statusUpdatedAt: 99 });
+  await waitFor(() => fired === 2, 'the second burst', 2_000);
+  watching.dispose();
+});
+
+test('a .key file event never fires and a .key file is never opened', async (t) => {
+  const dir = path.join(tempDir(t), 'sessions');
+  fs.mkdirSync(dir, { recursive: true });
+  const touched = spyOnFileAccess(t);
+  let fired = 0;
+  const watching = sessionsFile(dir).watch(() => fired++);
+  t.after(() => watching.dispose());
+  await sleep(50);
+
+  fs.writeFileSync(path.join(dir, '4242.0123456789abcdef.key'), 'not for pitwall');
+  fs.appendFileSync(path.join(dir, '4242.0123456789abcdef.key'), ' still not');
+  await sleep(400);
+  assert.equal(fired, 0, 'a .key write is not a sessions change');
+  assert.deepEqual(touched.filter((p) => p.endsWith('.key')), [], 'no fs call ever names a .key file');
+
+  writeSession(dir, { pid: 4242, sessionId: 's', status: 'busy', statusUpdatedAt: 1 });
+  await waitFor(() => fired === 1, 'the .json change', 2_000);
+  watching.dispose();
+});
+
+test('watch survives the folder being created after start', async (t) => {
+  const dir = path.join(tempDir(t), 'sessions');
+  let fired = 0;
+  const file = new ClaudeSessionsFile({ dir: () => dir, isAlive: () => true, pidDomain: async () => DOMAIN, rewatchMs: 50 });
+  const watching = file.watch(() => fired++);
+  t.after(() => watching.dispose());
+  await sleep(120);
+
+  // An older CLI, or a first run: the folder appears later.
+  writeSession(dir, { pid: 77, sessionId: 's', status: 'busy', statusUpdatedAt: 1 });
+  await sleep(200);
+  writeSession(dir, { pid: 77, sessionId: 's', status: 'idle', statusUpdatedAt: 2 });
+  await waitFor(() => fired > 0, 'a change once the folder exists', 3_000);
+  watching.dispose();
+  const after = fired;
+  writeSession(dir, { pid: 77, sessionId: 's', status: 'busy', statusUpdatedAt: 3 });
+  await sleep(300);
+  assert.equal(fired, after, 'nothing fires after dispose');
+});
+
+test('the S2 recorder writes one line per change with only t, sid8, status, waitingFor and statusUpdatedAt, and never touches .key files', async (t) => {
+  const root = tempDir(t);
+  const dir = path.join(root, 'sessions');
+  const domain = await localPidDomain();
+  const file = writeSession(dir, {
+    pid: process.pid,
+    sessionId: 'abcdef12-0000-4000-8000-000000000001',
+    status: 'busy',
+    statusUpdatedAt: 1_800_000_000_001,
+    cwd: '/SECRET/CWD',
+    pidDomain: domain,
+  });
+  fs.writeFileSync(path.join(dir, `${process.pid}.0123456789abcdef.key`), 'SECRET-KEY');
+  const guard = path.join(root, 'guard.cjs');
+  fs.writeFileSync(
+    guard,
+    `const fs = require('fs');
+const check = (p) => { if (String(p).endsWith('.key')) { process.stderr.write('touched a key file\\n'); process.exit(97); } };
+const wrap = (obj, names) => { for (const name of names) { const original = obj[name]; if (typeof original !== 'function') continue; obj[name] = function (p, ...rest) { check(p); return original.call(this, p, ...rest); }; } };
+wrap(fs, ['readFileSync', 'openSync', 'statSync', 'lstatSync', 'existsSync', 'accessSync', 'createReadStream', 'readFile', 'open', 'stat', 'lstat', 'access']);
+wrap(fs.promises, ['readFile', 'open', 'stat', 'lstat', 'access']);
+`
+  );
+  const out = path.join(root, 'truth.jsonl');
+  const { spawn } = await import('child_process');
+  const child = spawn(process.execPath, ['-r', guard, path.join(ROOT, 'scripts', 'watch-sessions.mjs'), '--dir', dir, '--out', out, '--duration', '1500']);
+  let stderr = '';
+  child.stderr.on('data', (chunk) => (stderr += chunk));
+  const exited = new Promise<number | null>((resolve) => child.on('exit', resolve));
+  // Wait for the first sample, then turn the session into a wait.
+  for (let i = 0; i < 100 && !(fs.existsSync(out) && fs.readFileSync(out, 'utf8').includes('busy')); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  fs.writeFileSync(
+    file,
+    JSON.stringify({ pid: process.pid, sessionId: 'abcdef12-0000-4000-8000-000000000001', pidDomain: domain, cwd: '/SECRET/CWD', status: 'waiting', waitingFor: 'permission prompt', statusUpdatedAt: 1_800_000_000_002 })
+  );
+  assert.equal(await exited, 0, stderr);
+  const lines = fs.readFileSync(out, 'utf8').trim().split(/\r?\n/).map((line) => JSON.parse(line) as Record<string, unknown>);
+  assert.deepEqual(
+    lines.map(({ sid8, status, waitingFor, statusUpdatedAt }) => ({ sid8, status, waitingFor, statusUpdatedAt })),
+    [
+      { sid8: 'abcdef12', status: 'busy', waitingFor: null, statusUpdatedAt: 1_800_000_000_001 },
+      { sid8: 'abcdef12', status: 'waiting', waitingFor: 'permission prompt', statusUpdatedAt: 1_800_000_000_002 },
+    ]
+  );
+  assert.ok(lines.every((line) => Object.keys(line).sort().join() === 'sid8,status,statusUpdatedAt,t,waitingFor'), 'only the five fields');
+  assert.ok(!/SECRET/.test(fs.readFileSync(out, 'utf8') + stderr), 'no cwd or key content');
 });

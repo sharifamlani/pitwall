@@ -15,9 +15,12 @@
  * pending, claimed, expired, and its outcome when one was written.
  *
  * --check-privacy also checks that every file holds only its allowed keys
- * (E17): window record `pid, folder, beatAt, openSessionIds`; request
- * `v, kind, sessionIds, folder, at, nonce`; outcome `ok, error, at`; clipboard
- * `path, cut, at`. Lock files must be empty, and no other file may be there.
+ * (E17, Phase 5 E14): window record `pid, folder, beatAt, openSessionIds,
+ * front, focused`; request `v, kind, sessionIds, folder, at, nonce`; outcome
+ * `ok, error, at`; clipboard `path, cut, at`; state dump `version, pid,
+ * windowFolder, tabGroups, repos, statuses, counts`. Lock files (handoff and
+ * pop-up, `pitwall-popups/<sessionId>.<needs|finished>.<stamp>.lock`) must be
+ * empty, and no other file may be there.
  *
  * Exit 0; 1 when --check-privacy finds a problem; 2 on bad arguments or a
  * folder that doesn't exist.
@@ -30,11 +33,14 @@ const EXTENSION_ID = 'sharifamlani.pitwall';
 const STALE_MS = 45_000;
 
 const ALLOWED = {
-  window: ['pid', 'folder', 'beatAt', 'openSessionIds'],
+  window: ['pid', 'folder', 'beatAt', 'openSessionIds', 'front', 'focused'],
   request: ['v', 'kind', 'sessionIds', 'folder', 'at', 'nonce'],
   outcome: ['ok', 'error', 'at'],
   clipboard: ['path', 'cut', 'at'],
+  dump: ['version', 'pid', 'windowFolder', 'tabGroups', 'repos', 'statuses', 'counts'],
 };
+/** A pop-up lock (Phase 5, Q32): `<sessionId>.<needs|finished>.<stamp>.lock`, always empty. */
+const POPUP_LOCK = /^[A-Za-z0-9_.-]{1,128}\.(needs|finished)\.[1-9]\d*\.lock$/;
 
 function parseArgs(argv) {
   const args = { dir: null, checkPrivacy: false };
@@ -191,6 +197,29 @@ if (requestCount === 0) console.log('  (none)');
 const clipboard = path.join(dir, 'pitwall-clipboard.json');
 if (args.checkPrivacy && fs.existsSync(clipboard)) {
   checkKeys(clipboard, 'clipboard', readJson(clipboard));
+}
+
+// Pop-up locks (Phase 5): empty files whose names hold a session ID, a kind and a stamp.
+const popupsDir = path.join(dir, 'pitwall-popups');
+const locks = list(popupsDir);
+console.log(`popup locks: ${locks.length}`);
+if (args.checkPrivacy) {
+  for (const name of locks) {
+    const file = path.join(popupsDir, name);
+    checked++;
+    if (!POPUP_LOCK.test(name)) problems.push(`${file}: not a Pitwall pop-up lock`);
+    else if (fs.statSync(file).size > 0) problems.push(`${file}: a lock file must be empty`);
+  }
+}
+
+// The developer state dump (`pitwall.dev.dumpState`, read by scripts/dump-tabs.mjs).
+const dumpDir = path.join(dir, 'pitwall-dump');
+if (args.checkPrivacy) {
+  for (const name of list(dumpDir)) {
+    const file = path.join(dumpDir, name);
+    if (/^\d+\.json(\.tmp)?$/.test(name)) checkKeys(file, 'dump', readJson(file));
+    else problems.push(`${file}: not a Pitwall dump file`);
+  }
 }
 
 if (args.checkPrivacy) {

@@ -21,7 +21,7 @@ A glance at the tree shows which agents are busy and which are done. The pulse r
 
 ## Notifications
 
-When an open session that you are not looking at needs attention, VS Code shows a notification with an **Open** button that takes you to the session.
+When a session in the sidebar list needs attention, open or not, in this window or another, and you are not looking at it, VS Code shows a notification with an **Open** button that takes you to the session. **Open** lands in the session's own window: a chat of another folder opens in that folder's window, the same way a row click does.
 
 | Notification | When | Agents |
 | --- | --- | --- |
@@ -32,11 +32,13 @@ The notification names the repository and worktree, so you know which agent is c
 
 Notifications are deliberately quiet:
 
-- You are never notified about the session you are looking at.
+- With several windows open, exactly one of them shows each notification.
+- You are never notified about a session you are looking at, in any window.
 - A session that is waiting on you sends "needs your input", not a second "finished".
-- "Needs your input" is sent at most once a minute per session.
-- A finished turn notifies once. The next prompt re-arms it.
+- A wait notifies once. A finished turn notifies once. The next prompt re-arms them.
+- A session whose process exits mid-turn shows idle and sends nothing.
 - After a window reload, sessions that were already waiting do not notify again.
+- A notification held back by a setting is sent once you turn the setting on, while the session is still waiting or finished.
 
 On macOS, Pitwall can also show a system banner while VS Code is in the background. The banner is not clickable; the notification inside VS Code has the **Open** button.
 
@@ -44,7 +46,7 @@ On macOS, Pitwall can also show a system banner while VS Code is in the backgrou
 
 Press `Ctrl+Alt+N` (`Ctrl+Cmd+N` on macOS), or choose **Go to Next Session That Needs You** in the Pitwall `…` menu.
 
-Pitwall opens the session that has waited longest since it finished a turn or asked you something while you were elsewhere. Visiting a session clears it from the queue, so pressing the shortcut again walks through the rest. When nothing is waiting, it says so.
+Pitwall opens the session that has waited longest on you, open or not, in any repo. A session stays in the queue until you answer it, so a session waiting in front of you still counts. When nothing is waiting, it says so.
 
 The shortcut works with notifications turned off, which makes it a good replacement if you find them distracting. One exception: Pitwall checks whether Claude Code is waiting on you only while `pitwall.notifications.onNeedsInput` is on.
 
@@ -63,12 +65,12 @@ Open **Pitwall Settings…** from the Pitwall `…` menu. Under **Notifications*
 
 Pitwall installs no hooks and does not edit any agent's configuration.
 
-- **Claude Code:** the end of the session transcript shows whether a turn is running, and the session's live-status file in `~/.claude/sessions` reports a session that is waiting on you (`claude agents --json` when that file is missing). A background subagent that is still running keeps the session marked as working.
+- **Claude Code:** the session's live-status file in `~/.claude/sessions` reports whether it is busy, waiting on you or idle, and Pitwall watches that folder, so a change shows within a fraction of a second (`claude agents --json` when that file is missing; after a failed call Pitwall tries again a minute later). The end of the session transcript shows whether a turn is running. A background subagent that is still running keeps the session marked as working.
 - **Codex:** the session's rollout file records when a task starts, completes, or is aborted.
 - **opencode:** its API reports when a session last went idle.
 - **Pi:** the last entry in the session record shows whether the agent is mid-turn.
 
-Only sessions that are open in a terminal or panel are watched, every few seconds, and only the new end of each file is read.
+Sessions open in a terminal or panel, and Claude Code sessions running anywhere on this machine, are checked every few seconds and on every change to the live-status folder; only the new end of each file is read. Every status change and notification is logged in the **Pitwall Operations** output (`[Pitwall] status <id8> …`, `[Pitwall] popup …`), with no chat titles.
 
 opencode, Codex, and Pi do not expose a "waiting for permission" state, so "needs your input" is Claude Code only for now.
 

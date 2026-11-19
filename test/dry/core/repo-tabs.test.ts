@@ -210,7 +210,8 @@ test('pitwall.dev.dumpState writes the tab and repo state, and scripts/dump-tabs
   await runCommand('pitwall.dev.dumpState');
   const file = path.join(dir, `${process.pid}.json`);
   const dump = JSON.parse(fs.readFileSync(file, 'utf8'));
-  assert.deepEqual(Object.keys(dump).sort(), ['pid', 'repos', 'tabGroups', 'version', 'windowFolder']);
+  // Phase 5 adds statuses and counts (GT for compare-status --dump); the Phase 4 keys are unchanged.
+  assert.deepEqual(Object.keys(dump).sort(), ['counts', 'pid', 'repos', 'statuses', 'tabGroups', 'version', 'windowFolder']);
   assert.equal(dump.version, 1);
   assert.deepEqual(dump.tabGroups, tabs);
   assert.deepEqual(dump.repos, [{ name: 'demo', rootPath: '/work/demo', sidebarMainChatIds: ['sm0', 'sm1'] }]);

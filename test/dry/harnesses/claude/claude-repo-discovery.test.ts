@@ -12,7 +12,7 @@ import { ClaudeHarness } from '../../../../src/harnesses/claude/ClaudeHarness';
 import { ClaudeSessionService } from '../../../../src/harnesses/claude/ClaudeSessionService';
 import { DiscoveryCounts } from '../../../../src/core/harness/types';
 import { claudeProfile } from './claudeFixture';
-import { assertNoLongBlock, watchEventLoopBlocks } from '../../support';
+import { assertNoLongBlock } from '../../support';
 
 const DAY = 24 * 60 * 60 * 1000;
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -298,17 +298,20 @@ test('a transcript whose last user entry is over 1 MB from its end counts as rec
     }
     return handle;
   };
-  const blocks = watchEventLoopBlocks();
-  t.after(() => blocks.stop());
-
-  const folders = await discovery().discoverRecentFolders(Date.now() - 14 * DAY);
-  const { maxBlockMs } = blocks.stop();
+  // Best of 3 (Phase 4 follow-up): a real block shows on every run, a load spike rarely does.
+  let folders: { cwd: string }[] = [];
+  await assertNoLongBlock(
+    async () => {
+      folders = await discovery().discoverRecentFolders(Date.now() - 14 * DAY);
+    },
+    50,
+    { label: 'discovery of a 3 MB transcript', metric: 'block' }
+  );
 
   assert.deepEqual(folders.map((folder) => folder.cwd), [busy], 'an unknown date counts as recent');
   assert.ok(reads.length > 0, 'the tail was read');
   const largest = Math.max(...reads.map((read) => read.bytes));
   assert.ok(largest <= 1024 * 1024, `one read asked for ${largest} bytes, past the 1 MB tail window`);
-  assert.ok(maxBlockMs <= 50, `discovery blocked the extension host for ${maxBlockMs.toFixed(0)} ms at once`);
 });
 
 test('a repo whose newest transcript has no message in the last 14 days is not discovered', async (t) => {

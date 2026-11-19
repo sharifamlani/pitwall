@@ -7,14 +7,49 @@ import {
   TurnState,
 } from '../harness/types';
 import { HarnessRegistry } from '../harness/HarnessRegistry';
+import { chatNativeSessionIds } from '../harness/sessionUtils';
 import { SessionStatus, lastTurnEnd, sessionStatus } from '../providers/sessionStatus';
-import { NotificationService } from './NotificationService';
+import { NotificationService, NotifyResult, USES_UP } from './NotificationService';
 import { StorageService } from './StorageService';
 
 /** A row's status and when it entered it (P6: the in-group sort key). */
 export interface ChatStatus {
   status: SessionStatus;
   statusSince: number;
+}
+
+/**
+ * One row-status change of a listed chat (row 5.1). Every window computes the
+ * same transitions from the same sessions file; the pop-up lock (Q32) lets
+ * exactly one of them speak.
+ */
+export interface StatusTransition {
+  chatId: string;
+  sessionId: string;
+  from: SessionStatus;
+  to: SessionStatus;
+  /**
+   * When it happened by the harness's own clock: `statusUpdatedAt` (or the
+   * transcript time) for needs and working, the turn end for finished. A
+   * transition with no such stamp (a row turning idle because you opened it,
+   * a transcript-only harness) carries the detection time instead; the pop-up
+   * lock never uses this field, so that fallback can't become a lock key.
+   */
+  at: number;
+  /** When the sample that showed it was taken. */
+  observedAt: number;
+  /** The raw waiting reason, on a transition to needs. */
+  waitingFor?: string;
+}
+
+export interface AttentionOptions {
+  /** The Operations log (`[Pitwall] status <id8> <from>→<to> lag=<ms>`). */
+  log?: (line: string) => void;
+  /**
+   * Live sessions no listed chat holds (a repo Pitwall doesn't list yet):
+   * asks discovery for one refresh, at most once per session per window (Q31).
+   */
+  onUnlistedLive?: (sessionIds: string[]) => void;
 }
 
 const IDLE: ChatStatus = { status: 'idle', statusSince: 0 };
@@ -31,6 +66,19 @@ function settled(state: RowState): RowState {
     turnState: state.turnState === 'working' ? 'done' : state.turnState,
     turnEndedAt: lastTurnEnd(state) ?? state.turnEndedAt,
   };
+}
+
+/** Whether the harness says the session is waiting on the user. */
+function isWaiting(state: RowState | undefined): boolean {
+  return state?.liveStatus === 'waiting' || Boolean(state?.waitingFor);
+}
+
+/** A wait's stamp (Q32): the live record's `statusUpdatedAt`, else the transcript time; undefined when neither is known. */
+function waitStamp(state: RowState | undefined): number | undefined {
+  if (state?.liveStatus === 'waiting' && state.statusUpdatedAt && state.statusUpdatedAt > 0) {
+    return state.statusUpdatedAt;
+  }
+  return state?.writtenAt && state.writtenAt > 0 ? state.writtenAt : undefined;
 }
 
 /**
@@ -77,19 +125,39 @@ interface WorktreeGroup {
   chats: ChatSession[];
 }
 
+/** A wait still to be judged for a pop-up. */
+interface PendingWait {
+  /** It may predate activation (R45): judged once, never shown. */
+  preExisting: boolean;
+  /** The reason the last judgement saw, for the cooldown; undefined before the first. */
+  triedReason?: string;
+}
+
 /**
- * Watches sessions with an open terminal or native-UI tab and notifies when
- * one stops working: a finished turn (every harness) or a session waiting on
- * the user.
+ * Every listed chat's status, its transitions, and the pop-ups they earn
+ * (rows 3.3 and 5.1).
  *
- * It also keeps every chat's row status (row 3.3). Two kinds of state, kept
- * apart (QA S6): toast state (the needs-you list, waits, cooldowns) covers
- * open chats only and is dropped when a chat closes (P5); row state covers
- * every chat and survives a close. The tick polls open chats plus the
- * sessions the harness's live record lists (a closed chat still running
- * somewhere); every other chat's turn state comes from the discovery scan
- * (`noteSessions`), so a tick never reads the transcripts of quiet chats
- * (QA S5, E18).
+ * The tick polls the open chats plus every closed chat whose session the
+ * harness's live record lists (Claude: `~/.claude/sessions`); every other
+ * chat's turn state comes from the discovery scan (`noteSessions`), so a tick
+ * never reads the transcripts of quiet chats (QA S5, E18). A change to the
+ * live record re-polls within 150 ms (`watchLive`); the 4 s tick is the
+ * backstop.
+ *
+ * Each row-status change after the first pass is a `StatusTransition`,
+ * logged with its lag. Pop-ups are judged for every chat in the sidebar list
+ * (Q31), open or not:
+ * - needs you: a wait that began after activation (R45), judged once, and
+ *   held back only while the settings are off, the chat isn't listed or the
+ *   wait has no stamp (Q32);
+ * - finished: a turn that ended after a working (or idle) row, never after a
+ *   wait (which already spoke) and never for a process that died mid-turn
+ *   (Q30).
+ * `NotificationService` makes the call; this service decides what is news.
+ *
+ * Needs-you is the live wait itself (Q30): the row, the list and the counts
+ * show a waiting chat whether or not it is in front. Only the pop-up looks
+ * at what is in front.
  *
  * Harness behavior stays behind the adapter. Harnesses with a cheap live-state
  * query expose `getLiveStates`; the rest fall back to discovery.
@@ -97,18 +165,17 @@ interface WorktreeGroup {
 export class SessionAttentionService {
   private timer: NodeJS.Timeout | undefined;
   private ticking = false;
+  /** A poll asked for while one was running runs right after it. */
+  private pollQueued = false;
 
   /** Latest known state per chat, for its row; kept when a chat closes. */
   private readonly rowState = new Map<string, RowState>();
   /** Each chat's row status and when it entered it. */
   private readonly rowStatus = new Map<string, ChatStatus>();
+  /** Chats whose row status was last judged from a known state, not a placeholder drawn before any state arrived. */
+  private readonly judgedWithState = new Set<string>();
   /** Chats the last tick polled; the scan does not overwrite their fresher state. */
   private polledChats = new Set<string>();
-  /**
-   * Closed chats last seen waiting through the live record. When one is
-   * reopened, its wait predates the reopen and never toasts (R45, QA S6).
-   */
-  private readonly closedWaits = new Set<string>();
   /** The seen time this service wrote per chat, ahead of the storage echo. */
   private readonly seenWritten = new Map<string, number>();
   /** The turn end each chat's last seen write was for: one write per finished turn (QA S4). */
@@ -116,29 +183,24 @@ export class SessionAttentionService {
   private readonly statusEmitter = new vscode.EventEmitter<string[]>();
   /** Fires with the chats whose row status changed, and only those. */
   readonly onDidChangeStatus = this.statusEmitter.event;
+  private readonly transitionEmitter = new vscode.EventEmitter<StatusTransition>();
+  /** Fires once per row-status change of a listed chat, after the first pass. */
+  readonly onDidTransition = this.transitionEmitter.event;
 
-  /**
-   * Last turn-end timestamp we acted on, per chat; null while working. Presence
-   * also means the chat has been seen, so a new one is seeded silently.
-   */
-  private readonly lastTurn = new Map<string, number | null>();
   /** When the last needs-input toast was actually shown, per chat. */
   private readonly lastNeedsInputAt = new Map<string, number>();
-  /** Last waiting reason per chat, so a repeat is not treated as new. */
+  /** The current wait's reason per chat; gone when the wait ends. */
   private readonly lastWaitingFor = new Map<string, string>();
-  /** When each chat's current wait was first seen; gone when the wait ends. */
-  private readonly waitingSince = new Map<string, number>();
+  /** Waits that may still pop, by chat. A wait leaves once it is used up or ends. */
+  private readonly pendingWaits = new Map<string, PendingWait>();
+  /** Finished turns that may still pop, by chat, with the turn end. */
+  private readonly pendingFinished = new Map<string, number>();
+  /** The turn end each chat's finished status was last judged for. */
+  private readonly judgedTurnEnd = new Map<string, number>();
   /**
-   * Chats whose current wait may still toast: it began after activation
-   * while the user was looking elsewhere, has not toasted, and has not been
-   * in front of the user since. A wait first seen in front of the user, or
-   * already there at activation, is left to the row and the list.
-   */
-  private readonly toastableWaits = new Set<string>();
-  /**
-   * Per chat, when the last agents sample without a wait was taken (the
-   * start of the call behind it). A wait first sighted later began somewhere
-   * between this time and its sighting.
+   * Per chat, when the last sample without a wait was taken (the start of
+   * the call behind it). A wait first sighted later began somewhere between
+   * this time and its sighting.
    */
   private readonly lastClearAt = new Map<string, number>();
   /**
@@ -152,6 +214,8 @@ export class SessionAttentionService {
   private readonly lastFrontAt = new Map<string, number>();
   /** Chats in front at the last look, so leaving is stamped when it is noticed. */
   private readonly frontChats = new Set<string>();
+  /** Unlisted live sessions this window already asked discovery about (Q31, N5). */
+  private readonly askedUnlisted = new Set<string>();
 
   /**
    * Latest turn state per chat with an open terminal. The tree reads this to
@@ -159,15 +223,6 @@ export class SessionAttentionService {
    * bookkeeping stays separate so a redraw never re-arms an alert.
    */
   private readonly turnStates = new Map<string, TurnState>();
-
-  /**
-   * Open chats that need the user, with the time each first did. A finished
-   * turn is listed once, when it ends unseen, until the user visits the chat,
-   * the agent works again, or the chat closes. A wait is re-judged on every
-   * tick: listed whenever the chat is not in front, under the time the wait
-   * was first seen, until the wait ends. The map is bounded by the open chats.
-   */
-  private readonly needsYouSince = new Map<string, number>();
 
   constructor(
     private readonly storage: StorageService,
@@ -182,7 +237,8 @@ export class SessionAttentionService {
      */
     private readonly isChatOpen: (chat: ChatSession) => boolean,
     /** Whether the user is looking at this chat right now. */
-    private readonly isChatVisible: (chatId: string) => boolean = () => false
+    private readonly isChatVisible: (chatId: string) => boolean = () => false,
+    private readonly options: AttentionOptions = {}
   ) {}
 
   start(): void {
@@ -195,12 +251,23 @@ export class SessionAttentionService {
     this.timer = setInterval(() => void this.poll(), TICK_MS);
   }
 
+  /**
+   * Re-poll soon after any harness's live record changes (Claude: a `*.json`
+   * event in `~/.claude/sessions`, 150 ms after the burst). Started after the
+   * list's first render; disposing stops every watcher.
+   */
+  watchLive(): vscode.Disposable {
+    const watchers = this.adapters().flatMap((adapter) => (adapter.watchLive ? [adapter.watchLive(() => void this.poll())] : []));
+    return { dispose: () => watchers.forEach((watcher) => watcher.dispose()) };
+  }
+
   dispose(): void {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
     }
     this.statusEmitter.dispose();
+    this.transitionEmitter.dispose();
   }
 
   /**
@@ -244,37 +311,63 @@ export class SessionAttentionService {
     return this.turnStates.get(chatId);
   }
 
-  /** Open chats that need the user, longest-waiting first. */
+  /** Every listed chat that is waiting on the user, in front or not (Q30), oldest wait first. */
   sessionsNeedingYou(): string[] {
-    return [...this.needsYouSince].sort(([, a], [, b]) => a - b).map(([chatId]) => chatId);
+    return this.needsYouOrder().map((entry) => entry.chatId);
   }
 
-  /**
-   * Whether the chat's row shows the needs-you mark: it is listed and its
-   * agent is waiting on the user. A turn that merely finished unseen keeps
-   * the finished mark.
-   */
+  /** Every listed waiting chat with the time its wait began, oldest first (Q39's order). */
+  needsYouOrder(): Array<{ chatId: string; since: number }> {
+    return this.storage
+      .getChats()
+      .flatMap((chat) => {
+        const status = this.rowStatus.get(chat.id);
+        return status?.status === 'needs' ? [{ chatId: chat.id, since: status.statusSince }] : [];
+      })
+      .sort((a, b) => a.since - b.since || (a.chatId < b.chatId ? -1 : a.chatId > b.chatId ? 1 : 0));
+  }
+
+  /** How many rows of the sidebar list need you, are working, and finished (Q38). Every window counts the same rows. */
+  counts(): { needs: number; working: number; finished: number } {
+    const counts = { needs: 0, working: 0, finished: 0 };
+    for (const chat of this.storage.getChats()) {
+      const status = this.rowStatus.get(chat.id)?.status;
+      if (status === 'needs' || status === 'working' || status === 'finished') {
+        counts[status]++;
+      }
+    }
+    return counts;
+  }
+
+  /** Every listed session's row status, by native session ID (the state dump, GT). */
+  statuses(): Record<string, SessionStatus> {
+    const statuses: Record<string, SessionStatus> = {};
+    for (const chat of this.storage.getChats()) {
+      if (chat.harnessSessionId) {
+        statuses[chat.harnessSessionId] = this.rowStatus.get(chat.id)?.status ?? 'idle';
+      }
+    }
+    return statuses;
+  }
+
+  /** Whether the chat's row shows the needs-you mark: its agent is waiting on the user (Q30). */
   needsYou(chatId: string): boolean {
-    return this.needsYouSince.has(chatId) && this.waitingSince.has(chatId);
+    return isWaiting(this.rowState.get(chatId));
   }
 
   /**
    * The user is looking at this chat (opened, selected or focused). A
    * finished turn no longer needs them, and its row turns idle: the chat's
-   * seen time is stored, once per finished turn. A wait is listed again on
-   * the next tick the chat is not in front.
+   * seen time is stored, once per finished turn. A wait stays a wait until
+   * the agent moves on.
    */
   markSeen(chatId: string): void {
-    const listed = this.needsYouSince.delete(chatId);
     const chats = this.storage.getChats();
     const chat = chats.find((entry) => entry.id === chatId);
     if (chat) {
       this.markFinishedSeen(chat, Date.now());
     }
     this.recomputeStatuses(chats);
-    if (listed) {
-      this.onTurnStateChanged();
-    }
   }
 
   /** The chat's seen baseline, with this window's own unechoed write. */
@@ -307,37 +400,108 @@ export class SessionAttentionService {
   }
 
   /**
-   * Re-judge every chat's row status and announce the ones that changed. A
-   * chat entering a status gets the best known time for it: the wait's
-   * start, the turn's end, or now.
+   * Re-judge every chat's row status, announce the ones that changed, and
+   * log each transition. A chat entering a status gets the best known time
+   * for it: the wait's start, the turn's end, or now. The first pass after
+   * activation (`priming`), and a row's first judgement, are no transitions.
    */
-  private recomputeStatuses(chats: readonly ChatSession[], silent = false): void {
+  private recomputeStatuses(chats: readonly ChatSession[], silent = false, priming = false): void {
     const now = Date.now();
     const changed: string[] = [];
+    const transitions: StatusTransition[] = [];
     const present = new Set<string>();
     for (const chat of chats) {
       present.add(chat.id);
       const state = this.rowState.get(chat.id);
       const status = sessionStatus({ live: state, needsYou: this.needsYou(chat.id), seenAt: this.seenAtOf(chat) });
       const previous = this.rowStatus.get(chat.id);
+      // A change from a placeholder (drawn before any state arrived) or in the first pass is not news.
+      const real = previous !== undefined && this.judgedWithState.has(chat.id) && !priming;
+      if (state) {
+        this.judgedWithState.add(chat.id);
+      }
+      this.noteTurnEnd(chat.id, status, state, real ? previous : undefined);
       if (previous?.status === status) {
         continue;
       }
       this.rowStatus.set(chat.id, { status, statusSince: statusSince(status, state, chat, now, previous === undefined) });
       changed.push(chat.id);
+      if (real && chat.harnessSessionId) {
+        transitions.push(this.transitionOf(chat.id, chat.harnessSessionId, previous.status, status, state, now));
+      }
     }
     for (const chatId of [...this.rowStatus.keys()]) {
       if (!present.has(chatId)) {
-        this.rowStatus.delete(chatId);
-        this.rowState.delete(chatId);
-        this.closedWaits.delete(chatId);
-        this.seenWritten.delete(chatId);
-        this.seenTurn.delete(chatId);
+        this.forget(chatId);
       }
     }
     if (changed.length > 0 && !silent) {
       this.statusEmitter.fire(changed);
     }
+    for (const transition of transitions) {
+      this.options.log?.(
+        `[Pitwall] status ${transition.sessionId.slice(0, 8)} ${transition.from}→${transition.to} lag=${Math.max(0, now - transition.at)}`
+      );
+      this.transitionEmitter.fire(transition);
+    }
+  }
+
+  /** Drop everything kept for a chat that left the list. */
+  private forget(chatId: string): void {
+    this.rowStatus.delete(chatId);
+    this.rowState.delete(chatId);
+    this.judgedWithState.delete(chatId);
+    this.seenWritten.delete(chatId);
+    this.seenTurn.delete(chatId);
+    this.pendingWaits.delete(chatId);
+    this.pendingFinished.delete(chatId);
+    this.judgedTurnEnd.delete(chatId);
+    this.lastWaitingFor.delete(chatId);
+    this.lastNeedsInputAt.delete(chatId);
+    this.lastClearAt.delete(chatId);
+    this.waitStartAt.delete(chatId);
+  }
+
+  /**
+   * A finished row whose turn end is new may pop (Q30): after a working row
+   * (busy → idle), after an idle row (a turn that ran between two looks), or
+   * after a finished one whose turn end moved on. Never after a wait, which
+   * already spoke, and never in the first pass or on a row's first judgement.
+   */
+  private noteTurnEnd(chatId: string, status: SessionStatus, state: RowState | undefined, previous: ChatStatus | undefined): void {
+    if (status !== 'finished') {
+      return;
+    }
+    const endedAt = lastTurnEnd(state);
+    if (endedAt === undefined || this.judgedTurnEnd.get(chatId) === endedAt) {
+      return;
+    }
+    this.judgedTurnEnd.set(chatId, endedAt);
+    if (previous && previous.status !== 'needs') {
+      this.pendingFinished.set(chatId, endedAt);
+    }
+  }
+
+  private transitionOf(chatId: string, sessionId: string, from: SessionStatus, to: SessionStatus, state: RowState | undefined, now: number): StatusTransition {
+    const observedAt = state?.observedAt ?? now;
+    const stamp =
+      to === 'needs'
+        ? waitStamp(state)
+        : to === 'finished'
+          ? lastTurnEnd(state)
+          : to === 'working' || from !== 'finished'
+            ? state?.statusUpdatedAt
+            : undefined; // finished → idle: you opened it, just now
+    const waitingFor = to === 'needs' ? state?.waitingFor : undefined;
+    return {
+      chatId,
+      sessionId,
+      from,
+      to,
+      at: stamp !== undefined && stamp > 0 ? stamp : now,
+      observedAt,
+      ...(waitingFor ? { waitingFor } : {}),
+    };
   }
 
   /**
@@ -389,15 +553,10 @@ export class SessionAttentionService {
     return start !== undefined && front < start;
   }
 
-  private flagNeedsYou(chatId: string): void {
-    if (!this.needsYouSince.has(chatId) && !this.isChatVisible(chatId)) {
-      this.needsYouSince.set(chatId, Date.now());
-    }
-  }
-
-  /** Run one attention check immediately. */
+  /** Run one attention check now; one asked for during a check runs right after it. */
   async poll(prime = false): Promise<void> {
     if (this.ticking) {
+      this.pollQueued = true;
       return;
     }
     this.ticking = true;
@@ -408,10 +567,31 @@ export class SessionAttentionService {
     } finally {
       this.ticking = false;
     }
+    if (this.pollQueued) {
+      this.pollQueued = false;
+      await this.poll();
+    }
   }
 
   private activeChats(): ChatSession[] {
     return this.storage.getChats().filter((chat) => this.isChatOpen(chat));
+  }
+
+  /** Every adapter: the registry's, or (a registry without `all`) those the chats name. */
+  private adapters(chats: readonly ChatSession[] = this.storage.getChats()): HarnessAdapter[] {
+    const registry = this.registry as Partial<HarnessRegistry>;
+    if (typeof registry.all === 'function') {
+      return [...registry.all()];
+    }
+    const adapters = new Map<string, HarnessAdapter>();
+    for (const chat of chats) {
+      try {
+        adapters.set(chat.harness, this.registry.get(chat.harness));
+      } catch {
+        // Unknown harness.
+      }
+    }
+    return [...adapters.values()];
   }
 
   private async checkTurns(prime: boolean): Promise<void> {
@@ -427,28 +607,21 @@ export class SessionAttentionService {
         this.frontChats.delete(chatId);
       }
     }
-
-    // Forget chats whose terminal is gone; if one comes back it is seeded
-    // again instead of notifying about history.
-    for (const chatId of this.lastTurn.keys()) {
+    // The tree's working mark covers open chats only.
+    for (const chatId of [...this.turnStates.keys()]) {
       if (!activeIds.has(chatId)) {
-        this.lastTurn.delete(chatId);
-        this.lastNeedsInputAt.delete(chatId);
-        this.lastWaitingFor.delete(chatId);
-        this.waitingSince.delete(chatId);
-        this.toastableWaits.delete(chatId);
-        this.lastClearAt.delete(chatId);
-        this.waitStartAt.delete(chatId);
-        this.needsYouSince.delete(chatId);
-        if (this.turnStates.delete(chatId)) {
-          turnStatesChanged = true;
-        }
+        this.turnStates.delete(chatId);
+        turnStatesChanged = true;
       }
     }
 
     // Closed chats whose session the harness's live record lists are polled
-    // for their rows only; every other closed chat waits for the scan.
-    const liveIds = await this.liveSessionIds(allChats, activeIds);
+    // too, for their rows and pop-ups; every other closed chat waits for the scan.
+    const liveIds = await this.liveSessionIds(allChats);
+    // Discovery's own first pass covers whatever runs at activation.
+    if (!prime) {
+      this.askAboutUnlisted(liveIds, allChats);
+    }
     const closedLive = allChats.filter(
       (chat) => !activeIds.has(chat.id) && chat.harnessSessionId && liveIds.get(chat.harness)?.has(chat.harnessSessionId)
     );
@@ -473,69 +646,20 @@ export class SessionAttentionService {
         group.chats.forEach((chat) => polled.add(chat.id));
         continue;
       }
-
       for (const chat of group.chats) {
-        const live = chat.harnessSessionId
-          ? states.get(chat.harnessSessionId)
-          : undefined;
+        const live = chat.harnessSessionId ? states.get(chat.harnessSessionId) : undefined;
         if (!live) {
           continue;
         }
         polled.add(chat.id);
-        this.rowState.set(chat.id, live);
-        if (!activeIds.has(chat.id)) {
-          // Row state only: toasts stay limited to open chats (P5).
-          if (live.waitingFor) {
-            this.closedWaits.add(chat.id);
-          } else {
-            this.closedWaits.delete(chat.id);
-          }
-          continue;
-        }
-
-        const { turnState, turnEndedAt, waitingFor, observedAt, writtenAt } = live;
-
-        if (this.turnStates.get(chat.id) !== turnState) {
-          this.turnStates.set(chat.id, turnState);
+        // A process that died mid-turn leaves a transcript that looks mid-turn: idle, never working or finished (Q30).
+        const state: RowState = live.running === false ? { ...settled(live), ...(live.observedAt ? { observedAt: live.observedAt } : {}) } : live;
+        this.rowState.set(chat.id, state);
+        if (activeIds.has(chat.id) && this.turnStates.get(chat.id) !== state.turnState) {
+          this.turnStates.set(chat.id, state.turnState);
           turnStatesChanged = true;
         }
-
-        this.updateNeedsInput(chat, waitingFor, prime, observedAt, writtenAt);
-
-        const done = turnState === 'done';
-        const endedAt = done ? turnEndedAt ?? -1 : null;
-
-        if (!this.lastTurn.has(chat.id)) {
-          this.lastTurn.set(chat.id, endedAt);
-          continue;
-        }
-
-        if (!done) {
-          // A new turn started (or is still running); the next turn end is a
-          // fresh notification.
-          this.lastTurn.set(chat.id, null);
-          if (!waitingFor) {
-            this.needsYouSince.delete(chat.id);
-          }
-          continue;
-        }
-
-        if (this.lastTurn.get(chat.id) === endedAt) {
-          continue;
-        }
-        this.lastTurn.set(chat.id, endedAt);
-        if (!prime) {
-          this.flagNeedsYou(chat.id);
-        }
-
-        // Needs-you takes precedence: when the turn ended at a prompt, the
-        // user already gets the more useful notification.
-        if (!prime && !waitingFor) {
-          this.notifications.notify('finished', {
-            chat,
-            context: this.contextFor(chat),
-          });
-        }
+        this.trackWait(chat, state, prime);
       }
     }
 
@@ -543,7 +667,11 @@ export class SessionAttentionService {
     for (const [chatId, state] of this.rowState) {
       if (!polled.has(chatId) && (state.liveStatus || state.waitingFor || state.turnState === 'working')) {
         this.rowState.set(chatId, settled(state));
-        this.closedWaits.delete(chatId);
+      }
+    }
+    for (const chatId of [...this.lastWaitingFor.keys()]) {
+      if (!polled.has(chatId)) {
+        this.endWait(chatId, undefined);
       }
     }
     this.polledChats = polled;
@@ -555,7 +683,8 @@ export class SessionAttentionService {
         this.markFinishedSeen(chat, now);
       }
     }
-    this.recomputeStatuses(allChats);
+    this.recomputeStatuses(allChats, false, prime);
+    await this.judgePopups(allChats, activeIds);
 
     if (turnStatesChanged || this.rowMarkKey() !== rowMarksBefore) {
       this.onTurnStateChanged();
@@ -563,41 +692,54 @@ export class SessionAttentionService {
   }
 
   /**
-   * Native sessions each harness's live record lists, by harness. Asked only
-   * for harnesses with a closed chat: open chats are polled anyway.
+   * Live sessions each harness's live record lists, by harness. Every
+   * harness that has one is asked: the closed chats among them are polled,
+   * and the unlisted ones ask discovery for a refresh (Q31).
    */
-  private async liveSessionIds(chats: readonly ChatSession[], openIds: ReadonlySet<string>): Promise<Map<string, Set<string>>> {
-    const harnesses = new Set(
-      chats.filter((chat) => chat.harnessSessionId && !openIds.has(chat.id)).map((chat) => chat.harness)
-    );
+  private async liveSessionIds(chats: readonly ChatSession[]): Promise<Map<string, Set<string>>> {
     const result = new Map<string, Set<string>>();
     await Promise.all(
-      [...harnesses].map(async (harness) => {
-        let adapter: HarnessAdapter;
-        try {
-          adapter = this.registry.get(harness);
-        } catch {
-          return;
-        }
+      this.adapters(chats).map(async (adapter) => {
         if (!adapter.liveSessionIds) {
           return;
         }
         try {
           const ids = await adapter.liveSessionIds();
           if (ids) {
-            result.set(harness, ids);
+            result.set(adapter.id, ids);
           }
         } catch (error) {
-          console.error(`[Pitwall] Could not list live ${harness} sessions:`, error);
+          console.error(`[Pitwall] Could not list live ${adapter.id} sessions:`, error);
         }
       })
     );
     return result;
   }
 
+  /** Ask discovery once about each live session no listed chat holds (Q31, N5: once per session per window). */
+  private askAboutUnlisted(liveIds: ReadonlyMap<string, ReadonlySet<string>>, chats: readonly ChatSession[]): void {
+    if (!this.options.onUnlistedLive) {
+      return;
+    }
+    const listed = new Set(chats.flatMap((chat) => chatNativeSessionIds(chat).map((id) => `${chat.harness}\u0000${id}`)));
+    const fresh: string[] = [];
+    for (const [harness, ids] of liveIds) {
+      for (const id of ids) {
+        const key = `${harness}\u0000${id}`;
+        if (!listed.has(key) && !this.askedUnlisted.has(key)) {
+          this.askedUnlisted.add(key);
+          fresh.push(id);
+        }
+      }
+    }
+    if (fresh.length > 0) {
+      this.options.onUnlistedLive(fresh);
+    }
+  }
+
   /** The needs-you rows, as a comparable key. */
   private rowMarkKey(): string {
-    return [...this.needsYouSince.keys()].filter((chatId) => this.needsYou(chatId)).sort().join(',');
+    return [...this.rowState.keys()].filter((chatId) => this.needsYou(chatId)).sort().join(',');
   }
 
   /**
@@ -636,84 +778,119 @@ export class SessionAttentionService {
     }
   }
 
-  private updateNeedsInput(
-    chat: ChatSession,
-    waitingFor: string | undefined,
-    prime: boolean,
-    observedAt: number | undefined,
-    writtenAt: number | undefined
-  ): void {
+  /** The wait ended (or its chat is no longer polled): the next wait is new. */
+  private endWait(chatId: string, observedAt: number | undefined): void {
+    this.lastClearAt.set(chatId, observedAt ?? Date.now());
+    this.waitStartAt.delete(chatId);
+    this.lastWaitingFor.delete(chatId);
+    this.pendingWaits.delete(chatId);
+  }
+
+  /**
+   * Follow one polled chat's wait. A wait starts on the first tick that sees
+   * its reason, so a changed reason is a new wait; a restamp of the same
+   * reason is the same wait (Q32). R45: a wait may pop only if it cannot
+   * predate activation: this service saw the chat without a wait since it
+   * started, or the chat was launched after it started. Otherwise it is
+   * pre-existing (a reload): marked and listed, judged once, never shown. The
+   * transcript time only narrows the window from that floor, it never makes
+   * a wait eligible.
+   */
+  private trackWait(chat: ChatSession, state: RowState, prime: boolean): void {
+    const waitingFor = state.waitingFor;
     if (!waitingFor) {
-      // The wait ended: it leaves the list, and the next wait is new.
-      this.lastClearAt.set(chat.id, observedAt ?? Date.now());
-      this.waitStartAt.delete(chat.id);
-      this.lastWaitingFor.delete(chat.id);
-      this.toastableWaits.delete(chat.id);
-      this.closedWaits.delete(chat.id);
-      if (this.waitingSince.delete(chat.id)) {
-        this.needsYouSince.delete(chat.id);
-      }
+      this.endWait(chat.id, state.observedAt);
       return;
     }
-
-    const now = Date.now();
-    const visible = this.isChatVisible(chat.id);
     const previous = this.lastWaitingFor.get(chat.id);
     this.lastWaitingFor.set(chat.id, waitingFor);
-    const since = this.waitingSince.get(chat.id) ?? now;
-    this.waitingSince.set(chat.id, since);
-
-    // Re-judged every tick, including the first pass after activation: a
-    // waiting chat is listed whenever it is not in front.
-    if (visible) {
-      this.needsYouSince.delete(chat.id);
-    } else if (!this.needsYouSince.has(chat.id)) {
-      this.needsYouSince.set(chat.id, since);
-    }
-
-    // A wait starts on the first tick that sees its reason, so a changed
-    // reason is a new wait. Each wait toasts at most once: only if it began
-    // unseen after activation (judged over the whole window in which it could
-    // have started), and never once it has toasted or been seen.
-    if (waitingFor !== previous && !prime) {
-      // R45: a wait may toast only if it cannot predate activation: this
-      // session saw the chat without a wait since it started, or the chat was
-      // launched after it started. Otherwise it is pre-existing (a reload):
-      // marked and listed, never toasted. The transcript time only narrows
-      // the window from that floor, it never makes a wait eligible.
-      // A wait the live record already showed while the chat was closed
-      // predates this open: pre-existing, like a wait at activation (QA S6).
-      const seenWhileClosed = this.closedWaits.delete(chat.id);
-      const clear = this.lastClearAt.get(chat.id);
-      const launched = chat.createdAt >= this.activatedAt ? chat.createdAt : undefined;
-      const floor = seenWhileClosed ? undefined : clear ?? launched;
-      if (floor === undefined) {
-        this.toastableWaits.delete(chat.id);
-        this.waitStartAt.delete(chat.id);
-      } else {
-        this.toastableWaits.add(chat.id);
-        this.waitStartAt.set(chat.id, Math.max(floor, writtenAt ?? -Infinity));
-      }
-    }
-    if (prime || visible || !this.beganUnseen(chat.id)) {
-      this.toastableWaits.delete(chat.id);
-    }
-    // A toast held back by the settings does not start the cooldown, so it
-    // fires on the first tick the settings allow it.
-    if (
-      !this.toastableWaits.has(chat.id) ||
-      !shouldNotifyNeedsInput(previous, waitingFor, this.lastNeedsInputAt.get(chat.id), now)
-    ) {
+    if (waitingFor === previous) {
       return;
     }
-    const shown = this.notifications.notify('needs-input', {
-      chat,
-      context: this.contextFor(chat),
-      detail: waitingFor,
-    });
-    if (shown) {
-      this.lastNeedsInputAt.set(chat.id, now);
-      this.toastableWaits.delete(chat.id);
+    const clear = prime ? undefined : this.lastClearAt.get(chat.id);
+    const launched = !prime && chat.createdAt >= this.activatedAt ? chat.createdAt : undefined;
+    const floor = clear ?? launched;
+    if (floor === undefined) {
+      this.waitStartAt.delete(chat.id);
+      this.pendingWaits.set(chat.id, { preExisting: true });
+    } else {
+      this.waitStartAt.set(chat.id, Math.max(floor, state.writtenAt ?? -Infinity));
+      this.pendingWaits.set(chat.id, { preExisting: false });
+    }
+  }
+
+  /**
+   * Judge every pending wait and finished turn (row 5.1's order lives in
+   * `NotificationService.notify`). A result that uses it up (shown, locked,
+   * in front, pre-existing) ends it; the rest keep it for the next tick.
+   */
+  private async judgePopups(chats: readonly ChatSession[], openIds: ReadonlySet<string>): Promise<void> {
+    const byId = new Map(chats.map((chat) => [chat.id, chat]));
+    const now = Date.now();
+    const jobs: Promise<void>[] = [];
+    for (const [chatId, wait] of this.pendingWaits) {
+      const chat = byId.get(chatId);
+      const state = this.rowState.get(chatId);
+      const waitingFor = state?.waitingFor;
+      if (!chat?.harnessSessionId || !waitingFor) {
+        this.pendingWaits.delete(chatId);
+        continue;
+      }
+      // A retry under the same reason waits out the cooldown since the chat's last toast.
+      if (!shouldNotifyNeedsInput(wait.triedReason, waitingFor, this.lastNeedsInputAt.get(chatId), now)) {
+        continue;
+      }
+      wait.triedReason = waitingFor;
+      const inFront = (openIds.has(chatId) && this.isChatVisible(chatId)) || !this.beganUnseen(chatId);
+      jobs.push(
+        this.judge('needs-input', chat, {
+          detail: waitingFor,
+          at: waitStamp(state),
+          preExisting: wait.preExisting,
+          inFront,
+        }).then((result) => {
+          if (result === 'shown') {
+            this.lastNeedsInputAt.set(chatId, now);
+          }
+          // A judgement that threw is not retried every tick.
+          if ((!result || USES_UP.has(result)) && this.pendingWaits.get(chatId) === wait) {
+            this.pendingWaits.delete(chatId);
+          }
+        })
+      );
+    }
+    for (const [chatId, endedAt] of this.pendingFinished) {
+      const chat = byId.get(chatId);
+      if (!chat?.harnessSessionId || this.rowStatus.get(chatId)?.status !== 'finished') {
+        this.pendingFinished.delete(chatId);
+        continue;
+      }
+      jobs.push(
+        this.judge('finished', chat, { at: endedAt, inFront: openIds.has(chatId) && this.isChatVisible(chatId) }).then((result) => {
+          if ((!result || USES_UP.has(result)) && this.pendingFinished.get(chatId) === endedAt) {
+            this.pendingFinished.delete(chatId);
+          }
+        })
+      );
+    }
+    await Promise.all(jobs);
+  }
+
+  private async judge(
+    kind: 'needs-input' | 'finished',
+    chat: ChatSession,
+    target: { detail?: string; at: number | undefined; preExisting?: boolean; inFront: boolean }
+  ): Promise<NotifyResult | undefined> {
+    try {
+      return await this.notifications.notify(kind, {
+        chat,
+        context: this.contextFor(chat),
+        sessionId: chat.harnessSessionId!,
+        ...target,
+      });
+    } catch (error) {
+      console.error('[Pitwall] Pop-up failed:', error);
+      return undefined;
     }
   }
 

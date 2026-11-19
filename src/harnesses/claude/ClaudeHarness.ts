@@ -1,3 +1,4 @@
+import type * as vscode from 'vscode';
 import {
   ClaudeSessionService,
   toHarnessSession,
@@ -198,6 +199,11 @@ export class ClaudeHarness implements HarnessAdapter {
     return result;
   }
 
+  /** Re-poll soon after a `*.json` change in `~/.claude/sessions` (150 ms debounce; `.key` files never count). */
+  watchLive(onChange: () => void): vscode.Disposable {
+    return this.sessionsFile.watch(onChange);
+  }
+
   /** The folder read a `liveSessionIds` call just made, or a fresh one. */
   private readSessionsFile(): Promise<ClaudeSessionsSnapshot> {
     const shared = this.sharedRead;
@@ -287,6 +293,10 @@ export class ClaudeHarness implements HarnessAdapter {
 
     const file = await filePromise;
     const agentsSnapshot = await agentsPromise;
+    // A complete read of a folder that exists lists every running session:
+    // one absent from it has no process (Q30: a death mid-turn is idle).
+    const notRunning = (sessionId: string) =>
+      file.listed && !file.partial && !file.states.has(sessionId) && !file.unknownStatus.has(sessionId);
     await Promise.all(
       readings.map(async (entry) => {
         if (!entry) {
@@ -298,16 +308,24 @@ export class ClaudeHarness implements HarnessAdapter {
           // The file is read fresh each tick, so its status is current truth:
           // no stale-wait drop (P4). statusUpdatedAt is when the wait began;
           // it does not move during a wait, so it is only the wait's start,
-          // never a reason to drop it.
+          // never a reason to drop it. A wait whose file has no stamp is
+          // dated by the transcript's last write instead (Q32); without
+          // either it has no stamp, and never pops.
           const live = file.states.get(sessionId);
           const waiting = live?.status === 'waiting';
+          let writtenAt = waiting && live.statusUpdatedAt > 0 ? live.statusUpdatedAt : undefined;
+          if (waiting && writtenAt === undefined) {
+            const mtime = await this.sessionService.transcriptWrittenAt(filePath);
+            writtenAt = mtime === null ? undefined : Math.floor(mtime);
+          }
           states.set(sessionId, {
             ...reading,
             waitingFor: waiting ? live.waitingFor : undefined,
             observedAt: file.observedAt,
-            ...(waiting && live.statusUpdatedAt > 0 ? { writtenAt: live.statusUpdatedAt } : {}),
+            ...(writtenAt !== undefined ? { writtenAt } : {}),
             ...(live ? { liveStatus: live.status } : {}),
             ...(live && live.statusUpdatedAt > 0 ? { statusUpdatedAt: live.statusUpdatedAt } : {}),
+            ...(notRunning(sessionId) ? { running: false } : {}),
           });
           return;
         }
@@ -353,6 +371,7 @@ export class ClaudeHarness implements HarnessAdapter {
           observedAt,
           ...(writtenAt !== undefined ? { writtenAt } : {}),
           ...(liveStatus ? { liveStatus } : {}),
+          ...(!liveStatus && notRunning(sessionId) ? { running: false } : {}),
         });
       })
     );
@@ -372,6 +391,7 @@ export class ClaudeHarness implements HarnessAdapter {
 
   dispose(): void {
     this.nativeUi.surfaces?.dispose();
+    this.agentsService.dispose?.();
   }
 
   async prepareForkToNewWorktree(

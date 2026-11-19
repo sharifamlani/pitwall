@@ -88,6 +88,13 @@ export interface HarnessLiveState {
    * (a denied prompt) dates the turn's end from this.
    */
   statusUpdatedAt?: number;
+  /**
+   * False when the harness's live record, read completely, shows no process
+   * for this session (it exited, or never started). A transcript that looks
+   * mid-turn then means a process that died mid-turn: the row is idle, never
+   * working or finished (Q30). Undefined when the harness can't tell.
+   */
+  running?: boolean;
 }
 
 /**
@@ -432,6 +439,15 @@ export interface HarnessAdapter {
    * still gets a live status. Undefined when the harness has no such record.
    */
   liveSessionIds?(): Promise<Set<string> | undefined>;
+
+  /**
+   * Calls `onChange` soon after the harness's live record changes (Claude: a
+   * `*.json` event in `~/.claude/sessions`, debounced 150 ms), so the
+   * attention service re-polls at once instead of on its next 4 s tick.
+   * Watching reads and writes nothing. Undefined when the harness has no
+   * such record.
+   */
+  watchLive?(onChange: () => void): vscode.Disposable;
 
   /**
    * The live agent process running a native session on this machine, by the

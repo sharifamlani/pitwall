@@ -1153,16 +1153,20 @@ export function registerChatCommands(
     }
   });
 
-  // Jump to the open session that has waited longest since it finished or
-  // asked for something. Visiting it clears its flag, so repeating the
-  // command walks through the rest.
+  // Jump to the listed session that has waited longest on you (Q30: open or
+  // not, in front or not). A routed open lands in its folder's window, which
+  // marks it seen and selects it there, so this window selects nothing; any
+  // other result ('here', and 'outside'/'gone' by design, Q48) marks it seen
+  // and selects its row here.
   register('pitwall.openNextSessionNeedingYou', async () => {
     for (const chatId of sessionsNeedingYou()) {
       const chat = storageService.getChat(chatId);
       const worktree = chat && harnessRegistry.has(chat.harness) && (await workspacesProvider.getWorktreeByIdAsync(chat.worktreeId));
       if (chat && worktree) {
-        await openChatPrimary(chat, worktree);
-        activateChat(chat);
+        const where = await openChatPrimary(chat, worktree);
+        if (where !== 'routed') {
+          activateChat(chat);
+        }
         return;
       }
     }

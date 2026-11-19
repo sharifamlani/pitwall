@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import type * as vscode from 'vscode';
 import { claudeConfigDir } from './claudeConfig';
 
 /** The process status Claude Code writes for a running session. */
@@ -24,6 +25,8 @@ export interface ClaudeSessionFileState {
 export interface ClaudeSessionsSnapshot {
   /** False when no file counts (missing or empty folder, or nothing live with a known status). */
   available: boolean;
+  /** The folder could be listed: a session absent from a complete read (not `partial`) is not running. */
+  listed: boolean;
   /** When this read started. The files are read fresh, so this is the sample time. */
   observedAt: number;
   states: Map<string, ClaudeSessionFileState>;
@@ -41,7 +44,13 @@ export interface ClaudeSessionsFileOptions {
   /** This machine's pid domain. Defaults to {@link localPidDomain}. */
   pidDomain?: () => Promise<string | undefined>;
   now?: () => number;
+  /** How often `watch` retries a folder it can't watch yet (missing, or gone). Default 4 s, the attention tick. */
+  rewatchMs?: number;
 }
+
+/** File events re-poll this long after the last one in a burst. */
+export const WATCH_DEBOUNCE_MS = 150;
+const REWATCH_MS = 4_000;
 
 /**
  * Signal 0 checks a pid without touching the process. EPERM means it exists
@@ -126,6 +135,7 @@ export class ClaudeSessionsFile {
   private readonly isAlive: (pid: number) => boolean;
   private readonly pidDomain: () => Promise<string | undefined>;
   private readonly now: () => number;
+  private readonly rewatchMs: number;
   private localDomain: Promise<string | undefined> | undefined;
   private inFlight: Promise<ClaudeSessionsSnapshot> | undefined;
 
@@ -134,6 +144,76 @@ export class ClaudeSessionsFile {
     this.isAlive = options.isAlive ?? isPidAlive;
     this.pidDomain = options.pidDomain ?? localPidDomain;
     this.now = options.now ?? (() => Date.now());
+    this.rewatchMs = options.rewatchMs ?? REWATCH_MS;
+  }
+
+  /**
+   * Calls `onChange` 150 ms after the last `*.json` event in a burst, so a
+   * status change reaches the rows within a tick's fraction instead of up to
+   * 4 s later. Events for any other name (the `.key` files) are dropped from
+   * the event alone: nothing is opened or stat-ed to judge them, and an event
+   * without a name is dropped too (the 4 s tick still covers it). A folder
+   * that is missing, or goes away, is retried every `rewatchMs`. Watching
+   * reads nothing and writes nothing.
+   */
+  watch(onChange: () => void): vscode.Disposable {
+    let watcher: fs.FSWatcher | undefined;
+    let pending: NodeJS.Timeout | undefined;
+    let retry: NodeJS.Timeout | undefined;
+    let disposed = false;
+    const fire = () => {
+      clearTimeout(pending);
+      pending = setTimeout(() => {
+        pending = undefined;
+        if (!disposed) {
+          onChange();
+        }
+      }, WATCH_DEBOUNCE_MS);
+      pending.unref?.();
+    };
+    const scheduleRetry = () => {
+      if (!disposed && !retry) {
+        retry = setTimeout(() => {
+          retry = undefined;
+          start(true);
+        }, this.rewatchMs);
+        retry.unref?.();
+      }
+    };
+    const start = (catchUp: boolean) => {
+      if (disposed || watcher) {
+        return;
+      }
+      try {
+        watcher = fs.watch(this.dir(), { persistent: false }, (_event, name) => {
+          if (typeof name === 'string' && name.endsWith('.json')) {
+            fire();
+          }
+        });
+        watcher.on('error', () => {
+          watcher?.close();
+          watcher = undefined;
+          scheduleRetry();
+        });
+        // A folder that appeared (or came back) may already hold files written while unwatched.
+        if (catchUp) {
+          fire();
+        }
+      } catch {
+        watcher = undefined;
+        scheduleRetry();
+      }
+    };
+    start(false);
+    return {
+      dispose: () => {
+        disposed = true;
+        clearTimeout(pending);
+        clearTimeout(retry);
+        watcher?.close();
+        watcher = undefined;
+      },
+    };
   }
 
   /** Reads the folder fresh. Concurrent callers (one per worktree group in a tick) share one read. */
@@ -150,6 +230,7 @@ export class ClaudeSessionsFile {
     const observedAt = this.now();
     const snapshot: ClaudeSessionsSnapshot = {
       available: false,
+      listed: false,
       observedAt,
       states: new Map(),
       unknownStatus: new Set(),
@@ -167,6 +248,7 @@ export class ClaudeSessionsFile {
     } catch {
       return snapshot;
     }
+    snapshot.listed = true;
     const files = names.filter((name) => name.endsWith('.json'));
     if (files.length === 0) {
       return snapshot;

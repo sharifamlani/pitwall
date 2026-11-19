@@ -9,7 +9,9 @@ import { writeJsonAtomic } from './HandoffInbox';
  * into `<globalStorage>/pitwall-windows/<pid>.json`: its folder and the chats
  * it has open as tabs. Every window reads the others' records, so a row can
  * say which repos have a window and which chats are open anywhere. Records
- * hold only a pid, a folder path, a timestamp and session ids.
+ * hold only a pid, a folder path, a timestamp, session ids, the session in
+ * front and a focus flag (Q33: no pop-up for a chat in front of a focused
+ * window anywhere).
  */
 
 /** A window beats this often, and on every change. */
@@ -26,6 +28,17 @@ export interface WindowRecord {
   folder: string | undefined;
   beatAt: number;
   openSessionIds: string[];
+  /** The session in front of this window (its chat tab is the active tab), whether or not the window has focus (Q33). */
+  front?: string;
+  /** Whether this window has OS focus. */
+  focused: boolean;
+}
+
+/** What a beat publishes: the chats open as tabs, the one in front, and window focus. */
+export interface BeatState {
+  openSessionIds: string[];
+  front?: string;
+  focused: boolean;
 }
 
 /** The folder every window shares: the extension's global storage, created if missing. */
@@ -74,10 +87,17 @@ function parseRecord(data: unknown, pid: number): WindowRecord | undefined {
     folder: typeof record.folder === 'string' ? record.folder : undefined,
     beatAt: record.beatAt,
     openSessionIds: record.openSessionIds as string[],
+    ...(typeof record.front === 'string' ? { front: record.front } : {}),
+    // A Phase 4 record has neither field: no chat in front of a focused window.
+    focused: record.focused === true,
   };
 }
 
-/** What `onDidChange` compares: every live window's pid, folder and open chats, never `beatAt`. */
+/**
+ * What `onDidChange` compares: every live window's pid, folder and open chats,
+ * never `beatAt`, `front` or `focused` (Q33): a focus change or a tab switch
+ * alone is not a change of which windows exist or what they hold.
+ */
 function signatureOf(windows: readonly WindowRecord[]): string {
   return JSON.stringify(windows.map((w) => [w.pid, w.folder ?? null, [...w.openSessionIds].sort()]));
 }
@@ -87,9 +107,13 @@ export class WindowRegistry {
   private readonly changed = new vscode.EventEmitter<void>();
   /** Fires when a window appears, goes stale, or changes its folder or open chats; never for a beat alone. */
   readonly onDidChange: vscode.Event<void> = this.changed.event;
-  private openIds: string[] = [];
+  private state: BeatState = { openSessionIds: [], focused: false };
   private signature = signatureOf([]);
   private disposed = false;
+  /** Every live window as the last refresh read it, for synchronous questions (`frontAnywhere`). */
+  private snapshot: readonly WindowRecord[] = [];
+  /** What `start()` set up, undone by `dispose()`. */
+  private started: vscode.Disposable | undefined;
   /** Beats and refreshes run one at a time, so writes never share a temp file and comparisons never interleave. */
   private queue: Promise<unknown> = Promise.resolve();
 
@@ -111,12 +135,17 @@ export class WindowRegistry {
     return run;
   }
 
-  /** Write this window's record with the chats it has open now, then refresh. */
-  async beat(openSessionIds: string[]): Promise<void> {
+  /**
+   * Write this window's record with the chats it has open now, the one in
+   * front and whether the window has focus, then refresh. A bare array is the
+   * open chats alone (no chat in front, not focused).
+   */
+  async beat(state: BeatState | string[]): Promise<void> {
     if (this.disposed) {
       return;
     }
-    this.openIds = [...openSessionIds];
+    const next = Array.isArray(state) ? { openSessionIds: state, focused: false } : state;
+    this.state = { openSessionIds: [...next.openSessionIds], ...(next.front ? { front: next.front } : {}), focused: next.focused };
     await this.enqueue(async () => {
       if (this.disposed) {
         return;
@@ -125,7 +154,7 @@ export class WindowRegistry {
         pid: this.self.pid,
         folder: this.self.folder,
         beatAt: this.clock(),
-        openSessionIds: this.openIds,
+        ...this.state,
       };
       await fs.promises.mkdir(this.dir, { recursive: true });
       await writeJsonAtomic(this.ownFile, record);
@@ -139,7 +168,9 @@ export class WindowRegistry {
   /** Re-read every window and fire `onDidChange` if the set differs from the last read. */
   refresh(): Promise<void> {
     return this.enqueue(async () => {
-      const signature = signatureOf(await this.windows());
+      const windows = await this.windows();
+      this.snapshot = windows;
+      const signature = signatureOf(windows);
       if (signature !== this.signature) {
         this.signature = signature;
         if (!this.disposed) {
@@ -192,11 +223,25 @@ export class WindowRegistry {
   }
 
   /**
+   * Whether any live window, this one included, has this session in front
+   * and has focus (Q33). Synchronous: it reads the snapshot the last refresh
+   * cached (the folder watcher refreshes on every other window's beat, and
+   * every beat refreshes), and drops a record that has gone stale since.
+   */
+  frontAnywhere(sessionId: string): boolean {
+    const now = this.clock();
+    return this.snapshot.some((w) => w.front === sessionId && w.focused && now - w.beatAt < STALE_MS);
+  }
+
+  /**
    * Beat now and every 15 s, and refresh when another window's record changes.
    * Disposing stops both and deletes this window's record.
    */
   start(): vscode.Disposable {
-    const beat = () => void this.beat(this.openIds).catch(() => undefined);
+    if (this.started) {
+      return this.started;
+    }
+    const beat = () => void this.beat(this.state).catch(() => undefined);
     beat();
     const timer = setInterval(beat, BEAT_MS);
     timer.unref?.();
@@ -212,8 +257,11 @@ export class WindowRegistry {
     } catch {
       // No file events: the 15 s beat still refreshes.
     }
-    return {
+    this.started = {
       dispose: () => {
+        if (this.disposed) {
+          return;
+        }
         this.disposed = true;
         clearInterval(timer);
         clearTimeout(pending);
@@ -226,5 +274,18 @@ export class WindowRegistry {
         this.changed.dispose();
       },
     };
+    return this.started;
+  }
+
+  /** Stop beating and delete this window's record (what disposing `start()`'s result does). Safe to call twice. */
+  dispose(): void {
+    if (this.started) {
+      this.started.dispose();
+      return;
+    }
+    if (!this.disposed) {
+      this.disposed = true;
+      this.changed.dispose();
+    }
   }
 }
