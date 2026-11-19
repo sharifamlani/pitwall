@@ -114,6 +114,12 @@ function tempDir(t: { after(fn: () => void): void }): string {
   return dir;
 }
 
+/**
+ * Orders claims by when each request was sent, so a failure diff lines up with
+ * `sent` (a nonce that was never sent sorts first and fails the comparison).
+ */
+const bySendOrder = (sent: string[]) => (a: string, b: string) => sent.indexOf(a) - sent.indexOf(b);
+
 const sendOne = (sender: HandoffInbox, folder: string) =>
   sender.send(folder, { kind: 'open', sessionIds: ['5f0c3d4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f'] });
 
@@ -140,7 +146,7 @@ if (process.env.PITWALL_CLAIM_CHILD) {
 
     const all = [...first.nonces, ...second.nonces];
     assert.equal(all.length, REQUESTS, `claimed ${first.nonces.length} + ${second.nonces.length}`);
-    assert.deepEqual([...all].sort(), [...sent].sort(), 'every request claimed exactly once');
+    assert.deepEqual([...all].sort(bySendOrder(sent)), sent, 'every request claimed exactly once');
     assert.deepEqual(first.nonces.filter((nonce) => second.nonces.includes(nonce)), [], 'no request claimed by both');
   });
 
@@ -172,7 +178,7 @@ if (process.env.PITWALL_CLAIM_CHILD) {
     const expired = expirer.nonces;
     assert.equal(claimed.length + expired.length, REQUESTS, `claimed ${claimed.length} + expired ${expired.length}`);
     assert.deepEqual(claimed.filter((nonce) => expired.includes(nonce)), [], 'no request both claimed and expired');
-    assert.deepEqual([...claimed, ...expired].sort(), [...sent].sort(), 'every request claimed or expired');
+    assert.deepEqual([...claimed, ...expired].sort(bySendOrder(sent)), sent, 'every request claimed or expired');
 
     const files = new Set(fs.readdirSync(inboxDir));
     const wrong = sent.flatMap((nonce) => {

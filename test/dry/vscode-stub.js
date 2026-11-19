@@ -427,6 +427,7 @@ const extensionChangeListeners = new Set();
 const openExternalCalls = [];
 let openExternalResult = true;
 const deletedUris = [];
+const uriHandlers = [];
 
 function createOutputChannel(name) {
   const channel = {
@@ -468,6 +469,7 @@ module.exports = {
   ProgressLocation: { SourceControl: 1, Window: 10, Notification: 15 },
   FileType: { Unknown: 0, File: 1, Directory: 2, SymbolicLink: 64 },
   ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
+  ExtensionMode: { Production: 1, Development: 2, Test: 3 },
   workspace: {
     fs: {
       readDirectory: async (uri) => {
@@ -937,6 +939,11 @@ module.exports = {
       return inputResponses.shift();
     },
     withProgress: async (_options, task) => task(),
+    /** Records the extension's URI handler; tests read it back as `__uriHandlers`. */
+    registerUriHandler: (handler) => {
+      uriHandlers.push(handler);
+      return { dispose: () => uriHandlers.splice(uriHandlers.indexOf(handler), 1) };
+    },
   },
   extensions: {
     getExtension: (id) =>
@@ -1003,6 +1010,7 @@ module.exports = {
       fileWatchers,
       outputChannels,
       deletedUris,
+      uriHandlers,
       shownDocuments,
       treeViews,
       statusBarItems,
@@ -1050,6 +1058,7 @@ module.exports = {
     module.exports.env.shell = '/bin/bash';
   },
   __deleted: deletedUris,
+  __uriHandlers: uriHandlers,
   __treeViews: treeViews,
   /** Test helper: tree views created from now on start visible (or hidden). */
   __setTreeViewsVisible: (visible) => {

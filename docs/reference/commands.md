@@ -103,6 +103,7 @@ Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pit
 | **Pitwall: Pitwall Keyboard Shortcuts…** | Open Pitwall's shortcuts in the Keyboard Shortcuts editor |
 | **Pitwall: Turn On Auto-Switch Workspace Folder** / **Turn Off Auto-Switch Workspace Folder** | Make VS Code's open folder follow the worktree you select |
 | **Pitwall: Turn On Focus on Startup** / **Turn Off Focus on Startup** | Open the Pitwall sidebar when VS Code starts |
+| **Pitwall: Remove Pop-up Registration** | Windows only. Delete the per-user registry key that names "Pitwall" as the sender of its Windows pop-ups (`HKCU\Software\Classes\AppUserModelId\sharifamlani.pitwall`). Pop-ups show inside the window until Pitwall starts again; uninstalling Pitwall also deletes the key. See [Notifications](../notifications.md#windows-pop-ups) |
 
 ## Workspaces view
 

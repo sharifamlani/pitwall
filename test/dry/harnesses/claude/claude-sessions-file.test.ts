@@ -6,6 +6,8 @@ import * as path from 'path';
 import {
   ClaudeSessionsFile,
   localPidDomain,
+  WATCH_DEBOUNCE_MS,
+  WATCH_MAX_WAIT_MS,
 } from '../../../../src/harnesses/claude/ClaudeSessionsFile';
 import { tempDir, waitFor } from '../../support';
 
@@ -281,6 +283,29 @@ test('watch fires once per burst of .json writes within 150 ms', async (t) => {
   // A second burst after a quiet gap is a second change.
   writeSession(dir, { pid: 1000, sessionId: 's-0', status: 'idle', statusUpdatedAt: 99 });
   await waitFor(() => fired === 2, 'the second burst', 2_000);
+  watching.dispose();
+});
+
+test('a steady stream of watch events re-polls within 500 ms', async (t) => {
+  assert.equal(WATCH_DEBOUNCE_MS, 150);
+  assert.equal(WATCH_MAX_WAIT_MS, 500);
+  const dir = path.join(tempDir(t), 'sessions');
+  fs.mkdirSync(dir, { recursive: true });
+  const fires: number[] = [];
+  const watching = sessionsFile(dir).watch(() => fires.push(Date.now()));
+  t.after(() => watching.dispose());
+  await sleep(50);
+
+  // A write every 50 ms for 1.6 s: a plain 150 ms debounce would not fire until the stream stopped.
+  const start = Date.now();
+  for (let i = 0; Date.now() - start < 1_600; i++) {
+    writeSession(dir, { pid: 2000, sessionId: 's-stream', status: 'busy', statusUpdatedAt: i });
+    await sleep(50);
+  }
+  const during = fires.filter((at) => at < start + 1_600);
+  assert.ok(during.length >= 2, `re-polled ${during.length} times while the stream ran`);
+  // The first re-poll comes within the max wait, plus slack for the watcher's own delivery.
+  assert.ok(during[0] - start <= 500 + 250, `first re-poll after ${during[0] - start} ms`);
   watching.dispose();
 });
 

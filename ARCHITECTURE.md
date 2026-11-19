@@ -577,6 +577,15 @@ single-folder workspace), `openSession()` for an existing session, and
   window wins the `wx` lock in `<globalStorage>/pitwall-popups/` (`PopupLedger`). Shown,
   locked, in front and pre-existing use up the wait; disabled keeps it. A waiting session
   suppresses its turn-end pop-up, and a process that dies mid-turn is idle, never finished.
+- **The Windows pop-up (row 5.2).** On Windows the winner hands the pop-up to `WindowsToast`
+  in the background: one hidden `powershell.exe -NoProfile -NonInteractive -Command -` per
+  pop-up, fed a constant script plus one base64 literal (`toastXml` escapes every text node),
+  under the per-user AUMID `sharifamlani.pitwall` that `registerAumid` writes after the first
+  render. Tag `<id8>-<kind>`. A failed host falls back to the in-window message once. A click
+  launches `<uriScheme>://sharifamlani.pitwall/open?session=<uuid>`; `PopupUriHandler`
+  validates it and opens through `ChatRouter.route`, whose `'outside'` result (a chat live in a
+  terminal Pitwall doesn't own) still marks the chat seen
+  ([ADR 0022](docs/adr/0022-windows-popup-sender.md)).
 - **Needs-you queue.** Every listed chat that is waiting, in front or not
   (`needsYouOrder()`, `sessionsNeedingYou()`, oldest wait first; `counts()` for the bar). An
   entry goes when the agent stops waiting. **Go to Next Session That Needs You**

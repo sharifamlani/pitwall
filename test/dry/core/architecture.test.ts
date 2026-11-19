@@ -90,8 +90,11 @@ test('core reaches no harness folder, directly or transitively, in any import sy
   assert.deepEqual(reached, []);
 });
 
-test('src/ holds only core, harnesses and extension.ts', () => {
-  assert.deepEqual(fs.readdirSync(SRC).sort(), ['core', 'extension.ts', 'harnesses']);
+test('src/ holds only core, harnesses, extension.ts and uninstall.ts', () => {
+  // uninstall.ts is the manifest's vscode:uninstall entry (Q46 = A); it imports core only.
+  assert.deepEqual(fs.readdirSync(SRC).sort(), ['core', 'extension.ts', 'harnesses', 'uninstall.ts']);
+  const specs = importSpecifiers(fs.readFileSync(path.join(SRC, 'uninstall.ts'), 'utf8'));
+  assert.deepEqual(specs.filter((spec) => spec !== './core/notify/WindowsToast'), [], 'the uninstall script loads only the pop-up host');
 });
 
 // ---------------------------------------------------------------------------

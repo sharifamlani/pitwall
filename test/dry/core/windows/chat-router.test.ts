@@ -1094,13 +1094,13 @@ test("a chat live in an outside terminal (a live ~/.claude/sessions pid Pitwall 
   w.transcript(w.other, ID.b, [w.turn(ID.b, w.other)]);
   const here = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main, outsideTerminal: (id) => (id === ID.a || id === ID.b ? 4321 : undefined) });
 
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Same folder', ID.a, w.mainWt)] }), 'gone');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Same folder', ID.a, w.mainWt)] }), 'outside', 'held back by the guard alone: its own result (Q48)');
   assert.deepEqual(here.opened, [], 'nothing opened here');
   assert.deepEqual(warnings(OUTSIDE(4321)), [OUTSIDE(4321)]);
   assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → elsewhere (outside-terminal)`]);
 
   // Another folder's chat is not handed to its window either: that would start a second process.
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Other folder', ID.b, w.otherWt)] }), 'gone');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Other folder', ID.b, w.otherWt)] }), 'outside');
   assert.deepEqual(calls, [], 'no window raised');
   assert.deepEqual(requestsFor(here.inbox, dir, w.other), []);
 });
@@ -1233,7 +1233,7 @@ test('a chat in a Claude panel of a window Pitwall cannot see gets the window-or
   const w = world(t);
   w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
   const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, outsideTerminal: () => ({ pid: 777, panel: true }) });
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel elsewhere', ID.a, w.mainWt)] }), 'gone');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel elsewhere', ID.a, w.mainWt)] }), 'outside');
   assert.deepEqual(here.opened, []);
   assert.equal(warnings('That chat is already running in another window or terminal (pid 777). Switch to it there.').length, 1);
   assert.deepEqual(shownMessages().filter((message) => message.includes('another terminal')), []);
@@ -1298,4 +1298,17 @@ test('a no-transcript chat whose row folder is not this window never starts here
   assert.deepEqual(here.opened, [], 'nothing opened in this window');
   assert.deepEqual(calls, [], 'and no window raised for a chat with nothing to open');
   assert.deepEqual(here.routeLog, [`[Pitwall] route ${chat.id.slice(0, 8)} → ${w.main} (no-transcript-elsewhere)`]);
+});
+
+test('no-transcript-elsewhere still returns gone', async (t) => {
+  const w = world(t);
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const here = windowOn(t, w, tempDir(t), () => w.other, { pid: 1001, claims: w.other, outsideTerminal: (id) => (id === ID.a ? 4321 : undefined) });
+  const pending = w.storage.createChat(w.mainWt.id, 'claude', 'New Session', { pendingUiLaunch: true });
+  assert.equal(await here.router.route({ kind: 'open', chats: [pending] }), 'gone', 'only the outside-terminal guard makes outside');
+
+  // A batch where one chat is held back by the guard and another has nothing to open is not 'outside' either.
+  const live = w.chat('Live outside', ID.a, w.mainWt);
+  assert.equal(await here.router.route({ kind: 'openAll', chats: [live, pending] }), 'gone');
+  assert.deepEqual(here.opened, []);
 });

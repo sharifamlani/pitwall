@@ -885,6 +885,7 @@ export class SessionAttentionService {
       return await this.notifications.notify(kind, {
         chat,
         context: this.contextFor(chat),
+        repo: this.repoFor(chat),
         sessionId: chat.harnessSessionId!,
         ...target,
       });
@@ -925,6 +926,12 @@ export class SessionAttentionService {
     }
 
     return groups;
+  }
+
+  /** The repo's sidebar name, the Windows pop-up's title (§3a). */
+  private repoFor(chat: ChatSession): string | undefined {
+    const worktree = this.getWorktree(chat.worktreeId);
+    return worktree ? this.storage.getRepository(worktree.repoId)?.name : undefined;
   }
 
   private contextFor(chat: ChatSession): string {

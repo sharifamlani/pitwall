@@ -7,6 +7,7 @@ GOOD = [
     "CHANGELOG.md",
     "THIRD_PARTY_NOTICES.md",
     "out/extension.js",
+    "out/uninstall.js",
     "resources/icons/pitwall.png",
     "resources/icons/pitwall.svg",
     "resources/icons/harness/claude.svg",
@@ -57,3 +58,16 @@ def test_missing_extension_js_fails(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "MISSING out/extension.js" in out
     assert "OK:" not in out
+
+
+def test_missing_uninstall_js_fails(tmp_path, capsys):
+    # The vscode:uninstall script removes the pop-up registration (Q46); it must ship.
+    paths = [p for p in GOOD if p != "out/uninstall.js"]
+    listing = tmp_path / "ls.txt"
+    listing.write_text("\n".join(paths) + "\n", encoding="utf-8")
+    assert main(["--from-file", str(listing)]) == 1
+    assert "MISSING out/uninstall.js" in capsys.readouterr().out
+
+
+def test_uninstall_source_map_is_stray():
+    assert stray_paths(GOOD + ["out/uninstall.js.map"]) == ["out/uninstall.js.map"]

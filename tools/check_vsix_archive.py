@@ -18,7 +18,7 @@ from pathlib import Path
 
 _ALLOWED = re.compile(
     r"^(extension\.vsixmanifest|\[Content_Types\]\.xml"
-    r"|extension/(package\.json|readme\.md|changelog\.md|LICENSE\.txt|THIRD_PARTY_NOTICES\.md|out/extension\.js)"
+    r"|extension/(package\.json|readme\.md|changelog\.md|LICENSE\.txt|THIRD_PARTY_NOTICES\.md|out/(extension|uninstall)\.js)"
     r"|extension/resources/icons/[^/]+\.(png|svg)"
     r"|extension/resources/icons/harness/[^/]+\.svg)$"
 )
@@ -30,6 +30,7 @@ REQUIRED_FILES = (
     "extension/LICENSE.txt",
     "extension/THIRD_PARTY_NOTICES.md",
     "extension/out/extension.js",
+    "extension/out/uninstall.js",
 )
 REQUIRED_PATTERNS = (
     r"extension/resources/icons/[^/]+\.(png|svg)",

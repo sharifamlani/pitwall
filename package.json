@@ -47,10 +47,12 @@
     "theme": "dark"
   },
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onUri"
   ],
   "files": [
     "out/extension.js",
+    "out/uninstall.js",
     "resources/icons/*.png",
     "resources/icons/*.svg",
     "resources/icons/harness/*.svg",
@@ -350,6 +352,11 @@
       {
         "command": "pitwall.dev.traceTabs",
         "title": "Trace tab events (developer)",
+        "category": "Pitwall"
+      },
+      {
+        "command": "pitwall.removePopupRegistration",
+        "title": "Remove Pop-up Registration",
         "category": "Pitwall"
       },
       {
@@ -1524,6 +1531,10 @@
           "when": "false"
         },
         {
+          "command": "pitwall.removePopupRegistration",
+          "when": "isWindows"
+        },
+        {
           "command": "pitwall.switchToWorkspace",
           "when": "false"
         },
@@ -1696,6 +1707,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
+    "vscode:uninstall": "node ./out/uninstall.js",
     "compile": "node esbuild.js",
     "generate:icons": "node scripts/generate-harness-icons.mjs",
     "watch": "node esbuild.js --watch",
