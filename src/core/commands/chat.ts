@@ -74,7 +74,7 @@ export interface ChatCommandDeps {
   removeChats: (chatIds: string[], options?: { rememberSession?: boolean }) => string[];
   refreshTree: () => void;
   /** The chat router (T3), once built: a row open lands in its folder's window. */
-  router?: () => (Pick<ChatRouter, 'route'> & Partial<Pick<ChatRouter, 'launchFolder'>>) | undefined;
+  router?: () => (Pick<ChatRouter, 'route'> & Partial<Pick<ChatRouter, 'launchFolder' | 'guardLive'>>) | undefined;
   /** Every listed chat with this row status and when it entered it, oldest first (the jump list, Q38). */
   statusList?: (status: 'needs' | 'working' | 'finished') => Array<{ chatId: string; since: number }>;
   /** Why a waiting chat waits ("permission prompt"), for the jump list's meta. */
@@ -541,6 +541,16 @@ export function registerChatCommands(
   };
 
   /**
+   * One agent process per session, for an explicit open that would start one
+   * in this window for a chat with no tab or terminal Pitwall knows of here:
+   * the router's own guard (a row click's). True when the chat is live
+   * elsewhere and was brought forward, handed to its window, or warned about,
+   * so the caller starts nothing.
+   */
+  const heldByLiveProcess = async (chat: ChatSession): Promise<boolean> =>
+    (await deps.router?.()?.guardLive?.(chat)) !== undefined;
+
+  /**
    * Hand an existing session to its harness's native UI. Shared by the
    * explicit Open in ... commands and the row click (which reveals an open
    * panel, or follows a UI default). Every refusal is explained, and a running
@@ -551,7 +561,8 @@ export function registerChatCommands(
   const openChatInNativeUi = async (
     chat: ChatSession,
     worktree: Worktree,
-    nativeUi: NativeUiCapability
+    nativeUi: NativeUiCapability,
+    options: { explicit?: boolean } = {}
   ): Promise<boolean> => {
     pitwallOpens += 1;
     const adapter = harnessRegistry.get(chat.harness);
@@ -581,6 +592,13 @@ export function registerChatCommands(
     let open = surfaces?.isOpen(sessionId) ?? false;
     if (!open && terminalManager.isResuming(chat.id)) {
       vscode.window.showInformationMessage('This session is still starting. Try again in a moment.');
+      return false;
+    }
+    // An explicit Open in <agent> UI skips the router, so it asks the router's
+    // guard here, before the UI's resume (a new panel process) or a refusal's
+    // terminal fallback. A row click reaches this through the router, which
+    // already asked. Pitwall's own terminal is the user's to move (below).
+    if (!open && options.explicit && !terminalManager.isActive(chat.id) && (await heldByLiveProcess(chat))) {
       return false;
     }
     if (!open) {
@@ -783,7 +801,7 @@ export function registerChatCommands(
     }
     const worktree = await chatWorktree(chat);
     if (worktree) {
-      await openChatInNativeUi(chat, worktree, nativeUi);
+      await openChatInNativeUi(chat, worktree, nativeUi, { explicit: true });
     }
   };
 
@@ -951,7 +969,8 @@ export function registerChatCommands(
   );
 
   // Explicitly open a session in its terminal. If it is open in its agent's
-  // UI, close that tab first so two agent processes cannot run.
+  // UI, close that tab first so two agent processes cannot run; if it is live
+  // anywhere else, never start one (the router's guard).
   register('pitwall.openChatInTerminal', async (item?: WorkspaceTreeItem) => {
     const chat = resolveChat(item);
     const worktree = chat && (await chatWorktree(chat));
@@ -988,6 +1007,12 @@ export function registerChatCommands(
           );
           return;
         }
+      } else if (!terminalManager.isResuming(chat.id) && (await heldByLiveProcess(chat))) {
+        // Live where Pitwall can't close it (this window's panel with a tab it
+        // never bound, a terminal it doesn't own, another window): a
+        // `--resume` here would fork the session, so it is brought forward,
+        // handed off, or warned about instead.
+        return;
       }
     }
 

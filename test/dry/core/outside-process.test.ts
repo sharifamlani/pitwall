@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyLiveProcess } from '../../../src/core/windows/outsideProcess';
-import { parentPidOf } from '../../../src/core/utils/parentPid';
+import { cachedParentPid, parentPidOf } from '../../../src/core/utils/parentPid';
 
 const HOST = 5000;
 
@@ -51,4 +51,33 @@ test('parentPidOf reads the parent through an async exec with a timeout, and ans
   assert.equal(win, 321);
   assert.equal(await parentPidOf(42, { platform: 'linux', exec: async () => { throw new Error('timed out'); } }), undefined);
   assert.equal(await parentPidOf(42, { platform: 'linux', exec: async () => 'garbage' }), undefined);
+});
+
+test('the Windows lookup waits long enough for a loaded machine: 1.4-1.6 s idle must not time out', async () => {
+  const timeouts: (number | undefined)[] = [];
+  await parentPidOf(42, { platform: 'win32', exec: async (_file, _args, options) => (timeouts.push(options.timeout), 'ParentProcessId=1') });
+  assert.ok((timeouts[0] ?? 0) >= 5_000, `timeout ${timeouts[0]} ms`);
+});
+
+test("a pid's parent is asked of the OS once: the second call is answered from the cache; a failure is asked again", async () => {
+  const asked: number[] = [];
+  let fail = true;
+  const lookup = cachedParentPid(async (pid) => {
+    asked.push(pid);
+    if (pid === 13 && fail) {
+      return undefined;
+    }
+    return pid * 10;
+  });
+  assert.equal(await lookup(42), 420);
+  assert.equal(await lookup(42), 420);
+  assert.deepEqual(asked, [42], 'the second call never reached the OS');
+  // Two clicks at once share one lookup.
+  assert.deepEqual(await Promise.all([lookup(7), lookup(7)]), [70, 70]);
+  assert.deepEqual(asked, [42, 7]);
+  // A timed-out lookup is not remembered as "no parent".
+  assert.equal(await lookup(13), undefined);
+  fail = false;
+  assert.equal(await lookup(13), 130);
+  assert.deepEqual(asked, [42, 7, 13, 13]);
 });

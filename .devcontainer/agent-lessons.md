@@ -12,6 +12,9 @@ check enforces it.
   any generated title. (Pitwall #71: tab "Main" vs stored "Pitwall initial idea".)
 - Never remove a safety guard because a case "can only happen when…"; keep it and test the
   counterexample. (Pitwall #71: #68 dropped the guard and a live chat was forked.)
+- A guard on one entry point protects none of the others: put it in one shared function and call
+  it from every command, menu item and fallback that can start a process, with a test for each.
+  (Pitwall QA on #71: Open in Terminal / Open in Claude UI bypassed the router's guard and forked.)
 
 ## Review (QA reads before reviewing)
 

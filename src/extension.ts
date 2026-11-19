@@ -49,7 +49,7 @@ import { ChatRouter } from './core/windows/ChatRouter';
 import { SIDE_BY_SIDE_MOVE_WAIT_MS, splitSideBySide } from './core/windows/sideBySide';
 import { classifyLiveProcess } from './core/windows/outsideProcess';
 import { raiseThisWindow } from './core/windows/raiseWindow';
-import { parentPidOf } from './core/utils/parentPid';
+import { cachedParentPid } from './core/utils/parentPid';
 import { WindowRegistry, ownsFolder } from './core/windows/WindowRegistry';
 import { startTabAdoption } from './core/windows/tabAdoption';
 
@@ -190,6 +190,8 @@ export async function activate(context: vscode.ExtensionContext) {
   let openChatHere: ChatCommands['openChatHere'] = async () => 'failed';
   /** The first harness UI whose tab tracker can open sessions serially and describe its tabs. */
   const tabTracker = () => harnessRegistry.all().find((adapter) => adapter.nativeUi?.surfaces?.openSerially)?.nativeUi?.surfaces;
+  /** A panel's parent, asked of the OS once per pid (each Windows query starts PowerShell). */
+  const parentPidOf = cachedParentPid();
   const router = new ChatRouter({
     services: () => windowServices,
     // Claude's own rule: a window's folder is its first workspace folder.

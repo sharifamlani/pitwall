@@ -549,8 +549,9 @@ class TranscriptParser {
     const session = this.session;
 
     if (entry.type === 'custom-title' && typeof entry.customTitle === 'string') {
-      // An empty one clears the rename: the generated name shows again.
-      this.customTitle = entry.customTitle.trim() || null;
+      // An empty one keeps the previous rename, as Claude's own reader does
+      // (`|| previous`), so the name matches the title on Claude's tab.
+      this.customTitle = entry.customTitle.trim() || this.customTitle;
     }
 
     if (entry.type === 'ai-title' && typeof entry.aiTitle === 'string') {

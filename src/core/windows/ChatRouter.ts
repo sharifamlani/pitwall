@@ -224,6 +224,94 @@ export class ChatRouter implements vscode.Disposable {
     return run;
   }
 
+  /**
+   * The one-process guard for an explicit open that starts a process here
+   * (Open in Terminal, Open in <agent> UI, and a UI refusal's terminal
+   * fallback), for a chat with no tab or terminal Pitwall knows of in this
+   * window. The same decision a row click makes: open in another Pitwall
+   * window, or a live panel Pitwall never bound in another window's folder,
+   * is handed there ('routed'); this window's own panel is brought forward
+   * without a process ('here'), or warned about ('outside'); any other live
+   * process is warned about (Q28, 'outside'). Undefined when the session is
+   * live nowhere: only then may the caller start a process.
+   */
+  async guardLive(chat: ChatSession): Promise<RouteResult | undefined> {
+    const sessionId = chat.harnessSessionId;
+    if (!sessionId) {
+      return undefined;
+    }
+    const live = await this.liveElsewhere(chat);
+    if (!live) {
+      return undefined;
+    }
+    if (live.kind === 'here') {
+      return (await this.revealLive(chat, sessionId)) ? 'here' : 'outside';
+    }
+    if (live.kind === 'outside') {
+      this.warnOutside(sessionId, live);
+      return 'outside';
+    }
+    const sent = await this.handOff(live.folder, 'open', [sessionId]);
+    this.logRoute(sessionId, live.folder, sent ? live.reason : 'no-services');
+    return sent ? 'routed' : 'gone';
+  }
+
+  /**
+   * Where a chat that is not open in this window is live, if anywhere. A chat
+   * another Pitwall window lists is that window's ('there'). Otherwise a live
+   * process for it is this window's own panel whose tab Pitwall never bound
+   * (renamed, or a title two chats share: 'here'), or one Pitwall doesn't own
+   * (a terminal the user started, another window). A second process on the
+   * session would fork it, so a caller never starts one for any answer but
+   * undefined: it brings this window's tab forward, hands off, or warns.
+   */
+  private async liveElsewhere(
+    chat: ChatSession,
+    worktree?: Worktree
+  ): Promise<
+    | { kind: 'there'; folder: string; reason: 'open-there' | 'open-there-unbound' }
+    | { kind: 'here' }
+    | { kind: 'outside'; pid: number; panel?: boolean }
+    | undefined
+  > {
+    const sessionId = chat.harnessSessionId;
+    if (!sessionId) {
+      return undefined;
+    }
+    const there = this.canHandOff(chat) ? await this.windowOpening(sessionId) : undefined;
+    if (there) {
+      return { kind: 'there', folder: there, reason: 'open-there' };
+    }
+    const outside = await this.deps.outsideTerminal?.(sessionId).catch(() => undefined);
+    if (!outside) {
+      return undefined;
+    }
+    if (outside.here) {
+      return { kind: 'here' };
+    }
+    if (outside.panel && this.canHandOff(chat)) {
+      // A panel runs in some editor window whose tab Pitwall never bound (a
+      // shared title, W4(b)). One window per folder (D35): its folder names
+      // the window. The window there brings its tab forward (`revealLive`),
+      // never a second process. This window's own panel was handled above,
+      // so a panel in this window's folder belongs to a second window on it
+      // (or its parent lookup failed): opening here would fork the session,
+      // so it keeps the warning.
+      const fallback = worktree ?? (await this.deps.worktreeOf(chat));
+      const folder = outside.cwd || ((await this.launchFolder(chat, fallback)) ?? fallback?.path);
+      if (folder && !this.isThisWindow(folder) && (await this.hasWindow(folder))) {
+        return { kind: 'there', folder, reason: 'open-there-unbound' };
+      }
+    }
+    return { kind: 'outside', pid: outside.pid, panel: outside.panel };
+  }
+
+  /** Q28: a live process Pitwall can neither bring forward nor hand off is never opened a second time. */
+  private warnOutside(id: string, live: { pid: number; panel?: boolean }): void {
+    this.logRoute(id, 'elsewhere', 'outside-terminal');
+    void vscode.window.showWarningMessage(outsideTerminalMessage(live.pid, live.panel));
+  }
+
   private async routeNow(
     req: { kind: HandoffKind; chats: ChatSession[]; folder?: string },
     options: { keepListFocus?: boolean }
@@ -278,19 +366,12 @@ export class ChatRouter implements vscode.Disposable {
         local.push({ chat, worktree: { ...worktree, path: this.deps.windowFolder() ?? worktree.path } });
         continue;
       }
-      const there = this.canHandOff(chat) ? await this.windowOpening(chat.harnessSessionId!) : undefined;
-      if (there) {
-        hand(there, chat.harnessSessionId!, 'open-there');
+      const live = await this.liveElsewhere(chat, worktree);
+      if (live?.kind === 'there') {
+        hand(live.folder, chat.harnessSessionId!, live.reason);
         continue;
       }
-      // Neither open here nor in another Pitwall window as far as Pitwall
-      // knows. A live process for it is this window's own panel whose tab
-      // Pitwall never bound (renamed, or a title two chats share), or one
-      // Pitwall doesn't own (a terminal the user started, another window).
-      // A second process on the session would fork it, so Pitwall never
-      // starts one: it brings this window's tab forward, hands off, or warns.
-      const outside = chat.harnessSessionId ? await this.deps.outsideTerminal?.(chat.harnessSessionId).catch(() => undefined) : undefined;
-      if (outside?.here) {
+      if (live?.kind === 'here') {
         if (await this.revealLive(chat, chat.harnessSessionId!)) {
           revealed++;
         } else {
@@ -298,23 +379,8 @@ export class ChatRouter implements vscode.Disposable {
         }
         continue;
       }
-      if (outside?.panel && this.canHandOff(chat)) {
-        // A panel runs in some editor window whose tab Pitwall never bound (a
-        // shared title, W4(b)). One window per folder (D35): its folder names
-        // the window. The window there brings its tab forward (`revealLive`),
-        // never a second process. This window's own panel was handled above,
-        // so a panel in this window's folder belongs to a second window on it
-        // (or its parent lookup failed): opening here would fork the session,
-        // so it keeps the warning below.
-        const folder = outside.cwd || ((await this.launchFolder(chat, worktree)) ?? worktree.path);
-        if (!this.isThisWindow(folder) && (await this.hasWindow(folder))) {
-          hand(folder, chat.harnessSessionId!, 'open-there-unbound');
-          continue;
-        }
-      }
-      if (outside !== undefined) {
-        this.logRoute(id, 'elsewhere', 'outside-terminal');
-        void vscode.window.showWarningMessage(outsideTerminalMessage(outside.pid, outside.panel));
+      if (live?.kind === 'outside') {
+        this.warnOutside(id, live);
         outsideTerminal++;
         continue;
       }
