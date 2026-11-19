@@ -140,6 +140,8 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
    * so a tab's place here finds its replacement.
    */
   private layout: vscode.Tab[][] = [];
+  /** Each Tab a re-sent model replaced, to the Tab it was paired with: `followHeldTab` walks it (live E12). */
+  private readonly successor = new WeakMap<vscode.Tab, vscode.Tab>();
   /** `pitwall.dev.traceTabs`: log every raw event and each bind decision. Off by default. */
   private tracing = false;
   /** Every Tab object (any kind) as of the last event, while tracing: tells a re-send from a plain group event. */
@@ -234,6 +236,23 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   endFirstVisit(tab: vscode.Tab): void {
     this.unvisited.delete(tab);
     this.visitStartedAt.delete(tab);
+  }
+
+  followHeldTab(tab: vscode.Tab): vscode.Tab | undefined {
+    const present = this.allTabs();
+    const seen = new Set<vscode.Tab>();
+    let current: vscode.Tab | undefined = tab;
+    while (current && !present.has(current) && !seen.has(current)) {
+      seen.add(current);
+      current = this.successor.get(current);
+    }
+    if (!current || !present.has(current)) {
+      return undefined;
+    }
+    if (current !== tab && this.tracing) {
+      this.log(`[Pitwall] trace hold follows re-sent tab ${this.placeOf(current)}`);
+    }
+    return current;
   }
 
   /**
@@ -936,6 +955,9 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       const sessionId = this.tabs.get(old);
       const replacement = pairs.get(old);
       const stamp = this.openedAt.get(old);
+      if (replacement) {
+        this.successor.set(old, replacement.tab);
+      }
       if (replacement && stamp) {
         this.openedAt.set(replacement.tab, stamp);
       }

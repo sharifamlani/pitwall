@@ -300,6 +300,14 @@ export interface NativeUiSurfaceTracker extends vscode.Disposable {
   isFirstVisitSinceLaunch?(tab: vscode.Tab): boolean;
   /** The Ctrl+↓/↑ hold on this tab finished (its retry fired or it let go): its first visit is over. */
   endFirstVisit?(tab: vscode.Tab): void;
+  /**
+   * The Tab object the editor has now for a tab the Ctrl+↓/↑ hold is on: the
+   * tab itself while it is present; after a re-sent tab model (Cursor
+   * replaces every Tab object), its replacement, paired as the bindings are;
+   * undefined once it closed or was left unpaired. Logs on the tab trace
+   * when it follows a replacement (live E12).
+   */
+  followHeldTab?(tab: vscode.Tab): vscode.Tab | undefined;
 }
 
 /** A session a tab may belong to, and the titles its tab can show (its agent's title, its row name). */
