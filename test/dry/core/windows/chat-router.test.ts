@@ -1357,6 +1357,96 @@ test('a live CLI process still gets the outside warning', async (t) => {
   assert.deepEqual(requestsFor(here.inbox, dir, w.other), [], 'no handOff');
 });
 
+test("a claimed open-there-unbound session whose live panel is not this window's child opens nothing and reports outside", async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  w.transcript(w.other, ID.b, [w.turn(ID.b, w.other)]);
+  // A multi-root window (or one the session's cwd followed into) holds the panel; the claimer is a second window on its folder.
+  const panel = { pid: 39032, panel: true, cwd: w.other };
+  const slowWarn = { ...FAST, warnMs: 60_000, expireMs: 120_000 };
+  const sender = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main, timing: slowWarn, windowsAt: [w.other], outsideTerminal: (id) => (id === ID.b ? panel : undefined) });
+  const asked: string[] = [];
+  const claimer = windowOn(t, w, dir, () => w.other, {
+    pid: 1002,
+    claims: w.other,
+    outsideTerminal: (id) => {
+      asked.push(id);
+      return id === ID.b ? panel : undefined;
+    },
+  });
+
+  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('Unbound B', ID.b, w.otherWt)] }), 'routed');
+  const [request] = await claimer.inbox.claimAll();
+  await claimer.router.runClaimed([request]);
+
+  assert.deepEqual(asked, [ID.b], 'the claimer asks its own guard');
+  assert.deepEqual(claimer.opened, [], 'nothing opened: no second process');
+  assert.deepEqual(await sender.inbox.outcome(w.other, request.nonce), { ok: false, error: 'outside' });
+  assert.deepEqual(claimer.routeLog, [`[Pitwall] route ${ID.b.slice(0, 8)} → elsewhere (outside-terminal)`]);
+  // The sender reads the outcome; the claimer's Q28 copy is the only warning (no "couldn't reach").
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.deepEqual(shownMessages(), [PANEL_OUTSIDE(39032)]);
+});
+
+test("a claimed session whose live panel is this window's child opens normally", async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  w.transcript(w.other, ID.b, [w.turn(ID.b, w.other)]);
+  const sender = windowOn(t, w, dir, () => w.main, {
+    pid: 1001,
+    claims: w.main,
+    windowsAt: [w.other],
+    outsideTerminal: (id) => (id === ID.b ? { pid: 39032, panel: true, cwd: w.other } : undefined),
+  });
+  const asked: string[] = [];
+  // The real owner: its panel is a child of its own extension host, so its guard finds no outsider.
+  const owner = windowOn(t, w, dir, () => w.other, {
+    pid: 1002,
+    claims: w.other,
+    outsideTerminal: (id) => void asked.push(id),
+  });
+
+  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('Unbound B', ID.b, w.otherWt)] }), 'routed');
+  const [request] = await owner.inbox.claimAll();
+  await owner.router.runClaimed([request]);
+
+  assert.deepEqual(asked, [ID.b], 'the claimer asks its own guard');
+  assert.deepEqual(owner.opened.map((entry) => [entry.chat, entry.path]), [['Unbound B', w.other]]);
+  assert.deepEqual(await sender.inbox.outcome(w.other, request.nonce), { ok: true });
+  assert.deepEqual(shownMessages(), []);
+});
+
+test("a claimed session open in the claimer's own terminal opens without asking the guard (a Pitwall terminal is no outsider)", async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  // open-there: the claimer's heartbeat lists the chat because its Pitwall terminal runs it (a CLI process, panel: false).
+  const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other, openIn: [{ folder: w.main, sessionIds: [ID.a] }] });
+  const asked: string[] = [];
+  const claimer = windowOn(t, w, dir, () => w.main, {
+    pid: 1002,
+    claims: w.main,
+    isOpenHere: (chat) => chat.harnessSessionId === ID.a,
+    openHere: async () => 'terminal',
+    outsideTerminal: (id) => {
+      asked.push(id);
+      return { pid: 4242, panel: false };
+    },
+  });
+
+  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('In a Pitwall terminal', ID.a, w.mainWt)] }), 'routed');
+  const [request] = await claimer.inbox.claimAll();
+  await claimer.router.runClaimed([request]);
+
+  assert.deepEqual(asked, [], 'open here: no process lookup on the claim path');
+  assert.deepEqual(claimer.opened.map((entry) => entry.chat), ['In a Pitwall terminal']);
+  assert.deepEqual(await sender.inbox.outcome(w.main, request.nonce), { ok: true });
+  assert.deepEqual(shownMessages(), []);
+});
+
 test('openAll with a terminal chat skips the tab wait for it, and a claimed one still reports ok', async (t) => {
   const w = world(t);
   const dir = tempDir(t);
