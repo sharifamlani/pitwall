@@ -3,12 +3,17 @@
  * Pitwall window (Q28, QA #52 C1). A terminal the user started is an outsider.
  * A harness panel whose process is a child of this extension host is this
  * window's own (Pitwall never bound its tab): it is not an outsider, so the
- * chat opens here. Any other panel runs in a window Pitwall cannot see.
+ * chat opens here. Any other panel runs in another window: the router hands
+ * it to the Pitwall window on its folder (`cwd`, D35) when that is another
+ * window, and warns otherwise (no window there, or a second window on this
+ * window's folder, where a local open would fork the session).
  */
 export interface LiveProcess {
   pid: number;
   /** Started from the harness's own editor panel, not a terminal. */
   panel: boolean;
+  /** The process's folder, from the harness's record, when it has one. */
+  cwd?: string;
 }
 
 export interface OutsideProcessDeps {
@@ -22,13 +27,14 @@ export interface OutsideProcessDeps {
 export async function outsideProcessOf(
   live: LiveProcess | undefined,
   deps: OutsideProcessDeps
-): Promise<{ pid: number; panel: boolean } | undefined> {
+): Promise<LiveProcess | undefined> {
   if (!live) {
     return undefined;
   }
+  const cwd = live.cwd ? { cwd: live.cwd } : {};
   if (!live.panel) {
-    return { pid: live.pid, panel: false };
+    return { pid: live.pid, panel: false, ...cwd };
   }
   const parent = await deps.parentPidOf(live.pid);
-  return parent === undefined || parent === deps.hostPid ? undefined : { pid: live.pid, panel: true };
+  return parent === undefined || parent === deps.hostPid ? undefined : { pid: live.pid, panel: true, ...cwd };
 }

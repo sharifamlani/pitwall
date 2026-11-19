@@ -50,6 +50,9 @@ export const outsideTerminalMessage = (pid: number, panel = false): string =>
     ? `That chat is already running in another window or terminal (pid ${pid}). Switch to it there.`
     : `That chat is already running in another terminal (pid ${pid}). Switch to it there.`;
 
+/** A claim's outcome error when the claimer's outside guard held a chat back and no other open failed (Q28). */
+const OUTSIDE_ERROR = 'outside';
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface ChatRouterDeps {
@@ -85,8 +88,11 @@ export interface ChatRouterDeps {
    * The pid of a live agent process running this session outside anything
    * Pitwall owns (a terminal the user started), if any (Q28). Asked only for a
    * chat that is not open here or in another Pitwall window: those are Pitwall's.
+   * A window that claimed a handoff asks it too, for each chat not open here.
+   * A panel's `cwd` names its window (D35): a panel tab Pitwall never bound
+   * (its title is shared, W4(b)) still routes there.
    */
-  outsideTerminal?: (sessionId: string) => Promise<{ pid: number; panel?: boolean } | undefined>;
+  outsideTerminal?: (sessionId: string) => Promise<{ pid: number; panel?: boolean; cwd?: string } | undefined>;
   /**
    * Open sessions one at a time, binding each new tab to its session (the tab
    * tracker's `openSerially`). Used for `openAll` and `sideBySide`; a single
@@ -262,6 +268,20 @@ export class ChatRouter implements vscode.Disposable {
       // is one Pitwall doesn't own (a terminal the user started). A second
       // process on the session would fork it, so Pitwall warns and opens nothing.
       const outside = chat.harnessSessionId ? await this.deps.outsideTerminal?.(chat.harnessSessionId).catch(() => undefined) : undefined;
+      if (outside?.panel && this.canHandOff(chat)) {
+        // A panel runs in some editor window whose tab Pitwall never bound (a
+        // shared title, W4(b)). One window per folder (D35): its folder names
+        // the window. Opening there makes the agent's UI re-send its open tab,
+        // never a second process. This window's own panel never gets here (it
+        // is no outsider), so a panel in this window's folder belongs to a
+        // second window on it: opening here would fork the session, so it
+        // keeps the warning below.
+        const folder = outside.cwd || ((await this.launchFolder(chat, worktree)) ?? worktree.path);
+        if (!this.isThisWindow(folder) && (await this.hasWindow(folder))) {
+          hand(folder, chat.harnessSessionId!, 'open-there-unbound');
+          continue;
+        }
+      }
       if (outside !== undefined) {
         this.logRoute(id, 'elsewhere', 'outside-terminal');
         void vscode.window.showWarningMessage(outsideTerminalMessage(outside.pid, outside.panel));
@@ -393,8 +413,23 @@ export class ChatRouter implements vscode.Disposable {
   private async openClaimedChats(req: HandoffRequest): Promise<HandoffOutcome> {
     await this.activateUi();
     const failed: string[] = [];
+    let outside = 0;
     await this.openChats(req.kind, req.sessionIds, async (sessionId) => {
       const chat = this.deps.chatForSession(sessionId);
+      // One agent process per session, on this side too: the sender routed an
+      // unbound panel by its folder, but the window holding it may not be this
+      // one (a multi-root window on the same folder, or a cwd that followed
+      // EnterWorktree). The request carries no per-chat reason, so every claimed
+      // chat is checked, as the sender's guard orders it: open here (its tab or
+      // Pitwall terminal) reveals it, with no process lookup; any other live
+      // process is not this window's and is never opened a second time (Q28).
+      const live = chat && this.deps.isOpenHere(chat) ? undefined : await this.deps.outsideTerminal?.(sessionId).catch(() => undefined);
+      if (live) {
+        this.logRoute(sessionId, 'elsewhere', 'outside-terminal');
+        void vscode.window.showWarningMessage(outsideTerminalMessage(live.pid, live.panel));
+        outside++;
+        return false;
+      }
       // The lookup that waits on nothing first; the awaited one (which can wait on the listing) only when it knows nothing.
       const quick = chat && this.deps.worktreeFor?.(chat, req.folder);
       if (chat) {
@@ -410,7 +445,10 @@ export class ChatRouter implements vscode.Disposable {
       }
       return opened;
     });
-    return failed.length === 0 ? { ok: true } : { ok: false, error: `could not open ${failed.join(', ')}` };
+    if (failed.length > 0) {
+      return { ok: false, error: `could not open ${failed.join(', ')}` };
+    }
+    return outside > 0 ? { ok: false, error: OUTSIDE_ERROR } : { ok: true };
   }
 
   /** A session this window has no row for yet: hand it straight to the agent's UI. */
@@ -446,6 +484,12 @@ export class ChatRouter implements vscode.Disposable {
   private isThisWindow(folder: string): boolean {
     const here = this.deps.windowFolder();
     return here !== undefined && samePath(here, folder);
+  }
+
+  /** Whether a live Pitwall window shows this folder (its heartbeat says so). */
+  private async hasWindow(folder: string): Promise<boolean> {
+    const windows = (await this.deps.services()?.registry?.windowsFor(folder).catch(() => [])) ?? [];
+    return windows.length > 0;
   }
 
   /** The folder of another window that has this session open, if any (its heartbeat lists it). */
@@ -588,7 +632,9 @@ export class ChatRouter implements vscode.Disposable {
         return;
       }
       if (outcome) {
-        if (!outcome.ok) {
+        // A claim held back by the claimer's outside guard already showed the
+        // Q28 copy there; "couldn't reach, click again" would be wrong.
+        if (!outcome.ok && outcome.error !== OUTSIDE_ERROR) {
           warn();
         }
         settled();

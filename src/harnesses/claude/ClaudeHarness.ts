@@ -175,11 +175,12 @@ export class ClaudeHarness implements HarnessAdapter {
    * The pid of the live process running a session, from the same
    * `~/.claude/sessions/*.json` read (`.key` files are never opened). A
    * terminal outside Pitwall and a panel in some window look alike here; the
-   * caller tells them apart by what Pitwall owns (Q28).
+   * caller tells them apart by what Pitwall owns (Q28). The record's `cwd`
+   * names the folder, and so the window (D35), of a panel Pitwall never bound.
    */
-  async liveProcessOf(sessionId: string): Promise<{ pid: number; panel: boolean } | undefined> {
+  async liveProcessOf(sessionId: string): Promise<{ pid: number; panel: boolean; cwd?: string } | undefined> {
     const state = (await this.sessionsFile.snapshot()).states.get(sessionId);
-    return state ? { pid: state.pid, panel: state.entrypoint === 'claude-vscode' } : undefined;
+    return state ? { pid: state.pid, panel: state.entrypoint === 'claude-vscode', ...(state.cwd ? { cwd: state.cwd } : {}) } : undefined;
   }
 
   /**
