@@ -552,6 +552,9 @@ export async function activate(context: vscode.ExtensionContext) {
   // claim's opens (I3).
   const afterSettledClaim = workspacesProvider.whenSettled().then(() => bounded(openedPass));
   sessionImporter.start(afterSettledClaim);
+  /** The importer's and discovery's first passes have started; before that, a refresh would only run early. */
+  let scansStarted = false;
+  void afterSettledClaim.then(() => (scansStarted = true));
 
   // Repos found from the agents' sessions (ADR 0019), after the list first
   // renders; activation never waits for a pass.
@@ -601,10 +604,14 @@ export async function activate(context: vscode.ExtensionContext) {
     isChatVisible,
     {
       log: logOperation,
-      // A live session in a folder the list doesn't have yet: one discovery pass, then the importer (Q31).
+      // A live session no row holds yet: one discovery pass (a new repo) and one import scan (a new
+      // session in a listed repo), Q31. Before their own first passes (after the first render and the
+      // first claim, E16/I3) those passes cover it, so nothing runs early.
       onUnlistedLive: () => {
-        repoDiscovery.wake();
-        sessionImporter.wake();
+        if (scansStarted) {
+          repoDiscovery.wake();
+          sessionImporter.wake();
+        }
       },
     }
   );

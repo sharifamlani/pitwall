@@ -618,7 +618,10 @@ export class SessionAttentionService {
     // Closed chats whose session the harness's live record lists are polled
     // too, for their rows and pop-ups; every other closed chat waits for the scan.
     const liveIds = await this.liveSessionIds(allChats);
-    this.askAboutUnlisted(liveIds, allChats);
+    // Discovery's own first pass covers whatever runs at activation.
+    if (!prime) {
+      this.askAboutUnlisted(liveIds, allChats);
+    }
     const closedLive = allChats.filter(
       (chat) => !activeIds.has(chat.id) && chat.harnessSessionId && liveIds.get(chat.harness)?.has(chat.harnessSessionId)
     );

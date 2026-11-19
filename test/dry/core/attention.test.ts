@@ -1629,6 +1629,7 @@ test('a live session in an unlisted folder asks discovery to refresh once per se
   const states: Record<string, HarnessLiveState> = { 's-new': busy() };
   const flow = popupFlow(storage, { live: () => live, states: () => states });
   await flow.service.poll(true);
+  assert.deepEqual(flow.unlisted, [], "the first pass leaves it to discovery's own first pass (nothing runs before the first render)");
   await flow.service.poll();
   await flow.service.poll();
   assert.deepEqual(flow.unlisted, [['s-new']], 'one refresh for it, however many ticks see it');
