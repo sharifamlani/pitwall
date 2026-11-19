@@ -1,6 +1,6 @@
 # Phase 4 scorecard (independent evaluator), release re-grade
 
-- **Date:** round 1 on 2026-11-18 (UTC 22:40–23:20), on `852c4c4`. Round 2 on 2026-11-19, on the release sha.
+- **Date:** round 1 on 2026-11-18 (UTC 22:40–23:20), on `852c4c4`. Round 2 on 2026-11-19 UTC, on the release sha.
 - **Code graded:** main **`3351749`** (Merge PR #56). Since round 1, these landed:
   - #53: docs and version 0.5.0, merged at `18580d8`;
   - #55: E8 terminal refocus, plus E6 claim-lookup logging, at `c650f7d`;

@@ -43,7 +43,7 @@ Also merged: #45 (v0.4.1, drive-letter case fix on Windows) and #49 (load-tolera
 - After a cold click, the "Open the other N chats" pick stays open but has no keyboard focus; the mouse works.
 - The drag checks (file onto a repo row, tab reorder) need a human hand and are not covered by automated tests.
 - Pop-ups still only cover chats you have open (Phase 5).
-- The first Ctrl+↓ after launch onto a panel tab Cursor restored loses list focus: Claude's webview loads and takes focus about 0.5 s after Pitwall's retry (E8 amended by Sharif; fix in v0.5.1).
+- The first Ctrl+↓ after launch onto a panel tab Cursor restored loses list focus: Claude's webview finishes loading and takes focus about 0.5 s after the key press, after Pitwall's 250 ms retry (E8 amended by Sharif; fix in v0.5.1).
 
 ## Follow-ups
 
