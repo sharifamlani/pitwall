@@ -1003,6 +1003,28 @@ test('E6: a window a handoff started opens its claimed chats without waiting on 
   ]);
   assert.equal(outcome, 'done');
   assert.deepEqual(wtWindow.opened.map((entry) => entry.path), [w.wt], 'opened in the worktree window');
+  assert.ok(wtWindow.routeLog.includes(`[Pitwall] claim lookup ${ID.a.slice(0, 8)} (no-wait)`), wtWindow.routeLog.join(' | '));
+});
+
+test('E6: the operations log says when a claim fell back to the awaited worktree lookup', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  w.transcript(w.wt, ID.a, [w.turn(ID.a, w.wt)]);
+  const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
+  const wtWindow = windowOn(t, w, dir, () => w.wt, { pid: 1002, claims: w.wt, worktreeFor: () => undefined });
+  await sender.router.route({ kind: 'open', chats: [w.chat('In worktree', ID.a, w.featWt)] });
+  await wtWindow.router.runClaimed(await wtWindow.inbox.claimAll());
+  assert.ok(wtWindow.routeLog.includes(`[Pitwall] claim lookup ${ID.a.slice(0, 8)} (awaited)`), wtWindow.routeLog.join(' | '));
+});
+
+test('E6: watching the inbox logs when the window began to claim', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const window = windowOn(t, w, dir, () => w.wt, { pid: 1002, claims: w.wt });
+  const watch = window.inbox.watch(() => undefined, { watchFs: false, backstopMs: Infinity });
+  t.after(() => watch.dispose());
+  assert.ok(window.logs.includes('[Pitwall] handoff watch started'), window.logs.join(' | '));
 });
 
 test('I2: a window that registers for the folder in time gets no retry', async (t) => {

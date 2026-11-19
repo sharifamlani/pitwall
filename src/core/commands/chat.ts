@@ -225,7 +225,7 @@ export function registerChatCommands(
       preserveFocus: keepListFocus,
       ...(refocus ? { afterTitle: refocus.afterTitle } : {}),
     });
-    refocus?.openReturned();
+    await refocus?.openReturned();
     selectChat(prepared, worktree);
     return terminal !== undefined;
   };
@@ -305,10 +305,19 @@ export function registerChatCommands(
           letGo();
         }
       },
-      /** An existing terminal is only shown and never calls back: nothing is left to hold. */
-      openReturned: () => {
-        if (!refocusedNow) {
-          letGo();
+      /**
+       * An existing terminal is only shown and never calls back. Showing it
+       * still moves focus to its tab (E8), so the list is refocused once, if
+       * nothing moved since the press, and nothing is left to hold.
+       */
+      openReturned: async (): Promise<void> => {
+        if (refocusedNow) {
+          return;
+        }
+        const refocus = stillHeld();
+        letGo();
+        if (refocus) {
+          await refocusList();
         }
       },
     };
