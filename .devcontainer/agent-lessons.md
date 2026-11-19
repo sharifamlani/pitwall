@@ -15,6 +15,8 @@ check enforces it.
 - A guard on one entry point protects none of the others: put it in one shared function and call
   it from every command, menu item and fallback that can start a process, with a test for each.
   (Pitwall QA on #71: Open in Terminal / Open in Claude UI bypassed the router's guard and forked.)
+- Remove each builder worktree as soon as its PR merges, and watch the package cache (`npm ci` in
+  many worktrees grew npm's cache to ~16 GB and filled the disk mid-walk). (Pitwall 2026-11-19.)
 
 ## Review (QA reads before reviewing)
 
