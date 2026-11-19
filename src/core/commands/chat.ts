@@ -22,6 +22,7 @@ import { samePath } from '../utils/paths';
 import { commandInDirectory } from '../services/terminalEvents';
 import { consumeKeepListFocus } from './navigation';
 import type { ChatRouter } from '../windows/ChatRouter';
+import type { JumpWalk } from '../windows/JumpWalk';
 import {
   commandRegistrar,
   defaultWorktreePath,
@@ -73,7 +74,19 @@ export interface ChatCommandDeps {
   removeChats: (chatIds: string[], options?: { rememberSession?: boolean }) => string[];
   refreshTree: () => void;
   /** The chat router (T3), once built: a row open lands in its folder's window. */
-  router?: () => Pick<ChatRouter, 'route'> | undefined;
+  router?: () => (Pick<ChatRouter, 'route'> & Partial<Pick<ChatRouter, 'launchFolder'>>) | undefined;
+  /** Every listed chat with this row status and when it entered it, oldest first (the jump list, Q38). */
+  statusList?: (status: 'needs' | 'working' | 'finished') => Array<{ chatId: string; since: number }>;
+  /** Why a waiting chat waits ("permission prompt"), for the jump list's meta. */
+  waitingFor?: (chatId: string) => string | undefined;
+  /** Whether this chat is in front of this window: Ctrl+Alt+0 and Next skip it (QA C3). */
+  inFront?: (chatId: string) => boolean;
+  /** The walk behind Next ▸ (Q40). */
+  jumpWalk?: Pick<JumpWalk, 'start' | 'next' | 'end'>;
+  /** This window's folder, to tell "this window" from "its own window" in the jump list. */
+  windowFolder?: () => string | undefined;
+  /** The Operations log. */
+  log?: (line: string) => void;
 }
 
 /** What the session commands give back: this window's open, for the router's local path. */
@@ -1195,24 +1208,108 @@ export function registerChatCommands(
     }
   });
 
-  // Jump to the listed session that has waited longest on you (Q30: open or
-  // not, in front or not). A routed open lands in its folder's window, which
-  // marks it seen and selects it there, so this window selects nothing; any
-  // other result ('here', and 'outside'/'gone' by design, Q48) marks it seen
-  // and selects its row here.
+  // Row 5.4: the bottom-bar counts, the jump list behind them, Ctrl+Alt+0 and Next ▸.
+  const NOBODY_WAITING = 'Nobody is waiting on you right now.';
+  const NOTHING_LEFT = 'Nothing left in this list.';
+  const id8 = (chat: ChatSession): string => (chat.harnessSessionId ?? chat.id).slice(0, 8);
+
+  /**
+   * Open a listed chat through the router (a routed open lands in its
+   * folder's window, which marks it seen and selects it there; any other
+   * result selects its row here). False when the chat or its folder is gone.
+   */
+  const jumpTo = async (chatId: string, position: number, total: number): Promise<boolean> => {
+    const chat = storageService.getChat(chatId);
+    const worktree = chat && harnessRegistry.has(chat.harness) && (await workspacesProvider.getWorktreeByIdAsync(chat.worktreeId));
+    if (!chat || !worktree) {
+      return false;
+    }
+    deps.log?.(`[Pitwall] jump ${id8(chat)} ${position}/${total}`);
+    const where = await openChatPrimary(chat, worktree);
+    if (where !== 'routed') {
+      activateChat(chat);
+    }
+    return true;
+  };
+
+  /** The needs-you chats a press here may open: every waiting one but the chat in front of this window (QA C3). */
+  const needsYouHere = (): { order: string[]; skip: Set<string> } => {
+    const order = sessionsNeedingYou();
+    return { order, skip: new Set(order.filter((chatId) => deps.inFront?.(chatId))) };
+  };
+
+  // Ctrl+Alt+0 / Ctrl+Alt+N (Q39): the needs-you chat that has waited longest
+  // across all sessions, never a finished one, never the chat in front of this
+  // window. It starts the walk Next ▸ continues (Q40).
   register('pitwall.openNextSessionNeedingYou', async () => {
-    for (const chatId of sessionsNeedingYou()) {
-      const chat = storageService.getChat(chatId);
-      const worktree = chat && harnessRegistry.has(chat.harness) && (await workspacesProvider.getWorktreeByIdAsync(chat.worktreeId));
-      if (chat && worktree) {
-        const where = await openChatPrimary(chat, worktree);
-        if (where !== 'routed') {
-          activateChat(chat);
-        }
+    const { order, skip } = needsYouHere();
+    for (const [index, chatId] of order.entries()) {
+      if (!skip.has(chatId) && (await jumpTo(chatId, index + 1, order.length))) {
+        await deps.jumpWalk?.start(order, chatId);
         return;
       }
     }
-    vscode.window.showInformationMessage('No session is waiting for you.');
+    vscode.window.showInformationMessage(NOBODY_WAITING);
+  });
+
+  // Next ▸ (Q40): the next needs-you session in the list's order after the last one jumped to.
+  register('pitwall.jumpNext', async () => {
+    const walk = deps.jumpWalk;
+    for (let attempts = 0; walk && attempts < 50; attempts++) {
+      const { order, skip } = needsYouHere();
+      const chatId = await walk.next(order, skip);
+      if (!chatId) {
+        break;
+      }
+      if (await jumpTo(chatId, order.indexOf(chatId) + 1, order.length)) {
+        return;
+      }
+      skip.add(chatId);
+    }
+    vscode.window.showInformationMessage(NOTHING_LEFT);
+  });
+
+  // A click on a bottom-bar count (Q38): the chats of that status, longest first.
+  register('pitwall.showStatusList', async (status: 'needs' | 'working' | 'finished' = 'needs') => {
+    const entries = (deps.statusList?.(status) ?? []).filter((entry) => storageService.getChat(entry.chatId));
+    if (entries.length === 0) {
+      vscode.window.showInformationMessage(NOTHING_LEFT);
+      return;
+    }
+    const heading = { needs: 'WAITING ON YOU, LONGEST FIRST', working: 'WORKING', finished: 'FINISHED' }[status];
+    const noun = { needs: 'need you', working: 'working', finished: 'finished' }[status];
+    const windowFolder = deps.windowFolder?.();
+    const router = deps.router?.();
+    const items: Array<vscode.QuickPickItem & { chatId?: string }> = [{ label: heading, kind: vscode.QuickPickItemKind.Separator }];
+    for (const { chatId } of entries) {
+      const chat = storageService.getChat(chatId)!;
+      const worktree = await workspacesProvider.getWorktreeByIdAsync(chat.worktreeId);
+      const folder = (worktree && ((await router?.launchFolder?.(chat, worktree).catch(() => undefined)) ?? worktree.path)) || undefined;
+      const here = Boolean(windowFolder && folder && samePath(windowFolder, folder));
+      const repo = worktree && storageService.getRepository(worktree.repoId)?.name;
+      const parts = [
+        repo ?? 'Unknown',
+        `⎇ ${worktree ? (worktree.branch ?? worktree.name) : '?'}`,
+        here ? 'this window' : 'its own window',
+        status === 'needs' ? deps.waitingFor?.(chatId) : undefined,
+      ];
+      items.push({ label: `● ${chat.name}`, description: parts.filter(Boolean).join(' · '), chatId });
+    }
+    const picked = await vscode.window.showQuickPick(items, {
+      placeHolder: `${entries.length} ${noun}: pick one to go to it (Enter = top)`,
+      matchOnDescription: true,
+    });
+    if (!picked?.chatId) {
+      return;
+    }
+    const order = entries.map((entry) => entry.chatId);
+    if (await jumpTo(picked.chatId, order.indexOf(picked.chatId) + 1, order.length)) {
+      if (status === 'needs') {
+        await deps.jumpWalk?.start(order, picked.chatId);
+      }
+    } else {
+      vscode.window.showInformationMessage(NOTHING_LEFT);
+    }
   });
 
   register('pitwall.showStarredSessions', async () => {

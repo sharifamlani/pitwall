@@ -279,3 +279,14 @@ test('a repo tooltip names its keys only for positions 1–9', async (t) => {
     }
   }
 });
+
+test('Ctrl+Alt+0 and Ctrl+Alt+N run the longest-wait session command; the list and Next ▸ commands are declared, Next ▸ off the palette (Q39, Q40)', async (t) => {
+  const { calls } = setup(t);
+  await runCommand('pitwall.openLongestWaiting');
+  assert.deepEqual(calls.map((call) => call.id), ['pitwall.openNextSessionNeedingYou']);
+  for (const command of ['pitwall.showStatusList', 'pitwall.jumpNext']) {
+    assert.ok(commandIds.has(command), `${command} is declared`);
+  }
+  const palette = (pkg.contributes.menus as { commandPalette?: { command: string; when?: string }[] }).commandPalette ?? [];
+  assert.ok(palette.some((entry) => entry.command === 'pitwall.jumpNext' && entry.when === 'false'));
+});

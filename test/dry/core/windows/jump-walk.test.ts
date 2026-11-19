@@ -4,6 +4,7 @@
  */
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { JUMP_FILE, JumpWalk, WALK_EXPIRES_MS } from '../../../../src/core/windows/JumpWalk';
@@ -75,4 +76,20 @@ test("onDidChange fires on a start, on another window's change seen by poll, and
   await a.end();
   await b.poll();
   assert.equal(fired, 2);
+});
+
+test('the dump script reads the walk file and fails on a key outside v, ids, last, at', async (t) => {
+  const dir = tempDir(t);
+  await new JumpWalk(dir).start(['5f0c3d4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f', 'b'], 'b');
+  const script = path.resolve(__dirname, '..', '..', '..', 'scripts', 'dump-pitwall-windows.mjs');
+  const run = () => spawnSync(process.execPath, [script, '--dir', dir, '--check-privacy'], { encoding: 'utf8' });
+  const ok = run();
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  assert.match(ok.stdout, /jump walk: 2 ids/);
+  assert.match(ok.stdout, /privacy ok: 1 files checked/);
+  const file = path.join(dir, JUMP_FILE);
+  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf-8')), title: 'a chat title' }));
+  const leak = run();
+  assert.equal(leak.status, 1, leak.stdout);
+  assert.match(leak.stdout, /keys outside the jump allow-list: title/);
 });

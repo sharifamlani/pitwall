@@ -17,7 +17,7 @@
  * --check-privacy also checks that every file holds only its allowed keys
  * (E17, Phase 5 E14): window record `pid, folder, beatAt, openSessionIds,
  * front, focused`; request `v, kind, sessionIds, folder, at, nonce`; outcome
- * `ok, error, at`; clipboard `path, cut, at`; state dump `version, pid,
+ * `ok, error, at`; clipboard `path, cut, at`; jump walk `v, ids, last, at`; state dump `version, pid,
  * windowFolder, tabGroups, repos, statuses, counts`. Lock files (handoff and
  * pop-up, `pitwall-popups/<sessionId>.<needs|finished>.<stamp>.lock`) must be
  * empty, and no other file may be there.
@@ -37,6 +37,7 @@ const ALLOWED = {
   request: ['v', 'kind', 'sessionIds', 'folder', 'at', 'nonce'],
   outcome: ['ok', 'error', 'at'],
   clipboard: ['path', 'cut', 'at'],
+  jump: ['v', 'ids', 'last', 'at'],
   dump: ['version', 'pid', 'windowFolder', 'tabGroups', 'repos', 'statuses', 'counts'],
 };
 /** A pop-up lock (Phase 5, Q32): `<sessionId>.<needs|finished>.<stamp>.lock`, always empty. */
@@ -197,6 +198,14 @@ if (requestCount === 0) console.log('  (none)');
 const clipboard = path.join(dir, 'pitwall-clipboard.json');
 if (args.checkPrivacy && fs.existsSync(clipboard)) {
   checkKeys(clipboard, 'clipboard', readJson(clipboard));
+}
+
+// The Next walk (Phase 5 Task 5), when one is running.
+const jump = path.join(dir, 'pitwall-jump.json');
+if (fs.existsSync(jump)) {
+  const walk = readJson(jump);
+  console.log(`jump walk: ${walk?.ids?.length ?? '?'} ids, last ${String(walk?.last ?? '?').slice(0, 8)}, age=${Math.round((Date.now() - (walk?.at ?? 0)) / 1000)}s`);
+  if (args.checkPrivacy) checkKeys(jump, 'jump', walk);
 }
 
 // Pop-up locks (Phase 5): empty files whose names hold a session ID, a kind and a stamp.

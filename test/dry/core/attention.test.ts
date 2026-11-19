@@ -556,7 +556,7 @@ test("replay of the tester's flow: a prompt that appears while typing in the cha
 
   await runCommand('pitwall.openNextSessionNeedingYou');
   assert.deepEqual(flow.activated, [flow.chatId], 'Go to Next finds it');
-  assert.ok(!shown('No session is waiting for you.'));
+  assert.ok(!shown('Nobody is waiting on you right now.'));
   assert.deepEqual(toasts(), [], 'the prompt appeared while the user was typing in it: no toast');
 });
 
@@ -577,7 +577,7 @@ test('after a reload, an existing wait is listed and Go to Next Session That Nee
   }
   await runCommand('pitwall.openNextSessionNeedingYou');
   assert.deepEqual(flow.activated, [flow.chatId], 'Go to Next finds it');
-  assert.ok(!shown('No session is waiting for you.'));
+  assert.ok(!shown('Nobody is waiting on you right now.'));
   assert.deepEqual(toasts(), [], 'zero toasts, even past the cooldown');
 });
 

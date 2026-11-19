@@ -52,8 +52,10 @@ Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pit
 | **Pitwall: Open in Codex UI** | Open the selected Codex session in the Codex panel |
 | **Pitwall: Import Existing Sessions…** | Add sessions the agents already hold for a worktree |
 | **Pitwall: Starred Sessions…** | Pick one of your starred sessions to open |
-| **Pitwall: Go to Next Session That Needs You** | Open the session that has waited longest since it finished or asked you something |
+| **Pitwall: Go to Next Session That Needs You** | Open the session that has been waiting on you longest, leaving out the one in front of this window |
 | **Pitwall: Go to the Session Waiting Longest** | The same, on `Ctrl+Alt+0` and `Ctrl+Alt+N` |
+| **Pitwall: List the Sessions That Need You** | The jump list behind the bottom-bar `need you` count: pick one to go to it |
+| **Pitwall: Continue to the Next Session That Needs You** | What `Next ▸` in the bottom bar runs: after a jump, the next waiting session in the list's order |
 | **Pitwall: Go to Repo 1** | Reveal and select repo 1 in the list; again opens its next session (key only) |
 | **Pitwall: Go to Repo 2** | Reveal and select repo 2 in the list; again opens its next session (key only) |
 | **Pitwall: Go to Repo 3** | Reveal and select repo 3 in the list; again opens its next session (key only) |

@@ -11,7 +11,15 @@ import { assertNoLongBlock, stub, tempDir, waitFor } from '../../support';
 
 beforeEach(() => stub.__reset());
 
-type Item = (typeof stub.__statusBarItems)[number];
+interface Item {
+  alignment: number;
+  priority?: number;
+  text: string;
+  tooltip?: string;
+  command?: unknown;
+  shown: boolean;
+  disposed: boolean;
+}
 
 function setup(t: { after(fn: () => void): void }, order: string[] = []) {
   const emitter = new vscode.EventEmitter<void>();
@@ -19,7 +27,7 @@ function setup(t: { after(fn: () => void): void }, order: string[] = []) {
   const walk = new JumpWalk(tempDir(t));
   const bar = new AttentionStatusBar({ counts: () => state.counts, onDidChange: emitter.event, order: () => state.order }, walk);
   t.after(() => bar.dispose());
-  const items = () => stub.__statusBarItems as Item[];
+  const items = () => stub.__statusBarItems as unknown as Item[];
   const byText = (text: string) => items().find((item) => item.shown && item.text.includes(text));
   const shownTexts = () => items().filter((item) => item.shown).map((item) => item.text);
   return { emitter, state, walk, bar, items, byText, shownTexts };
@@ -35,7 +43,7 @@ test('three items show "{n} need you", "{n} working", "{n} finished" and hide at
   assert.deepEqual(f.shownTexts(), ['$(bell) 2 need you', '$(circle-filled) 1 working', '$(circle-filled) 3 finished']);
   for (const item of f.items()) {
     assert.equal(item.alignment, 1, 'left aligned');
-    assert.ok((item.priority as number) < 100, 'after the repo item (priority 100)');
+    assert.ok((item.priority ?? 100) < 100, 'after the repo item (priority 100)');
   }
 
   f.state.counts = { needs: 0, working: 1, finished: 0 };
