@@ -563,7 +563,8 @@ export async function activate(context: vscode.ExtensionContext) {
   sessionImporter.start(afterSettledClaim);
   /** The importer's and discovery's first passes have started; before that, a refresh would only run early. */
   let scansStarted = false;
-  void afterSettledClaim.then(() => (scansStarted = true));
+  /** A live session no row holds was asked about before the first passes started; they run it once they do. */
+  let unlistedBeforeScans = false;
 
   // Repos found from the agents' sessions (ADR 0019), after the list first
   // renders; activation never waits for a pass.
@@ -578,6 +579,19 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(repoDiscovery);
   repoDiscovery.start(afterSettledClaim);
+  // After the passes' own starts, so the asked-for discovery pass is not
+  // dropped before discovery has started. The attention service asks about a
+  // session once per window, so an ask that came before this would be lost:
+  // a hidden list's first import pass skips a full scan, and a handoff's
+  // claim can hold the passes for CLAIM_FIRST_MAX_MS past the first ticks.
+  void afterSettledClaim.then(() => {
+    scansStarted = true;
+    if (unlistedBeforeScans) {
+      unlistedBeforeScans = false;
+      repoDiscovery.wake();
+      sessionImporter.refresh();
+    }
+  });
 
   /** Whether the chat's terminal or native-UI tab is the one in front of the user. */
   const isChatVisible = (chatId: string): boolean => chatVisibility.isChatVisible(visibilitySources, chatId);
@@ -671,11 +685,14 @@ export async function activate(context: vscode.ExtensionContext) {
       log: logOperation,
       // A live session no row holds yet, once its first turn has started: one discovery pass (a new
       // repo) and one full import scan (a new session in a listed repo), Q31. Before their own first
-      // passes (after the first render and the first claim, E16/I3) those passes cover it.
+      // passes start (after the first render and the first claim, E16/I3) the ask is kept, and they
+      // run it once when they start.
       onUnlistedLive: () => {
         if (scansStarted) {
           repoDiscovery.wake();
           sessionImporter.refresh();
+        } else {
+          unlistedBeforeScans = true;
         }
       },
     }

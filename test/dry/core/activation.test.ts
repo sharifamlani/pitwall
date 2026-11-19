@@ -533,7 +533,27 @@ function watchFirstScans(t: TestContext) {
       return rows;
     };
   };
-  return { order, notified, drain, advance, runUntil, markRender };
+  /**
+   * Finish the turn of a session the importer listed. The listed chat is
+   * seen at its import, and a turn that ends in that same millisecond is no
+   * news (endedAt > seenAt), so wait the clock past it first.
+   */
+  const finishAfterImport = async (storedChats: () => ChatSession[], sessionId: string, finish: () => void) => {
+    const seenAt = storedChats().find((chat) => chat.harnessSessionId === sessionId)!.seenAt ?? 0;
+    while (Date.now() <= seenAt) await new Promise((resolve) => setImmediate(resolve));
+    finish();
+  };
+  /**
+   * Deactivate now and let in-flight git and file work end on the real
+   * clock, before the test's folders are deleted: the folders' cleanup hooks
+   * were registered first, so they run before the activation's own.
+   */
+  const stop = async (context: { subscriptions: { dispose(): unknown }[] }) => {
+    context.subscriptions.splice(0).forEach((subscription) => subscription.dispose());
+    t.mock.timers.reset();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  };
+  return { order, notified, drain, advance, runUntil, markRender, finishAfterImport, stop };
 }
 
 /**
@@ -588,9 +608,56 @@ test('with the Pitwall view never shown, the first scans start after HIDDEN_LIST
   // The attention tick sees the running session no row holds and asks the importer for a full pass (Q31).
   await scans.runUntil(() => f.storedChats().some((chat) => chat.harnessSessionId === sessionId), 'the importer to list the live session');
   // The chat turn finishes unseen: busy, then idle.
-  session.finish();
+  await scans.finishAfterImport(f.storedChats, sessionId, session.finish);
   await scans.runUntil(() => scans.notified.includes(`finished ${sessionId}`), 'the finished pop-up to reach NotificationService.notify');
   assert.ok(!scans.order.includes('render'), 'no view was opened');
+  await scans.stop(f.context);
+});
+
+test('a live session asked about before the first scans start, in a hidden window a handoff started, is listed once they do and pops up', async (t) => {
+  // The view stays hidden, and a handoff's open hangs, so the first scans
+  // wait out CLAIM_FIRST_MAX_MS after the hidden fallback (about 6 s in).
+  const lab = labFolder(t);
+  const f = await seededActivation(t, [], {}, [lab.repository]);
+  const storage = tempDir(t, 'pitwall-storage-');
+  (f.context as { globalStorageUri?: vscode.Uri }).globalStorageUri = vscode.Uri.file(storage);
+  (stub.workspace as { workspaceFolders: unknown[] }).workspaceFolders = [{ uri: vscode.Uri.file(lab.repository.rootPath), name: 'lab', index: 0 }];
+  const { HandoffInbox } = await import('../../../src/core/windows/HandoffInbox');
+  await new HandoffInbox(storage, { pid: 1, folder: undefined }, Date.now, () => undefined).send(lab.repository.rootPath, {
+    kind: 'open',
+    sessionIds: ['0a0a0a0a-0000-4000-8000-000000000001'],
+  });
+  const { ChatRouter } = await import('../../../src/core/windows/ChatRouter');
+  const runClaimed = ChatRouter.prototype.runClaimed;
+  let claimed = false;
+  ChatRouter.prototype.runClaimed = () => {
+    claimed = true;
+    return new Promise<void>(() => undefined);
+  };
+  t.after(() => (ChatRouter.prototype.runClaimed = runClaimed));
+  const { SessionAttentionService } = await import('../../../src/core/services/SessionAttentionService');
+  const asked: string[] = [];
+  const ask = (SessionAttentionService.prototype as unknown as Record<string, (...args: unknown[]) => Promise<void>>).askAboutUnlisted;
+  (SessionAttentionService.prototype as unknown as Record<string, unknown>).askAboutUnlisted = async function (this: unknown, ...args: unknown[]) {
+    await ask.apply(this, args);
+    asked.push(...[...(this as { askedUnlisted: Set<string> }).askedUnlisted].map((key) => key.split(' ')[1]));
+  };
+  t.after(() => ((SessionAttentionService.prototype as unknown as Record<string, unknown>).askAboutUnlisted = ask));
+  const sessionId = '9a7c3e4f-5d6b-4c8a-8e1f-2a3b4c5d6e7f';
+  const session = await liveUnlistedSession(f.claudeDir, lab.repository.rootPath, sessionId);
+  const scans = watchFirstScans(t);
+
+  await f.start();
+  // Past the hidden fallback the claim takes the handoff and its open hangs;
+  // the attention tick asks about the unlisted session before the scans start.
+  await scans.runUntil(() => claimed && asked.includes(sessionId), 'the handoff claim and the ask about the unlisted session', 5_900);
+  assert.deepEqual([...scans.order], [], 'asked before the first scans start');
+
+  await scans.runUntil(() => scans.order.length === 2, 'the first scans, after CLAIM_FIRST_MAX_MS');
+  await scans.runUntil(() => f.storedChats().some((chat) => chat.harnessSessionId === sessionId), 'the importer to list the session it was asked about');
+  await scans.finishAfterImport(f.storedChats, sessionId, session.finish);
+  await scans.runUntil(() => scans.notified.includes(`finished ${sessionId}`), 'the finished pop-up to reach NotificationService.notify');
+  await scans.stop(f.context);
 });
 
 test('with the Pitwall view shown, the first scans still start only after its first render (E16)', async (t) => {
@@ -608,6 +675,7 @@ test('with the Pitwall view shown, the first scans still start only after its fi
   await scans.advance(1);
   assert.equal(scans.order[0], 'render', 'the first render comes first');
   assert.deepEqual([...scans.order.slice(1)].sort(), ['discovery', 'importer'], 'then both first scans, well before the hidden fallback');
+  await scans.stop(f.context);
 });
 
 test('a window deactivated before HIDDEN_LIST_START_MS never starts its first scans', async (t) => {
@@ -623,6 +691,7 @@ test('a window deactivated before HIDDEN_LIST_START_MS never starts its first sc
   await scans.advance(10 * HIDDEN_LIST_START_MS);
   assert.deepEqual([...scans.order], [], 'no scan starts after deactivation');
   assert.deepEqual([...scans.notified], [], 'and nothing pops up');
+  await scans.stop(f.context);
 });
 
 test('stored repos render before discovery finishes', async (t) => {
