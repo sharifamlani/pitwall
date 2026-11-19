@@ -462,6 +462,14 @@ export interface HarnessAdapter {
   ): Promise<HarnessSession[]>;
 
   /**
+   * One session by ID, read from its own record alone (Claude: its one
+   * transcript), so a new live session can be listed without a full scan.
+   * Null while the record does not exist or does not place the session in a
+   * folder yet. Undefined (not implemented) sends callers to a full scan.
+   */
+  getSession?(sessionId: string): Promise<HarnessSession | null>;
+
+  /**
    * Live state for specific sessions, when the harness has a cheaper way to
    * answer than a full discovery pass. The attention tick prefers this.
    * `cwd` scopes a harness whose record lookup depends on the working

@@ -591,6 +591,8 @@ export async function activate(context: vscode.ExtensionContext) {
   let scansStarted = false;
   /** A live session no row holds was asked about before the first passes started; they run it once they do. */
   let unlistedBeforeScans = false;
+  /** Live sessions in folders no listed repo holds that already woke discovery: once each per window (Q31, N5). */
+  const discoveryAsked = new Set<string>();
 
   // Repos found from the agents' sessions (ADR 0019), after the list first
   // renders; activation never waits for a pass.
@@ -711,17 +713,32 @@ export async function activate(context: vscode.ExtensionContext) {
     isChatVisible,
     {
       log: logOperation,
-      // A live session no row holds yet, once its first turn has started: one discovery pass (a new
-      // repo) and one full import scan (a new session in a listed repo), Q31. Before their own first
-      // passes start (after the first render and the first claim, E16/I3) the ask is kept, and they
-      // run it once when they start.
-      onUnlistedLive: () => {
-        if (scansStarted) {
-          repoDiscovery.wake();
-          sessionImporter.refresh();
-        } else {
+      // A live session no row holds yet, once its turn has started (Q31): its own transcript is read
+      // and imported by itself, list hidden or not (new-chat pickup, 12f645db). One with nothing to
+      // import yet is asked about again with backoff; one in a folder no listed repo holds wakes
+      // discovery once (a new repo) and is asked again so it lists once discovery adds the repo; an
+      // adapter that can't read one session gets the full import scan as before. Before the first
+      // passes start (after the first render and the first claim, E16/I3) the ask is kept, they run
+      // it once when they start, and the attention service asks again.
+      onUnlistedLive: async (sessionIds) => {
+        if (!scansStarted) {
           unlistedBeforeScans = true;
+          return sessionIds;
         }
+        const result = await sessionImporter.importLive(sessionIds);
+        const newRepos = result.unplaced.filter((id) => !discoveryAsked.has(id));
+        newRepos.forEach((id) => discoveryAsked.add(id));
+        if (result.unsupported.length > 0 || newRepos.length > 0) {
+          repoDiscovery.wake();
+        }
+        if (result.unsupported.length > 0) {
+          sessionImporter.refresh();
+        }
+        if (result.retry.length < sessionIds.length - result.unplaced.length - result.unsupported.length) {
+          // Something was listed: track its turn now, not on the next tick.
+          void attentionService.poll();
+        }
+        return [...result.retry, ...result.unplaced];
       },
     }
   );

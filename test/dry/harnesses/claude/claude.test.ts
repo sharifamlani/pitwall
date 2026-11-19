@@ -71,6 +71,23 @@ test("a session the user renamed in Claude is named by its custom title, the tab
   assert.deepEqual([listed.summary, listed.userTitled], ['Main', true], 'the listing the importer and tab adoption read carries it');
 });
 
+test('getSession reads one session from its own transcript: null until a line places it, then the listing shape (new-chat pickup)', async (t) => {
+  const profile = claudeProfile(t);
+  const repo = profile.dir('repo');
+  const harness = new ClaudeHarness();
+  assert.equal(await harness.getSession(SESSION_ID), null, 'no transcript yet');
+  // A line with no cwd (Claude's file-history snapshot comes first) does not place it.
+  const file = profile.write(SESSION_ID, repo, []);
+  fs.writeFileSync(file, `${JSON.stringify({ type: 'file-history-snapshot', sessionId: SESSION_ID })}\n`);
+  assert.equal(await harness.getSession(SESSION_ID), null, 'nothing places it yet');
+  profile.write(SESSION_ID, repo, [entry.user('Write a short story about a night ferry', '2026-11-19T22:31:29.000Z')]);
+  const session = await harness.getSession(SESSION_ID);
+  assert.equal(session?.cwd, repo);
+  assert.equal(session?.summary, 'Write a short story about a night ferry');
+  assert.equal(session?.lastActivity, Date.parse('2026-11-19T22:31:29.000Z'));
+  assert.deepEqual(session, (await harness.listSessionsForWorktree(repo))[0], 'the same session a full listing gives');
+});
+
 test('names and previews come only from prompts the user typed', async (t) => {
   const profile = claudeProfile(t);
   const repo = profile.dir('repo');

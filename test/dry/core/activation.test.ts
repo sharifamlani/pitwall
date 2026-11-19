@@ -614,6 +614,112 @@ test('with the Pitwall view never shown, the first scans start after HIDDEN_LIST
   await scans.stop(f.context);
 });
 
+test('with the Pitwall view hidden for the whole life of the window, a brand-new chat whose transcript lands after its turn starts is listed within 5 s and pops up once (12f645db)', async (t) => {
+  const lab = labFolder(t);
+  const f = await seededActivation(t, [], {}, [lab.repository]);
+  const { ClaudeSessionService } = await import('../../../src/harnesses/claude/ClaudeSessionService');
+  const findForRepository = ClaudeSessionService.prototype.findSessionsForRepository;
+  let fullScans = 0;
+  ClaudeSessionService.prototype.findSessionsForRepository = function (this: InstanceType<typeof ClaudeSessionService>, ...args: Parameters<typeof findForRepository>) {
+    fullScans++;
+    return findForRepository.apply(this, args);
+  };
+  t.after(() => (ClaudeSessionService.prototype.findSessionsForRepository = findForRepository));
+  const { SessionAttentionService } = await import('../../../src/core/services/SessionAttentionService');
+  const asks: string[] = [];
+  const attentionProto = SessionAttentionService.prototype as unknown as Record<string, unknown>;
+  const ask = attentionProto.askAboutUnlisted as (...args: unknown[]) => Promise<void>;
+  attentionProto.askAboutUnlisted = async function (this: { askedUnlisted: Set<string> }, ...args: unknown[]) {
+    await ask.apply(this, args);
+    asks.push(...this.askedUnlisted);
+  };
+  t.after(() => (attentionProto.askAboutUnlisted = ask));
+  // The importer's work in flight (a scan, or a targeted import), so the transcript can land after the first ask's work ends.
+  let importing = 0;
+  const importerProto = SessionImportService.prototype as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+  for (const name of ['scan', 'importLive']) {
+    const original = importerProto[name];
+    if (!original) continue;
+    importerProto[name] = async function (this: unknown, ...args: unknown[]) {
+      importing++;
+      try {
+        return await original.apply(this, args);
+      } finally {
+        importing--;
+      }
+    };
+    t.after(() => (importerProto[name] = original));
+  }
+  const scans = watchFirstScans(t);
+  await f.start();
+  await scans.advance(HIDDEN_LIST_START_MS);
+  await scans.runUntil(() => scans.order.length === 2, 'the first scans, view hidden');
+  await scans.advance(8_000);
+
+  // Claude Code: Open in New Tab, then the first prompt. The live record says busy
+  // before Claude writes the transcript, so the first ask finds nothing to import.
+  const sessionId = '12f645db-c23e-4bfa-990a-9e8939f69777';
+  const cwd = lab.repository.rootPath;
+  const sessions = path.join(f.claudeDir, 'sessions');
+  fs.mkdirSync(sessions, { recursive: true });
+  const domain = await localPidDomain();
+  const record = (status: string) =>
+    fs.writeFileSync(
+      path.join(sessions, `${process.pid}.json`),
+      JSON.stringify({ pid: process.pid, sessionId, pidDomain: domain, cwd, status, statusUpdatedAt: Date.now(), entrypoint: 'claude-vscode' })
+    );
+  const line = (entry: object) => `${JSON.stringify({ timestamp: new Date().toISOString(), cwd, sessionId, ...entry })}\n`;
+  const transcript = path.join(f.claudeDir, 'projects', encodeClaudeProjectPath(cwd), `${sessionId}.jsonl`);
+  const scansBefore = fullScans;
+  record('busy');
+  let elapsed = 0;
+  /** Let `ms` of real time pass for git and file work, without the mocked timers. */
+  const realPause = async (ms: number) => {
+    const until = performance.now() + ms;
+    while (performance.now() < until) await new Promise((resolve) => setImmediate(resolve));
+  };
+  for (; !asks.some((key) => key.endsWith(sessionId)); elapsed += 50) {
+    assert.ok(elapsed <= 8_000, 'the window asks about the new session as its turn starts (within two ticks)');
+    await scans.advance(50);
+    await realPause(5);
+  }
+  // Let that ask's work (a full scan, or a read of the one transcript) finish before the transcript lands.
+  await realPause(20);
+  for (let waited = 0; importing > 0; waited++) {
+    assert.ok(waited < 1_000, "the first ask's import work ends");
+    await realPause(10);
+  }
+  fs.mkdirSync(path.dirname(transcript), { recursive: true });
+  fs.writeFileSync(transcript, line({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'Write a short story about a night ferry' }] } }));
+  const listed = () => f.storedChats().some((chat) => chat.harnessSessionId === sessionId);
+  for (let spins = 0; !listed(); spins++) {
+    assert.ok(elapsed <= 5_000, `listed within 5 s of the turn start, view hidden (${elapsed} ms)`);
+    assert.ok(spins < 3_000, 'the import work ends');
+    // The clock moves only while the importer is idle: its real git and file work takes
+    // machine time, which a loaded test run must not charge to the 5 s.
+    if (importing > 0) {
+      await realPause(5);
+      continue;
+    }
+    await scans.advance(50);
+    elapsed += 50;
+    await realPause(5);
+  }
+  assert.equal(fullScans, scansBefore, 'picked up without a full scan of every transcript');
+
+  // The 15 s turn ends unseen: exactly one finished pop-up.
+  await scans.advance(Math.max(0, 15_000 - elapsed));
+  await scans.finishAfterImport(f.storedChats, sessionId, () => {
+    fs.appendFileSync(transcript, line({ type: 'assistant', message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: 'The ferry left at midnight.' }] } }));
+    record('idle');
+  });
+  await scans.runUntil(() => scans.notified.includes(`finished ${sessionId}`), 'the finished pop-up');
+  await scans.advance(20_000);
+  assert.equal(scans.notified.filter((entry) => entry === `finished ${sessionId}`).length, 1, 'one finished pop-up');
+  assert.ok(!scans.order.includes('render'), 'the view was never opened');
+  await scans.stop(f.context);
+});
+
 test('a live session asked about before the first scans start, in a hidden window a handoff started, is listed once they do and pops up', async (t) => {
   // The view stays hidden, and a handoff's open hangs, so the first scans
   // wait out CLAIM_FIRST_MAX_MS after the hidden fallback (about 6 s in).

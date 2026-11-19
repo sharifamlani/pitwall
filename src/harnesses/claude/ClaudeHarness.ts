@@ -154,6 +154,12 @@ export class ClaudeHarness implements HarnessAdapter {
     return sessions.map(toHarnessSession);
   }
 
+  /** One session from its own transcript; null until the transcript exists and a line names its cwd. */
+  async getSession(sessionId: string): Promise<HarnessSession | null> {
+    const session = await this.sessionService.getSessionById(sessionId);
+    return session ? toHarnessSession(session) : null;
+  }
+
   async getSessionMetadata(
     sessionId: string,
     _cwd?: string

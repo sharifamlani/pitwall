@@ -1173,8 +1173,8 @@ interface PopupFlowOptions extends RowFlowOptions {
   frontAnywhere?: (sessionId: string) => boolean;
   /** Live sessions whose turn is under way (busy or waiting); without it the adapter cannot tell. */
   underWay?: () => Set<string>;
-  /** Runs after each discovery request is recorded (a test's import). */
-  onUnlisted?: (sessionIds: string[]) => void;
+  /** Runs after each discovery request is recorded (a test's import); returns the sessions still worth asking about again. */
+  onUnlisted?: (sessionIds: string[]) => void | readonly string[] | Promise<void | readonly string[]>;
 }
 
 /** rowFlow with the whole Phase 5 pop-up path: lock, front anywhere, listed check, log lines. */
@@ -1217,7 +1217,7 @@ function popupFlow(storage: ReturnType<typeof makeStorage>, options: PopupFlowOp
       log: (line) => logs.push(line),
       onUnlistedLive: (sessionIds) => {
         unlisted.push([...sessionIds]);
-        options.onUnlisted?.(sessionIds);
+        return options.onUnlisted?.(sessionIds);
       },
     }
   );
@@ -1768,6 +1768,132 @@ test('the discovery refresh is rate-limited to once per unknown session per wind
   await flow.service.poll();
   await flow.service.poll();
   assert.deepEqual(flow.unlisted, [['s-a'], ['s-b']], 'and asks once when its turn starts');
+});
+
+/** Let the retry timer's poll, and the promise jobs it starts, run. */
+const settleTimers = async (t: TestContext, ms: number) => {
+  t.mock.timers.tick(ms);
+  for (let i = 0; i < 20; i++) await flush();
+};
+
+test('a new chat whose transcript has nothing to import at the first ask is asked again, listed within 5 s, and its 15 s first turn pops up once (12f645db)', async (t) => {
+  const T0 = 1_800_000_000_000;
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: T0 });
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const live = new Set<string>();
+  const underWay = new Set<string>();
+  const states: Record<string, HarnessLiveState> = {};
+  let transcriptReady = false;
+  let promptAt = 0;
+  const flow = popupFlow(storage, {
+    live: () => live,
+    underWay: () => underWay,
+    states: () => states,
+    // The importer: nothing to import until the first prompt's line is in the transcript.
+    onUnlisted: async (sessionIds) => {
+      if (!transcriptReady) return sessionIds;
+      storage.createChat('wt-a', 'claude', 'Night ferry story', { id: 'chat-new', harnessSessionId: 's-new', autoImported: true, seenAt: promptAt - 1 });
+      return [];
+    },
+  });
+  await flow.service.poll(true);
+
+  // Open in New Tab, then the prompt: the live record is busy before Claude writes the transcript.
+  const turnStart = Date.now();
+  promptAt = turnStart;
+  live.add('s-new');
+  underWay.add('s-new');
+  states['s-new'] = busy(turnStart);
+  await flow.service.poll();
+  for (let i = 0; i < 20; i++) await flush();
+  assert.deepEqual(flow.unlisted, [['s-new']], 'asked as the turn starts');
+  assert.equal(storage.getChat('chat-new'), undefined, 'too early: nothing to import');
+
+  // The transcript lands half a second later; the service asks again on its own.
+  await settleTimers(t, 500);
+  transcriptReady = true;
+  for (let waited = 500; !storage.getChat('chat-new'); waited += 100) {
+    assert.ok(waited <= 5_000, 'listed within 5 s of the turn start');
+    await settleTimers(t, 100);
+  }
+  assert.ok(flow.unlisted.length >= 2, 'asked again after the first answer said "not yet"');
+
+  // Tracked from the next poll: the first turn is a transition.
+  await flow.service.poll();
+  assert.equal(flow.service.statusOf('chat-new').status, 'working');
+
+  // The 15 s turn ends with the chat closed and nobody looking.
+  await settleTimers(t, turnStart + 15_000 - Date.now());
+  states['s-new'] = idleAfter(Date.now());
+  underWay.delete('s-new');
+  for (let tick = 0; tick < 4; tick++) {
+    await flow.service.poll();
+  }
+  assert.deepEqual(
+    flow.statusLines().map((line) => line.replace(/ lag=\d+$/, '')),
+    ['[Pitwall] status s-new idle→working', '[Pitwall] status s-new working→finished']
+  );
+  assert.equal(finishedToasts().length, 1, 'exactly one finished pop-up');
+  assert.equal(flow.shownLines().length, 1);
+  const asks = flow.unlisted.length;
+  await settleTimers(t, 60_000);
+  await flow.service.poll();
+  assert.equal(flow.unlisted.length, asks, 'listed: never asked about again');
+  flow.service.dispose();
+});
+
+test('a first turn that ended before its new chat was listed pops up once', async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const live = new Set(['s-short']);
+  const promptAt = Date.now() - 3_000;
+  const states: Record<string, HarnessLiveState> = { 's-short': busy(promptAt) };
+  const flow = popupFlow(storage, { live: () => live, states: () => states });
+  await flow.service.poll(true);
+  // A 2.6 s turn (dac4f591): over by the time the import lists it, seen as of its prompt.
+  states['s-short'] = idleAfter(promptAt + 2_600);
+  storage.createChat('wt-b', 'claude', 'Short first turn', { harnessSessionId: 's-short', autoImported: true, seenAt: promptAt - 1 });
+  for (let tick = 0; tick < 3; tick++) {
+    await flow.service.poll();
+  }
+  assert.equal(finishedToasts().length, 1, 'one finished pop-up');
+  assert.deepEqual(flow.statusLines().map((line) => line.replace(/ lag=\d+$/, '')), ['[Pitwall] status s-short idle→finished']);
+});
+
+test('asks about a session that stays unimportable are bounded: at most 6 a minute however often it polls, then none until its next turn', async (t) => {
+  const T0 = 1_800_000_000_000;
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: T0 });
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const live = new Set(['s-stuck']);
+  const underWay = new Set(['s-stuck']);
+  const flow = popupFlow(storage, {
+    live: () => live,
+    underWay: () => underWay,
+    states: () => ({ 's-stuck': busy(T0) }),
+    onUnlisted: (sessionIds) => sessionIds, // never importable
+  });
+  await flow.service.poll(true);
+  // A minute of polls every 500 ms (a sessions folder that never stops changing).
+  for (let at = 0; at < 60_000; at += 500) {
+    await flow.service.poll();
+    await settleTimers(t, 500);
+  }
+  const asked = flow.unlisted.length;
+  assert.ok(asked >= 3 && asked <= 6, `asked ${asked} times in a minute (between 3 and 6)`);
+  for (let at = 0; at < 120_000; at += 4_000) {
+    await flow.service.poll();
+    await settleTimers(t, 4_000);
+  }
+  assert.equal(flow.unlisted.length, asked, 'spent until its next turn starts');
+
+  underWay.delete('s-stuck');
+  await flow.service.poll();
+  underWay.add('s-stuck');
+  await flow.service.poll();
+  assert.equal(flow.unlisted.length, asked + 1, 'a new turn asks again at once');
+  flow.service.dispose();
 });
 
 test('a chat first seen after activation at needs pops once across windows (not pre-existing)', async (t) => {

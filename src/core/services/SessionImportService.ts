@@ -64,6 +64,16 @@ export interface SessionImportServiceOptions {
   readSettings?: () => SessionImportSettings;
 }
 
+/** What `importLive` did with each live session it was asked about. */
+export interface LiveImportResult {
+  /** Nothing to import yet (no transcript, or no line that places it): worth asking again. */
+  retry: string[];
+  /** Placed in a folder no listed repository holds: discovery's to find. */
+  unplaced: string[];
+  /** No installed adapter reads one session by itself: only a full scan can list it. */
+  unsupported: string[];
+}
+
 interface PendingUiExpectation {
   harness: HarnessId;
   worktreePath: string;
@@ -110,6 +120,8 @@ export class SessionImportService implements vscode.Disposable {
   private wakeQueued = false;
   /** A refresh asked for a full pass; the next scan runs one even while hot or hidden. */
   private fullQueued = false;
+  /** Targeted imports waiting for the scan in progress to end. */
+  private readonly scanEnded: Array<() => void> = [];
   private disposed = false;
 
   constructor(
@@ -286,11 +298,112 @@ export class SessionImportService implements vscode.Disposable {
     this.wake();
   }
 
+  /**
+   * List live sessions no row holds, each read by itself (new-chat pickup):
+   * the attention service asks as a session's turn starts, list hidden or
+   * not, and a full scan would re-read every transcript of every repository
+   * to find one. Each session goes through the same per-worktree steps as a
+   * full scan's (a waiting UI launch claims it first, then the import with
+   * its tombstone, reservation, retention and setting checks); renames,
+   * relocation and retention pruning need the full listing and stay with
+   * the scans. It runs between scans, never alongside one.
+   *
+   * A live import is seen as of just before its latest prompt: its turn is
+   * news (Q30), so a first turn that ended before it was listed still pops.
+   */
+  async importLive(sessionIds: readonly string[]): Promise<LiveImportResult> {
+    const result: LiveImportResult = { retry: [], unplaced: [], unsupported: [] };
+    while (this.scanning && !this.disposed) {
+      await new Promise<void>((resolve) => this.scanEnded.push(resolve));
+    }
+    if (this.disposed || sessionIds.length === 0) {
+      return result;
+    }
+    this.scanning = true;
+    const event: SessionImportEvent = { imported: 0, linked: 0, renamed: 0, relocated: 0, removed: [] };
+    try {
+      const adapters = (await this.harnessRegistry.getInstalled()).filter((adapter) => adapter.getSession);
+      if (adapters.length === 0) {
+        result.unsupported.push(...sessionIds);
+        return result;
+      }
+      const settings = this.readSettings();
+      const now = Date.now();
+      const scopes = await this.catalog.scopesAsync();
+      const chats = this.storageService.getChats();
+      this.restorePendingUiExpectations(scopes, chats);
+      const index = this.buildIndex(chats);
+      const allWorktrees = scopes.flatMap((scope) => scope.worktrees);
+      for (const sessionId of sessionIds) {
+        const found = await this.readLiveSession(adapters, sessionId);
+        if (!found) {
+          result.retry.push(sessionId);
+          continue;
+        }
+        const { adapter, session } = found;
+        if (index.linked.get(adapter.id)?.has(session.sessionId)) {
+          continue;
+        }
+        const worktree = deepestContainingRoot(allWorktrees, session.cwd);
+        if (!worktree) {
+          result.unplaced.push(sessionId);
+          continue;
+        }
+        this.linkPendingUiLaunches(adapter, worktree, [session], index, event);
+        if (settings.enabled && !index.linked.get(adapter.id)?.has(session.sessionId)) {
+          const seenAt = (session.lastActivity ?? session.lastUpdated?.getTime() ?? now) - 1;
+          this.importRecentSessions(adapter, worktree, [session], index, event, now, settings.retentionDays * DAY_MS, seenAt);
+        }
+      }
+    } catch (error) {
+      console.error('[SessionImportService] Could not import live sessions:', error);
+    } finally {
+      this.scanning = false;
+      if (event.imported > 0 || event.linked > 0) {
+        this.onChatsChanged(event);
+      }
+      this.endScan();
+    }
+    return result;
+  }
+
+  /** The first adapter that reads this session by itself, with the session. */
+  private async readLiveSession(
+    adapters: HarnessAdapter[],
+    sessionId: string
+  ): Promise<{ adapter: HarnessAdapter; session: HarnessSession } | undefined> {
+    for (const adapter of adapters) {
+      try {
+        const session = await adapter.getSession!(sessionId);
+        if (session?.cwd) {
+          return { adapter, session };
+        }
+      } catch (error) {
+        console.error(`[SessionImportService] Could not read ${adapter.displayName} session ${sessionId}:`, error);
+      }
+    }
+    return undefined;
+  }
+
+  /** A scan or targeted import ended: let one waiting import run, then any wake that came meanwhile. */
+  private endScan(): void {
+    const next = this.scanEnded.shift();
+    if (next) {
+      next();
+      return;
+    }
+    if (this.wakeQueued) {
+      this.wakeQueued = false;
+      this.wake();
+    }
+  }
+
   dispose(): void {
     this.disposed = true;
     this.stopTimer();
     this.expectations.clear();
     this.configListener.dispose();
+    this.scanEnded.splice(0).forEach((resolve) => resolve());
   }
 
   private async scan(): Promise<void> {
@@ -400,10 +513,7 @@ export class SessionImportService implements vscode.Disposable {
         this.onChatsChanged(event);
       }
       this.schedule();
-      if (this.wakeQueued) {
-        this.wakeQueued = false;
-        this.wake();
-      }
+      this.endScan();
     }
   }
 
@@ -706,7 +816,9 @@ export class SessionImportService implements vscode.Disposable {
     index: ChatIndex,
     event: SessionImportEvent,
     now: number,
-    retentionMs: number
+    retentionMs: number,
+    /** A live import's seen baseline (`importLive`); a scan's import is seen now. */
+    seenAt?: number
   ): void {
     if (event.imported >= MAX_IMPORTS_PER_SCAN) {
       return;
@@ -774,6 +886,7 @@ export class SessionImportService implements vscode.Disposable {
           createdAt,
           lastAccessedAt: lastActive,
           autoImported: true,
+          ...(seenAt !== undefined ? { seenAt } : {}),
         }
       );
       index.byId.set(chat.id, chat);
