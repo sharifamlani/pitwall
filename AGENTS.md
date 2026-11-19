@@ -31,7 +31,8 @@ dev container to other repos. Each role reads its list in
 line when a bug gets past it.
 
 The rule that comes first: a feature is done when a real user can use it smoothly, proven by the
-Tester using the real app like the owner. Timings and scorecards come after.
+Tester using the real app like the owner. QA approval plus the Tester's PASS ships the release;
+the Evaluator grades it afterwards, and its findings become patch releases.
 
 ### Pitwall specifics
 

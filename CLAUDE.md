@@ -6,7 +6,7 @@ Pitwall is a Cursor / VS Code extension: one sidebar showing every Claude Code s
 
 ## Agent roles
 
-The team's roles, prompts and learning loop are in [`.devcontainer/AGENT_ROLES.md`](.devcontainer/AGENT_ROLES.md); Pitwall's specifics are under "Agent roles" in [AGENTS.md](AGENTS.md). The Tester's user walk, in a real-use setup, passes before any timing, grading or release.
+The team's roles, prompts and learning loop are in [`.devcontainer/AGENT_ROLES.md`](.devcontainer/AGENT_ROLES.md); Pitwall's specifics are under "Agent roles" in [AGENTS.md](AGENTS.md). QA approval plus the Tester's user walk (in a real-use setup) ships a release; the Evaluator grades it after the tag, and its findings become patch releases.
 
 ## Layout
 
