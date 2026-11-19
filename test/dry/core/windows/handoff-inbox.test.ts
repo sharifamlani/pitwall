@@ -349,3 +349,30 @@ test('the dump script finds only allowed keys in the files the inbox and registr
   assert.equal(leak.status, 1, leak.stdout);
   assert.match(leak.stdout, /keys outside the outcome allow-list: text/);
 });
+
+test('the dump script checks pop-up locks, the state dump and the new window keys (Phase 5 E14)', async (t) => {
+  const dir = tempDir(t);
+  const A = '5f0c3d4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f';
+  await new WindowRegistry(dir, { pid: process.pid, folder: tempDir(t) }).beat({ openSessionIds: [A], front: A, focused: true });
+  fs.mkdirSync(path.join(dir, 'pitwall-popups'));
+  fs.writeFileSync(path.join(dir, 'pitwall-popups', `${A}.needs.1800000000123.lock`), '');
+  fs.mkdirSync(path.join(dir, 'pitwall-dump'));
+  const dump = { version: 1, pid: process.pid, windowFolder: null, tabGroups: [], repos: [], statuses: { [A]: 'needs' }, counts: { needs: 1, working: 0, finished: 0 } };
+  fs.writeFileSync(path.join(dir, 'pitwall-dump', `${process.pid}.json`), JSON.stringify(dump));
+
+  const script = path.resolve(__dirname, '..', '..', '..', 'scripts', 'dump-pitwall-windows.mjs');
+  const run = () => spawnSync(process.execPath, [script, '--dir', dir, '--check-privacy'], { encoding: 'utf8' });
+  const ok = run();
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  assert.match(ok.stdout, /popup locks: 1/);
+  assert.match(ok.stdout, /privacy ok: 3 files checked/);
+
+  fs.writeFileSync(path.join(dir, 'pitwall-popups', `${A}.finished.5.lock`), 'a chat title');
+  fs.writeFileSync(path.join(dir, 'pitwall-popups', `${A}.needs.0.lock`), '');
+  fs.writeFileSync(path.join(dir, 'pitwall-dump', `${process.pid}.json`), JSON.stringify({ ...dump, title: 'a chat title' }));
+  const leak = run();
+  assert.equal(leak.status, 1, leak.stdout);
+  assert.match(leak.stdout, /finished\.5\.lock: a lock file must be empty/);
+  assert.match(leak.stdout, /needs\.0\.lock: not a Pitwall pop-up lock/);
+  assert.match(leak.stdout, /keys outside the dump allow-list: title/);
+});

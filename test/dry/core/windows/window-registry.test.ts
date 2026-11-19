@@ -195,6 +195,108 @@ test('a window registers at activation, before its window services (E6): a sende
   assert.equal(startWindowRegistry({ subscriptions: [] } as never), undefined, 'no global storage');
 });
 
+const A = '5f0c3d4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f';
+const B = '6a1d4e5f-2b3c-4d4e-9f0a-1b2c3d4e5f60';
+
+test('front and focused round-trip through the record', async (t) => {
+  const dir = tempDir(t);
+  const clock = fakeClock();
+  const self = new WindowRegistry(dir, { pid: process.pid, folder: tempDir(t) }, clock.read);
+  const observer = new WindowRegistry(dir, { pid: process.ppid, folder: undefined }, clock.read);
+
+  await self.beat({ openSessionIds: [A, B], front: B, focused: true });
+  const [record] = (await observer.windows()).filter((w) => w.pid === process.pid);
+  assert.deepEqual([record.openSessionIds, record.front, record.focused], [[A, B], B, true]);
+  const own = path.join(dir, 'pitwall-windows', `${process.pid}.json`);
+  assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(own, 'utf8'))).sort(), ['beatAt', 'focused', 'folder', 'front', 'openSessionIds', 'pid']);
+
+  await self.beat({ openSessionIds: [A, B], focused: false });
+  const [after] = (await observer.windows()).filter((w) => w.pid === process.pid);
+  assert.deepEqual([after.front, after.focused], [undefined, false], 'no chat in front, window blurred');
+
+  // A record from a Phase 4 build (no front, no focused) still parses.
+  fs.writeFileSync(own, JSON.stringify({ pid: process.pid, folder: null, beatAt: clock.now, openSessionIds: [A] }));
+  const [old] = (await observer.windows()).filter((w) => w.pid === process.pid);
+  assert.deepEqual([old.front, old.focused], [undefined, false]);
+});
+
+test('a focus change alone does not fire onDidChange', async (t) => {
+  const dir = tempDir(t);
+  const registry = new WindowRegistry(dir, { pid: process.pid, folder: tempDir(t) }, fakeClock().read);
+  let fired = 0;
+  registry.onDidChange(() => fired++);
+  await registry.beat({ openSessionIds: [A, B], front: A, focused: true });
+  assert.equal(fired, 1, 'the window appeared');
+  await registry.beat({ openSessionIds: [A, B], front: B, focused: true });
+  await registry.beat({ openSessionIds: [A, B], front: B, focused: false });
+  await registry.beat({ openSessionIds: [A, B], focused: false });
+  assert.equal(fired, 1, 'front and focused are outside the change signature');
+  await registry.beat({ openSessionIds: [A], focused: false });
+  assert.equal(fired, 2, 'an open-chats change still fires');
+});
+
+test('frontAnywhere answers synchronously from the cached snapshot', async (t) => {
+  const dir = tempDir(t);
+  const clock = fakeClock();
+  const here = new WindowRegistry(dir, { pid: process.pid, folder: tempDir(t) }, clock.read);
+  const other = new WindowRegistry(dir, { pid: process.ppid, folder: tempDir(t) }, clock.read);
+  assert.equal(here.frontAnywhere(A), false, 'nothing read yet');
+
+  await other.beat({ openSessionIds: [A], front: A, focused: true });
+  await here.refresh();
+  const result = here.frontAnywhere(A);
+  assert.equal(typeof result, 'boolean', 'a plain value, not a promise');
+  assert.equal(result, true, 'in front of a focused window');
+  assert.equal(here.frontAnywhere(B), false);
+
+  await other.beat({ openSessionIds: [A], front: A, focused: false });
+  await here.refresh();
+  assert.equal(here.frontAnywhere(A), false, 'in front of a window that lost focus does not count');
+
+  // The cache answers without touching the disk.
+  await other.beat({ openSessionIds: [A], front: A, focused: true });
+  await here.refresh();
+  fs.rmSync(path.join(dir, 'pitwall-windows'), { recursive: true, force: true });
+  assert.equal(here.frontAnywhere(A), true, 'from the snapshot the last refresh cached');
+});
+
+test("a stale record's front is ignored", async (t) => {
+  const dir = tempDir(t);
+  const clock = fakeClock();
+  const here = new WindowRegistry(dir, { pid: process.pid, folder: tempDir(t) }, clock.read);
+  await new WindowRegistry(dir, { pid: process.ppid, folder: tempDir(t) }, clock.read).beat({ openSessionIds: [A], front: A, focused: true });
+  await here.refresh();
+  assert.equal(here.frontAnywhere(A), true);
+  clock.now += STALE_MS;
+  assert.equal(here.frontAnywhere(A), false, 'stale 45 s after its beat, even before the next refresh');
+  await new WindowRegistry(dir, { pid: deadPid(), folder: tempDir(t) }, clock.read).beat({ openSessionIds: [B], front: B, focused: true });
+  await here.refresh();
+  assert.equal(here.frontAnywhere(B), false, 'a dead pid never counts');
+});
+
+test('the early registry entry is disposed when window services fail to start', async (t) => {
+  const storage = path.join(tempDir(t), 'globalStorage');
+  const lab = tempDir(t);
+  stub.workspace.workspaceFolders = [{ uri: { fsPath: lab } }];
+  const context = { subscriptions: [] as { dispose(): unknown }[], globalStorageUri: vscode.Uri.file(storage) };
+  t.after(() => context.subscriptions.forEach((subscription) => subscription.dispose()));
+  const early = startWindowRegistry(context as never);
+  assert.ok(early);
+  const own = path.join(storage, 'pitwall-windows', `${process.pid}.json`);
+  await waitFor(() => fs.existsSync(own), 'the early beat');
+
+  // The services' own storage is unusable (a file where the folder should be): they fail to start.
+  const blocked = path.join(tempDir(t), 'not-a-folder');
+  fs.writeFileSync(blocked, '');
+  const lines: string[] = [];
+  const failing = { subscriptions: context.subscriptions, globalStorageUri: vscode.Uri.file(path.join(blocked, 'globalStorage')) };
+  assert.equal(startWindowServices(failing as never, (line) => lines.push(line), undefined, early), undefined);
+  assert.ok(lines.some((line) => line.startsWith('[Pitwall] window services did not start')), lines.join('\n'));
+  assert.equal(fs.existsSync(own), false, 'the early record is gone, so no sender waits on a window that cannot claim');
+  await early.beat({ openSessionIds: [A], focused: true });
+  assert.equal(fs.existsSync(own), false, 'and it beats no more');
+});
+
 test('activation registers the window before the first render: extension.ts calls startWindowRegistry and hands it on (E6)', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src', 'extension.ts'), 'utf8');
   const early = source.indexOf('const earlyRegistry = startWindowRegistry(context)');
