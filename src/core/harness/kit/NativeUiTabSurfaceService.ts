@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { NativeUiSurfaceTracker, NativeUiTabGroupState, NativeUiTitleCandidate } from '../types';
+import { NativeUiSurfaceTracker, NativeUiTabGroupState, NativeUiTitleCandidate, RESTORED_DEADLINE_CAP_MS } from '../types';
 import { logOperation } from '../../services/OperationLog';
 
 /** How long an expected tab can take to appear before the expectation expires. */
@@ -147,13 +147,14 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   /** The last group line traced, so back-to-back identical re-sends log once. */
   private lastGroupTrace: string | undefined;
   /**
-   * Restored tabs not yet visited: this harness's tabs present at activation
-   * and not active then. A tab leaves once it has been active and then
-   * inactive, or closes (E11).
+   * Restored tabs whose first visit has not ended: this harness's tabs
+   * present at activation and not shown then. A tab leaves when its hold
+   * ends (`endFirstVisit`), RESTORED_DEADLINE_CAP_MS after it was first
+   * shown, or when it closes (E11).
    */
   private readonly unvisited = new Set<vscode.Tab>();
-  /** The unvisited tabs active now: their first visit is in progress. */
-  private readonly visiting = new Set<vscode.Tab>();
+  /** When each unvisited tab was first shown (its webview started loading). */
+  private readonly visitStartedAt = new Map<vscode.Tab, number>();
   /** `whenTabMoved` calls waiting for one of this harness's tabs to close. */
   private readonly moveWaiters = new Set<() => void>();
   /** The sessions a tab here may belong to, with their titles; set once titles are known (I1). */
@@ -226,7 +227,13 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   }
 
   isFirstVisitSinceLaunch(tab: vscode.Tab): boolean {
-    return this.unvisited.has(tab);
+    const started = this.visitStartedAt.get(tab);
+    return this.unvisited.has(tab) && (started === undefined || this.now() - started <= RESTORED_DEADLINE_CAP_MS);
+  }
+
+  endFirstVisit(tab: vscode.Tab): void {
+    this.unvisited.delete(tab);
+    this.visitStartedAt.delete(tab);
   }
 
   /**
@@ -932,9 +939,12 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       if (replacement && stamp) {
         this.openedAt.set(replacement.tab, stamp);
       }
-      for (const visits of [this.unvisited, this.visiting]) {
-        if (replacement && visits.delete(old)) {
-          visits.add(replacement.tab);
+      if (replacement && this.unvisited.delete(old)) {
+        this.unvisited.add(replacement.tab);
+        const started = this.visitStartedAt.get(old);
+        this.visitStartedAt.delete(old);
+        if (started !== undefined) {
+          this.visitStartedAt.set(replacement.tab, started);
         }
       }
       if (sessionId === undefined) {
@@ -957,21 +967,25 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   }
 
   /**
-   * After every tab or group event (and its re-send pairing): an unvisited
-   * tab that is active now is being visited; one that was and no longer is
-   * has been visited; one that is gone is dropped.
+   * After every tab or group event (and its re-send pairing; a group switch
+   * or a re-send fires no tab event): an unvisited tab shown now, the
+   * selected tab of its group, starts its visit, whose webview loads now. A
+   * visit never ends on the tab being hidden again: the selected tab of a
+   * group that lost focus stays selected (QA C1). It ends with its hold or
+   * RESTORED_DEADLINE_CAP_MS after it started; a tab that is gone is dropped.
    */
   private trackVisits(): void {
     if (this.unvisited.size === 0) {
       return;
     }
     const present = new Set(this.layout.flat());
+    const now = this.now();
     for (const tab of [...this.unvisited]) {
-      if (present.has(tab) && tab.isActive) {
-        this.visiting.add(tab);
-      } else if (!present.has(tab) || this.visiting.has(tab)) {
-        this.unvisited.delete(tab);
-        this.visiting.delete(tab);
+      const started = this.visitStartedAt.get(tab);
+      if (!present.has(tab) || (started !== undefined && now - started > RESTORED_DEADLINE_CAP_MS)) {
+        this.endFirstVisit(tab);
+      } else if (started === undefined && tab.isActive) {
+        this.visitStartedAt.set(tab, now);
       }
     }
   }

@@ -1042,24 +1042,79 @@ test('R2-6: while the title source is partial, a title proves nothing: a restore
 
 // ---- Phase 5 Task 1 (E11): the first visit of a restored panel tab ----
 
-test('a Tab seeded at activation, inactive then, is a first visit until it is active once and left, bound or not', () => {
+test('a Tab seeded at activation, not shown then, is a first visit from when it is shown until its hold ends or 1200 ms pass, bound or not', () => {
   const world = tabWorld();
+  const clock = { now: 0 };
   const shown = world.open(claudeTab(), 'O2 chat one', { announce: false });
   const named = world.open(claudeTab(), 'O2 chat two', { active: false, announce: false });
   const untitled = world.open(claudeTab(), 'Claude Code', { active: false, announce: false });
   const file = world.open(fileTab(), 'README.md', { active: false, announce: false });
-  const service = claudeUiSurfaces(world.options);
+  const service = claudeUiSurfaces({ ...world.options, now: () => clock.now });
   service.setTitleSource(() => labB);
   assert.ok(service.isOpen('20aa05a6'), 'the named tab is bound; the untitled one stays unbound');
   const first = (tab: FakeTab) => service.isFirstVisitSinceLaunch(tab as unknown as vscode.Tab);
 
-  assert.deepEqual([shown, named, untitled, file].map(first), [false, true, true, false], 'active at activation, or not a Claude tab: never');
+  assert.deepEqual([shown, named, untitled, file].map(first), [false, true, true, false], 'shown at activation, or not a Claude tab: never');
   world.focus(untitled);
-  assert.equal(first(untitled), true, 'the visit in progress is still the first: the hold reads it on the activation event');
+  assert.equal(first(untitled), true, 'the visit in progress is the first: the hold reads it on the activation event');
+  clock.now = 1_200;
+  assert.equal(first(untitled), true, 'still loading at the cap');
+  clock.now = 1_201;
+  assert.equal(first(untitled), false, 'over 1200 ms after it was first shown: visited, unbound or not');
   world.focus(named);
-  assert.deepEqual([untitled, named].map(first), [false, true], 'left once: visited, unbound or not');
-  world.focus(shown);
-  assert.deepEqual([shown, named, untitled].map(first), [false, false, false], 'bound or not, each is visited once');
+  assert.equal(first(named), true);
+  service.endFirstVisit(named as unknown as vscode.Tab);
+  assert.equal(first(named), false, 'its hold ended: visited, bound or not');
+  service.dispose();
+});
+
+test('two groups: a first visit does not end when focus moves to the other group (A still selected in its group); it ends 1200 ms after A was shown (QA C1)', () => {
+  const world = tabWorld();
+  const clock = { now: 0 };
+  const claudeGroup = world.groups[0];
+  const other = world.open(claudeTab(), 'Claude B', { announce: false });
+  const restored = world.open(claudeTab(), 'Restored A', { active: false, announce: false });
+  const editorGroup: FakeGroup = { isActive: false, activeTab: undefined, tabs: [] };
+  world.groups.push(editorGroup);
+  const file = world.open(fileTab(), 'file.ts', { announce: false, group: editorGroup });
+  claudeGroup.isActive = false;
+  editorGroup.isActive = true;
+  const service = claudeUiSurfaces({ ...world.options, now: () => clock.now });
+  const first = (tab: FakeTab) => service.isFirstVisitSinceLaunch(tab as unknown as vscode.Tab);
+  assert.deepEqual([other, restored, file].map(first), [false, true, false]);
+
+  world.focusGroup(0);
+  world.focus(restored);
+  clock.now = 900;
+  world.focusGroup(1);
+  assert.equal(restored.isActive, true, 'A stays the selected tab of its group');
+  assert.equal(first(restored), true, 'within the cap of its first showing');
+  clock.now = 1_201;
+  world.focusGroup(0);
+  assert.equal(first(restored), false, 'its first visit is over, though A was never hidden');
+  service.dispose();
+});
+
+test('a visit that starts on a group-only event (no tab event) ends 1200 ms later, across a re-send (QA N2)', () => {
+  const world = tabWorld();
+  const clock = { now: 0 };
+  world.open(claudeTab(), 'Claude B', { announce: false });
+  world.open(claudeTab(), 'Restored A', { active: false, announce: false });
+  const service = claudeUiSurfaces({ ...world.options, now: () => clock.now });
+  const first = (tab: FakeTab | undefined) => service.isFirstVisitSinceLaunch(tab as unknown as vscode.Tab);
+  // Cursor re-sends the model with A selected and fires no tab event.
+  const group = world.groups[0];
+  group.tabs = group.tabs.map((tab, index) => ({ ...tab, isActive: index === 1 }));
+  group.activeTab = group.tabs[1];
+  world.emitGroups();
+  const shownA = group.tabs[1];
+  assert.equal(first(shownA), true, 'the replacement is the restored tab, its first visit started now');
+  clock.now = 1_000;
+  cursorWorkbench(world).resend();
+  const resentA = group.tabs[1];
+  assert.equal(first(resentA), true);
+  clock.now = 1_201;
+  assert.equal(first(resentA), false, 'the visit started on the group event, not on the later re-send');
   service.dispose();
 });
 

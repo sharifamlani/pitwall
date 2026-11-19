@@ -787,6 +787,72 @@ test('a mouse open of a restored panel chat arms no retry (E11)', async (t) => {
   assert.deepEqual(keys.events, [], 'a click lets the chat keep focus');
 });
 
+// ---- QA round 2, C1: a first visit ends with its hold, whatever group has focus ----
+
+for (const secondPressAt of [1_000, 3_000]) {
+  test(`two groups: after the first visit to A, focus moves to the other group (A still selected in its group); the next Ctrl+Down onto A retries at 250 ms (+${secondPressAt} ms)`, async (t) => {
+    const f = setup(t, { surface: 'ui' });
+    const chat = f.chat('claude', 'Restored A', 'claude-1');
+    f.claudeUi.surfaces.open.add('claude-1');
+    const webview = () => new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel');
+    const other = { label: 'Claude B', input: webview(), isActive: true };
+    const restored = { label: 'Restored A', input: webview(), isActive: false };
+    const file = { label: 'file.ts', input: undefined, isActive: true };
+    const claudeGroup = { isActive: false, viewColumn: 2, activeTab: other as typeof restored, tabs: [other, restored] };
+    const editorGroup = { isActive: true, viewColumn: 1, activeTab: file, tabs: [file] };
+    stub.window.tabGroups.all = [editorGroup, claudeGroup];
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() });
+    // The real tracker, seeded at activation: A is restored and not shown.
+    const tracker = claudeUiSurfaces();
+    t.after(() => tracker.dispose());
+    f.claudeUi.surfaces.tracker.isFirstVisitSinceLaunch = (tab) => tracker.isFirstVisitSinceLaunch(tab);
+    f.claudeUi.surfaces.tracker.endFirstVisit = (tab) => tracker.endFirstVisit(tab);
+    const focusGroup = (group: typeof claudeGroup | typeof editorGroup) => {
+      claudeGroup.isActive = group === claudeGroup;
+      editorGroup.isActive = group === editorGroup;
+      stub.window.__fireTabGroupsChanged();
+    };
+    // The reveal shows A and focuses its group; the second time A is already selected there, so only the group event comes.
+    f.claudeUi.nativeUi.openSession = async (sessionId, cwd) => {
+      f.claudeUi.opened.push({ sessionId, cwd });
+      if (!restored.isActive) {
+        other.isActive = false;
+        restored.isActive = true;
+        claudeGroup.activeTab = restored;
+        stub.window.__fireTabsChanged({ changed: [restored, other] });
+      }
+      focusGroup(claudeGroup);
+      return { kind: 'opened', via: 'command' };
+    };
+    const keys = listKeys(f.row(chat));
+    t.after(() => stub.window.__fireWindowState(true));
+    let now = 0;
+    const at = async (ms: number) => {
+      t.mock.timers.tick(ms - now);
+      now = ms;
+      await settle();
+    };
+
+    await keys.press();
+    await at(799);
+    assert.equal(keys.events.length, 1, 'the first visit waits');
+    await at(800);
+    assert.equal(keys.events.length, 2, 'the first-visit retry at 800 ms');
+    focusGroup(editorGroup);
+    assert.equal(restored.isActive, true, 'A is still the selected tab of its group');
+
+    await at(secondPressAt);
+    await keys.press();
+    assert.equal(keys.events.length, 3, 'refocused right after the second reveal');
+    await at(secondPressAt + 249);
+    assert.equal(keys.events.length, 3);
+    await at(secondPressAt + 250);
+    assert.equal(keys.events.length, 4, 'a later visit retries at 250 ms, not 800');
+    await at(secondPressAt + 2_000);
+    assert.equal(keys.events.length, 4, 'one retry');
+  });
+}
+
 test('a mouse open of a panel chat arms no retry (E8)', async (t) => {
   const f = setup(t, { surface: 'ui' });
   const chat = f.chat('claude', 'Clicked', 'claude-1');

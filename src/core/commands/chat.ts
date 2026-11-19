@@ -14,6 +14,7 @@ import {
   NativeUiOpenResult,
   NativeUiSurfaceTracker,
   NativeUiUnavailable,
+  RESTORED_DEADLINE_CAP_MS,
 } from '../harness/types';
 import { DEFAULT_CHAT_NAME, chatPrimarySessionId } from '../harness/sessionUtils';
 import { errorMessage, formatRelativeTime, nextForkName } from '../utils/text';
@@ -45,8 +46,6 @@ const PANEL_SETTLE_MS = 250;
  * (12 launches): the last focus movement came at ≤ 556 ms, + 250, rounded (Q43a).
  */
 const RESTORED_DEADLINE_MS = 800;
-/** The first-visit retry never fires later than this after the press (Q43). */
-const RESTORED_DEADLINE_CAP_MS = 1_200;
 type LinkedChat = ChatSession & { harnessSessionId: string };
 
 export interface ChatCommandDeps {
@@ -364,6 +363,10 @@ export function registerChatCommands(
       dispose: () => {
         clearTimeout(timer);
         watches.forEach((entry) => entry.dispose());
+        // Whether the retry fired or the hold let go, this tab's first visit is over (QA C1).
+        if (settled) {
+          surfaces?.endFirstVisit?.(settled);
+        }
       },
     };
     heldList = watch;
