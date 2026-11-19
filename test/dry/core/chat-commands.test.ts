@@ -4,7 +4,7 @@
  * harness-agnostic, so each path is proven once with the adapter shape that
  * exercises it (a chosen ID, a linked fork, a native UI).
  */
-import { beforeEach, test } from 'node:test';
+import { beforeEach, test, TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { StorageService } from '../../../src/core/services/StorageService';
@@ -568,28 +568,316 @@ test('Ctrl+Down onto a chat whose panel tab is already open reveals it, then ref
 
 const afterSettle = () => new Promise((resolve) => setTimeout(resolve, 450));
 
+type PanelTab = { label: string; isActive: boolean };
+
+/**
+ * One editor group: a file tab, active before the press, and the panel tab a
+ * Ctrl+Down reveals. The events have the shapes S1 recorded live.
+ */
+function panelTabs() {
+  const editor: PanelTab = { label: 'file.ts', isActive: true };
+  const panel: PanelTab = { label: 'Open in panel', isActive: false };
+  const group = { isActive: true, activeTab: editor, tabs: [editor, panel] };
+  stub.window.tabGroups.all = [group];
+  const show = (tab: PanelTab) => {
+    const previous = group.activeTab;
+    previous.isActive = false;
+    tab.isActive = true;
+    group.activeTab = tab;
+    stub.window.__fireTabsChanged({ changed: [tab, previous] });
+  };
+  return {
+    editor,
+    panel,
+    /** The revealed tab becomes active: one event naming it and the tab it replaced. */
+    activate: () => show(panel),
+    /** The user switches to another tab. */
+    show,
+    /** The same Tab changes again, activeTab unchanged (S1: once at +77-162 ms, then a burst of 3 at about +2.1-2.6 s). */
+    sameTab: () => stub.window.__fireTabsChanged({ changed: [panel] }),
+  };
+}
+
 /** A Ctrl+Down onto an open panel tab; the revealed webview activates a moment after the first refocus. */
-async function panelPress(t: Parameters<typeof setup>[0], between?: (f: ReturnType<typeof setup>) => unknown) {
+async function panelPress(
+  t: Parameters<typeof setup>[0],
+  between?: (f: ReturnType<typeof setup>, tabs: ReturnType<typeof panelTabs>) => unknown
+) {
   const f = setup(t, { surface: 'ui' });
   const chat = f.chat('claude', 'Open in panel', 'claude-1');
   f.claudeUi.surfaces.open.add('claude-1');
+  const tabs = panelTabs();
   const keys = listKeys(f.row(chat));
   t.after(() => stub.window.__fireWindowState(true));
   await keys.press();
   assert.deepEqual(keys.events, ['focus list'], 'refocused right after the reveal');
   // The tab becomes active, then Claude's webview takes focus.
-  stub.window.__fireTabsChanged({ changed: [{}] });
-  await between?.(f);
+  tabs.activate();
+  await between?.(f, tabs);
   await afterSettle();
-  return { f, keys };
+  return { f, keys, tabs };
 }
 
 test('Ctrl+Down onto an open panel tab refocuses the list once more after the webview activates (E8)', async (t) => {
-  const { keys } = await panelPress(t);
-  // Wait out a second settle: a looping retry would refocus again inside it.
+  // S1: the same Tab changes once more inside the hold; it is not the user's move.
+  const { keys, tabs } = await panelPress(t, (_f, panel) => panel.sameTab());
+  // Wait out a second settle, with S1's later burst in it: a looping or re-armed retry would refocus again.
+  tabs.sameTab();
+  tabs.sameTab();
+  tabs.sameTab();
   await afterSettle();
   assert.deepEqual(keys.events, ['focus list', 'focus list'], 'one retry, never a loop');
 });
+
+/**
+ * A Ctrl+Down onto a restored panel tab, on fake timers from the press: the
+ * reveal takes `revealMs`. The tab activates once the open returned, inside
+ * the hold (as live), or with `activateInReveal` (or a slow reveal) before
+ * the open returns. `at(ms)` advances the clock to that many ms after the press.
+ */
+async function restoredPress(
+  t: TestContext,
+  options: { firstVisit: boolean; revealMs?: number; activateInReveal?: boolean }
+) {
+  const f = setup(t, { surface: 'ui' });
+  const chat = f.chat('claude', 'Open in panel', 'claude-1');
+  f.claudeUi.surfaces.open.add('claude-1');
+  const tabs = panelTabs();
+  const unvisited = new Set<unknown>(options.firstVisit ? [tabs.panel] : []);
+  f.claudeUi.surfaces.tracker.isFirstVisitSinceLaunch = (tab) => unvisited.has(tab);
+  const keys = listKeys(f.row(chat));
+  t.after(() => stub.window.__fireWindowState(true));
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() });
+  let now = 0;
+  const at = async (ms: number) => {
+    t.mock.timers.tick(ms - now);
+    now = ms;
+    await settle();
+  };
+  const inReveal = Boolean(options.revealMs || options.activateInReveal);
+  if (inReveal) {
+    const open = f.claudeUi.nativeUi.openSession;
+    f.claudeUi.nativeUi.openSession = async (sessionId, cwd) => {
+      if (options.revealMs) {
+        await new Promise((resolve) => setTimeout(resolve, options.revealMs));
+      }
+      tabs.activate();
+      return open(sessionId, cwd);
+    };
+  }
+  const pressed = keys.press();
+  await settle();
+  if (options.revealMs) {
+    await at(options.revealMs);
+  }
+  await pressed;
+  assert.deepEqual(keys.events, ['focus list'], 'refocused right after the reveal');
+  if (!inReveal) {
+    tabs.activate();
+  }
+  return { f, keys, tabs, at };
+}
+
+test('the first Ctrl+Down onto a restored, unvisited panel tab refocuses once at 800 ms, not 250 (E11)', async (t) => {
+  const { keys, tabs, at } = await restoredPress(t, { firstVisit: true });
+  await at(120);
+  tabs.sameTab();
+  await at(799);
+  assert.deepEqual(keys.events, ['focus list'], 'no retry at the 250 ms settle: the webview still loads');
+  await at(800);
+  assert.deepEqual(keys.events, ['focus list', 'focus list'], 'the one retry, at 800 ms after the press');
+  await at(2_300);
+  tabs.sameTab();
+  tabs.sameTab();
+  tabs.sameTab();
+  await at(3_000);
+  assert.deepEqual(keys.events, ['focus list', 'focus list'], 'one retry, never a loop, with the +2.3 s burst');
+});
+
+test('a same-Tab changed event during a hold does not cancel it: the 250 ms retry still runs', async (t) => {
+  const { keys, tabs, at } = await restoredPress(t, { firstVisit: false });
+  await at(100);
+  tabs.sameTab();
+  await at(249);
+  assert.deepEqual(keys.events, ['focus list']);
+  await at(250);
+  assert.deepEqual(keys.events, ['focus list', 'focus list'], 'not the user\'s move: the retry runs');
+  await at(2_300);
+  tabs.sameTab();
+  await at(3_000);
+  assert.deepEqual(keys.events, ['focus list', 'focus list'], 'one retry only');
+});
+
+test('a tab active at activation (not a first visit) keeps the 250 ms retry', async (t) => {
+  const { keys, at } = await restoredPress(t, { firstVisit: false });
+  await at(250);
+  assert.deepEqual(keys.events, ['focus list', 'focus list'], 'the normal settle');
+  await at(3_000);
+  assert.deepEqual(keys.events, ['focus list', 'focus list'], 'and nothing at 800 ms');
+});
+
+test('the first-visit retry is never later than the 1200 ms cap, even after a slow reveal', async (t) => {
+  // The reveal takes 1 s: 800 ms has passed and a 250 ms settle would end at 1250.
+  const { keys, at } = await restoredPress(t, { firstVisit: true, revealMs: 1_000 });
+  await at(1_199);
+  assert.deepEqual(keys.events, ['focus list']);
+  await at(1_200);
+  assert.deepEqual(keys.events, ['focus list', 'focus list'], 'capped at 1200 ms after the press');
+  await at(3_000);
+  assert.equal(keys.events.length, 2);
+});
+
+test('the first-visit retry also waits for a tab that was active before the hold began', async (t) => {
+  // The activation came before the open returned: the hold starts on the panel tab itself.
+  const { keys, tabs, at } = await restoredPress(t, { firstVisit: true, activateInReveal: true });
+  await at(120);
+  tabs.sameTab();
+  await at(500);
+  assert.deepEqual(keys.events, ['focus list']);
+  await at(800);
+  assert.deepEqual(keys.events, ['focus list', 'focus list']);
+});
+
+const HELD_TAB_MOVES: [string, (tabs: ReturnType<typeof panelTabs>) => void][] = [
+  ['the user switched tabs', (tabs) => tabs.show(tabs.editor)],
+  ['a tab opened', () => stub.window.__fireTabsChanged({ opened: [{ label: 'new.ts', isActive: false }] })],
+  ['the held tab closed', (tabs) => stub.window.__fireTabsChanged({ closed: [tabs.panel] })],
+  ['another tab changed', (tabs) => stub.window.__fireTabsChanged({ changed: [tabs.editor] })],
+];
+for (const firstVisit of [false, true]) {
+  for (const [moved, move] of HELD_TAB_MOVES) {
+    test(`a real tab change still lets go of the hold: ${moved} (${firstVisit ? 'first visit' : '250 ms path'})`, async (t) => {
+      const { keys, tabs, at } = await restoredPress(t, { firstVisit });
+      await at(100);
+      move(tabs);
+      await at(3_000);
+      assert.deepEqual(keys.events, ['focus list'], 'where the user went keeps focus');
+    });
+  }
+}
+
+const FIRST_VISIT_CANCELS: [string, (f: ReturnType<typeof setup>) => unknown][] = [
+  ['an editor took focus', () => stub.window.__focusTextEditor({ document: { uri: vscode.Uri.file('/work/demo/file.ts') } })],
+  ['another terminal became active', () => stub.window.__focusTerminal(stub.window.createTerminal({ name: 'user shell' }))],
+  ['the window lost focus', () => stub.window.__fireWindowState(false)],
+  ['another Pitwall open came', (f) => runCommand('pitwall.openChat', f.row(f.chat('claude', 'Second', 'claude-2')))],
+];
+for (const [moved, move] of FIRST_VISIT_CANCELS) {
+  test(`the first-visit retry does not run when ${moved} during the wait (E11)`, async (t) => {
+    const { f, keys, at } = await restoredPress(t, { firstVisit: true });
+    await at(400);
+    await move(f);
+    await at(3_000);
+    assert.deepEqual(keys.events, ['focus list'], 'where the user went keeps focus');
+  });
+}
+
+test('a mouse open of a restored panel chat arms no retry (E11)', async (t) => {
+  const f = setup(t, { surface: 'ui' });
+  const chat = f.chat('claude', 'Clicked', 'claude-1');
+  f.claudeUi.surfaces.open.add('claude-1');
+  const tabs = panelTabs();
+  f.claudeUi.surfaces.tracker.isFirstVisitSinceLaunch = (tab) => tab === tabs.panel;
+  const keys = listKeys(f.row(chat));
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() });
+  await runCommand('pitwall.openChat', f.row(chat));
+  tabs.activate();
+  t.mock.timers.tick(3_000);
+  await settle();
+  assert.deepEqual(keys.events, [], 'a click lets the chat keep focus');
+});
+
+// ---- QA round 2, N1: each condition of the same-Tab rule is load-bearing ----
+
+const NOT_SAME_TAB_AGAIN: [string, (tabs: ReturnType<typeof panelTabs>) => void][] = [
+  [
+    'while another tab is active',
+    (tabs) => {
+      const group = stub.window.tabGroups.all[0] as { activeTab: PanelTab };
+      group.activeTab = tabs.editor;
+      stub.window.__fireTabsChanged({ changed: [tabs.panel] });
+      // Back on the held tab with no event, so only the event decides: the timer's own check would also see a moved tab.
+      group.activeTab = tabs.panel;
+    },
+  ],
+  ['alongside an opened tab', (tabs) => stub.window.__fireTabsChanged({ opened: [{ label: 'new.ts', isActive: false }], changed: [tabs.panel] })],
+  ['alongside a closed tab', (tabs) => stub.window.__fireTabsChanged({ closed: [tabs.editor], changed: [tabs.panel] })],
+];
+for (const [shape, fire] of NOT_SAME_TAB_AGAIN) {
+  test(`a changed event naming the held Tab ${shape} still counts as a move and lets go`, async (t) => {
+    const { keys, tabs, at } = await restoredPress(t, { firstVisit: false });
+    await at(100);
+    fire(tabs);
+    await at(3_000);
+    assert.deepEqual(keys.events, ['focus list'], 'not the host\'s same-Tab event: the hold let go');
+  });
+}
+
+// ---- QA round 2, C1: a first visit ends with its hold, whatever group has focus ----
+
+for (const secondPressAt of [1_000, 3_000]) {
+  test(`two groups: after the first visit to A, focus moves to the other group (A still selected in its group); the next Ctrl+Down onto A retries at 250 ms (+${secondPressAt} ms)`, async (t) => {
+    const f = setup(t, { surface: 'ui' });
+    const chat = f.chat('claude', 'Restored A', 'claude-1');
+    f.claudeUi.surfaces.open.add('claude-1');
+    const webview = () => new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel');
+    const other = { label: 'Claude B', input: webview(), isActive: true };
+    const restored = { label: 'Restored A', input: webview(), isActive: false };
+    const file = { label: 'file.ts', input: undefined, isActive: true };
+    const claudeGroup = { isActive: false, viewColumn: 2, activeTab: other as typeof restored, tabs: [other, restored] };
+    const editorGroup = { isActive: true, viewColumn: 1, activeTab: file, tabs: [file] };
+    stub.window.tabGroups.all = [editorGroup, claudeGroup];
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() });
+    // The real tracker, seeded at activation: A is restored and not shown.
+    const tracker = claudeUiSurfaces();
+    t.after(() => tracker.dispose());
+    f.claudeUi.surfaces.tracker.isFirstVisitSinceLaunch = (tab) => tracker.isFirstVisitSinceLaunch(tab);
+    f.claudeUi.surfaces.tracker.endFirstVisit = (tab) => tracker.endFirstVisit(tab);
+    const focusGroup = (group: typeof claudeGroup | typeof editorGroup) => {
+      claudeGroup.isActive = group === claudeGroup;
+      editorGroup.isActive = group === editorGroup;
+      stub.window.__fireTabGroupsChanged();
+    };
+    // The reveal shows A and focuses its group; the second time A is already selected there, so only the group event comes.
+    f.claudeUi.nativeUi.openSession = async (sessionId, cwd) => {
+      f.claudeUi.opened.push({ sessionId, cwd });
+      if (!restored.isActive) {
+        other.isActive = false;
+        restored.isActive = true;
+        claudeGroup.activeTab = restored;
+        stub.window.__fireTabsChanged({ changed: [restored, other] });
+      }
+      focusGroup(claudeGroup);
+      return { kind: 'opened', via: 'command' };
+    };
+    const keys = listKeys(f.row(chat));
+    t.after(() => stub.window.__fireWindowState(true));
+    let now = 0;
+    const at = async (ms: number) => {
+      t.mock.timers.tick(ms - now);
+      now = ms;
+      await settle();
+    };
+
+    await keys.press();
+    await at(799);
+    assert.equal(keys.events.length, 1, 'the first visit waits');
+    await at(800);
+    assert.equal(keys.events.length, 2, 'the first-visit retry at 800 ms');
+    focusGroup(editorGroup);
+    assert.equal(restored.isActive, true, 'A is still the selected tab of its group');
+
+    await at(secondPressAt);
+    await keys.press();
+    assert.equal(keys.events.length, 3, 'refocused right after the second reveal');
+    await at(secondPressAt + 249);
+    assert.equal(keys.events.length, 3);
+    await at(secondPressAt + 250);
+    assert.equal(keys.events.length, 4, 'a later visit retries at 250 ms, not 800');
+    await at(secondPressAt + 2_000);
+    assert.equal(keys.events.length, 4, 'one retry');
+  });
+}
 
 test('a mouse open of a panel chat arms no retry (E8)', async (t) => {
   const f = setup(t, { surface: 'ui' });

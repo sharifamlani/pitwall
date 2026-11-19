@@ -216,6 +216,14 @@ export interface NativeUiCapability {
 }
 
 /**
+ * A restored tab's first visit lasts at most this long after its webview was
+ * first shown, and a Ctrl+↓/↑ first-visit retry fires no later than this after
+ * the press (Q43). By then the webview has loaded (S1: last focus movement at
+ * ≤ 556 ms).
+ */
+export const RESTORED_DEADLINE_CAP_MS = 1_200;
+
+/**
  * Maps native-UI tabs to native session IDs. The tree, attention service, and
  * active-row logic resolve that ID back to a chat, so the tracker stays free
  * of stored state.
@@ -280,6 +288,18 @@ export interface NativeUiSurfaceTracker extends vscode.Disposable {
   adopt?(): void;
   /** Before an open: wait at most `timeoutMs` for the titles, then adopt, so an open never misses a tab already there. */
   adoptBeforeOpen?(timeoutMs?: number): Promise<void>;
+  /**
+   * Whether this is the first visit since launch of a tab restored before
+   * activation: one of this harness's tabs that was there at activation and
+   * not shown then, whose first visit has not ended. A visit starts when the
+   * tab is first shown and ends when `endFirstVisit` is called (the hold on it
+   * finished) or RESTORED_DEADLINE_CAP_MS after it started. Keyed on the Tab,
+   * not a session: restored tabs are often unbound. Its webview loads on this
+   * visit and takes focus late (E11).
+   */
+  isFirstVisitSinceLaunch?(tab: vscode.Tab): boolean;
+  /** The Ctrl+↓/↑ hold on this tab finished (its retry fired or it let go): its first visit is over. */
+  endFirstVisit?(tab: vscode.Tab): void;
 }
 
 /** A session a tab may belong to, and the titles its tab can show (its agent's title, its row name). */

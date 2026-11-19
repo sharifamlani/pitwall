@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { NativeUiSurfaceTracker, NativeUiTabGroupState, NativeUiTitleCandidate } from '../types';
+import { NativeUiSurfaceTracker, NativeUiTabGroupState, NativeUiTitleCandidate, RESTORED_DEADLINE_CAP_MS } from '../types';
 import { logOperation } from '../../services/OperationLog';
 
 /** How long an expected tab can take to appear before the expectation expires. */
@@ -144,6 +144,17 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   private tracing = false;
   /** Every Tab object (any kind) as of the last event, while tracing: tells a re-send from a plain group event. */
   private traceSeen = new Set<vscode.Tab>();
+  /** The last group line traced, so back-to-back identical re-sends log once. */
+  private lastGroupTrace: string | undefined;
+  /**
+   * Restored tabs whose first visit has not ended: this harness's tabs
+   * present at activation and not shown then. A tab leaves when its hold
+   * ends (`endFirstVisit`), RESTORED_DEADLINE_CAP_MS after it was first
+   * shown, or when it closes (E11).
+   */
+  private readonly unvisited = new Set<vscode.Tab>();
+  /** When each unvisited tab was first shown (its webview started loading). */
+  private readonly visitStartedAt = new Map<vscode.Tab, number>();
   /** `whenTabMoved` calls waiting for one of this harness's tabs to close. */
   private readonly moveWaiters = new Set<() => void>();
   /** The sessions a tab here may belong to, with their titles; set once titles are known (I1). */
@@ -192,6 +203,7 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       const reconciled = this.reconcile();
       const mappingChanged = this.adoptTabs() || reconciled;
       this.layout = this.uiTabsByGroup();
+      this.trackVisits();
       if (this.updateActiveSession() || mappingChanged) {
         this._onDidChange.fire();
       }
@@ -206,6 +218,22 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     }
     this.lastActiveSessionId = this.activeSessionId();
     this.layout = this.uiTabsByGroup();
+    // A restored tab that is not shown has not loaded its webview yet.
+    for (const tab of this.layout.flat()) {
+      if (!tab.isActive) {
+        this.unvisited.add(tab);
+      }
+    }
+  }
+
+  isFirstVisitSinceLaunch(tab: vscode.Tab): boolean {
+    const started = this.visitStartedAt.get(tab);
+    return this.unvisited.has(tab) && (started === undefined || this.now() - started <= RESTORED_DEADLINE_CAP_MS);
+  }
+
+  endFirstVisit(tab: vscode.Tab): void {
+    this.unvisited.delete(tab);
+    this.visitStartedAt.delete(tab);
   }
 
   /**
@@ -529,6 +557,7 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     mappingChanged = this.adoptTabs() || mappingChanged;
 
     this.layout = this.uiTabsByGroup();
+    this.trackVisits();
     const activeChanged = this.updateActiveSession();
     if (mappingChanged || activeChanged) {
       this._onDidChange.fire();
@@ -649,12 +678,14 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     const list = (tabs: readonly vscode.Tab[]) => `[${tabs.map((tab) => this.traceTab(tab)).join(', ')}]`;
     this.log(`[Pitwall] trace tabs opened=${list(event.opened)} closed=${list(event.closed)} changed=${list(event.changed)}`);
     this.traceSeen = this.allTabs();
+    this.lastGroupTrace = undefined;
   }
 
   /**
    * The raw tab-group event, before it is handled: how many of the Tab
    * objects seen at the last event it replaced (by identity), and every tab
-   * per group.
+   * per group. A re-send identical to the group event just before it, with
+   * no tab event between, is not logged again.
    */
   private traceGroupEvent(): void {
     if (!this.tracing) {
@@ -665,7 +696,11 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     const groups = this.getTabGroups();
     const active = groups.findIndex((group) => group.isActive);
     const tabs = groups.flatMap((group) => group.tabs.map((tab) => this.traceTab(tab)));
-    this.log(`[Pitwall] trace groups n=${groups.length} active=${active} replaced=${replaced}/${this.traceSeen.size} tabs=[${tabs.join(', ')}]`);
+    const line = `[Pitwall] trace groups n=${groups.length} active=${active} replaced=${replaced}/${this.traceSeen.size} tabs=[${tabs.join(', ')}]`;
+    if (line !== this.lastGroupTrace) {
+      this.log(line);
+      this.lastGroupTrace = line;
+    }
     this.traceSeen = now;
   }
 
@@ -904,6 +939,14 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       if (replacement && stamp) {
         this.openedAt.set(replacement.tab, stamp);
       }
+      if (replacement && this.unvisited.delete(old)) {
+        this.unvisited.add(replacement.tab);
+        const started = this.visitStartedAt.get(old);
+        this.visitStartedAt.delete(old);
+        if (started !== undefined) {
+          this.visitStartedAt.set(replacement.tab, started);
+        }
+      }
       if (sessionId === undefined) {
         continue;
       }
@@ -921,6 +964,30 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       changed = this.rebindReleased(tab, now, true) || changed;
     }
     return changed;
+  }
+
+  /**
+   * After every tab or group event (and its re-send pairing; a group switch
+   * or a re-send fires no tab event): an unvisited tab shown now, the
+   * selected tab of its group, starts its visit, whose webview loads now. A
+   * visit never ends on the tab being hidden again: the selected tab of a
+   * group that lost focus stays selected (QA C1). It ends with its hold or
+   * RESTORED_DEADLINE_CAP_MS after it started; a tab that is gone is dropped.
+   */
+  private trackVisits(): void {
+    if (this.unvisited.size === 0) {
+      return;
+    }
+    const present = new Set(this.layout.flat());
+    const now = this.now();
+    for (const tab of [...this.unvisited]) {
+      const started = this.visitStartedAt.get(tab);
+      if (!present.has(tab) || (started !== undefined && now - started > RESTORED_DEADLINE_CAP_MS)) {
+        this.endFirstVisit(tab);
+      } else if (started === undefined && tab.isActive) {
+        this.visitStartedAt.set(tab, now);
+      }
+    }
   }
 
   /** Returns true when the active native-UI session changed. */
