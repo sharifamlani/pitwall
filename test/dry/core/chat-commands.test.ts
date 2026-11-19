@@ -1869,3 +1869,127 @@ test('a multi-root window labels no chat "this window"', async (t) => {
   assert.match(lastPick()[1].description ?? '', /its own window/, 'the router never treats a multi-root window as owning a folder');
   assert.ok(!lastPick()[1].description?.includes('this window'));
 });
+
+// ---- v0.6.x: explicit menu opens never start a second process for a live chat (QA on #71) ----
+
+const TERMINAL_OUTSIDE = (pid: number) => `That chat is already running in another terminal (pid ${pid}). Switch to it there.`;
+const PANEL_OUTSIDE = (pid: number) => `That chat is already running in another window or terminal (pid ${pid}). Switch to it there.`;
+
+/**
+ * The session commands wired to a real router whose live-process lookup
+ * answers from `live`: this window's own panel with a tab Pitwall never bound
+ * (`here`), a terminal the user started, or a panel in another window.
+ */
+function guarded(
+  t: TestContext,
+  live: Record<string, { pid: number; panel?: boolean; here?: boolean; cwd?: string }>,
+  options: { surface?: 'terminal' | 'ui'; reveals?: boolean } = {}
+) {
+  let router: ChatRouter | undefined;
+  const f = setup(t, { surface: options.surface, extra: { router: () => router } });
+  const revealed: string[] = [];
+  const lookups: string[] = [];
+  router = new ChatRouter({
+    services: () => undefined,
+    windowFolder: () => f.main.path,
+    harnessRegistry: { has: () => true, get: () => ({}) as never, all: () => [] },
+    worktreeOf: async (chat) => f.worktrees.find((worktree) => worktree.id === chat.worktreeId),
+    rootsOf: () => f.worktrees.map((worktree) => worktree.path),
+    repoName: () => 'demo',
+    isOpenHere: () => false,
+    chatForSession: (sessionId) => f.storage.getChats().find((chat) => chat.harnessSessionId === sessionId),
+    openHere: async () => true,
+    startNew: async () => false,
+    outsideTerminal: async (sessionId) => (lookups.push(sessionId), live[sessionId]),
+    revealLive: async (_chat, sessionId) => (revealed.push(sessionId), options.reveals ?? true),
+    log: () => undefined,
+  });
+  t.after(() => router?.dispose());
+  return { ...f, revealed, lookups };
+}
+
+const LIVE = {
+  'claude-here': { pid: 4242, panel: true, here: true },
+  'claude-term': { pid: 777, panel: false },
+  'claude-win': { pid: 888, panel: true, cwd: '/work/other' },
+};
+
+test('Open in Terminal on a chat live in this window, a terminal Pitwall does not own, or another window starts no process', async (t) => {
+  const f = guarded(t, LIVE);
+  const here = f.chat('claude', 'Main', 'claude-here');
+  const term = f.chat('claude', 'In my own terminal', 'claude-term');
+  const win = f.chat('claude', 'In window B', 'claude-win');
+
+  await runCommand('pitwall.openChatInTerminal', f.row(here));
+  await runCommand('pitwall.openChatInTerminal', f.row(term));
+  await runCommand('pitwall.openChatInTerminal', f.row(win));
+  assert.equal(stub.window.terminals.length, 0, 'no terminal, so no claude --resume beside the live process');
+  assert.deepEqual(f.claudeUi.opened, [], 'no new panel either');
+  assert.deepEqual(f.revealed, ['claude-here'], "this window's own panel is brought forward instead");
+  assert.ok(shown(TERMINAL_OUTSIDE(777)), 'the outside terminal is named');
+  assert.ok(shown(PANEL_OUTSIDE(888)), 'the other window is named');
+
+  // A chat live nowhere still opens in a terminal, as before.
+  const idle = f.chat('claude', 'Idle', 'claude-idle');
+  await runCommand('pitwall.openChatInTerminal', f.row(idle));
+  assert.deepEqual(stub.window.terminals.map((terminal) => terminal.sent[0]), ['claude --resume claude-idle']);
+});
+
+test("Open in Terminal on this window's own unbound panel warns when it can't bring the tab forward, and starts nothing", async (t) => {
+  const f = guarded(t, LIVE, { reveals: false });
+  await runCommand('pitwall.openChatInTerminal', f.row(f.chat('claude', 'Main', 'claude-here')));
+  assert.equal(stub.window.terminals.length, 0);
+  assert.ok(shown("That chat is already open in this window's Claude panel. Switch to its tab there."));
+});
+
+test('Open in Terminal on a chat with its own Pitwall terminal reveals that terminal without asking for live processes', async (t) => {
+  const f = guarded(t, LIVE);
+  const chat = f.chat('claude', 'Mine', 'claude-mine');
+  await runCommand('pitwall.openChatInTerminal', f.row(chat));
+  const terminal = f.lastTerminal();
+  const asked = f.lookups.length;
+  await runCommand('pitwall.openChatInTerminal', f.row(chat));
+  assert.deepEqual([stub.window.terminals.length, terminal.shown, f.lookups.length], [1, 2, asked], 'its own terminal, focused again');
+});
+
+test("Open in Claude UI on a chat live in its own Pitwall terminal offers Close and Open, never the outside warning (M6)", async (t) => {
+  const live: Record<string, { pid: number; panel?: boolean }> = {};
+  const f = guarded(t, live, { surface: 'terminal' });
+  const chat = f.chat('claude', 'Mine', 'claude-mine');
+  await runCommand('pitwall.openChatInTerminal', f.row(chat));
+  // Its own terminal's process is now the live one.
+  live['claude-mine'] = { pid: 9100, panel: false };
+  stub.__warningResponses.push(undefined);
+  await runCommand('pitwall.openClaudeUi', f.row(chat));
+  assert.ok(shown('Close the terminal for "Mine"?'), 'the user may move it to the panel');
+  assert.ok(!shown(TERMINAL_OUTSIDE(9100)), 'Pitwall knows its own terminal');
+  assert.deepEqual([f.claudeUi.opened, f.lookups], [[], ['claude-mine']], 'no lookup once its terminal owns it');
+});
+
+test('Open in Claude UI on a chat live in an outside terminal or another window opens no new panel and no terminal', async (t) => {
+  const f = guarded(t, LIVE, { surface: 'ui' });
+  for (const id of ['claude-term', 'claude-win', 'claude-here']) {
+    await runCommand('pitwall.openClaudeUi', f.row(f.chat('claude', id, id)));
+  }
+  assert.deepEqual(f.claudeUi.opened, [], 'never a second panel process');
+  assert.equal(stub.window.terminals.length, 0);
+  assert.ok(shown(TERMINAL_OUTSIDE(777)));
+  assert.ok(shown(PANEL_OUTSIDE(888)));
+  assert.deepEqual(f.revealed, ['claude-here']);
+
+  const idle = f.chat('claude', 'Idle', 'claude-idle');
+  await runCommand('pitwall.openClaudeUi', f.row(idle));
+  assert.deepEqual(f.claudeUi.opened, [{ sessionId: 'claude-idle', cwd: f.main.path }], 'a chat live nowhere still opens');
+});
+
+test("Open in Claude UI on a live chat the panel can't resume never falls back to a terminal (Q23 refusal)", async (t) => {
+  const f = guarded(t, LIVE, { surface: 'ui' });
+  f.claudeUi.nativeUi.resumeRefusal = async () => SDK_REFUSAL;
+  await runCommand('pitwall.openClaudeUi', f.row(f.chat('claude', 'From claude -p', 'claude-term')));
+  await runCommand('pitwall.openClaudeUi', f.row(f.chat('claude', 'SDK in window B', 'claude-win')));
+  assert.equal(stub.window.terminals.length, 0, 'no claude --resume beside the live process');
+  assert.deepEqual(f.claudeUi.opened, []);
+
+  await runCommand('pitwall.openClaudeUi', f.row(f.chat('claude', 'SDK, idle', 'claude-sdk-idle')));
+  assert.deepEqual(stub.window.terminals.map((terminal) => terminal.sent[0]), ['claude --resume claude-sdk-idle'], 'live nowhere: the refusal still resumes it in a terminal');
+});

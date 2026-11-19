@@ -19,6 +19,8 @@ export interface ClaudeSessionFileState {
   cwd: string;
   /** Where the session was started (`cli`, `claude-vscode`, ...), when the file says. */
   entrypoint?: string;
+  /** When the process started (epoch ms), when the file says: with the pid, it names one process (a pid is reused). */
+  startedAt?: number;
 }
 
 /** One read of the sessions folder. */
@@ -92,7 +94,7 @@ export async function localPidDomain(): Promise<string> {
 
 type Parsed =
   | { kind: 'malformed' }
-  | { kind: 'record'; sessionId: string; pid: number; pidDomain?: string; status?: string; waitingFor?: string; statusUpdatedAt: number; cwd: string; entrypoint?: string };
+  | { kind: 'record'; sessionId: string; pid: number; pidDomain?: string; status?: string; waitingFor?: string; statusUpdatedAt: number; cwd: string; entrypoint?: string; startedAt?: number };
 
 function parseSessionFile(text: string): Parsed {
   let raw: unknown;
@@ -121,6 +123,7 @@ function parseSessionFile(text: string): Parsed {
     statusUpdatedAt: typeof record.statusUpdatedAt === 'number' ? record.statusUpdatedAt : 0,
     cwd: typeof record.cwd === 'string' ? record.cwd : '',
     ...(typeof record.entrypoint === 'string' ? { entrypoint: record.entrypoint } : {}),
+    ...(typeof record.startedAt === 'number' ? { startedAt: record.startedAt } : {}),
   };
 }
 
@@ -303,6 +306,7 @@ export class ClaudeSessionsFile {
         pid: entry.pid,
         cwd: entry.cwd,
         ...(entry.entrypoint ? { entrypoint: entry.entrypoint } : {}),
+        ...(entry.startedAt !== undefined ? { startedAt: entry.startedAt } : {}),
       });
     }
     for (const sessionId of unknown) {

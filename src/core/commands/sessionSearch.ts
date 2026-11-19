@@ -10,6 +10,7 @@ import { StorageService } from '../services/StorageService';
 import { WorktreeCatalog } from '../services/WorktreeCatalog';
 import { ChatSession, SessionSearchEngine, SessionSearchMatch } from '../types';
 import { errorMessage } from '../utils/text';
+import { outsideTerminalMessage, ownPanelMessage } from '../windows/ChatRouter';
 import { commandRegistrar, importNativeSession } from './common';
 
 export const SESSION_SEARCH_VIEW = 'pitwall.sessionSearchView';
@@ -27,6 +28,12 @@ export interface SessionSearchCommandDeps {
   refreshTree: () => void;
   /** Whether the Find Session view is on screen. */
   isViewVisible: () => boolean;
+  /**
+   * The live process running a session, if any, marked `here` when it is this
+   * window's own panel (the router's lookup, Q28). Defaults to the harness's
+   * own record, unmarked.
+   */
+  liveProcess?: (sessionId: string) => Promise<{ pid: number; panel?: boolean; here?: boolean } | undefined>;
 }
 
 /**
@@ -285,6 +292,15 @@ export function registerSessionSearchCommands(context: vscode.ExtensionContext, 
     }
     if (!(await adapter.isSessionResumable(match.sessionId, match.cwd))) {
       vscode.window.showWarningMessage(`The ${adapter.displayName} session no longer exists. It may have been removed.`);
+      return;
+    }
+    // One agent process per session (Q28): a session live anywhere (this
+    // window's panel, a terminal, another window) is never resumed again.
+    const lookup: NonNullable<SessionSearchCommandDeps['liveProcess']> =
+      deps.liveProcess ?? ((sessionId) => Promise.resolve(adapter.liveProcessOf?.(sessionId)));
+    const live = await lookup(match.sessionId).catch(() => undefined);
+    if (live) {
+      void vscode.window.showWarningMessage(live.here ? ownPanelMessage() : outsideTerminalMessage(live.pid, live.panel));
       return;
     }
     const terminal = vscode.window.createTerminal({

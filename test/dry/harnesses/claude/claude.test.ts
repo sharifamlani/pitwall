@@ -61,6 +61,10 @@ test("a session the user renamed in Claude is named by its custom title, the tab
   profile.write(SESSION_ID, repo, [entry.user('Please fix the tests'), entry.aiTitle('Pitwall initial idea'), entry.summary('A summary')]);
   assert.deepEqual(await parsed(), ['Pitwall initial idea', false], 'no custom title: the ai-title, as before');
 
+  // Claude's own reader keeps the previous custom title when a later one is empty (`|| previous`).
+  profile.write(SESSION_ID, repo, [entry.user('Please fix the tests'), entry.aiTitle('Pitwall initial idea'), entry.customTitle('Main'), entry.customTitle('  ')]);
+  assert.deepEqual(await parsed(), ['Main', true], 'an empty custom title keeps the previous one');
+
   const harness = new ClaudeHarness();
   profile.write(SESSION_ID, repo, [entry.user('Please fix the tests'), entry.aiTitle('Pitwall initial idea'), entry.customTitle('Main')]);
   const [listed] = await harness.listSessionsForWorktree(repo);

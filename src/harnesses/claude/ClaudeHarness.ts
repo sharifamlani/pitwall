@@ -177,10 +177,18 @@ export class ClaudeHarness implements HarnessAdapter {
    * terminal outside Pitwall and a panel in some window look alike here; the
    * caller tells them apart by what Pitwall owns (Q28). The record's `cwd`
    * names the folder, and so the window (D35), of a panel Pitwall never bound.
+   * Its `startedAt` tells this process from a later one that reuses the pid.
    */
-  async liveProcessOf(sessionId: string): Promise<{ pid: number; panel: boolean; cwd?: string } | undefined> {
+  async liveProcessOf(sessionId: string): Promise<{ pid: number; panel: boolean; cwd?: string; startedAt?: number } | undefined> {
     const state = (await this.sessionsFile.snapshot()).states.get(sessionId);
-    return state ? { pid: state.pid, panel: state.entrypoint === 'claude-vscode', ...(state.cwd ? { cwd: state.cwd } : {}) } : undefined;
+    return state
+      ? {
+          pid: state.pid,
+          panel: state.entrypoint === 'claude-vscode',
+          ...(state.cwd ? { cwd: state.cwd } : {}),
+          ...(state.startedAt !== undefined ? { startedAt: state.startedAt } : {}),
+        }
+      : undefined;
   }
 
   /**

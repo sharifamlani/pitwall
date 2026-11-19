@@ -335,6 +335,35 @@ test('overlapping focus changes never swap two tabs’ titles', async (t) => {
   await waitFor(() => tabA.name === titleA, 'the refocused tab to get its title');
 });
 
+test('after a quit, a revived tab whose chat went on running elsewhere is not resumed, and one message says so (QA #72)', async (t) => {
+  const f = setup(t, {
+    chats: [
+      { id: 'aabbcc00-moved', name: 'Moved on', harnessSessionId: 'live-elsewhere', status: 'closed' },
+      { id: 'bbccdd00-other', name: 'Also moved', harnessSessionId: 'live-too', status: 'closed' },
+      { id: 'ccddee00-idle', name: 'Idle', harnessSessionId: 'idle', status: 'closed' },
+    ],
+    // While the window was closed, the sessions were resumed in another terminal or window.
+    adapter: { liveProcessOf: async (id) => (id.startsWith('live') ? { pid: 4321, panel: id === 'live-too' } : undefined) },
+  });
+  await f.storage.rememberTerminalPid('aabbcc00-moved', 7001);
+  await f.storage.rememberTerminalPid('bbccdd00-other', 7002);
+  await f.storage.rememberTerminalPid('ccddee00-idle', 7003);
+  const moved = f.restoredTab('Pitwall: Moved on [aabbcc]', 8001);
+  const other = f.restoredTab('Pitwall: Also moved [bbccdd]', 8002);
+  const idle = f.restoredTab('Pitwall: Idle [ccddee]', 8003);
+
+  const restore = f.manager.beginRestoreSync(() => WORKTREE);
+  await restore.adopted;
+  await restore.complete;
+  const cd = ` cd '${WORKTREE.path}' && `;
+  assert.deepEqual([moved.sent[0], other.sent[0], idle.sent[0]], [undefined, undefined, `${cd}claude --resume idle`], 'no second process on a live session');
+  assert.equal(f.manager.getTerminal('aabbcc00-moved'), undefined, 'the tab is left a plain shell');
+  assert.equal(f.manager.isResuming('aabbcc00-moved'), false, 'and not held: a click routes the chat');
+  const messages = stub.__messages.map((args) => String(args[0]));
+  assert.equal(messages.length, 1, 'warned once for the pass');
+  assert.match(messages[0], /"Moved on", "Also moved"/);
+});
+
 test('adoption does not wait for a slow harness check, and a click meanwhile focuses the restored tab', async (t) => {
   let release: (resumable: boolean) => void = () => undefined;
   const f = setup(t, {

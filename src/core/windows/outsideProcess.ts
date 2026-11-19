@@ -20,11 +20,26 @@ export interface LiveProcess {
   here?: boolean;
 }
 
+/** What the harness's record says about the process; `startedAt` or `sessionId` names it for the parent cache. */
+export interface LiveRecord {
+  pid: number;
+  panel: boolean;
+  cwd?: string;
+  /** When the process started (epoch ms), when the record says. */
+  startedAt?: number;
+  /** The session it runs: names the process when the record has no start time. */
+  sessionId?: string;
+}
+
 export interface OutsideProcessDeps {
   /** This extension host's pid: the parent of this window's panel processes. */
   hostPid: number;
-  /** The parent of a pid; undefined when the lookup fails or times out. */
-  parentPidOf: (pid: number) => Promise<number | undefined>;
+  /**
+   * The parent of a pid; undefined when the lookup fails or times out.
+   * `identity` (the start time, else the session) tells the process from a
+   * later one that reuses its pid, so a cached answer never applies to it.
+   */
+  parentPidOf: (pid: number, identity?: string) => Promise<number | undefined>;
 }
 
 /**
@@ -33,7 +48,7 @@ export interface OutsideProcessDeps {
  * unmarked: a live process of an unknown window is never opened a second time.
  */
 export async function classifyLiveProcess(
-  live: LiveProcess | undefined,
+  live: LiveRecord | undefined,
   deps: OutsideProcessDeps
 ): Promise<LiveProcess | undefined> {
   if (!live) {
@@ -43,6 +58,7 @@ export async function classifyLiveProcess(
   if (!live.panel) {
     return { pid: live.pid, panel: false, ...cwd };
   }
-  const parent = await deps.parentPidOf(live.pid);
+  const identity = live.startedAt !== undefined ? String(live.startedAt) : live.sessionId;
+  const parent = await deps.parentPidOf(live.pid, identity);
   return { pid: live.pid, panel: true, ...cwd, ...(parent === deps.hostPid ? { here: true } : {}) };
 }
