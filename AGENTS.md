@@ -44,6 +44,11 @@ the Evaluator grades it afterwards, and its findings become patch releases.
 - **Every open path, every walk:** row click, pop-up click, Ctrl+Alt+0, `Next ▸`, each on live and
   stopped chats, in this window and another, with the `claude` process count checked before and
   after. A second process for a live chat is a FAIL.
+- **Marketing:** voice skill `sharif-voice` (`.claude/skills/sharif-voice`, `harness/check_draft.py`),
+  posting with `anthropic-skills:chrome-browser`; media from
+  `%LOCALAPPDATA%\pitwall-uj\captures\phaseN-*` (uj-lab-* repos only); state file
+  `MARKETING_STATE.md` in its scratchpad; series = ROADMAP D39; repo link
+  `github.com/sharifamlani/pitwall`; never "Claude" in the product name.
 - Pop-up clicks are simulated in the test profile, because `cursor://` belongs to the default
   profile. Each release adds one real pop-up click in Sharif's setup, done by Sharif.
 

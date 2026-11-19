@@ -34,3 +34,18 @@ check enforces it.
   and after. (Pitwall #71.)
 - Include one real end-to-end action through the operating system (a real notification click),
   not only a simulated one. (Pitwall 0.6.0 real click.)
+
+## Marketing (Marketing reads before drafting)
+
+- Give the measured number with its condition; never stretch it (a handoff time measured only with
+  the window already open).
+- Gate a claim until the Tester's walk proves it; a screenshot doesn't prove it.
+- Lead with a bold, clear promise; weak openers get rewritten.
+- Always post with media; never offer a text-only fallback.
+- Never use a raw whole-desktop recording; it shows the owner's other windows.
+- Pad video to the platform's accepted ratio (a 3.08:1 clip was rejected).
+- Make only the edits asked for ("change nothing else" means exactly that).
+- Count X characters before sending (a draft ran to 306).
+- Soften claims about platforms nobody tested (macOS).
+- Flag drafts over the length target.
+- Put the repo link in the first comment, never in the post.
