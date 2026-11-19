@@ -8,7 +8,7 @@ On an F1 pit wall, the team watches every car at once and calls in whichever one
 
 ## Status
 
-**v0.5.0 (Phase 4): Windows and tabs, on top of Sidebar v1.** What works today:
+**v0.6.0 (Phase 5): status and pop-ups, on top of Windows and tabs.** What works today:
 
 - Click any chat and it opens in the Cursor window for its folder (the window opens if needed), in Claude Code's own chat panel with its history.
 - A repo click opens its 8 newest chats as tabs, side by side up to 4 panes, and never opens one twice.
@@ -22,7 +22,22 @@ On an F1 pit wall, the team watches every car at once and calls in whichever one
 - The list draws within a second of starting.
 - After you quit or reload Cursor, the chat you had open comes back in its own tab (terminal chats are resumed by Pitwall; panel chats by Claude Code). This works on Windows.
 
-**Next, Phase 5, "Status and pop-ups":** a pop-up for every session that needs you, with "Open chat" using the same window routing. The plan and its order are in [ROADMAP.md](ROADMAP.md).
+**New in v0.6.0 (Phase 5):**
+
+- Every listed session shows its status, read from Claude Code's sessions file.
+- On Windows, a pop-up under Pitwall's own name for each chat that needs you or finishes, one per change however many windows are open. "Open chat" opens the chat in the window for its folder.
+- Sound switches for "needs you" and "finished", off by default, with a bell in the Repos header and a Test sound button.
+- The bottom bar counts chats that need you, are working or are finished. A click opens a jump list, `Next ▸` steps through the chats that need you, and Ctrl+Alt+0 opens the one that has waited longest.
+- The first time Pitwall starts on Windows it checks that Windows will show its pop-ups, and offers the Settings page if not.
+
+### Pop-ups on Windows
+
+- The first time you click a Pitwall pop-up, Cursor asks "Allow 'Pitwall' extension to open this URI?". It asks on every click until you tick "Do not ask me again".
+- Pitwall adds one per-user Windows entry so the pop-ups carry its name: HKCU `AppUserModelId\sharifamlani.pitwall`. It needs no admin rights. "Pitwall: Remove Pop-up Registration" removes it, and so does uninstalling Pitwall.
+- Sounds are off by default. Turn them on from the bell in the Repos header or in Settings → Pitwall → Sound.
+- More detail: [docs/notifications.md](docs/notifications.md) and [docs/privacy.md](docs/privacy.md).
+
+**Next, Phase 6:** the first installable `.vsix`. The plan and its order are in [ROADMAP.md](ROADMAP.md).
 
 ### Known issues
 
@@ -33,11 +48,16 @@ On an F1 pit wall, the team watches every car at once and calls in whichever one
 - **Dragging a file onto a repo row, and dragging tabs to reorder them, are checked by hand**, not by automated tests.
 - **A click on a brand-new chat that belongs to another window's folder does nothing visible.** Pitwall won't start it in this window and doesn't yet say why; open that folder's window and click it there.
 - **A restored tab titled "Claude Code", or with a title two chats share, isn't marked " · open".** Pitwall only links a tab it didn't open when its title names exactly one chat; clicking the row still shows the tab.
-- **The first Ctrl+↓ onto a restored panel chat after launch moves focus out of the list.** Claude's panel loads on that first visit and takes focus; click the list once and carry on. Later visits keep the list focused. Fix planned for v0.5.1.
-- **Pop-ups are Phase 5.** Today only a chat you have open can pop up.
 - **Claude Code pulls its terminal to the front.** About a second after a Claude turn starts in a terminal, the Claude Code extension's IDE integration brings that terminal forward and gives it keyboard focus. This happens with Pitwall disabled too; it isn't Pitwall.
 - **Quitting with a file in front can drop terminal chats.** If a file (not a chat terminal) is in front when you quit, VS Code and Cursor may restart the chat terminals without their names, so Pitwall can't match them and they aren't resumed. It's an editor race, reproduced without Pitwall installed. Click the chat in Pitwall to resume it in a new tab. Since v0.5.0 chats open in Claude's chat panel by default; this affects terminal mode only.
 - **A terminal moved to the bottom panel always counts as "not looking"**, so you may get a "needs you" pop-up for a chat you are watching there.
+- **A click into a just-restored chat within about 0.8 s of the first Ctrl+↓ after launch is pulled back to the list once.** Click again.
+- **Ctrl+Alt+0 and `Next ▸` can re-open the chat already in front** when it is a restored tab whose title other chats share.
+- **Pop-up clicks open in Cursor's default profile**, and can take several seconds on a busy machine. A Cursor started with a separate `--user-data-dir` doesn't receive them.
+- **A chat running a background agent shows "working"** until the agent's result is handled.
+- **The pop-up registration is shared by all Cursor profiles** of the Windows user. Removing it in one profile turns pop-ups into in-window messages in the others until their next start.
+- **Pop-ups appear about 1.5 to 3 s after the change.**
+- **Downgrading shows merged duplicate chats again.** Nothing was deleted.
 
 ## Requirements
 
