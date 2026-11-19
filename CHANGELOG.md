@@ -4,10 +4,36 @@ All notable changes to Pitwall are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-19
+
+Status and pop-ups (ROADMAP Phase 5).
+
+### Added
+
+- Every listed session now shows its status (needs you, working, finished, idle), read from Claude Code's sessions file. A new chat is listed and tracked from its first turn.
+- Windows pop-ups under Pitwall's own name. One pop-up per change, even with several windows open. "Open chat" opens the chat in the window for its folder.
+- Sound switches for "needs you" and "finished", off by default (Settings → Pitwall → Sound), a bell in the Repos header, and a Test sound button.
+- The bottom bar counts chats that need you, are working or are finished. A click on a count opens a jump list. `Next ▸` steps through the chats that need you, and Ctrl+Alt+0 opens the one that has waited longest.
+- A check the first time Pitwall starts on Windows: if Windows would hide Pitwall's pop-ups, it offers the Settings page to turn them on. "Pitwall: Check Windows Notifications" runs it again.
+- "Pitwall: Remove Pop-up Registration" removes the one per-user Windows entry Pitwall adds for its pop-ups. Uninstalling the extension removes it too.
+
 ### Fixed
 
 - The first Ctrl+↓ after launch onto a restored panel chat keeps the list focused (the 0.5.0 known issue).
+- A session was listed twice when two windows imported it at once. Duplicates now merge without losing stars, names or terminal links.
 - `pitwall.dev.traceTabs` logs a tab model Cursor re-sends unchanged once, not on every re-send.
+
+### Known issues
+
+- A click into a just-restored chat within about 0.8 s of the first Ctrl+↓ after launch is pulled back to the list once. Click again. VS Code gives no event for clicks inside Claude's panel.
+- Ctrl+Alt+0 and `Next ▸` can re-open the chat already in front when it is a restored tab whose title is shared by other chats. Pitwall can't tell which session that tab is.
+- Cursor asks "Allow 'Pitwall' extension to open this URI?" on every pop-up click until you tick "Do not ask me again".
+- A pop-up click can take several seconds on a busy machine, mostly Cursor starting its link handler. Pitwall's own part is fast.
+- Pop-up clicks always open in Cursor's default profile, because Windows sends `cursor://` links there. A Cursor started with a separate `--user-data-dir` doesn't receive them.
+- A chat running a background agent shows "working" until the agent's result is handled.
+- The pop-up registration and the first-run "already asked" marker are shared by all Cursor profiles of the Windows user. Removing the registration in one profile turns pop-ups into in-window messages in the others until the next start registers it again.
+- Pop-ups appear about 1.5 to 3 s after the change (PowerShell starts for each one), and slower on a heavily loaded machine.
+- Downgrading to an older version shows merged duplicate chats again. Nothing was deleted.
 
 ## [0.5.0] - 2026-11-18
 
