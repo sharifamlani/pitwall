@@ -1,36 +1,38 @@
 /**
- * The outside-terminal guard's decision (Q28, QA #52 C1): a live Claude panel
- * whose parent is this extension host is this window's own and opens here;
- * another panel or a terminal blocks. The parent lookup is async, times out,
- * and on failure falls back to opening here.
+ * Who owns a session's live process (Q28, QA #52 C1, v0.6.0 own-window fork):
+ * a live Claude panel whose parent is this extension host is this window's
+ * own (`here`), which the router brings forward and never opens a second
+ * time; another panel or a terminal is an outsider. The parent lookup is
+ * async and times out; a failed lookup is never taken as "not live".
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { outsideProcessOf } from '../../../src/core/windows/outsideProcess';
+import { classifyLiveProcess } from '../../../src/core/windows/outsideProcess';
 import { parentPidOf } from '../../../src/core/utils/parentPid';
 
 const HOST = 5000;
 
-test("a panel whose parent is this extension host is this window's own: not outside", async () => {
-  assert.equal(await outsideProcessOf({ pid: 9, panel: true }, { hostPid: HOST, parentPidOf: async () => HOST }), undefined);
+test("a panel whose parent is this extension host is this window's own: live here, never 'not live'", async () => {
+  assert.deepEqual(await classifyLiveProcess({ pid: 9, panel: true }, { hostPid: HOST, parentPidOf: async () => HOST }), { pid: 9, panel: true, here: true });
+  assert.deepEqual(await classifyLiveProcess({ pid: 9, panel: true, cwd: 'pitwall' }, { hostPid: HOST, parentPidOf: async () => HOST }), { pid: 9, panel: true, cwd: 'pitwall', here: true });
 });
 
 test('a panel with another parent is a window Pitwall cannot see; a terminal never asks for the parent', async () => {
-  assert.deepEqual(await outsideProcessOf({ pid: 9, panel: true }, { hostPid: HOST, parentPidOf: async () => 1234 }), { pid: 9, panel: true });
+  assert.deepEqual(await classifyLiveProcess({ pid: 9, panel: true }, { hostPid: HOST, parentPidOf: async () => 1234 }), { pid: 9, panel: true });
   let asked = 0;
-  const terminal = await outsideProcessOf({ pid: 8, panel: false }, { hostPid: HOST, parentPidOf: async () => void asked++ });
+  const terminal = await classifyLiveProcess({ pid: 8, panel: false }, { hostPid: HOST, parentPidOf: async () => void asked++ });
   assert.deepEqual(terminal, { pid: 8, panel: false });
   assert.equal(asked, 0);
-  assert.equal(await outsideProcessOf(undefined, { hostPid: HOST, parentPidOf: async () => 1 }), undefined);
+  assert.equal(await classifyLiveProcess(undefined, { hostPid: HOST, parentPidOf: async () => 1 }), undefined);
 });
 
 test("the record's cwd passes through to the router, which routes a panel by it (W4(b))", async () => {
-  assert.deepEqual(await outsideProcessOf({ pid: 9, panel: true, cwd: 'uj-lab-b' }, { hostPid: HOST, parentPidOf: async () => 1234 }), { pid: 9, panel: true, cwd: 'uj-lab-b' });
-  assert.deepEqual(await outsideProcessOf({ pid: 8, panel: false, cwd: 'uj-lab-t' }, { hostPid: HOST, parentPidOf: async () => 1234 }), { pid: 8, panel: false, cwd: 'uj-lab-t' });
+  assert.deepEqual(await classifyLiveProcess({ pid: 9, panel: true, cwd: 'uj-lab-b' }, { hostPid: HOST, parentPidOf: async () => 1234 }), { pid: 9, panel: true, cwd: 'uj-lab-b' });
+  assert.deepEqual(await classifyLiveProcess({ pid: 8, panel: false, cwd: 'uj-lab-t' }, { hostPid: HOST, parentPidOf: async () => 1234 }), { pid: 8, panel: false, cwd: 'uj-lab-t' });
 });
 
-test('a failed parent lookup opens here instead of blocking', async () => {
-  assert.equal(await outsideProcessOf({ pid: 9, panel: true }, { hostPid: HOST, parentPidOf: async () => undefined }), undefined);
+test("a failed parent lookup is a live process of unknown window: never 'not live', never 'here'", async () => {
+  assert.deepEqual(await classifyLiveProcess({ pid: 9, panel: true }, { hostPid: HOST, parentPidOf: async () => undefined }), { pid: 9, panel: true });
 });
 
 test('parentPidOf reads the parent through an async exec with a timeout, and answers undefined on failure', async () => {

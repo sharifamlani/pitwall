@@ -91,6 +91,32 @@ export class ClaudeUi implements NativeUiCapability {
     return this.open(cwd);
   }
 
+  /**
+   * A session live in this window's panel (its process is a child of this
+   * extension host) whose tab Pitwall never bound (v0.6.0). The extension's
+   * `claude-vscode.editor.open` with a session ID first looks the session up
+   * among its open panels and the sidebar and reveals that one; it starts a
+   * process only for a session no panel holds (read in extension 2.1.296's
+   * `createPanel`; the W4(b) re-walk saw one process before and after, 3/3).
+   * That is the extension's behaviour, not a documented contract, so only the
+   * command is used: the URI fallback's behaviour for an open session is
+   * unknown, and without the command this returns failed and nothing opens.
+   */
+  async revealOpenSession(sessionId: string, cwd: string): Promise<NativeUiOpenResult> {
+    const availability = this.checkAvailability(cwd);
+    if (availability.kind !== 'available') {
+      return availability;
+    }
+    if (!(await vscode.commands.getCommands(true)).includes(CLAUDE_UI_COMMAND)) {
+      return { kind: 'failed', message: `${CLAUDE_UI_COMMAND} is not available.` };
+    }
+    return attemptOpen(() =>
+      vscode.commands.executeCommand(CLAUDE_UI_COMMAND, sessionId, undefined, undefined, undefined, undefined, {
+        programmatic: 'honor-preferred-location',
+      })
+    );
+  }
+
   private async open(cwd: string, sessionId?: string): Promise<NativeUiOpenResult> {
     const availability = this.checkAvailability(cwd);
     if (availability.kind !== 'available') {

@@ -11,6 +11,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { openUri, parseOpenUri, PopupUriHandler, PopupUriDeps } from '../../../../src/core/notify/PopupUriHandler';
 import { ChatRouter, RouteResult } from '../../../../src/core/windows/ChatRouter';
+import { raiseThisWindow } from '../../../../src/core/windows/raiseWindow';
 import { ChatSession } from '../../../../src/core/types';
 import { chatRecord, flush, shownMessages, stub, worktreeRecord } from '../../support';
 
@@ -158,4 +159,31 @@ test('a query key Cursor adds (allow-listed after S4) is accepted; any other key
   await strict.handler.handleUri(uri(`session=${SESSION}&windowId=7`));
   assert.deepEqual(strict.routes, [], 'the list starts empty: only session');
   assert.equal(strict.log.at(-1), '[Pitwall] uri rejected param');
+});
+
+test('a pop-up click handled in this window raises this window; a routed one leaves raising to the handoff (v0.6.0)', async () => {
+  for (const [answer, raises] of [['here', 1], ['outside', 1], ['gone', 1], ['routed', 0]] as const) {
+    let raised = 0;
+    const h = handler(answer, { raiseWindow: () => void raised++ });
+    await h.handler.handleUri(uri(`session=${SESSION}`));
+    assert.equal(raised, raises, `${answer}: raised ${raises}`);
+  }
+  // A rejected link raises nothing: any local app can fire it.
+  let raised = 0;
+  await handler('here', { raiseWindow: () => void raised++ }).handler.handleUri(uri(`session=${OTHER}`));
+  assert.equal(raised, 0);
+});
+
+test("this window is raised with the handoff's own call on its folder, never from a multi-root, workspace-file or empty window", async () => {
+  const calls: { path: string; forceNewWindow?: boolean }[] = [];
+  vscode.commands.registerCommand('vscode.openFolder', (target: vscode.Uri, options?: { forceNewWindow?: boolean }) => {
+    calls.push({ path: target.fsPath, forceNewWindow: options?.forceNewWindow });
+  });
+  const folder = path.join(path.sep, 'work', 'pitwall');
+  await raiseThisWindow({ folders: [folder], workspaceFile: undefined });
+  assert.deepEqual(calls, [{ path: vscode.Uri.file(folder).fsPath, forceNewWindow: true }]);
+  await raiseThisWindow({ folders: [folder, path.join(path.sep, 'work', 'b')], workspaceFile: undefined });
+  await raiseThisWindow({ folders: [folder], workspaceFile: path.join(path.sep, 'work', 'a.code-workspace') });
+  await raiseThisWindow({ folders: [], workspaceFile: undefined });
+  assert.equal(calls.length, 1, 'openFolder from those would open a new window instead of raising this one');
 });

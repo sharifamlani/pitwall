@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ChatRouter, ROUTER_TIMING } from '../../../../src/core/windows/ChatRouter';
+import { PopupUriHandler } from '../../../../src/core/notify/PopupUriHandler';
 import { EXPIRE_MS, HandoffInbox, HandoffRequest, WARN_MS } from '../../../../src/core/windows/HandoffInbox';
 import { ownsFolder } from '../../../../src/core/windows/WindowRegistry';
 import { HarnessRegistry } from '../../../../src/core/harness/HarnessRegistry';
@@ -109,7 +110,9 @@ function windowOn(
     /** Other windows' open sessions, as the registry's heartbeats list them. */
     openIn?: { folder: string; sessionIds: string[]; pid?: number }[];
     /** The pid of a live process outside Pitwall running a session (a terminal the user started), if any. */
-    outsideTerminal?: (sessionId: string) => number | { pid: number; panel: boolean; cwd?: string } | undefined;
+    outsideTerminal?: (sessionId: string) => number | { pid: number; panel: boolean; cwd?: string; here?: boolean } | undefined;
+    /** Bring forward a session live in this window's own panel without a process (the agent UI's open command); absent: no such command. */
+    revealLive?: (chat: ChatSession, sessionId: string) => Promise<boolean>;
     /** Record the serial opens the router asks the tab tracker for. */
     serial?: ({ ids: string[]; results?: unknown[] }[] & { recordResults?: boolean });
     /** Record the side-by-side splits the router asks for. */
@@ -159,6 +162,7 @@ function windowOn(
           return typeof found === 'number' ? { pid: found } : found;
         }
       : undefined,
+    revealLive: options.revealLive,
     openSerially: options.serial
       ? async (ids: string[], open: (id: string) => Promise<unknown>) => {
           const entry: { ids: string[]; results?: unknown[] } = { ids: [...ids] };
@@ -1239,12 +1243,12 @@ test('a chat in a Claude panel of a window Pitwall cannot see gets the window-or
   assert.deepEqual(shownMessages().filter((message) => message.includes('another terminal')), []);
 });
 
-test("a chat in this window's own panel (the guard finds no outsider) opens here and warns nothing", async (t) => {
+test('a chat with no live process (the guard finds none) opens here and warns nothing', async (t) => {
   const w = world(t);
   w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
   const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, outsideTerminal: () => undefined });
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Own panel', ID.a, w.mainWt)] }), 'here');
-  assert.deepEqual(here.opened.map((entry) => entry.chat), ['Own panel']);
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Not live', ID.a, w.mainWt)] }), 'here');
+  assert.deepEqual(here.opened.map((entry) => entry.chat), ['Not live']);
   assert.deepEqual(shownMessages(), []);
 });
 
@@ -1510,4 +1514,128 @@ test('no-transcript-elsewhere still returns gone', async (t) => {
   const live = w.chat('Live outside', ID.a, w.mainWt);
   assert.equal(await here.router.route({ kind: 'openAll', chats: [live, pending] }), 'gone');
   assert.deepEqual(here.opened, []);
+});
+
+// ---- v0.6.0 release blocker: a chat live in THIS window's panel whose tab Pitwall never bound ----
+// Sharif's pop-up click on b3778905 (tab renamed "Main", row "Pitwall initial idea") logged
+// "route → here (same-folder)" and started a second `claude --resume` in a new terminal.
+
+const OWN_PANEL = "That chat is already open in this window's Claude panel. Switch to its tab there.";
+/** This window's own panel process: a child of this extension host (classifyLiveProcess marks it `here`). */
+const ownPanel = (id: string) => (sessionId: string) => (sessionId === id ? { pid: 4242, panel: true, here: true } : undefined);
+
+test("a pop-up click on a chat live in this window's own panel, tab unbound, brings it forward and starts no process", async (t) => {
+  const w = world(t);
+  const calls = openFolderCalls();
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const revealed: string[] = [];
+  const here = windowOn(t, w, tempDir(t), () => w.main, {
+    pid: 1001,
+    claims: w.main,
+    outsideTerminal: ownPanel(ID.a),
+    revealLive: async (_chat, sessionId) => (revealed.push(sessionId), true),
+  });
+  const chat = w.chat('Pitwall initial idea', ID.a, w.mainWt);
+  const popupLog: string[] = [];
+  const activated: string[] = [];
+  const handler = new PopupUriHandler({
+    chatForSession: (sessionId) => (sessionId === ID.a ? chat : undefined),
+    route: (request) => here.router.route(request),
+    activateLocal: (entry) => activated.push(entry.name),
+    log: (line) => popupLog.push(line),
+  });
+
+  await handler.handleUri(vscode.Uri.from({ scheme: 'cursor', authority: 'sharifamlani.pitwall', path: '/open', query: `session=${ID.a}` }));
+  assert.deepEqual(here.opened, [], 'openHere (a terminal or a new panel process) is never asked');
+  assert.deepEqual(revealed, [ID.a], "the agent UI's own open brings the existing tab forward");
+  assert.deepEqual(calls, [], 'no handoff');
+  assert.deepEqual(shownMessages(), []);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (live-here)`]);
+  assert.equal(popupLog.at(-1), `[Pitwall] popup click ${ID.a.slice(0, 8)}`);
+  assert.deepEqual(activated, ['Pitwall initial idea'], 'marked seen here');
+});
+
+test("a chat live in this window's own panel that can't be brought forward without a process warns and opens nothing", async (t) => {
+  const w = world(t);
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const failing = windowOn(t, w, tempDir(t), () => w.main, {
+    pid: 1001,
+    claims: w.main,
+    outsideTerminal: ownPanel(ID.a),
+    revealLive: async () => false,
+  });
+  const chat = w.chat('Main', ID.a, w.mainWt);
+  assert.equal(await failing.router.route({ kind: 'open', chats: [chat] }), 'outside');
+  assert.deepEqual(failing.opened, []);
+  assert.deepEqual(warnings(OWN_PANEL), [OWN_PANEL]);
+  assert.deepEqual(failing.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (live-here-warn)`]);
+
+  stub.__reset();
+  // No reveal command at all (an older Claude build): the same warning, still no process.
+  const none = windowOn(t, w, tempDir(t), () => w.main, { pid: 1002, claims: w.main, outsideTerminal: ownPanel(ID.a) });
+  assert.equal(await none.router.route({ kind: 'open', chats: [chat] }), 'outside');
+  assert.deepEqual(none.opened, []);
+  assert.deepEqual(warnings(OWN_PANEL), [OWN_PANEL]);
+});
+
+test("a chat live in this window with a bound tab is focused as before: the guard isn't asked", async (t) => {
+  const w = world(t);
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  let asked = 0;
+  const revealed: string[] = [];
+  const here = windowOn(t, w, tempDir(t), () => w.main, {
+    pid: 1001,
+    claims: w.main,
+    isOpenHere: () => true,
+    outsideTerminal: (id) => (asked++, ownPanel(ID.a)(id)),
+    revealLive: async (_chat, sessionId) => (revealed.push(sessionId), true),
+  });
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Bound', ID.a, w.mainWt)] }), 'here');
+  assert.deepEqual(here.opened.map((entry) => entry.chat), ['Bound'], 'its tab is revealed through openHere');
+  assert.equal(asked, 0);
+  assert.deepEqual(revealed, []);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (open-here)`]);
+});
+
+test("a chat that is not live opens normally here (same-folder), and the reveal path isn't used", async (t) => {
+  const w = world(t);
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  const revealed: string[] = [];
+  const here = windowOn(t, w, tempDir(t), () => w.main, {
+    pid: 1001,
+    claims: w.main,
+    outsideTerminal: () => undefined,
+    revealLive: async (_chat, sessionId) => (revealed.push(sessionId), true),
+  });
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Idle', ID.a, w.mainWt)] }), 'here');
+  assert.deepEqual(here.opened.map((entry) => [entry.chat, entry.path]), [['Idle', w.main]]);
+  assert.deepEqual(revealed, []);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (same-folder)`]);
+});
+
+test("a claimed chat live in the claimer's own panel, tab unbound, is brought forward there without a process", async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  w.transcript(w.other, ID.b, [w.turn(ID.b, w.other)]);
+  const chat = w.chat('Unbound B', ID.b, w.otherWt);
+  const revealed: string[] = [];
+  const claimer = windowOn(t, w, dir, () => w.other, {
+    pid: 2002,
+    claims: w.other,
+    outsideTerminal: ownPanel(ID.b),
+    revealLive: async (_chat, sessionId) => (revealed.push(sessionId), true),
+  });
+  const sender = windowOn(t, w, dir, () => w.main, {
+    pid: 1001,
+    claims: w.main,
+    windowsAt: [w.other],
+    outsideTerminal: (id) => (id === ID.b ? { pid: 4242, panel: true, cwd: w.other } : undefined),
+  });
+  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  const [request] = requestsFor(sender.inbox, dir, w.other);
+  await claimer.router.runClaimed([request], claimer.inbox);
+  assert.deepEqual(claimer.opened, [], 'no openHere on the claim side');
+  assert.deepEqual(revealed, [ID.b]);
+  assert.deepEqual(shownMessages(), []);
 });

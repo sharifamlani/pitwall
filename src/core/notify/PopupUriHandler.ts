@@ -71,6 +71,11 @@ export interface PopupUriDeps {
   log: (line: string) => void;
   /** Query keys accepted beside `session` (empty until S4 names one Cursor adds). */
   allowKeys?: ReadonlySet<string>;
+  /**
+   * Bring this window forward after a click it handled (v0.6.0). A routed
+   * click is raised by the handoff in the window it lands in.
+   */
+  raiseWindow?: () => unknown;
 }
 
 /**
@@ -78,7 +83,8 @@ export interface PopupUriDeps {
  * it only ever opens a chat Pitwall lists, through the same router as every
  * other open (D35): never a new chat, never a prompt. A chat opened here, or
  * held back (gone, or live in a terminal Pitwall doesn't own), is marked seen
- * here, so a finished row turns idle (D18); a routed one is marked by the
+ * here, so a finished row turns idle (D18), and this window is raised so the
+ * chat or the warning is in front; a routed one is marked and raised by the
  * window it lands in.
  */
 export class PopupUriHandler implements vscode.UriHandler {
@@ -101,6 +107,11 @@ export class PopupUriHandler implements vscode.UriHandler {
     this.deps.log(where === 'outside' ? `[Pitwall] popup click ${id8} outside` : `[Pitwall] popup click ${id8}`);
     if (where !== 'routed') {
       this.deps.activateLocal(chat);
+      try {
+        await this.deps.raiseWindow?.();
+      } catch {
+        // The chat is open (or the warning shown) either way.
+      }
     }
   }
 }

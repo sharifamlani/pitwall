@@ -656,21 +656,34 @@ export function registerChatCommands(
   };
 
   /**
-   * Whether a UI default can open this chat without asking anything: it has a
-   * native session the UI can resume (Q23), no terminal owns it, and the UI
-   * can open its worktree.
+   * Why a UI default can't open this chat without asking anything, or
+   * undefined when it can: it has a native session the UI can resume (Q23),
+   * no terminal owns it, and the UI can open its worktree. The reason goes to
+   * the Operations log when a click falls back to a terminal (v0.6.0).
    */
-  const canOpenInNativeUi = async (
+  const nativeUiSkipReason = async (
     chat: ChatSession,
     worktree: Worktree,
     nativeUi: NativeUiCapability
-  ): Promise<boolean> =>
-    Boolean(chat.harnessSessionId) &&
-    !terminalManager.isActive(chat.id) &&
-    !terminalManager.isResuming(chat.id) &&
-    nativeUi.isInstalled() &&
-    nativeUi.checkAvailability(worktree.path).kind === 'available' &&
-    !(await nativeUi.resumeRefusal?.(chat.harnessSessionId!));
+  ): Promise<string | undefined> => {
+    if (!chat.harnessSessionId) {
+      return 'no-session';
+    }
+    if (terminalManager.isActive(chat.id)) {
+      return 'terminal-open';
+    }
+    if (terminalManager.isResuming(chat.id)) {
+      return 'terminal-resuming';
+    }
+    if (!nativeUi.isInstalled()) {
+      return 'ui-not-installed';
+    }
+    const availability = nativeUi.checkAvailability(worktree.path).kind;
+    if (availability !== 'available') {
+      return availability;
+    }
+    return (await nativeUi.resumeRefusal?.(chat.harnessSessionId)) ? 'ui-cannot-resume' : undefined;
+  };
 
   /**
    * Open a chat the way a row click does. Shared by the row click, the
@@ -738,14 +751,13 @@ export function registerChatCommands(
 
     // The configured default is a preference: use the UI when it can open the
     // session, otherwise keep the action useful in the terminal.
-    if (
-      defaultSessionSurface() === 'ui' &&
-      nativeUi &&
-      (await canOpenInNativeUi(chat, worktree, nativeUi))
-    ) {
+    const skip =
+      defaultSessionSurface() !== 'ui' ? 'setting' : !nativeUi ? 'no-ui' : await nativeUiSkipReason(chat, worktree, nativeUi);
+    if (!skip && nativeUi) {
       return inUi(nativeUi);
     }
 
+    deps.log?.(`[Pitwall] open ${(sessionId ?? chat.id).slice(0, 8)} → terminal (${skip})`);
     const opened = await openInTerminal(chat, worktree, keepListFocus);
     if (listed.path !== worktree.path) {
       showWorktree(listed);
