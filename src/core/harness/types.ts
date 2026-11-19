@@ -273,6 +273,14 @@ export interface NativeUiSurfaceTracker extends vscode.Disposable {
   adopt?(): void;
   /** Before an open: wait at most `timeoutMs` for the titles, then adopt, so an open never misses a tab already there. */
   adoptBeforeOpen?(timeoutMs?: number): Promise<void>;
+  /**
+   * Whether this is the first visit since launch of a tab restored before
+   * activation: one of this harness's tabs that was there at activation, not
+   * active then, and not active and left since (the visit in progress counts
+   * as the first). Keyed on the Tab, not a session: restored tabs are often
+   * unbound. Its webview loads on this visit and takes focus late (E11).
+   */
+  isFirstVisitSinceLaunch?(tab: vscode.Tab): boolean;
 }
 
 /** A session a tab may belong to, and the titles its tab can show (its agent's title, its row name). */

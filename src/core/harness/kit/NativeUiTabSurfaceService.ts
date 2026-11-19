@@ -144,6 +144,14 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   private tracing = false;
   /** Every Tab object (any kind) as of the last event, while tracing: tells a re-send from a plain group event. */
   private traceSeen = new Set<vscode.Tab>();
+  /**
+   * Restored tabs not yet visited: this harness's tabs present at activation
+   * and not active then. A tab leaves once it has been active and then
+   * inactive, or closes (E11).
+   */
+  private readonly unvisited = new Set<vscode.Tab>();
+  /** The unvisited tabs active now: their first visit is in progress. */
+  private readonly visiting = new Set<vscode.Tab>();
   /** `whenTabMoved` calls waiting for one of this harness's tabs to close. */
   private readonly moveWaiters = new Set<() => void>();
   /** The sessions a tab here may belong to, with their titles; set once titles are known (I1). */
@@ -192,6 +200,7 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       const reconciled = this.reconcile();
       const mappingChanged = this.adoptTabs() || reconciled;
       this.layout = this.uiTabsByGroup();
+      this.trackVisits();
       if (this.updateActiveSession() || mappingChanged) {
         this._onDidChange.fire();
       }
@@ -206,6 +215,16 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     }
     this.lastActiveSessionId = this.activeSessionId();
     this.layout = this.uiTabsByGroup();
+    // A restored tab that is not shown has not loaded its webview yet.
+    for (const tab of this.layout.flat()) {
+      if (!tab.isActive) {
+        this.unvisited.add(tab);
+      }
+    }
+  }
+
+  isFirstVisitSinceLaunch(tab: vscode.Tab): boolean {
+    return this.unvisited.has(tab);
   }
 
   /**
@@ -529,6 +548,7 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     mappingChanged = this.adoptTabs() || mappingChanged;
 
     this.layout = this.uiTabsByGroup();
+    this.trackVisits();
     const activeChanged = this.updateActiveSession();
     if (mappingChanged || activeChanged) {
       this._onDidChange.fire();
@@ -904,6 +924,11 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       if (replacement && stamp) {
         this.openedAt.set(replacement.tab, stamp);
       }
+      for (const visits of [this.unvisited, this.visiting]) {
+        if (replacement && visits.delete(old)) {
+          visits.add(replacement.tab);
+        }
+      }
       if (sessionId === undefined) {
         continue;
       }
@@ -921,6 +946,26 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       changed = this.rebindReleased(tab, now, true) || changed;
     }
     return changed;
+  }
+
+  /**
+   * After every tab or group event (and its re-send pairing): an unvisited
+   * tab that is active now is being visited; one that was and no longer is
+   * has been visited; one that is gone is dropped.
+   */
+  private trackVisits(): void {
+    if (this.unvisited.size === 0) {
+      return;
+    }
+    const present = new Set(this.layout.flat());
+    for (const tab of [...this.unvisited]) {
+      if (present.has(tab) && tab.isActive) {
+        this.visiting.add(tab);
+      } else if (!present.has(tab) || this.visiting.has(tab)) {
+        this.unvisited.delete(tab);
+        this.visiting.delete(tab);
+      }
+    }
   }
 
   /** Returns true when the active native-UI session changed. */

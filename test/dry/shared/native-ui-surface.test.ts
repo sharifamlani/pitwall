@@ -1039,3 +1039,51 @@ test('R2-6: while the title source is partial, a title proves nothing: a restore
   assert.deepEqual(fresh.bound(), [[undefined]], 'namesOther is conservative until the listing is complete');
   fresh.service.dispose();
 });
+
+// ---- Phase 5 Task 1 (E11): the first visit of a restored panel tab ----
+
+test('a Tab seeded at activation, inactive then, is a first visit until it is active once and left, bound or not', () => {
+  const world = tabWorld();
+  const shown = world.open(claudeTab(), 'O2 chat one', { announce: false });
+  const named = world.open(claudeTab(), 'O2 chat two', { active: false, announce: false });
+  const untitled = world.open(claudeTab(), 'Claude Code', { active: false, announce: false });
+  const file = world.open(fileTab(), 'README.md', { active: false, announce: false });
+  const service = claudeUiSurfaces(world.options);
+  service.setTitleSource(() => labB);
+  assert.ok(service.isOpen('20aa05a6'), 'the named tab is bound; the untitled one stays unbound');
+  const first = (tab: FakeTab) => service.isFirstVisitSinceLaunch(tab as unknown as vscode.Tab);
+
+  assert.deepEqual([shown, named, untitled, file].map(first), [false, true, true, false], 'active at activation, or not a Claude tab: never');
+  world.focus(untitled);
+  assert.equal(first(untitled), true, 'the visit in progress is still the first: the hold reads it on the activation event');
+  world.focus(named);
+  assert.deepEqual([untitled, named].map(first), [false, true], 'left once: visited, unbound or not');
+  world.focus(shown);
+  assert.deepEqual([shown, named, untitled].map(first), [false, false, false], 'bound or not, each is visited once');
+  service.dispose();
+});
+
+test('a first visit follows a re-sent tab model (Cursor) and ends when the tab closes', () => {
+  const world = tabWorld();
+  world.open(claudeTab(), 'Active', { announce: false });
+  world.open(claudeTab(), 'Claude Code', { active: false, announce: false });
+  world.open(claudeTab(), 'Claude Code', { active: false, announce: false });
+  const service = claudeUiSurfaces(world.options);
+  const first = (tab: FakeTab | undefined) => service.isFirstVisitSinceLaunch(tab as unknown as vscode.Tab);
+  cursorWorkbench(world).resend();
+  const [, second, third] = world.groups[0].tabs;
+  assert.deepEqual([second, third].map(first), [true, true], 'the replacement Tab objects inherit the first visit by place');
+  world.close(third);
+  assert.equal(first(third), false, 'a closed tab is no visit');
+  service.dispose();
+});
+
+test('a tab Pitwall opened is never a first visit', async () => {
+  const { world, service } = serialWorld();
+  const background = world.open(claudeTab(), 'Opened later', { active: false });
+  await service.openSerially(['aaaa'], async () => void world.open(claudeTab(), 'Chat aaaa', { active: false }));
+  const opened = world.groups[0].tabs[1];
+  const first = (tab: FakeTab) => service.isFirstVisitSinceLaunch(tab as unknown as vscode.Tab);
+  assert.deepEqual([background, opened].map(first), [false, false], 'only tabs present at activation');
+  service.dispose();
+});
