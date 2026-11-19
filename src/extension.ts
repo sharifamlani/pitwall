@@ -12,6 +12,8 @@ import { SessionImportService } from './core/services/SessionImportService';
 import { RepoDiscoveryService } from './core/services/RepoDiscoveryService';
 import { NotificationService, openFromPopup } from './core/services/NotificationService';
 import { POPUPS_DIR, PopupLedger } from './core/notify/PopupLedger';
+import { WindowsToast } from './core/notify/WindowsToast';
+import { PopupUriHandler } from './core/notify/PopupUriHandler';
 import { SessionAttentionService } from './core/services/SessionAttentionService';
 import { SessionSearchService } from './core/services/SessionSearchService';
 import * as chatVisibility from './core/services/chatVisibility';
@@ -573,7 +575,14 @@ export async function activate(context: vscode.ExtensionContext) {
   /** Whether the chat's terminal or native-UI tab is the one in front of the user. */
   const isChatVisible = (chatId: string): boolean => chatVisibility.isChatVisible(visibilitySources, chatId);
   // One lock per transition in the shared global storage: exactly one window pops it (Q32).
-  const popupLedger = context.globalStorageUri ? new PopupLedger(path.join(context.globalStorageUri.fsPath, POPUPS_DIR)) : undefined;
+  const popupLedger = context.globalStorageUri
+    ? new PopupLedger(path.join(context.globalStorageUri.fsPath, POPUPS_DIR), Date.now, logOperation)
+    : undefined;
+  // On Windows the pop-up shows under Pitwall's own sender (row 5.2, Q46 = A); the in-window message is its fallback (Q35).
+  // Only in a real run: a test host (ExtensionMode.Test, or a dry test's context) never writes the registry.
+  const realRun = context.extensionMode === vscode.ExtensionMode.Production || context.extensionMode === vscode.ExtensionMode.Development;
+  const windowsToast =
+    process.platform === 'win32' && realRun ? new WindowsToast(undefined, process.platform, { log: logOperation }) : undefined;
   const notificationService = new NotificationService(
     // The message's Open goes through the router like every other open (D35, Q35).
     (chatId) => {
@@ -591,7 +600,31 @@ export async function activate(context: vscode.ExtensionContext) {
       frontAnywhere: (sessionId) => (windowServices?.registry ?? earlyRegistry)?.frontAnywhere(sessionId) ?? false,
       isListed: (chatId) => storageService.getChat(chatId) !== undefined,
       log: logOperation,
+      toast: windowsToast,
     }
+  );
+  // A pop-up click: `<uriScheme>://sharifamlani.pitwall/open?session=<uuid>` (Q37), through the router (D35).
+  // Registering is synchronous and reads nothing; a click before the window services start waits in the router.
+  context.subscriptions.push(
+    vscode.window.registerUriHandler(
+      new PopupUriHandler({
+        chatForSession: (sessionId) =>
+          storageService.getChats().find((chat) => harnessRegistry.has(chat.harness) && chatNativeSessionIds(chat).includes(sessionId)),
+        route: (request) => router.route(request),
+        activateLocal: (chat) => activateChat(chat, { revealIfHidden: false }),
+        log: logOperation,
+      })
+    ),
+    vscode.commands.registerCommand('pitwall.removePopupRegistration', async () => {
+      if (!windowsToast) {
+        void vscode.window.showInformationMessage('Pitwall registers a pop-up sender only on Windows.');
+        return;
+      }
+      await windowsToast.unregisterAumid();
+      void vscode.window.showInformationMessage(
+        "Removed Pitwall's pop-up registration. Pop-ups show inside the window until Pitwall starts again."
+      );
+    })
   );
   const attentionService = new SessionAttentionService(
     storageService,
@@ -619,9 +652,14 @@ export async function activate(context: vscode.ExtensionContext) {
   noteSessions = (sessions) => attentionService.noteSessions(sessions);
   attentionService.start();
   // After the first render (E16): re-poll within 150 ms of a sessions-file
-  // change, and sweep pop-up locks older than 10 min now and every 5 min.
+  // change, register the Windows pop-up sender, and sweep pop-up locks older
+  // than 10 min now and every 5 min.
   afterFirstRender(() => {
     context.subscriptions.push(attentionService.watchLive());
+    // The pop-up sender, once per activation and idempotent; the first pop-up waits behind it (Q46 = A).
+    if (windowsToast) {
+      void windowsToast.registerAumid(vscode.Uri.joinPath(context.extensionUri, 'resources', 'icons', 'pitwall.png').fsPath);
+    }
     if (popupLedger) {
       const sweep = () => void popupLedger.sweep().catch(() => undefined);
       sweep();

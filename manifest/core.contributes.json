@@ -291,6 +291,11 @@
       "category": "Pitwall"
     },
     {
+      "command": "pitwall.removePopupRegistration",
+      "title": "Remove Pop-up Registration",
+      "category": "Pitwall"
+    },
+    {
       "command": "pitwall.switchToWorkspace",
       "title": "Open in This Window",
       "category": "Pitwall",
@@ -1387,6 +1392,10 @@
       {
         "command": "pitwall.dev.traceTabs",
         "when": "false"
+      },
+      {
+        "command": "pitwall.removePopupRegistration",
+        "when": "isWindows"
       },
       {
         "command": "pitwall.switchToWorkspace",

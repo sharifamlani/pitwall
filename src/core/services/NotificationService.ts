@@ -2,6 +2,9 @@ import { execFile } from 'child_process';
 import * as vscode from 'vscode';
 import { ChatSession } from '../types';
 import type { PopupKey } from '../notify/PopupLedger';
+import { popupCopy, ToastPayload } from '../notify/toastXml';
+import { AUMID } from '../notify/WindowsToast';
+import { isOpenableSessionId, openUri } from '../notify/PopupUriHandler';
 
 export type AttentionKind = 'finished' | 'needs-input';
 
@@ -17,6 +20,8 @@ export interface NotificationTarget {
 export interface PopupTarget extends NotificationTarget {
   /** The chat's native session ID: the lock key and the "in front anywhere" lookup. */
   sessionId: string;
+  /** The repo's sidebar name, the Windows pop-up's title (§3a). Default: the context's first part. */
+  repo?: string;
   /** `statusUpdatedAt` (needs; else the transcript time) or the turn end (finished). Undefined: no stamp, no pop-up. */
   at: number | undefined;
   /** The wait was already there at activation or reload (R45). */
@@ -51,6 +56,14 @@ export interface NotificationOptions {
   isListed?: (chatId: string) => boolean;
   /** The Operations log. Lines carry an id8 and a reason, never a title or a path. */
   log?: (line: string) => void;
+  /**
+   * The Windows pop-up host (row 5.2), on Windows only. When it shows the
+   * pop-up, that replaces the in-window message; when it fails, the in-window
+   * message shows instead, once (Q35).
+   */
+  toast?: { show(p: ToastPayload): Promise<'shown' | 'failed'> };
+  /** Whether a kind's pop-up plays a sound (Task 4's switches, Q41). Default: silent. */
+  sound?: (kind: 'needs' | 'finished') => boolean;
 }
 
 /** Escape text for an AppleScript double-quoted string literal. */
@@ -95,10 +108,14 @@ const MAX_LOGGED_SKIPS = 500;
  * the window (and in the notification center) and can carry a button. On macOS
  * we additionally shell out to `osascript` so a finished session is visible
  * when VS Code is behind another app. The banner cannot be clicked, so the
- * toast keeps the action. (The Windows pop-up arrives in Task 3.)
+ * toast keeps the action. On Windows the pop-up host (`WindowsToast`) shows
+ * an OS pop-up under Pitwall's own sender instead, and the in-window message
+ * is its fallback (Q35).
  */
 export class NotificationService {
   private readonly loggedSkips = new Set<string>();
+  /** Windows pop-ups still being handed to the host. */
+  private readonly deliveries = new Set<Promise<void>>();
 
   constructor(
     private readonly onOpenChat: (chatId: string) => void,
@@ -135,6 +152,65 @@ export class NotificationService {
       return this.skip(popKind, target, 'locked');
     }
 
+    // On Windows the pop-up replaces the in-window message (Q35). Its link carries a UUID only (Q37),
+    // so a session ID it can't carry keeps the in-window message, whose Open works for any chat.
+    const toast = this.options.toast;
+    if (toast && isOpenableSessionId(target.sessionId)) {
+      // Delivered in the background: a slow host (up to 10 s) never holds up the attention tick.
+      const delivery = this.deliverToast(toast, popKind, target, at, windowFocused, config);
+      this.deliveries.add(delivery);
+      void delivery.finally(() => this.deliveries.delete(delivery));
+      return 'shown';
+    }
+    this.showInWindow(kind, target, at, windowFocused, config);
+    return 'shown';
+  }
+
+  /** Resolves once every Windows pop-up handed to the host so far has shown or fallen back. */
+  async whenDelivered(): Promise<void> {
+    while (this.deliveries.size > 0) {
+      await Promise.all([...this.deliveries]);
+    }
+  }
+
+  /** The Windows pop-up; on failure, the in-window message once instead (Q35). */
+  private async deliverToast(
+    toast: NonNullable<NotificationOptions['toast']>,
+    popKind: 'needs' | 'finished',
+    target: PopupTarget,
+    at: number,
+    windowFocused: boolean,
+    config: vscode.WorkspaceConfiguration
+  ): Promise<void> {
+    const repo = target.repo || target.context.split(' · ')[0] || target.chat.name;
+    const copy = popupCopy(popKind, { repo, chat: target.chat.name, waitingFor: target.detail });
+    const sound = this.options.sound?.(popKind) ?? false;
+    const payload: ToastPayload = {
+      aumid: AUMID,
+      ...copy,
+      sound,
+      openUri: openUri(target.sessionId),
+      tag: `${id8(target.sessionId)}-${popKind}`,
+    };
+    const result = await toast.show(payload).catch(() => 'failed' as const);
+    if (result === 'shown') {
+      this.options.log?.(
+        `[Pitwall] popup ${popKind} ${id8(target.sessionId)} shown lag=${Math.max(0, Date.now() - at)} sound=${sound ? 'on' : 'off'} via=toast`
+      );
+      return;
+    }
+    this.showInWindow(popKind === 'finished' ? 'finished' : 'needs-input', target, at, windowFocused, config);
+  }
+
+  /** The in-window message with its Open button (and the macOS banner), then its `shown` line. */
+  private showInWindow(
+    kind: AttentionKind,
+    target: PopupTarget,
+    at: number,
+    windowFocused: boolean,
+    config: vscode.WorkspaceConfiguration
+  ): void {
+    const popKind = kind === 'finished' ? 'finished' : 'needs';
     const name = target.chat.name;
     const title = kind === 'finished' ? `${name} finished` : `${name} needs your input`;
     const context = target.context ? ` (${target.context})` : '';
@@ -151,7 +227,6 @@ export class NotificationService {
     this.options.log?.(
       `[Pitwall] popup ${popKind} ${id8(target.sessionId)} shown lag=${Math.max(0, Date.now() - at)} sound=${sound ? 'on' : 'off'} via=in-window`
     );
-    return 'shown';
   }
 
   /** Log a skip once per transition and reason (a held-back pop-up is re-judged every tick). */
