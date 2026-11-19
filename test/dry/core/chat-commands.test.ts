@@ -16,6 +16,7 @@ import { SessionImportService } from '../../../src/core/services/SessionImportSe
 import { WorkspaceTreeItem } from '../../../src/core/providers/WorkspacesTreeProvider';
 import { ChatCommandDeps, registerChatCommands } from '../../../src/core/commands/chat';
 import { registerNavigationCommands } from '../../../src/core/commands/navigation';
+import { ownsFolder } from '../../../src/core/windows/WindowRegistry';
 import { JumpWalk } from '../../../src/core/windows/JumpWalk';
 import { claudeUiSurfaces } from '../../../src/harnesses/claude/claudeUi';
 import { registerSessionImportCommands } from '../../../src/core/commands/sessionImport';
@@ -1475,7 +1476,7 @@ test('Remove and Clear All drop chats only after confirmation, and removed sessi
 
 type Entry = { chatId: string; since: number };
 
-function jumping(t: TestContext, options: { windowFolder?: string } = {}) {
+function jumping(t: TestContext, options: { windowFolder?: string; ownsFolder?: boolean } = {}) {
   const lists: Record<'needs' | 'working' | 'finished', Entry[]> = { needs: [], working: [], finished: [] };
   const waits = new Map<string, string>();
   const routed: string[] = [];
@@ -1494,7 +1495,7 @@ function jumping(t: TestContext, options: { windowFolder?: string } = {}) {
       waitingFor: (chatId) => waits.get(chatId),
       inFront: (chatId) => front.has(chatId),
       jumpWalk: walk,
-      windowFolder: () => options.windowFolder ?? '/work/demo',
+      windowFolder: options.ownsFolder ? ownsFolder : () => options.windowFolder ?? '/work/demo',
       log: (line) => log.push(line),
       router: () => ({ route, launchFolder }) as never,
     },
@@ -1615,4 +1616,20 @@ test('Ctrl+Alt+0 with none says "Nobody is waiting on you right now."', async (t
   await runCommand('pitwall.openLongestWaiting');
   assert.ok(shown('Nobody is waiting on you right now.'), 'the only waiting chat is in front here');
   assert.deepEqual(f.routed, []);
+});
+
+test('a multi-root window labels no chat "this window"', async (t) => {
+  const f = jumping(t, { ownsFolder: true });
+  const folders = ['/work/demo', '/work/other'].map((fsPath, index) => ({ uri: vscode.Uri.file(fsPath), name: `f${index}`, index }));
+  f.add('needs', 'Mine', 100, 'input needed');
+  stub.__quickPickResponses.push(undefined, undefined);
+
+  (vscode.workspace as { workspaceFolders: unknown }).workspaceFolders = [folders[0]];
+  await runCommand('pitwall.showStatusList', 'needs');
+  assert.match(lastPick()[1].description ?? '', /this window/, 'a single-folder window owns its folder');
+
+  (vscode.workspace as { workspaceFolders: unknown }).workspaceFolders = folders;
+  await runCommand('pitwall.showStatusList', 'needs');
+  assert.match(lastPick()[1].description ?? '', /its own window/, 'the router never treats a multi-root window as owning a folder');
+  assert.ok(!lastPick()[1].description?.includes('this window'));
 });

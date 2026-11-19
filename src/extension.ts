@@ -44,7 +44,7 @@ import { ChatRouter } from './core/windows/ChatRouter';
 import { SIDE_BY_SIDE_MOVE_WAIT_MS, splitSideBySide } from './core/windows/sideBySide';
 import { outsideProcessOf } from './core/windows/outsideProcess';
 import { parentPidOf } from './core/utils/parentPid';
-import { WindowRegistry } from './core/windows/WindowRegistry';
+import { WindowRegistry, ownsFolder } from './core/windows/WindowRegistry';
 import { startTabAdoption } from './core/windows/tabAdoption';
 
 /** Panels re-read the worktree this long after its files stop changing. */
@@ -698,7 +698,8 @@ export async function activate(context: vscode.ExtensionContext) {
     waitingFor: (chatId) => attentionService.waitingForOf(chatId),
     inFront: isChatVisible,
     jumpWalk,
-    windowFolder: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+    // The folder this window owns, as the router counts it: none in a multi-root or workspace-file window.
+    windowFolder: ownsFolder,
     log: logOperation,
     selectedRows: () => workspacesTreeView.selection,
     activeWorktree: () => shownWorktree,
