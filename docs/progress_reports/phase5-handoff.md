@@ -2,7 +2,7 @@
 
 Release files prepared 2026-11-19 (a Thursday). The tag and the ROADMAP flip come from the lead after the independent evaluator passes.
 
-Scorecard: pending the evaluator (docs/progress_reports/phase5-scorecard.md).
+Scorecard: [phase5-scorecard.md](phase5-scorecard.md), graded by the independent evaluator (round 2: 17/18, E6 pending Sharif's real pop-up click).
 
 ## Summary
 
