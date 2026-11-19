@@ -39,6 +39,10 @@ check enforces it.
 - Include one real end-to-end action through the operating system (a real notification click),
   not only a simulated one. (Pitwall 0.6.0 real click.)
 
+- Never exit, kill or restart the app by process name or globally; stop only the test profile's own
+  instance, found by its `--user-data-dir`, and confirm it isn't the owner's. (Pitwall 0.6.0 walk:
+  "Exit Cursor; relaunch" crashed Sharif's Cursor.)
+
 ## Marketing (Marketing reads before drafting)
 
 - Give the measured number with its condition; never stretch it (a handoff time measured only with
