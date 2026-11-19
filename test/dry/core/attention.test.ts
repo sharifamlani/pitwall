@@ -1894,6 +1894,52 @@ test('compare-status passes a matching walk and fails a missing, extra or mismat
   assert.equal(run(good, '--bogus').status, 2);
 });
 
+test('compare-status --opened-from takes the opened lines from every window, so a window that did not click passes', (t) => {
+  const dir = tempDir(t);
+  const script = path.resolve(__dirname, '..', '..', '..', 'scripts', 'compare-status.mjs');
+  const t0 = Date.parse('2026-11-19T10:00:00.000Z');
+  const at = (ms: number) => new Date(t0 + ms).toISOString();
+  const truth = path.join(dir, 'truth.jsonl');
+  fs.writeFileSync(
+    truth,
+    [
+      { t: t0, sid8: 'aaaaaaaa', status: 'idle', statusUpdatedAt: t0 - 5_000 },
+      { t: t0 + 1_000, sid8: 'aaaaaaaa', status: 'busy', statusUpdatedAt: t0 + 1_000 },
+      { t: t0 + 4_000, sid8: 'aaaaaaaa', status: 'idle', statusUpdatedAt: t0 + 4_000 },
+    ]
+      .map((sample) => JSON.stringify(sample))
+      .join('\n') + '\n'
+  );
+  const write = (name: string, lines: string[]) => {
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, lines.join('\n') + '\n');
+    return file;
+  };
+  const statusLines = [
+    `[${at(1_200)}] [Pitwall] status aaaaaaaa idle→working lag=200`,
+    `[${at(4_300)}] [Pitwall] status aaaaaaaa working→finished lag=300`,
+    `[${at(9_010)}] [Pitwall] status aaaaaaaa finished→idle lag=0`,
+  ];
+  // The user opened the chat in window a; window b only saw it turn idle.
+  const windowA = write('ops-a.log', [...statusLines, `[${at(9_000)}] [Pitwall] popup click aaaaaaaa`]);
+  const windowB = write('ops-b.log', statusLines);
+  const windowC = write('ops-c.log', statusLines);
+  const run = (...extra: string[]) => spawnSync(process.execPath, [script, '--truth', truth, ...extra], { encoding: 'utf8' });
+
+  const alone = run('--log', windowB);
+  assert.equal(alone.status, 1, 'per window, the open is missing');
+  assert.match(alone.stdout, /extra #3: finished→idle/);
+
+  const merged = run('--log', windowB, '--opened-from', windowA, windowB, windowC, '--max-lag', '2000');
+  assert.equal(merged.status, 0, merged.stdout + merged.stderr);
+  assert.match(merged.stdout, /aaaaaaaa expected=3 logged=3 ok/);
+  assert.match(merged.stdout, /compare ok; 3 transitions matched/);
+  // Only --log counts status lines: the other windows' lines are never matched twice.
+  assert.match(run('--opened-from', windowA, '--log', windowA).stdout, /aaaaaaaa expected=3 logged=3 ok/);
+  assert.equal(run('--log', windowB, '--opened-from').status, 2, '--opened-from needs at least one log');
+  assert.equal(run('--log', windowB, '--opened-from', path.join(dir, 'missing.log')).status, 2);
+});
+
 test('the state dump carries every listed session status and the counts', async (t) => {
   const dir = tempDir(t);
   const file = writeDump(
