@@ -579,9 +579,9 @@ test('with the Pitwall view never shown, the first scans start after HIDDEN_LIST
   await f.start();
   scans.markRender();
   await scans.drain();
-  assert.deepEqual(scans.order, [], 'nothing scans at activation');
+  assert.deepEqual([...scans.order], [], 'nothing scans at activation');
   await scans.advance(HIDDEN_LIST_START_MS - 1);
-  assert.deepEqual(scans.order, [], 'nor before HIDDEN_LIST_START_MS');
+  assert.deepEqual([...scans.order], [], 'nor before HIDDEN_LIST_START_MS');
   await scans.advance(1);
   assert.deepEqual([...scans.order].sort(), ['discovery', 'importer'], 'both first scans start at HIDDEN_LIST_START_MS, view hidden');
 
@@ -604,7 +604,7 @@ test('with the Pitwall view shown, the first scans still start only after its fi
   await f.start();
   scans.markRender();
   await scans.advance(999);
-  assert.deepEqual(scans.order, [], 'nothing scans before the first render');
+  assert.deepEqual([...scans.order], [], 'nothing scans before the first render');
   await scans.advance(1);
   assert.equal(scans.order[0], 'render', 'the first render comes first');
   assert.deepEqual([...scans.order.slice(1)].sort(), ['discovery', 'importer'], 'then both first scans, well before the hidden fallback');
@@ -621,8 +621,8 @@ test('a window deactivated before HIDDEN_LIST_START_MS never starts its first sc
   f.context.subscriptions.splice(0).forEach((subscription) => subscription.dispose());
   session.finish();
   await scans.advance(10 * HIDDEN_LIST_START_MS);
-  assert.deepEqual(scans.order, [], 'no scan starts after deactivation');
-  assert.deepEqual(scans.notified, [], 'and nothing pops up');
+  assert.deepEqual([...scans.order], [], 'no scan starts after deactivation');
+  assert.deepEqual([...scans.notified], [], 'and nothing pops up');
 });
 
 test('stored repos render before discovery finishes', async (t) => {
