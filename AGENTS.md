@@ -38,7 +38,8 @@ the Evaluator grades it afterwards, and its findings become patch releases.
 
 - {PRODUCT} = Pitwall; {OWNER} = Sharif. Agents report only to Main, and Main talks to Sharif.
 - **The Tester's real-use setup:** a separate Cursor profile (`--user-data-dir`), never Sharif's
-  own. Upgrade from the previous release with 3+ windows open, default settings (no
+  own. Upgrade from the previous release with 2 windows open (plus 1 closed repo folder as the
+  cold-start target), default settings (no
   `focusOnStartup`), Pitwall's sidebar hidden in some windows, chats renamed with `/rename`, one
   repo with 40+ sessions, and chats live in the Claude panel and in terminals.
 - **Every open path, every walk:** row click, pop-up click, Ctrl+Alt+0, `Next ▸`, each on live and
