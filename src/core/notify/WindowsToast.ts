@@ -23,6 +23,8 @@ import { toastXml, ToastPayload } from './toastXml';
 export const AUMID = 'sharifamlani.pitwall';
 /** The one per-user key Pitwall writes (PowerShell's registry drive). */
 export const AUMID_KEY = `HKCU:\\Software\\Classes\\AppUserModelId\\${AUMID}`;
+/** Windows' own per-app entry for Pitwall's pop-up switch; removed with the registration. No other app's key is ever touched. */
+export const NOTIFICATION_SETTINGS_KEY = `HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings\\${AUMID}`;
 export const POWERSHELL = 'powershell.exe';
 export const POWERSHELL_ARGS: readonly string[] = Object.freeze(['-NoProfile', '-NonInteractive', '-Command', '-']);
 /** A host still running after this long is killed and the pop-up counts as failed. */
@@ -56,6 +58,9 @@ export const HOST_SCRIPT_SUFFIX =
   '\n' +
   DECODE +
   LOAD_WINRT +
+  // Another window ran "Remove Pop-up Registration", or Pitwall was uninstalled elsewhere: Windows would drop this toast silently.
+  // A dry run (tests only) never shows, so it needs no registration.
+  `  if (-not $j.dry) { if (-not (Test-Path -LiteralPath '${AUMID_KEY}')) { 'failed unregistered'; exit 2 } }\n` +
   '  $n = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier([string]$j.aumid)\n' +
   "  $s = 'Unknown'\n" +
   '  try { $s = [string]$n.get_Setting() } catch { $s = \'Unknown\' }\n' +
@@ -87,8 +92,11 @@ const REGISTER_SUFFIX =
   '  exit 0\n' +
   CATCH;
 
-/** Removes the one key. Windows' own per-app notification settings are left alone. */
-const UNREGISTER_SCRIPT = `Remove-Item -LiteralPath '${AUMID_KEY}' -Recurse -ErrorAction SilentlyContinue\n'removed'\n\n`;
+/** Removes the registration key and Windows' own entry for Pitwall (two constant paths), so Pitwall leaves Settings → Notifications. */
+const UNREGISTER_SCRIPT =
+  `Remove-Item -LiteralPath '${AUMID_KEY}' -Recurse -ErrorAction SilentlyContinue\n` +
+  `Remove-Item -LiteralPath '${NOTIFICATION_SETTINGS_KEY}' -Recurse -ErrorAction SilentlyContinue\n` +
+  "'removed'\n\n";
 
 /** `ToastNotifier.Setting` for the AUMID; the getter, since PowerShell turns a throwing property into $null. */
 const SETTING_SCRIPT =

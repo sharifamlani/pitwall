@@ -15,6 +15,7 @@ import { POPUPS_DIR, PopupLedger } from './core/notify/PopupLedger';
 import { WindowsToast } from './core/notify/WindowsToast';
 import { FirstRunCheck } from './core/notify/FirstRunCheck';
 import { notificationState, readersFor } from './core/notify/notificationState';
+import { SoundSwitches, registerSoundUi } from './core/notify/SoundSwitches';
 import { PopupUriHandler } from './core/notify/PopupUriHandler';
 import { SessionAttentionService } from './core/services/SessionAttentionService';
 import { SessionSearchService } from './core/services/SessionSearchService';
@@ -599,6 +600,9 @@ export async function activate(context: vscode.ExtensionContext) {
           { log: logOperation }
         )
       : undefined;
+  // Off by default (Q41); the bell and Settings → Pitwall → Sound flip them.
+  const soundSwitches = new SoundSwitches();
+  context.subscriptions.push(soundSwitches);
   const notificationService = new NotificationService(
     // The message's Open goes through the router like every other open (D35, Q35).
     (chatId) => {
@@ -617,8 +621,11 @@ export async function activate(context: vscode.ExtensionContext) {
       isListed: (chatId) => storageService.getChat(chatId) !== undefined,
       log: logOperation,
       toast: windowsToast,
+      sound: (kind) => soundSwitches.get(kind),
     }
   );
+  // The Repos-header bell, its quick pick and Test sound (row 5.3).
+  context.subscriptions.push(...registerSoundUi(soundSwitches, () => notificationService.testSound()));
   // A pop-up click: `<uriScheme>://sharifamlani.pitwall/open?session=<uuid>` (Q37), through the router (D35).
   // Registering is synchronous and reads nothing; a click before the window services start waits in the router.
   context.subscriptions.push(

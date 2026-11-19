@@ -304,3 +304,13 @@ test('harness folders with a contributes.json, ALL_HARNESSES keys and module ids
     assert.equal(module.id, key, `ALL_HARNESSES.${key}.id`);
   }
 });
+
+test('the shipped Settings page has a Sound group with both switches off', () => {
+  const shipped = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')) as {
+    contributes: Contributes & { configuration: { title: string; properties: Record<string, Setting & { default?: unknown }> }[] };
+  };
+  const sound = shipped.contributes.configuration.find((section) => section.title === 'Sound');
+  assert.deepEqual(Object.keys(sound?.properties ?? {}).sort(), ['pitwall.sound.finished', 'pitwall.sound.needsYou']);
+  assert.ok(Object.values(sound?.properties ?? {}).every((setting) => (setting as { default?: unknown }).default === false));
+  assert.ok(shipped.contributes.commands.some((entry) => entry.command === 'pitwall.testSound'));
+});

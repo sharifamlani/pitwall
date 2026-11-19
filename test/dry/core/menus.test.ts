@@ -81,7 +81,11 @@ test('session rows show bell (needs you only), terminal and fork inline; star, r
   const titleInline = (menus['view/title'] ?? []).filter(
     (entry) => entry.when?.includes('pitwall.workspacesView') && entry.group?.startsWith('navigation')
   );
-  assert.deepEqual(titleInline.map(id), ['pitwall.search', 'pitwall.addRepository'], 'search then add, in canvas order');
+  assert.deepEqual(
+    titleInline.map(id),
+    ['pitwall.search', 'pitwall.addRepository', 'pitwall.soundMenu', 'pitwall.soundMenuOn'],
+    'search, add, then the bell (one icon at a time, §3d), in canvas order'
+  );
 });
 
 test('the repo menu has exactly the §3c items in order, and the row shows history and "+" on hover', () => {
@@ -319,4 +323,15 @@ test('the list is named Repos, with the canvas empty state once a scan found not
     (menus['view/title'] ?? []).some((entry) => entry.command === 'pitwall.cloneRepository' && !entry.group?.startsWith('navigation')),
     'Clone stays in the overflow menu'
   );
+});
+
+test('the Repos header bell has two icons on one title, only one shown at a time, and the second stays out of the palette', () => {
+  const entry = (command: string) => commands.find((candidate) => candidate.command === command) as { title: string; icon?: string } | undefined;
+  assert.equal(entry('pitwall.soundMenu')?.title, 'Sound alerts');
+  assert.equal(entry('pitwall.soundMenuOn')?.title, 'Sound alerts');
+  assert.equal(entry('pitwall.soundMenu')?.icon, '$(bell-slash)');
+  assert.equal(entry('pitwall.soundMenuOn')?.icon, '$(bell)');
+  const bell = (menus['view/title'] ?? []).filter((candidate) => candidate.command === 'pitwall.soundMenu' || candidate.command === 'pitwall.soundMenuOn');
+  assert.deepEqual(bell.map((candidate) => [candidate.command, candidate.group]), [['pitwall.soundMenu', 'navigation@2'], ['pitwall.soundMenuOn', 'navigation@2']]);
+  assert.ok((menus.commandPalette ?? []).some((candidate) => candidate.command === 'pitwall.soundMenuOn' && candidate.when === 'false'));
 });

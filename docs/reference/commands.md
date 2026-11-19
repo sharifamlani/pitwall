@@ -106,7 +106,9 @@ Open the Command Palette (`Ctrl+Shift+P`, `Cmd+Shift+P` on macOS) and type **Pit
 | **Pitwall: Turn On Auto-Switch Workspace Folder** / **Turn Off Auto-Switch Workspace Folder** | Make VS Code's open folder follow the worktree you select |
 | **Pitwall: Turn On Focus on Startup** / **Turn Off Focus on Startup** | Open the Pitwall sidebar when VS Code starts |
 | **Pitwall: Check Windows Notifications** | Windows only. Check whether Windows would hide Pitwall's pop-ups (notifications off, Pitwall's own switch off, or Focus assist on) and say so, with a button to the matching Windows settings page. Says "Windows pop-ups are on." when all is well. Pitwall also runs this once, the first time it starts. It reads these settings and never changes them. See [Troubleshooting](../troubleshooting.md) |
-| **Pitwall: Remove Pop-up Registration** | Windows only. Delete the per-user registry key that names "Pitwall" as the sender of its Windows pop-ups (`HKCU\Software\Classes\AppUserModelId\sharifamlani.pitwall`). Pop-ups show inside the window until Pitwall starts again; uninstalling Pitwall also deletes the key. See [Notifications](../notifications.md#windows-pop-ups) |
+| **Pitwall: Sound alerts** (the bell in the Repos header) | Tick which pop-ups play a sound: when a session needs you, when it finishes. Both are off by default. Its **Test sound** button shows one pop-up with sound. See [Notifications](../notifications.md#sound) |
+| **Pitwall: Test Sound** | Show one pop-up, "Pitwall: test sound", with sound, whatever the switches say |
+| **Pitwall: Remove Pop-up Registration** | Windows only. Delete the per-user registry key that names "Pitwall" as the sender of its Windows pop-ups (`HKCU\Software\Classes\AppUserModelId\sharifamlani.pitwall`) and Windows' own entry for it under `Notifications\Settings`. Pop-ups show inside the window until Pitwall starts again; uninstalling Pitwall also deletes the key. See [Notifications](../notifications.md#windows-pop-ups) |
 
 ## Workspaces view
 
