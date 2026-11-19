@@ -502,11 +502,22 @@ test('terminal path calls show(true) only when the marker is set', async (t) => 
   keys.events.length = 0;
   await keys.press();
   assert.deepEqual([stub.window.terminals.length, keyed.shown], [1, 2], 'the live terminal is revealed');
-  assert.deepEqual(keys.events, [], 'an existing terminal: show(true) is enough, no refocus');
+  assert.deepEqual(keys.events, ['focus list'], 'an existing terminal is revealed, then the list is refocused (E8)');
 
   await runCommand('pitwall.openChat', f.row(second));
   assert.equal(stub.window.__focusedTerminal, f.lastTerminal(), 'a click focuses its terminal');
   assert.notEqual(f.lastTerminal(), keyed);
+});
+
+test('Ctrl+Down onto a chat whose panel tab is already open reveals it, then refocuses the list (E8)', async (t) => {
+  const f = setup(t, { surface: 'ui' });
+  const chat = f.chat('claude', 'Open in panel', 'claude-1');
+  f.claudeUi.surfaces.open.add('claude-1');
+  const keys = listKeys(f.row(chat));
+
+  await keys.press();
+  assert.deepEqual(f.claudeUi.opened.map((entry) => entry.sessionId), ['claude-1'], 'the open tab is revealed');
+  assert.deepEqual(keys.events, ['focus list'], 'refocused once after the reveal');
 });
 
 test('Ctrl+Down onto a chat with no terminal creates it, renames it, then refocuses the list', async (t) => {
