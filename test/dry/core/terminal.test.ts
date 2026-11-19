@@ -207,8 +207,8 @@ test('after a quit, each revived tab resumes its own chat in its worktree, quiet
     chats: [
       { id: 'aabbcc00-revived', harnessSessionId: 'linked', status: 'closed' },
       { id: 'cd34ef00-unlinked', status: 'closed' },
-      { id: 'ffeedd00-duplicate', harnessSessionId: 'linked', status: 'closed' },
-      { id: 'ddeeff00-same-pty', harnessSessionId: 'linked', status: 'active' },
+      { id: 'ffeedd00-duplicate', harnessSessionId: 'linked-dup', status: 'closed' },
+      { id: 'ddeeff00-same-pty', harnessSessionId: 'linked-pty', status: 'active' },
       { id: '11223300-fork', forkedFromSessionId: 'source', status: 'closed' },
       { id: '44556600-gone', harnessSessionId: 'gone', status: 'closed' },
       { id: '99aabb00-stale', status: 'active' },

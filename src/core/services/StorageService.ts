@@ -50,6 +50,7 @@ type LegacyChatSession = Omit<ChatSession, 'harness' | 'harnessSessionId'> & {
 export type NewChatFields = Partial<
   Pick<
     ChatSession,
+    | 'id'
     | 'harnessSessionId'
     | 'forkedFromSessionId'
     | 'pendingUiLaunch'
@@ -79,6 +80,33 @@ export function discoveredRepositoryId(rootPath: string): string {
   const canonical = canonicalPath(rootPath);
   const key = process.platform === 'win32' ? canonical.toLowerCase() : canonical;
   return `repo-${createHash('sha1').update(key).digest('hex').slice(0, 12)}`;
+}
+
+/**
+ * The chat id of an auto-imported native session: every window importing
+ * one session derives the same id, so two imports racing in two windows
+ * converge on one record instead of listing the session twice (like
+ * `discoveredRepositoryId`, P17). UUID-shaped (a name-based v5 layout), like
+ * every other chat id.
+ */
+export function importedChatId(harness: HarnessId, sessionId: string): string {
+  const hex = createHash('sha1').update(`pitwall.import\u0000${harness}\u0000${sessionId}`).digest('hex');
+  const variant = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+/**
+ * Which of two chats holding one native session is listed: a chat the user
+ * started over an import, then the older, then the lower id. Every window
+ * judges by stored fields only, so all of them pick the same row.
+ */
+function listedFirst(a: LegacyChatSession, b: LegacyChatSession): number {
+  const imported = (chat: LegacyChatSession) => (chat.autoImported ? 1 : 0);
+  return (
+    imported(a) - imported(b) ||
+    (a.createdAt ?? 0) - (b.createdAt ?? 0) ||
+    (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  );
 }
 
 /**
@@ -557,14 +585,55 @@ export class StorageService {
 
   // Chats
 
-  /** Stored chats, as stored, with stamps and this window's writes applied. */
+  /** Stored chats, as stored, with stamps and this window's writes applied; one per native session. */
   private mergedChats(): { value: LegacyChatSession[]; stamped: Stamped<LegacyChatSession> } {
-    return this.mergedList(
+    const merged = this.mergedList(
       STORAGE_KEYS.CHATS,
       this.storedList<LegacyChatSession>(STORAGE_KEYS.CHATS),
       this.chatOverlay,
       (chat) => chat?.id
     );
+    return { value: this.withoutDuplicateSessions(merged.value), stamped: merged.stamped };
+  }
+
+  /**
+   * Keep one chat per native session (`listedFirst`). Two windows importing
+   * one session at once, before imports had a shared id, stored it under two
+   * chat ids, and the session was listed, tracked and popped twice. A
+   * duplicate this window wrote is withdrawn; the rest leave the store with
+   * the collection's next write, like a record stored twice under one id.
+   */
+  private withoutDuplicateSessions(chats: LegacyChatSession[]): LegacyChatSession[] {
+    const listed = new Map<string, LegacyChatSession>();
+    let dropped: Set<LegacyChatSession> | undefined;
+    for (const chat of chats) {
+      const sessionId = chat?.harnessSessionId ?? chat?.claudeSessionId;
+      if (!sessionId) {
+        continue;
+      }
+      const key = `${chat.harness ?? 'claude'}\u0000${sessionId}`;
+      const kept = listed.get(key);
+      if (!kept) {
+        listed.set(key, chat);
+        continue;
+      }
+      dropped ??= new Set();
+      if (listedFirst(chat, kept) < 0) {
+        listed.set(key, chat);
+        dropped.add(kept);
+      } else {
+        dropped.add(chat);
+      }
+    }
+    if (!dropped) {
+      return chats;
+    }
+    for (const chat of dropped) {
+      if (this.chatOverlay.wrote(chat.id)) {
+        this.chatOverlay.note(chat.id, null);
+      }
+    }
+    return chats.filter((chat) => !dropped!.has(chat));
   }
 
   /**
@@ -618,7 +687,7 @@ export class StorageService {
   ): ChatSession {
     const now = this.now();
     const chat: ChatSession = {
-      id: generateId(),
+      id: fields.id ?? generateId(),
       worktreeId,
       name,
       harness,

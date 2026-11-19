@@ -12,7 +12,7 @@ import {
 import { deepestContainingRoot, samePath } from '../utils/paths';
 import { truncateName } from '../utils/text';
 import { Scope, WorktreeCatalog } from './WorktreeCatalog';
-import { StorageService } from './StorageService';
+import { StorageService, importedChatId } from './StorageService';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** A new UI placeholder links quickly; after this it moves to the slow scan. */
@@ -744,11 +744,19 @@ export class SessionImportService implements vscode.Disposable {
 
       const name = session.summary?.trim();
       const createdAt = session.lastUpdated?.getTime() ?? lastActive;
+      // The id comes from the session, so another window importing it at the
+      // same moment writes the same record rather than a second row.
       const chat = this.storageService.createChat(
         worktree.id,
         adapter.id,
         name ? truncateName(name) : DEFAULT_CHAT_NAME,
-        { harnessSessionId: session.sessionId, createdAt, lastAccessedAt: lastActive, autoImported: true }
+        {
+          id: importedChatId(adapter.id, session.sessionId),
+          harnessSessionId: session.sessionId,
+          createdAt,
+          lastAccessedAt: lastActive,
+          autoImported: true,
+        }
       );
       index.byId.set(chat.id, chat);
       linked.add(session.sessionId);

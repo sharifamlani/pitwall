@@ -30,6 +30,7 @@ import {
   fakeNativeUi,
   flush,
   makeStorage,
+  memento,
   runCommand,
   sessionRecord,
   shown,
@@ -1576,6 +1577,50 @@ test('a re-poll with the same statusUpdatedAt makes no second transition', async
   assert.equal(flow.statusLines().length, 1);
   assert.equal(toasts().length, 1);
   assert.equal(flow.shownLines().length, 1);
+});
+
+test('one status line and one notify per transition for a CLI chat stored twice; opening it clears the row you see', async () => {
+  windowState().state = { focused: false };
+  // Two windows imported the CLI session at once before the fix: two chat
+  // records, one harness session (the S7 walk's uj-lab-c).
+  const globalState = memento();
+  const twin = (id: string, createdAt: number) =>
+    chatRecord({ id, worktreeId: 'wt-c', name: 'T2-C ready', harnessSessionId: 's-cli', createdAt, lastAccessedAt: createdAt, seenAt: createdAt, autoImported: true });
+  const t0 = Date.now() - 60_000;
+  await globalState.update('pitwall.chats', [twin('chat-from-a', t0), twin('chat-from-c', t0 + 5)]);
+  const storage = makeStorage(globalState);
+  let live: HarnessLiveState = idleAfter(t0 - 1_000);
+  const flow = popupFlow(storage, { live: () => new Set(['s-cli']), states: () => ({ 's-cli': live }) });
+  assert.equal(storage.getChats().filter((chat) => chat.harnessSessionId === 's-cli').length, 1, 'one row for the session');
+  await flow.service.poll(true);
+
+  live = busy(Date.now());
+  await flow.service.poll();
+  live = waitingAt(Date.now());
+  await flow.service.poll();
+  live = busy(Date.now());
+  await flow.service.poll();
+  live = idleAfter(Date.now() + 1);
+  await flow.service.poll();
+
+  assert.deepEqual(
+    flow.statusLines().map((line) => line.replace(/ lag=\d+$/, '')),
+    [
+      '[Pitwall] status s-cli idle→working',
+      '[Pitwall] status s-cli working→needs',
+      '[Pitwall] status s-cli needs→working',
+      '[Pitwall] status s-cli working→finished',
+    ],
+    'one line per transition'
+  );
+  assert.equal(flow.shownLines().length, 2, 'one pop-up for the wait, one for the finish');
+  assert.deepEqual(flow.skipped('locked'), [], 'no second copy losing its own lock');
+  assert.equal(flow.claims.length, 2, 'one claim per transition');
+
+  const [row] = storage.getChats().filter((chat) => chat.harnessSessionId === 's-cli');
+  flow.service.markSeen(row.id);
+  assert.deepEqual(flow.service.statuses(), { 's-cli': 'idle' }, 'opening the row you see turns it idle');
+  assert.deepEqual(flow.service.counts(), { needs: 0, working: 0, finished: 0 });
 });
 
 test("counts() matches the sidebar list's needs, working and finished rows", async () => {

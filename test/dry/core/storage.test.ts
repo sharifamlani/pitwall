@@ -474,6 +474,36 @@ test('two StorageService instances adding the same root through a stale echo kee
   }
 });
 
+test('one harness session stored under two chat ids reads as one row in every window, and the store converges on it', async () => {
+  const globalState = echoingMemento();
+  const windowA = makeStorage(globalState as never);
+  const windowB = makeStorage(globalState as never);
+  // Two windows imported the session before either saw the other's import (random ids, before the fix).
+  const a = windowA.createChat('wt-1', 'claude', 'CLI chat', { harnessSessionId: 's-cli', autoImported: true, createdAt: 1_000 });
+  globalState.echo({});
+  const b = windowB.createChat('wt-1', 'claude', 'CLI chat', { harnessSessionId: 's-cli', autoImported: true, createdAt: 1_000 });
+  // A user's own chat of another session is never touched.
+  windowB.createChat('wt-1', 'claude', 'Other', { harnessSessionId: 's-other' });
+  assert.notEqual(a.id, b.id);
+
+  const rows = (storage: StorageService) => storage.getChats().filter((chat) => chat.harnessSessionId === 's-cli');
+  const winner = [a.id, b.id].sort()[0];
+  assert.deepEqual(rows(windowA).map((chat) => chat.id), [winner], 'A shows one row');
+  windowA.setActiveChatId('x');
+  windowB.setActiveChatId('x');
+  windowA.setActiveChatId('x');
+  assert.deepEqual(rows(windowB).map((chat) => chat.id), [winner], 'B shows the same row');
+  assert.deepEqual(
+    savedAt<{ id: string; harnessSessionId: string }[]>(globalState, STORAGE_KEYS.CHATS).map((chat) => chat.harnessSessionId).sort(),
+    ['s-cli', 's-other'],
+    'the store keeps one record per session'
+  );
+
+  // A user-started chat of the session wins over an import of it, whatever its age.
+  const own = windowA.createChat('wt-1', 'claude', 'Mine', { harnessSessionId: 's-cli', createdAt: 5_000 });
+  assert.deepEqual(rows(windowA).map((chat) => chat.id), [own.id]);
+});
+
 test('the overlay lets go of a write once the store shows it, so another window’s later write wins', () => {
   type Row = { name: string; at?: number };
   const clock = new StampClock(() => 1_000, 7);
