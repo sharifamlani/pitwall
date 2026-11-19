@@ -10,6 +10,7 @@ Pitwall is local-first. It collects no telemetry, needs no account, and keeps it
 - **No account.** There is nothing to sign in to.
 - **No servers.** Pitwall has no backend. It cannot see your code, your sessions, or which agents you use.
 - **No changes to your agents.** Pitwall installs no hooks and edits no agent configuration files.
+- **One registry key on Windows, nothing else in the system.** See [On Windows](#on-windows).
 
 ## What Pitwall reads
 
@@ -51,7 +52,13 @@ Each Cursor or VS Code window runs its own copy of Pitwall. So that one window c
 
 Unclaimed handoff requests are deleted after 2 minutes, and the other handoff files after 10. To see what is there, run `node scripts/dump-pitwall-windows.mjs`; `--check-privacy` fails if any file holds a key outside the lists above, or a lock file is not empty.
 
-The **Pitwall Operations** output logs each status change and pop-up as `[Pitwall] status <id8> <from>→<to> lag=<ms>` and `[Pitwall] popup <needs|finished> <id8> shown|skipped <reason>`: the first 8 characters of a session ID, statuses and timings, never a chat title or a path. The in-window notification itself shows the chat's name, its repo and the waiting reason, inside VS Code only.
+The **Pitwall Operations** output logs each status change and pop-up as `[Pitwall] status <id8> <from>→<to> lag=<ms>` and `[Pitwall] popup <needs|finished> <id8> shown|skipped <reason>`: the first 8 characters of a session ID, statuses and timings, never a chat title or a path. A pop-up click logs `[Pitwall] uri probe keys=<keys>` (the link's query keys, never their values), then `[Pitwall] popup click <id8>` or `[Pitwall] uri rejected <reason>`; a failed Windows pop-up logs `[Pitwall] toast failed <code>`, and a pop-up lock that can't be written `[Pitwall] popup lock failed <code>`. The in-window notification itself shows the chat's name, its repo and the waiting reason, inside VS Code only.
+
+### On Windows
+
+- **One registry key.** So that pop-ups are sent by "Pitwall", Pitwall writes `HKCU\Software\Classes\AppUserModelId\sharifamlani.pitwall` with two values, `DisplayName` (`Pitwall`) and `IconUri` (the path of Pitwall's icon inside the extension folder). It is per Windows user, needs no admin rights, and is written after each window starts (only when a value differs). **Pitwall: Remove Pop-up Registration** deletes it, and so does uninstalling Pitwall. The key is shared by every editor profile on your Windows account: another profile with Pitwall installed writes it again when it starts. Windows keeps its own per-app switch for Pitwall under Settings → System → Notifications; Pitwall reads it and never changes it.
+- **Pop-up text goes to Windows.** A pop-up's title, text and small print (the repo name, the chat's name and the waiting reason) are handed to Windows Notifications, which keeps them in its Notification history (Action Center) until you clear them. The text never appears on a command line, where other processes could read it, and never becomes PowerShell code: Pitwall starts `powershell.exe -NoProfile -NonInteractive -Command -` and sends it a fixed script plus one base64-encoded data block.
+- **The click link.** A pop-up's click target is `<cursor|vscode>://sharifamlani.pitwall/open?session=<session ID>`. Pitwall opens only a chat it already lists, and never starts a chat or sends a prompt from a link. The first time, Cursor may ask "Allow 'Pitwall' to open this URI?"; its **Do not ask me again** writes `extensions.confirmedUriHandlerExtensionIds` to your user settings, on your click. Pitwall itself writes no setting for this.
 
 The hidden developer command `pitwall.dev.traceTabs` writes tab labels, input kinds (view types, never file paths) and bound session IDs to the **Pitwall Operations** output while it is on. It is off by default, writes no file of its own and changes no settings.
 

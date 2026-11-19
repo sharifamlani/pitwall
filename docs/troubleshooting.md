@@ -46,8 +46,24 @@ A row is linked to the agent's session after your first prompt. If it still says
 4. Check that VS Code's own Do Not Disturb mode is off (the bell icon in the status bar).
 5. "Needs your input" is Claude Code only, and it is sent at most once a minute per session.
 6. On macOS, the system banner appears only while VS Code is in the background, and needs notification permission for VS Code in System Settings.
+7. On Windows, see [No Windows pop-up](#no-windows-pop-up).
 
 `Ctrl+Alt+N` (`Ctrl+Cmd+N` on macOS) still takes you to the next session that needs you, whatever the notification settings.
+
+## No Windows pop-up
+
+When a Windows pop-up can't be shown, the message inside the window shows instead. If neither appears, check the steps above first. Then:
+
+1. **Settings → System → Notifications.** "Get notifications from apps and other senders" must be on, and so must the **Pitwall** entry. Pitwall reads these and never changes them.
+2. **Focus assist** (Do not disturb) hides pop-ups. Turn it off, or add Pitwall to its priority list.
+3. Open **View → Output → Pitwall Operations** and look for `[Pitwall] toast failed <code>`. `DisabledForUser` or `DisabledForApplication` means Windows has Pitwall's pop-ups switched off (step 1); `timeout` means PowerShell took longer than 10 seconds; `unregistered` means **Pitwall: Remove Pop-up Registration** ran in this window, and the next window start registers again.
+4. A pop-up from a sender Windows doesn't know shows nothing. Run **Developer: Reload Window**: Pitwall registers its sender after the window starts.
+
+**A click asks "Allow 'Pitwall' to open this URI?"** That is Cursor's own question, the first time a link opens Pitwall. Choose **Open**; **Do not ask me again** stops it.
+
+**A click did nothing.** Look for `[Pitwall] uri rejected <reason>` in **Pitwall Operations**: `unknown` means the chat is no longer in the sidebar list (a stale pop-up); Pitwall opens only chats it lists.
+
+**Remove the registry key.** Run **Pitwall: Remove Pop-up Registration**, or uninstall Pitwall. By hand: `reg delete HKCU\Software\Classes\AppUserModelId\sharifamlani.pitwall /f`.
 
 ## The Claude Code or Codex panel will not open a session
 
