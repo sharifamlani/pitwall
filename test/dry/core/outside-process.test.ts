@@ -24,6 +24,11 @@ test('a panel with another parent is a window Pitwall cannot see; a terminal nev
   assert.equal(await outsideProcessOf(undefined, { hostPid: HOST, parentPidOf: async () => 1 }), undefined);
 });
 
+test("the record's cwd passes through to the router, which routes a panel by it (W4(b))", async () => {
+  assert.deepEqual(await outsideProcessOf({ pid: 9, panel: true, cwd: 'uj-lab-b' }, { hostPid: HOST, parentPidOf: async () => 1234 }), { pid: 9, panel: true, cwd: 'uj-lab-b' });
+  assert.deepEqual(await outsideProcessOf({ pid: 8, panel: false, cwd: 'uj-lab-t' }, { hostPid: HOST, parentPidOf: async () => 1234 }), { pid: 8, panel: false, cwd: 'uj-lab-t' });
+});
+
 test('a failed parent lookup opens here instead of blocking', async () => {
   assert.equal(await outsideProcessOf({ pid: 9, panel: true }, { hostPid: HOST, parentPidOf: async () => undefined }), undefined);
 });

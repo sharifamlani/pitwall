@@ -85,8 +85,10 @@ export interface ChatRouterDeps {
    * The pid of a live agent process running this session outside anything
    * Pitwall owns (a terminal the user started), if any (Q28). Asked only for a
    * chat that is not open here or in another Pitwall window: those are Pitwall's.
+   * A panel's `cwd` names its window (D35): a panel tab Pitwall never bound
+   * (its title is shared, W4(b)) still routes there.
    */
-  outsideTerminal?: (sessionId: string) => Promise<{ pid: number; panel?: boolean } | undefined>;
+  outsideTerminal?: (sessionId: string) => Promise<{ pid: number; panel?: boolean; cwd?: string } | undefined>;
   /**
    * Open sessions one at a time, binding each new tab to its session (the tab
    * tracker's `openSerially`). Used for `openAll` and `sideBySide`; a single
@@ -262,6 +264,22 @@ export class ChatRouter implements vscode.Disposable {
       // is one Pitwall doesn't own (a terminal the user started). A second
       // process on the session would fork it, so Pitwall warns and opens nothing.
       const outside = chat.harnessSessionId ? await this.deps.outsideTerminal?.(chat.harnessSessionId).catch(() => undefined) : undefined;
+      if (outside?.panel && this.canHandOff(chat)) {
+        // A panel runs in some editor window whose tab Pitwall never bound (a
+        // shared title, W4(b)). One window per folder (D35): its folder names
+        // the window. Opening there makes the agent's UI re-send its open tab,
+        // never a second process.
+        const folder = outside.cwd || ((await this.launchFolder(chat, worktree)) ?? worktree.path);
+        if (this.isThisWindow(folder)) {
+          this.logRoute(id, 'here', 'open-here-unbound');
+          local.push({ chat, worktree: { ...worktree, path: folder } });
+          continue;
+        }
+        if (await this.hasWindow(folder)) {
+          hand(folder, chat.harnessSessionId!, 'open-there-unbound');
+          continue;
+        }
+      }
       if (outside !== undefined) {
         this.logRoute(id, 'elsewhere', 'outside-terminal');
         void vscode.window.showWarningMessage(outsideTerminalMessage(outside.pid, outside.panel));
@@ -446,6 +464,12 @@ export class ChatRouter implements vscode.Disposable {
   private isThisWindow(folder: string): boolean {
     const here = this.deps.windowFolder();
     return here !== undefined && samePath(here, folder);
+  }
+
+  /** Whether a live Pitwall window shows this folder (its heartbeat says so). */
+  private async hasWindow(folder: string): Promise<boolean> {
+    const windows = (await this.deps.services()?.registry?.windowsFor(folder).catch(() => [])) ?? [];
+    return windows.length > 0;
   }
 
   /** The folder of another window that has this session open, if any (its heartbeat lists it). */

@@ -109,7 +109,7 @@ function windowOn(
     /** Other windows' open sessions, as the registry's heartbeats list them. */
     openIn?: { folder: string; sessionIds: string[]; pid?: number }[];
     /** The pid of a live process outside Pitwall running a session (a terminal the user started), if any. */
-    outsideTerminal?: (sessionId: string) => number | { pid: number; panel: boolean } | undefined;
+    outsideTerminal?: (sessionId: string) => number | { pid: number; panel: boolean; cwd?: string } | undefined;
     /** Record the serial opens the router asks the tab tracker for. */
     serial?: ({ ids: string[]; results?: unknown[] }[] & { recordResults?: boolean });
     /** Record the side-by-side splits the router asks for. */
@@ -1145,7 +1145,7 @@ test('the Claude harness reports a live pid from ~/.claude/sessions *.json and n
   };
   t.after(() => ((fs.promises as { readFile: unknown }).readFile = realRead));
   const harness = new ClaudeHarness({ sessionsFile: new ClaudeSessionsFile({ dir: () => dir }) } as never);
-  assert.deepEqual(await harness.liveProcessOf?.(ID.a), { pid: process.pid, panel: false });
+  assert.deepEqual(await harness.liveProcessOf?.(ID.a), { pid: process.pid, panel: false, cwd: 'C:/x' });
   assert.equal(await harness.liveProcessOf?.(ID.b), undefined);
   const inSessions = read.filter((file) => path.resolve(file).startsWith(dir));
   assert.ok(inSessions.length > 0 && inSessions.every((file) => file.endsWith('.json')), `only .json files are opened: ${inSessions.join(', ')}`);
@@ -1231,9 +1231,11 @@ test("open-here opens against this window's folder, even when the row is stored 
 
 test('a chat in a Claude panel of a window Pitwall cannot see gets the window-or-terminal copy', async (t) => {
   const w = world(t);
-  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
+  // Its folder (here the launch folder: the record has no cwd) is one no Pitwall window shows.
+  // A panel in this window's folder, or one a Pitwall window shows, routes there (W4(b), tests above).
+  w.transcript(w.other, ID.a, [w.turn(ID.a, w.other)]);
   const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, outsideTerminal: () => ({ pid: 777, panel: true }) });
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel elsewhere', ID.a, w.mainWt)] }), 'outside');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel elsewhere', ID.a, w.otherWt)] }), 'outside');
   assert.deepEqual(here.opened, []);
   assert.equal(warnings('That chat is already running in another window or terminal (pid 777). Switch to it there.').length, 1);
   assert.deepEqual(shownMessages().filter((message) => message.includes('another terminal')), []);
@@ -1246,6 +1248,113 @@ test("a chat in this window's own panel (the guard finds no outsider) opens here
   assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Own panel', ID.a, w.mainWt)] }), 'here');
   assert.deepEqual(here.opened.map((entry) => entry.chat), ['Own panel']);
   assert.deepEqual(shownMessages(), []);
+});
+
+// ---- Phase 5 release walk W4(b): a panel chat whose tab Pitwall never bound (E6) ----
+
+const PANEL_OUTSIDE = (pid: number) => `That chat is already running in another window or terminal (pid ${pid}). Switch to it there.`;
+
+test('a live panel process with no bound tab routes to its folder\'s window (open-there-unbound)', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.other, ID.b, [w.turn(ID.b, w.other)]);
+  // Window "a" (demo) is in front; chat B idles in window "b" (other), whose heartbeat does not list it.
+  const here = windowOn(t, w, dir, () => w.main, {
+    pid: 1001,
+    claims: w.main,
+    windowsAt: [w.other],
+    outsideTerminal: (id) => (id === ID.b ? { pid: 39032, panel: true, cwd: w.other } : undefined),
+  });
+
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Unbound B', ID.b, w.otherWt)] }), 'routed');
+  const requests = requestsFor(here.inbox, dir, w.other);
+  assert.equal(requests.length, 1, 'handed off once');
+  assert.deepEqual([requests[0].kind, requests[0].sessionIds, requests[0].folder], ['open', [ID.b], w.other]);
+  assert.deepEqual(calls.map((call) => call.path), [w.other], "its folder's window is raised");
+  assert.deepEqual(here.opened, [], 'nothing opens in this window');
+  assert.deepEqual(shownMessages(), [], 'no warning');
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.b.slice(0, 8)} → ${w.other} (open-there-unbound)`]);
+});
+
+test("a live panel process in this window's folder with no bound tab opens here", async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.main, ID.b, [w.turn(ID.b, w.main)]);
+  const here = windowOn(t, w, dir, () => w.main, {
+    pid: 1001,
+    claims: w.main,
+    windowsAt: [w.main],
+    outsideTerminal: (id) => (id === ID.b ? { pid: 39032, panel: true, cwd: w.main } : undefined),
+  });
+
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Unbound here', ID.b, w.mainWt)] }), 'here');
+  assert.deepEqual(here.opened.map((entry) => [entry.chat, entry.path]), [['Unbound here', w.main]], 'opened once, here');
+  assert.deepEqual(filesIn(here.inbox, dir, w.main), [], 'no request file');
+  assert.deepEqual(calls, [], 'no window raised');
+  assert.deepEqual(shownMessages(), [], 'no warning');
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.b.slice(0, 8)} → here (open-here-unbound)`]);
+});
+
+test('a live panel process with no cwd in its record routes by the chat\'s launch folder', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  w.transcript(w.other, ID.b, [w.turn(ID.b, w.other)]);
+  const here = windowOn(t, w, dir, () => w.main, {
+    pid: 1001,
+    claims: w.main,
+    windowsAt: [w.other],
+    outsideTerminal: (id) => (id === ID.b ? { pid: 39032, panel: true } : undefined),
+  });
+
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Unbound B', ID.b, w.otherWt)] }), 'routed');
+  assert.deepEqual(requestsFor(here.inbox, dir, w.other).map((request) => request.sessionIds), [[ID.b]]);
+  assert.deepEqual(shownMessages(), []);
+});
+
+test('a live panel process whose folder has no window keeps the outside warning', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.other, ID.b, [w.turn(ID.b, w.other)]);
+  const here = windowOn(t, w, dir, () => w.main, {
+    pid: 1001,
+    claims: w.main,
+    outsideTerminal: (id) => (id === ID.b ? { pid: 39032, panel: true, cwd: w.other } : undefined),
+  });
+
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel, no window', ID.b, w.otherWt)] }), 'outside');
+  assert.deepEqual(warnings(PANEL_OUTSIDE(39032)), [PANEL_OUTSIDE(39032)]);
+  assert.deepEqual(here.opened, []);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(requestsFor(here.inbox, dir, w.other), []);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.b.slice(0, 8)} → elsewhere (outside-terminal)`]);
+});
+
+test('a live CLI process still gets the outside warning', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.other, ID.b, [w.turn(ID.b, w.other, 'cli')]);
+  w.transcript(w.main, ID.c, [w.turn(ID.c, w.main, 'cli')]);
+  const here = windowOn(t, w, dir, () => w.main, {
+    pid: 1001,
+    claims: w.main,
+    windowsAt: [w.main, w.other],
+    outsideTerminal: (id) =>
+      id === ID.b ? { pid: 4321, panel: false, cwd: w.other } : id === ID.c ? { pid: 4322, panel: false, cwd: w.main } : undefined,
+  });
+
+  // Even with a window for its folder (another one, or this one), a terminal's chat is never opened a second time (Q28, Q48).
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('CLI there', ID.b, w.otherWt)] }), 'outside');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('CLI here', ID.c, w.mainWt)] }), 'outside');
+  assert.deepEqual(warnings(OUTSIDE(4321)), [OUTSIDE(4321)]);
+  assert.deepEqual(warnings(OUTSIDE(4322)), [OUTSIDE(4322)]);
+  assert.deepEqual(here.opened, [], 'no openHere');
+  assert.deepEqual(calls, [], 'no window raised');
+  assert.deepEqual(requestsFor(here.inbox, dir, w.other), [], 'no handOff');
 });
 
 test('openAll with a terminal chat skips the tab wait for it, and a claimed one still reports ok', async (t) => {
@@ -1282,8 +1391,8 @@ test('the Claude harness marks a claude-vscode entry as a panel', async (t) => {
   entry(ID.a, 'claude-vscode');
   entry(ID.b, 'cli');
   const harness = new ClaudeHarness({ sessionsFile: new ClaudeSessionsFile({ dir: () => dir }) } as never);
-  assert.deepEqual(await harness.liveProcessOf?.(ID.a), { pid: process.pid, panel: true });
-  assert.deepEqual(await harness.liveProcessOf?.(ID.b), { pid: process.pid, panel: false });
+  assert.deepEqual(await harness.liveProcessOf?.(ID.a), { pid: process.pid, panel: true, cwd: 'C:/x' }, "the record's cwd names the panel's window (D35)");
+  assert.deepEqual(await harness.liveProcessOf?.(ID.b), { pid: process.pid, panel: false, cwd: 'C:/x' });
 });
 
 // ---- Round 1 (tester T1) ----
