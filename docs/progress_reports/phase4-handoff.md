@@ -43,6 +43,7 @@ Also merged: #45 (v0.4.1, drive-letter case fix on Windows) and #49 (load-tolera
 - After a cold click, the "Open the other N chats" pick stays open but has no keyboard focus; the mouse works.
 - The drag checks (file onto a repo row, tab reorder) need a human hand and are not covered by automated tests.
 - Pop-ups still only cover chats you have open (Phase 5).
+- The first Ctrl+↓ after launch onto a panel tab Cursor restored loses list focus: Claude's webview loads and takes focus about 0.5 s after Pitwall's retry (E8 amended by Sharif; fix in v0.5.1).
 
 ## Follow-ups
 
@@ -56,6 +57,12 @@ Also merged: #45 (v0.4.1, drive-letter case fix on Windows) and #49 (load-tolera
 - Walk the 45 s re-raise and the "Open its window" toast live; the original no-window failure didn't reproduce in 3 tries on the fix.
 - Sample the first start after an install on a cold machine (one 4.12 s start right after build and install; the next 4 took 0.3 to 0.7 s).
 - Update the plan's FILES drag mime to `application/vnd.pitwall.files`.
+- v0.5.1: keep list focus on the first visit to a restored panel tab (wait for the webview to finish loading rather than a fixed 250 ms).
+- Score the W6 walk by session id or route line, not row title (shared titles give false FAILs).
+- Capture a screenshot of the outside-terminal warning plus a process count for the guard evidence.
+- Re-measure startup under recorded load: on 18580d8, four ungated starts took 1.1 to 12.4 s on a heavily loaded machine.
+- Re-run E6 existing-window handoffs on the release code (passed by equivalence after #55).
+- `dump-tabs.mjs`: skip dumps whose pid was reused; show terminal chats; add the dev tab dump to the privacy check.
 - Re-home a moved chat's row under its worktree.
 
 ## Next phase

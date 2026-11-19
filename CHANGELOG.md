@@ -28,6 +28,10 @@ Windows and tabs: one window per folder (ROADMAP Phase 4).
 - A chat that moved into a worktree opens in the window of the folder its transcript is filed under now.
 - A repo row shows "· N windows" when more than one window has that repo or one of its worktrees open.
 
+### Known issues
+
+- The first Ctrl+↓ onto a restored panel chat after launch moves focus out of the list (Claude's panel takes focus as it loads). Later visits are fine. Fix planned for 0.5.1.
+
 ## [0.4.1] - 2026-11-17
 
 ### Fixed
