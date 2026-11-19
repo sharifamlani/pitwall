@@ -100,6 +100,34 @@ const SETTING_SCRIPT =
   "  'unknown'\n" +
   '}\n\n';
 
+/**
+ * Read-only: "Toasts for all apps" (`PushNotifications\ToastEnabled`, missing =
+ * on) and Focus assist (the shell's quiet-hours WNF state, 0 off, 1 priority
+ * only, 2 alarms only). Same reads as `scripts/toast-probe.ps1 -State`. Writes
+ * nothing; anything it can't read answers `unknown`.
+ */
+const STATE_SCRIPT =
+  "$ErrorActionPreference = 'Stop'\n" +
+  "$t = 'unknown'\n" +
+  'try {\n' +
+  "  $v = (Get-ItemProperty -LiteralPath 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\PushNotifications' -ErrorAction Stop).ToastEnabled\n" +
+  "  if ($null -eq $v -or $v -ne 0) { $t = 'on' } else { $t = 'off' }\n" +
+  "} catch { $t = 'on' }\n" +
+  "$f = 'unknown'\n" +
+  'try {\n' +
+  "  Add-Type -Namespace PitwallProbe -Name Wnf -MemberDefinition @'\n" +
+  '[DllImport("ntdll.dll")]\n' +
+  'public static extern int NtQueryWnfStateData(ref ulong stateName, IntPtr typeId, IntPtr explicitScope, out uint changeStamp, out int buffer, ref uint bufferSize);\n' +
+  "'@\n" +
+  "  $n = [UInt64]'0x0D83063EA3BF1C75'\n" +
+  '  $c = [UInt32]0\n' +
+  '  $b = 0\n' +
+  '  $z = [UInt32]4\n' +
+  '  $r = [PitwallProbe.Wnf]::NtQueryWnfStateData([ref]$n, [IntPtr]::Zero, [IntPtr]::Zero, [ref]$c, [ref]$b, [ref]$z)\n' +
+  "  if ($r -eq 0) { $f = switch ($b) { 0 { 'off' } 1 { 'priority' } 2 { 'alarms' } default { 'unknown' } } }\n" +
+  "} catch { $f = 'unknown' }\n" +
+  '"toasts=$t focus=$f"\n\n';
+
 export type NotifierSetting = 'enabled' | 'disabledForUser' | 'disabledForApplication' | 'disabledByGroupPolicy' | 'unknown';
 
 const SETTINGS: Record<string, NotifierSetting> = {
@@ -215,6 +243,19 @@ export class WindowsToast {
     }
     const result = await this.run(SETTING_SCRIPT);
     return (!result.failure && SETTINGS[result.answer]) || 'unknown';
+  }
+
+  /**
+   * Windows' "toasts for all apps" switch and Focus assist, read-only (row 5.5).
+   * Each answer is 'unknown' when it can't be read.
+   */
+  async readState(): Promise<{ toasts: string; focus: string }> {
+    if (this.platform !== 'win32') {
+      return { toasts: 'unknown', focus: 'unknown' };
+    }
+    const result = await this.run(STATE_SCRIPT);
+    const match = !result.failure ? /^toasts=(\S+) focus=(\S+)$/.exec(result.answer) : null;
+    return { toasts: match?.[1] ?? 'unknown', focus: match?.[2] ?? 'unknown' };
   }
 
   /** Queue one host behind the one in flight. */

@@ -54,6 +54,8 @@ A row is linked to the agent's session after your first prompt. If it still says
 
 When a Windows pop-up can't be shown, the message inside the window shows instead. If neither appears, check the steps above first. Then:
 
+**First, run Pitwall: Check Windows Notifications.** Pitwall also checks once, the first time it starts, and says which of the three below is hiding its pop-ups. The Output line is `[Pitwall] notify-check toasts=<on|off|unknown> app=<on|off|unknown> focus=<off|priority|alarms|unknown>`; `unknown` is never treated as a problem.
+
 1. **Settings → System → Notifications.** "Get notifications from apps and other senders" must be on, and so must the **Pitwall** entry. Pitwall reads these and never changes them.
 2. **Focus assist** (Do not disturb) hides pop-ups. Turn it off, or add Pitwall to its priority list.
 3. Open **View → Output → Pitwall Operations** and look for `[Pitwall] toast failed <code>`. `DisabledForUser` or `DisabledForApplication` means Windows has Pitwall's pop-ups switched off (step 1); `timeout` means PowerShell took longer than 10 seconds; `unregistered` means **Pitwall: Remove Pop-up Registration** ran in this window, and the next window start registers again.

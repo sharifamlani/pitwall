@@ -13,6 +13,8 @@ import { RepoDiscoveryService } from './core/services/RepoDiscoveryService';
 import { NotificationService, openFromPopup } from './core/services/NotificationService';
 import { POPUPS_DIR, PopupLedger } from './core/notify/PopupLedger';
 import { WindowsToast } from './core/notify/WindowsToast';
+import { FirstRunCheck } from './core/notify/FirstRunCheck';
+import { notificationState, readersFor } from './core/notify/notificationState';
 import { PopupUriHandler } from './core/notify/PopupUriHandler';
 import { SessionAttentionService } from './core/services/SessionAttentionService';
 import { SessionSearchService } from './core/services/SessionSearchService';
@@ -585,6 +587,18 @@ export async function activate(context: vscode.ExtensionContext) {
   const realRun = context.extensionMode === vscode.ExtensionMode.Production || context.extensionMode === vscode.ExtensionMode.Development;
   const windowsToast =
     process.platform === 'win32' && realRun ? new WindowsToast(undefined, process.platform, { log: logOperation }) : undefined;
+  // The pop-up sender's registration (set after the first render); the notifications check waits for it (Q42).
+  let registration: Promise<'ok' | 'failed'> = Promise.resolve('failed');
+  // First-run check: Windows only, once per profile (Q42). Read-only; "Pitwall: Check Windows Notifications" re-runs it.
+  const notifyCheck =
+    windowsToast && context.globalStorageUri
+      ? new FirstRunCheck(
+          context.globalState,
+          context.globalStorageUri.fsPath,
+          () => notificationState(readersFor(windowsToast, registration)),
+          { log: logOperation }
+        )
+      : undefined;
   const notificationService = new NotificationService(
     // The message's Open goes through the router like every other open (D35, Q35).
     (chatId) => {
@@ -617,6 +631,13 @@ export async function activate(context: vscode.ExtensionContext) {
         log: logOperation,
       })
     ),
+    vscode.commands.registerCommand('pitwall.checkWindowsNotifications', async () => {
+      if (!notifyCheck) {
+        void vscode.window.showInformationMessage('Pitwall checks Windows notifications only on Windows.');
+        return;
+      }
+      await notifyCheck.run({ force: true });
+    }),
     vscode.commands.registerCommand('pitwall.removePopupRegistration', async () => {
       if (!windowsToast) {
         void vscode.window.showInformationMessage('Pitwall registers a pop-up sender only on Windows.');
@@ -660,7 +681,9 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(attentionService.watchLive());
     // The pop-up sender, once per activation and idempotent; the first pop-up waits behind it (Q46 = A).
     if (windowsToast) {
-      void windowsToast.registerAumid(vscode.Uri.joinPath(context.extensionUri, 'resources', 'icons', 'pitwall.png').fsPath);
+      registration = windowsToast.registerAumid(vscode.Uri.joinPath(context.extensionUri, 'resources', 'icons', 'pitwall.png').fsPath);
+      // The first-run check reads Pitwall's own switch, which Windows knows only once the sender is registered (Q42).
+      void registration.then(() => notifyCheck?.run()).catch(() => undefined);
     }
     if (popupLedger) {
       const sweep = () => void popupLedger.sweep().catch(() => undefined);

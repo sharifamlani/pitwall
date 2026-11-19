@@ -355,6 +355,11 @@
         "category": "Pitwall"
       },
       {
+        "command": "pitwall.checkWindowsNotifications",
+        "title": "Check Windows Notifications",
+        "category": "Pitwall"
+      },
+      {
         "command": "pitwall.removePopupRegistration",
         "title": "Remove Pop-up Registration",
         "category": "Pitwall"
@@ -1545,6 +1550,10 @@
         {
           "command": "pitwall.dev.traceTabs",
           "when": "false"
+        },
+        {
+          "command": "pitwall.checkWindowsNotifications",
+          "when": "isWindows"
         },
         {
           "command": "pitwall.removePopupRegistration",
