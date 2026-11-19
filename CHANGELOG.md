@@ -35,6 +35,7 @@ Status and pop-ups (ROADMAP Phase 5).
 - The pop-up registration and the first-run "already asked" marker are shared by all Cursor profiles of the Windows user. Removing the registration in one profile turns pop-ups into in-window messages in the others until the next start registers it again.
 - Pop-ups appear about 1.5 to 3 s after the change (PowerShell starts for each one), and slower on a heavily loaded machine.
 - Downgrading to an older version shows merged duplicate chats again. Nothing was deleted.
+- After you uninstall Pitwall, Cursor removes its pop-up registration only on the second full restart (Cursor runs uninstall scripts late). "Pitwall: Remove Pop-up Registration" before uninstalling removes it at once.
 - A pop-up click on a chat running in a window with several folders, or in a Cursor window without Pitwall, shows "already running in another window" instead of bringing that window forward. The same happens, rarely, for a Pitwall terminal chat restored a moment ago. Switch to it there; Pitwall never opens a second copy.
 
 ## [0.5.0] - 2026-11-18

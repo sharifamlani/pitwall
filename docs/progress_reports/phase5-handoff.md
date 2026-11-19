@@ -30,7 +30,7 @@ Release candidate: main `b3abaab`, CI green.
 - T1 re-walk on `ae19051`: Down moves 3/3, click inside the hold 0/3 (Q51).
 - T2 re-walk after `11093f3`: E2 30/30 per window, E4 12/12. E3 pop-up lag was 8/12 under about 97% CPU load, so it is re-measured on a quiet machine in the release walk.
 - Rows 5.3 to 5.5 walked clean live (E7 sound, E10 first-run).
-- Release walk on `5f27f95`: W1 to W9 and the ground-truth row PASS, except W4(b): a pop-up click on a panel chat whose tab Pitwall hadn't matched warned "running in another window or terminal" and opened nothing. Fixed in #68 and re-walked on `b3abaab`. On a quiet machine every pop-up showed within 1.8 s (12/12).
+- Release walk on `5f27f95`: W1 to W9 and the ground-truth row PASS, except W4(b): a pop-up click on a panel chat whose tab Pitwall hadn't matched warned "running in another window or terminal" and opened nothing. Fixed in #68 and re-walked on `b3abaab` (3/3, one process before and after), plus W10 uninstall PASS. On a quiet machine every pop-up showed within 1.8 s (12/12).
 - Still open: the evaluator's E1 to E18, and Sharif's one real pop-up click on the default profile (Q49).
 
 ## Rulings
@@ -53,6 +53,7 @@ Release candidate: main `b3abaab`, CI green.
 - The pop-up registration and the first-run "already asked" marker are shared by all Cursor profiles of the Windows user; removing the registration in one profile turns pop-ups into in-window messages elsewhere until the next start re-registers.
 - Pop-ups appear about 1.5 to 3 s after the change (PowerShell start-up per pop-up), slower on a loaded machine.
 - Downgrading to an older version shows merged duplicate chats again (nothing was deleted).
+- After uninstall, Cursor runs the `vscode:uninstall` script only on the second full restart, so the HKCU entry stays until then (W10).
 - A pop-up click on a chat running in a multi-folder window, or in a Cursor window without Pitwall, shows the "running in another window" warning instead of raising that window. The same happens, rarely, for a Pitwall terminal chat restored in the receiving window but not yet matched. It fails safe: never a second process.
 
 ## Follow-ups
