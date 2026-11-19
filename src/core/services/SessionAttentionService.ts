@@ -327,6 +327,23 @@ export class SessionAttentionService {
       .sort((a, b) => a.since - b.since || (a.chatId < b.chatId ? -1 : a.chatId > b.chatId ? 1 : 0));
   }
 
+  /** Every listed chat whose row has this status, with when it entered it (the jump list, Q38). Oldest first. */
+  chatsWithStatus(wanted: 'needs' | 'working' | 'finished'): Array<{ chatId: string; since: number }> {
+    return this.storage
+      .getChats()
+      .flatMap((chat) => {
+        const status = this.rowStatus.get(chat.id);
+        return status?.status === wanted ? [{ chatId: chat.id, since: status.statusSince }] : [];
+      })
+      .sort((a, b) => a.since - b.since || (a.chatId < b.chatId ? -1 : a.chatId > b.chatId ? 1 : 0));
+  }
+
+  /** The raw reason a waiting chat is waiting, e.g. "permission prompt"; undefined when it is not waiting. */
+  waitingForOf(chatId: string): string | undefined {
+    const state = this.rowState.get(chatId);
+    return isWaiting(state) ? state?.waitingFor || 'input needed' : undefined;
+  }
+
   /** How many rows of the sidebar list need you, are working, and finished (Q38). Every window counts the same rows. */
   counts(): { needs: number; working: number; finished: number } {
     const counts = { needs: 0, working: 0, finished: 0 };
