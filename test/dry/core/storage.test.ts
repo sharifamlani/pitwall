@@ -541,6 +541,31 @@ function assertOneRowKept(f: Awaited<ReturnType<typeof twinStore>>, winner: stri
   assert.equal(stored.find((chat) => chat.id === loser)?.mergedInto, winner, 'the loser is marked merged into the winner');
 }
 
+test('dedupe: the hidden copy survives every later write (a rename or seen-mark, a new chat, an unrelated delete)', async () => {
+  const f = await twinStore({}, { [STORAGE_KEYS.STARRED_CHATS]: ['chat-new'] });
+  assertOneRowKept(f, 'chat-new', 'chat-old');
+  const hiddenStored = () => storedTwins(f.globalState).find((chat) => chat.id === 'chat-old');
+
+  f.windowA.updateChat('chat-new', { name: 'Renamed', customName: true });
+  await f.windowB.markChatSeen('chat-new', 50_000);
+  assert.equal(hiddenStored()?.mergedInto, 'chat-new', 'a rename and a seen-mark of the kept row keep the hidden copy');
+  const other = f.windowA.createChat('wt-1', 'claude', 'Other', { harnessSessionId: 's-other' });
+  assert.equal(hiddenStored()?.mergedInto, 'chat-new', 'creating another chat keeps the hidden copy');
+  f.windowB.deleteChats([other.id], { rememberSession: false });
+  assert.equal(hiddenStored()?.mergedInto, 'chat-new', 'deleting an unrelated chat keeps the hidden copy');
+  assert.deepEqual(dupRows(f.windowA).map((chat) => [chat.id, chat.name]), [['chat-new', 'Renamed']]);
+  assert.deepEqual(dupRows(f.windowB).map((chat) => chat.id), ['chat-new']);
+});
+
+test('dedupe: removing the kept row removes its hidden copy, so the session is not listed again in either window', async () => {
+  const f = await twinStore({}, { [STORAGE_KEYS.STARRED_CHATS]: ['chat-new'] });
+  assertOneRowKept(f, 'chat-new', 'chat-old');
+  assert.deepEqual(f.windowA.deleteChats(['chat-new']), ['chat-new']);
+  assert.deepEqual(dupRows(f.windowA), [], 'window A lists no row for the session');
+  assert.deepEqual(dupRows(f.windowB), [], 'window B lists no row for the session');
+  assert.deepEqual(storedTwins(f.globalState), [], 'both records are gone');
+});
+
 test('dedupe: the dropped copy held the star; the starred row is kept and stays starred in both windows', async () => {
   const f = await twinStore({}, { [STORAGE_KEYS.STARRED_CHATS]: ['chat-new'] });
   assertOneRowKept(f, 'chat-new', 'chat-old');
