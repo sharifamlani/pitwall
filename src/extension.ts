@@ -55,7 +55,7 @@ import { startTabAdoption } from './core/windows/tabAdoption';
 /** Panels re-read the worktree this long after its files stop changing. */
 const FILE_CHANGE_DEBOUNCE_MS = 300;
 /** Work deferred past the list's first render starts after this long anyway while the list stays hidden. */
-const HIDDEN_LIST_START_MS = 3_000;
+export const HIDDEN_LIST_START_MS = 3_000;
 /** Startup work after the first render waits at most this long for a handoff's claimed chats to open (I3). */
 const CLAIM_FIRST_MAX_MS = 3_000;
 /** Every window sweeps old pop-up locks this often, besides once after its first render (Q32). */
@@ -555,9 +555,11 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   });
   context.subscriptions.push(sessionImporter);
-  // The first scan starts after the list's first render (E16) and the first
-  // claim's opens (I3).
-  const afterSettledClaim = workspacesProvider.whenSettled().then(() => bounded(openedPass));
+  // The first scan starts after the list's first render (E16), or after
+  // HIDDEN_LIST_START_MS while the list stays hidden (a window whose Pitwall
+  // view is never shown still tracks status and pops up), and the first
+  // claim's opens (I3); never after deactivation.
+  const afterSettledClaim = new Promise<void>((resolve) => afterClaim(resolve));
   sessionImporter.start(afterSettledClaim);
   /** The importer's and discovery's first passes have started; before that, a refresh would only run early. */
   let scansStarted = false;

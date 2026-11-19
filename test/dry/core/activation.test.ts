@@ -2,14 +2,18 @@
  * Extension activation and terminal restore: what `activate()` waits for, and
  * what a restore start reveals in the sidebar.
  */
-import { beforeEach, test } from 'node:test';
+import { beforeEach, test, TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import pkg from '../../../package.json';
-import { activate } from '../../../src/extension';
+import { HIDDEN_LIST_START_MS, activate } from '../../../src/extension';
+import { SessionImportService } from '../../../src/core/services/SessionImportService';
+import { RepoDiscoveryService } from '../../../src/core/services/RepoDiscoveryService';
+import { NotificationService } from '../../../src/core/services/NotificationService';
+import { localPidDomain } from '../../../src/harnesses/claude/ClaudeSessionsFile';
 import { ChatSession, Repository, STORAGE_KEYS } from '../../../src/core/types';
 import { worktreeId } from '../../../src/core/services/GitService';
 import { encodeClaudeProjectPath } from '../../../src/harnesses/claude/paths';
@@ -465,6 +469,160 @@ test("the repos' git watchers are made only after the first render, in an empty 
   assert.deepEqual(repoWatchers(), [], 'activation makes no watcher per repo before the rows are out');
   await requestRows();
   await waitFor(() => repoWatchers().length === 6, 'three watchers per repo once the rows are out');
+});
+
+// A window whose Pitwall view is never shown still scans, tracks status and
+// pops up: the first scans start after the first render or after
+// HIDDEN_LIST_START_MS while the list stays hidden, never after deactivation.
+
+/**
+ * Watches the first scans on mocked setTimeout/setInterval: the moment the
+ * session importer's and repo discovery's start gates open, the list's first
+ * render, and every pop-up asked of NotificationService. Restored when the
+ * test ends.
+ */
+function watchFirstScans(t: TestContext) {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const order: string[] = [];
+  const notified: string[] = [];
+  const importerStart = SessionImportService.prototype.start;
+  const discoveryStart = RepoDiscoveryService.prototype.start;
+  const notify = NotificationService.prototype.notify;
+  SessionImportService.prototype.start = function (this: SessionImportService, gate?: PromiseLike<unknown>) {
+    void Promise.resolve(gate).then(() => order.push('importer'));
+    return importerStart.call(this, gate);
+  };
+  RepoDiscoveryService.prototype.start = function (this: RepoDiscoveryService, gate: PromiseLike<unknown>) {
+    void Promise.resolve(gate).then(() => order.push('discovery'));
+    return discoveryStart.call(this, gate);
+  };
+  NotificationService.prototype.notify = function (this: NotificationService, ...args: Parameters<typeof notify>) {
+    notified.push(`${args[0]} ${args[1].sessionId}`);
+    return notify.apply(this, args);
+  };
+  t.after(() => {
+    SessionImportService.prototype.start = importerStart;
+    RepoDiscoveryService.prototype.start = discoveryStart;
+    NotificationService.prototype.notify = notify;
+  });
+  /** Let the promise jobs and I/O that are ready run, without moving the clock. */
+  const drain = async () => {
+    for (let i = 0; i < 20; i++) await flush();
+  };
+  /** Move the mocked clock on by `ms` and let what came due run. */
+  const advance = async (ms: number) => {
+    t.mock.timers.tick(ms);
+    await drain();
+  };
+  /** Run the clock in 50 ms steps (real I/O completing between them) until `condition` holds. */
+  const runUntil = async (condition: () => boolean, what: string, maxMs = 30_000) => {
+    const deadline = performance.now() + 15_000;
+    for (let at = 0; !condition(); at += 50) {
+      if (at > maxMs || performance.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
+      await advance(50);
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  };
+  /** Mark the list's first render in `order` once the workbench has the rows. */
+  const markRender = () => {
+    const provider = stub.__treeViews.find((candidate) => candidate.id === 'pitwall.workspacesView')!.options.treeDataProvider!;
+    const getChildren = provider.getChildren.bind(provider);
+    provider.getChildren = (element?: unknown) => {
+      const rows = getChildren(element as never);
+      if (element === undefined) void Promise.resolve(rows).then(() => order.push('render'));
+      return rows;
+    };
+  };
+  return { order, notified, drain, advance, runUntil, markRender };
+}
+
+/**
+ * A Claude Code session running in `cwd` that no row holds yet, as Claude
+ * writes it: its live record in `<profile>/sessions/<pid>.json` and its
+ * transcript. `finish()` ends the turn, the way a chat turn finishing does.
+ */
+async function liveUnlistedSession(claudeDir: string, cwd: string, sessionId: string) {
+  const sessions = path.join(claudeDir, 'sessions');
+  fs.mkdirSync(sessions, { recursive: true });
+  const domain = await localPidDomain();
+  const record = (status: string) =>
+    fs.writeFileSync(
+      path.join(sessions, `${process.pid}.json`),
+      JSON.stringify({ pid: process.pid, sessionId, pidDomain: domain, cwd, status, statusUpdatedAt: Date.now() })
+    );
+  const dir = path.join(claudeDir, 'projects', encodeClaudeProjectPath(cwd));
+  fs.mkdirSync(dir, { recursive: true });
+  const transcript = path.join(dir, `${sessionId}.jsonl`);
+  const line = (entry: object) => `${JSON.stringify({ timestamp: new Date().toISOString(), cwd, sessionId, ...entry })}
+`;
+  fs.writeFileSync(transcript, line({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'Fix the popups' }] } }));
+  record('busy');
+  return {
+    finish: () => {
+      fs.appendFileSync(
+        transcript,
+        line({ type: 'assistant', message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: 'Done' }] } })
+      );
+      record('idle');
+    },
+  };
+}
+
+test('with the Pitwall view never shown, the first scans start after HIDDEN_LIST_START_MS and a finished turn pops up', async (t) => {
+  // The view stays hidden: the workbench never asks for its rows.
+  const lab = labFolder(t);
+  const f = await seededActivation(t, [], {}, [lab.repository]);
+  const sessionId = '7e5a1c2d-3b4f-4a6e-8c9d-0e1f2a3b4c5d';
+  const session = await liveUnlistedSession(f.claudeDir, lab.repository.rootPath, sessionId);
+  const scans = watchFirstScans(t);
+
+  await f.start();
+  scans.markRender();
+  await scans.drain();
+  assert.deepEqual(scans.order, [], 'nothing scans at activation');
+  await scans.advance(HIDDEN_LIST_START_MS - 1);
+  assert.deepEqual(scans.order, [], 'nor before HIDDEN_LIST_START_MS');
+  await scans.advance(1);
+  assert.deepEqual([...scans.order].sort(), ['discovery', 'importer'], 'both first scans start at HIDDEN_LIST_START_MS, view hidden');
+
+  // The attention tick sees the running session no row holds and asks the importer for a full pass (Q31).
+  await scans.runUntil(() => f.storedChats().some((chat) => chat.harnessSessionId === sessionId), 'the importer to list the live session');
+  // The chat turn finishes unseen: busy, then idle.
+  session.finish();
+  await scans.runUntil(() => scans.notified.includes(`finished ${sessionId}`), 'the finished pop-up to reach NotificationService.notify');
+  assert.ok(!scans.order.includes('render'), 'no view was opened');
+});
+
+test('with the Pitwall view shown, the first scans still start only after its first render (E16)', async (t) => {
+  stub.__setTreeViewsVisible(true);
+  // The workbench asks for the rows 1 s after the view is made.
+  stub.__setTreeViewFirstRenderDelay(1_000);
+  const lab = labFolder(t);
+  const f = await seededActivation(t, [], {}, [lab.repository]);
+  const scans = watchFirstScans(t);
+
+  await f.start();
+  scans.markRender();
+  await scans.advance(999);
+  assert.deepEqual(scans.order, [], 'nothing scans before the first render');
+  await scans.advance(1);
+  assert.equal(scans.order[0], 'render', 'the first render comes first');
+  assert.deepEqual([...scans.order.slice(1)].sort(), ['discovery', 'importer'], 'then both first scans, well before the hidden fallback');
+});
+
+test('a window deactivated before HIDDEN_LIST_START_MS never starts its first scans', async (t) => {
+  const lab = labFolder(t);
+  const f = await seededActivation(t, [], {}, [lab.repository]);
+  const session = await liveUnlistedSession(f.claudeDir, lab.repository.rootPath, '8f6b2d3e-4c5a-4b7f-9d0e-1f2a3b4c5d6e');
+  const scans = watchFirstScans(t);
+
+  await f.start();
+  await scans.advance(HIDDEN_LIST_START_MS - 1);
+  f.context.subscriptions.splice(0).forEach((subscription) => subscription.dispose());
+  session.finish();
+  await scans.advance(10 * HIDDEN_LIST_START_MS);
+  assert.deepEqual(scans.order, [], 'no scan starts after deactivation');
+  assert.deepEqual(scans.notified, [], 'and nothing pops up');
 });
 
 test('stored repos render before discovery finishes', async (t) => {
