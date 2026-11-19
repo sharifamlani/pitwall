@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.67 · 2026-11-19
+> v0.68 · 2026-11-19
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 5 — Status + pop-ups. Phase 4 closed 2026-11-18 with tag `v0.5.0` (scorecard 19/19).
-- **Current step:** Phase 5 plan approved (QA APPROVE at `a816c9b`; Sharif answered Q45–Q47). Smoke S1 (restored-tab focus-steal timing) running with the tester; it sets Task 1's deadline.
+- **Current step:** PAUSED at the weekly limit (94%, resets Sun 2026-11-22). T2 merged (PR #59 → `2e028a8`, status for every session, one pop-up per transition; live check not yet run). T1 PR #58 in QA round 2. S1 done (Q43a); S2 partial (panel chat 6/6, CLI chat not run).
 - **Last update:** 2026-11-19
-- **Next action:** S1 result → dispatch Task 1 (`phase5/task-1-restored-ctrl-down`), and Task 2 (status for every session) in parallel per the plan's waves.
+- **Next action:** on resume: T1 round 2 → QA → merge; tester finishes S2 and walks T2; then Wave B (T3 Windows pop-up, T5 counts + jump list). Ledger RESUME HERE note has the steps.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -353,6 +353,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.59 · 2026-11-18.** Row 4.6 amended by live evidence: Claude's EnterWorktree moves a session's transcript into the worktree's project folder, so such a chat belongs in the worktree window (the old premise "stays in the main window" was wrong); a plain `cd` keeps it under main. The plan's Q2/E10 now say the project folder decides. T3 (router) in build.
 - **v0.60 · 2026-11-18.** Row 4.6 refined again by live data: Claude files a transcript under the session's current folder (the worktree while it runs there after EnterWorktree, main again after /exit), so the router follows wherever the file is now. T3 router PR #51: E3 shape, E6, E11, menus, the cold open (Pitwall's part 2.0–2.5 s), the line-clear 12/12 and E8 pass live; a fresh builder is closing the sdk-cli bypass and adding a route log line. Weekly usage about 76%.
 - **v0.61 · 2026-11-18.** Rows 4.2, 4.6, 4.8 ✅: the router merged (PR #51 → `d12d768`, 4 QA rounds plus 3 live walks). A click on any chat lands in its folder's window (opened if needed); sdk-cli chats route and then open in a terminal there; a chat already open stays where it is (one process per session); "+" starts in the repo's window; cold-open warning at 60 s; a line-clear before the typed resume line. Known issues for the handoff: a moved chat's row stays under main; multi-root windows are invisible to open-there; type-ahead before the late rename; a ~270 ms terminal flicker. T4 owns the outside-terminal second-process guard.
+- **v0.68 · 2026-11-19.** T2 merged (PR #59 → `2e028a8`; QA 17/17 mutations; main CI green): status for every listed session, exactly one pop-up per transition across windows (lock), in-window Open goes through the router. S1 found the real Ctrl+↓ cause (Q43a); T1 PR #58 in QA round 2. Paused at the weekly limit (94%).
 - **v0.67 · 2026-11-19.** Phase 5 plan approved by QA at `a816c9b` after 2 rounds (round 1: 2 blockers — pop-up click on a chat live in another terminal, toast-script injection — plus 9 changes; round 2: separate `outside` counter). Smoke S1 dispatched to the tester.
 - **v0.66 · 2026-11-19.** Sharif answered the Phase 5 plan questions: Q45 sessions file only (row 5.1 amended, hooks → new row 7.6), Q46 pop-ups under Pitwall via one per-user AUMID registry key (removable), Q47 the bell writes only `pitwall.sound.*` on click. QA round 1 fixes on the plan at `56fbb73`, re-review pending.
 - **v0.65 · 2026-11-19.** Phase 5 plan drafted (draft for QA review): 7 tasks, criteria E1–E18, smokes S1–S10. Task 1 folds in the v0.5.0 known issue (first Ctrl+↓ onto a restored panel tab after launch; Sharif 2026-11-19). Open for Sharif: Q45 hooks (recommend sessions file only, hooks to Phase 7), Q46 pop-up sender (per-user AppUserModelId registry key), Q47 bell writes `pitwall.sound.*`.
