@@ -40,6 +40,16 @@ beforeEach(() => stub.__reset());
 
 const UUID = /^[0-9a-f-]{36}$/;
 
+function disposeAll(subscriptions: { dispose(): unknown }[]): void {
+  for (const entry of subscriptions.splice(0)) {
+    try {
+      entry.dispose();
+    } catch {
+      // Already disposed.
+    }
+  }
+}
+
 function setup(
   t: { after(fn: () => void): void },
   /** `surface` is the defaultSessionSurface setting; null leaves it unset (the shipped default). */
@@ -133,7 +143,10 @@ function setup(
     terminals.dispose();
   });
 
-  const context = { subscriptions: [], extensionUri: vscode.Uri.file('/extension') } as never;
+  const subscriptions: { dispose(): unknown }[] = [];
+  const context = { subscriptions, extensionUri: vscode.Uri.file('/extension') } as never;
+  // A pending list-focus hold (its timer) ends with the test, as it does with the extension.
+  t.after(() => disposeAll(subscriptions));
   registerChatCommands(context, {
     storageService: storage,
     gitService: git as never,
@@ -164,7 +177,7 @@ function setup(
   vscode.commands.registerCommand('pitwall.refreshWorkspaces', () => undefined);
 
   return {
-    storage, main, feature, folder, folderRepo, worktrees, missing, sessions, adapters, terminals,
+    storage, main, feature, folder, folderRepo, worktrees, missing, sessions, adapters, terminals, subscriptions,
     claudeUi, codexUi, shown, activated, registrations, needingYou, selectedRows, active,
     /** A chat in a worktree (main by default), linked when `sessionId` is given. */
     chat(harness: HarnessId, name: string, sessionId: string | null = null, worktree = main): ChatSession {
@@ -551,6 +564,78 @@ test('Ctrl+Down onto a chat whose panel tab is already open reveals it, then ref
   await keys.press();
   assert.deepEqual(f.claudeUi.opened.map((entry) => entry.sessionId), ['claude-1'], 'the open tab is revealed');
   assert.deepEqual(keys.events, ['focus list'], 'refocused once after the reveal');
+});
+
+const afterSettle = () => new Promise((resolve) => setTimeout(resolve, 450));
+
+/** A Ctrl+Down onto an open panel tab; the revealed webview activates a moment after the first refocus. */
+async function panelPress(t: Parameters<typeof setup>[0], between?: (f: ReturnType<typeof setup>) => unknown) {
+  const f = setup(t, { surface: 'ui' });
+  const chat = f.chat('claude', 'Open in panel', 'claude-1');
+  f.claudeUi.surfaces.open.add('claude-1');
+  const keys = listKeys(f.row(chat));
+  t.after(() => stub.window.__fireWindowState(true));
+  await keys.press();
+  assert.deepEqual(keys.events, ['focus list'], 'refocused right after the reveal');
+  // The tab becomes active, then Claude's webview takes focus.
+  stub.window.__fireTabsChanged({ changed: [{}] });
+  await between?.(f);
+  await afterSettle();
+  return { f, keys };
+}
+
+test('Ctrl+Down onto an open panel tab refocuses the list once more after the webview activates (E8)', async (t) => {
+  const { keys } = await panelPress(t);
+  // Wait out a second settle: a looping retry would refocus again inside it.
+  await afterSettle();
+  assert.deepEqual(keys.events, ['focus list', 'focus list'], 'one retry, never a loop');
+});
+
+test('a mouse open of a panel chat arms no retry (E8)', async (t) => {
+  const f = setup(t, { surface: 'ui' });
+  const chat = f.chat('claude', 'Clicked', 'claude-1');
+  const keys = listKeys(f.row(chat));
+  await runCommand('pitwall.openChat', f.row(chat));
+  stub.window.__fireTabsChanged({ changed: [{}] });
+  await afterSettle();
+  assert.deepEqual(keys.events, [], 'a click lets the chat keep focus');
+});
+
+test('a newer open takes over: the earlier panel retry does not run (E8)', async (t) => {
+  const { f, keys } = await panelPress(t, async (fixture) => {
+    // A mouse open of a second chat before the settle ends.
+    const second = fixture.chat('claude', 'Second', 'claude-2');
+    await runCommand('pitwall.openChat', fixture.row(second));
+  });
+  assert.equal(f.claudeUi.opened.length, 2);
+  assert.deepEqual(keys.events, ['focus list'], 'only the first refocus; the click owns focus');
+});
+
+const PANEL_MOVES: [string, () => void][] = [
+  ['an editor took focus', () => stub.window.__focusTextEditor({ document: { uri: vscode.Uri.file('/work/demo/file.ts') } })],
+  ['another terminal became active', () => stub.window.__focusTerminal(stub.window.createTerminal({ name: 'user shell' }))],
+  ['the window lost focus', () => stub.window.__fireWindowState(false)],
+  ['a second tab change came', () => stub.window.__fireTabsChanged({ changed: [{}] })],
+];
+for (const [moved, move] of PANEL_MOVES) {
+  test(`the panel retry does not run when ${moved} (E8)`, async (t) => {
+    const { keys } = await panelPress(t, () => move());
+    assert.deepEqual(keys.events, ['focus list'], 'where the user went keeps focus');
+  });
+}
+
+test('the panel retry does not run once the subscriptions are disposed (E8)', async (t) => {
+  const { keys } = await panelPress(t, (f) => disposeAll(f.subscriptions));
+  assert.deepEqual(keys.events, ['focus list'], 'a disposed hold fires nothing');
+});
+
+test('the panel retry does not run when another group took the active tab (E8)', async (t) => {
+  const { keys } = await panelPress(t, () => {
+    stub.window.tabGroups.all = [{ isActive: true, activeTab: { label: 'other group tab' }, tabs: [] }];
+    t.after(() => (stub.window.tabGroups.all = []));
+    stub.window.__fireTabGroupsChanged();
+  });
+  assert.deepEqual(keys.events, ['focus list'], 'the settled tab is no longer the active one');
 });
 
 test('Ctrl+Down onto a chat with no terminal creates it, renames it, then refocuses the list', async (t) => {
