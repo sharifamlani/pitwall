@@ -28,6 +28,7 @@ to learn how a subsystem works today, and the ADR to learn why it is shaped that
 | [0018](0018-live-status-from-sessions-file.md) | Live status comes from `~/.claude/sessions`, with `claude agents` as the fallback | Proposed |
 | [0019](0019-repos-discovered-and-dismissed.md) | Repos are found from `~/.claude` and dismissed by right-click | Proposed |
 | [0020](0020-window-per-folder-handoff.md) | One window per folder, with a file handoff between windows | Proposed |
+| [0021](0021-status-and-popups-for-every-session.md) | Status and pop-ups for every listed session, one window speaks per transition | Proposed |
 
 ## Writing one
 

@@ -17,7 +17,7 @@ To list and watch sessions, Pitwall reads what each agent already keeps on your 
 
 | Agent | What is read |
 | --- | --- |
-| Claude Code | Session transcripts under `~/.claude/projects/`, also to find the repos your sessions ran in (only the first lines of transcripts from the retention window, up to the folder they name; only counts are logged); the live-status files `~/.claude/sessions/*.json` (only those: the `.key` files in that folder are never opened, read or logged); and the output of `claude agents --json` when those files are missing |
+| Claude Code | Session transcripts under `~/.claude/projects/`, also to find the repos your sessions ran in (only the first lines of transcripts from the retention window, up to the folder they name; only counts are logged); the live-status files `~/.claude/sessions/*.json` (only those: the `.key` files in that folder are never opened, read or logged; Pitwall also watches the folder for changes, which reads nothing); and the output of `claude agents --json` when those files are missing. Pitwall writes nothing under `~/.claude` (a test spies on every file write to prove it) |
 | Codex | Threads through a local `codex app-server`, and rollout files under `~/.codex/sessions/` |
 | opencode | Sessions through the `opencode` CLI and API. Its database is never opened |
 | Pi | Session records under `~/.pi/agent/sessions/` |
@@ -42,13 +42,16 @@ Each Cursor or VS Code window runs its own copy of Pitwall. So that one window c
 
 | File | Where | What it holds |
 | --- | --- | --- |
-| Window record | `pitwall-windows/<pid>.json` | `pid`, `folder`, `beatAt`, `openSessionIds`: the window's folder and the chats it has open as tabs. Deleted when the window closes; ignored 45 s after its last update |
+| Window record | `pitwall-windows/<pid>.json` | `pid`, `folder`, `beatAt`, `openSessionIds`, `front`, `focused`: the window's folder, the chats it has open as tabs, the session in front, and whether the window has focus (so no other window pops up a chat you are looking at). Deleted when the window closes; ignored 45 s after its last update |
+| Pop-up lock | `pitwall-popups/<sessionId>.<needs\|finished>.<stamp>.lock` | Nothing: an empty file whose name is a session ID, a kind and a timestamp. The first window to create it shows that one pop-up; the others don't. Swept after 10 minutes |
 | Handoff request | `pitwall-handoff/<folder key>/<id>.json` (renamed `.claimed-<pid>` or `.expired`) | `v`, `kind`, `sessionIds`, `folder`, `at`, `nonce`: which chats to open in which folder. A `<id>.lock` file, always empty, exists only while a request is being claimed |
 | Handoff outcome | `pitwall-handoff/<folder key>/<id>.done-<pid>` | `ok`, `error`, `at`: whether the other window opened the chats |
 | Clipboard | `pitwall-clipboard.json` | `path`, `cut`, `at`: the one file path copied or cut in the FILES panel, shared by all windows |
-| Tab dump | `pitwall-dump/<pid>.json` | `version`, `pid`, `windowFolder`, `tabGroups` (tab labels, pinned and active flags, bound session IDs), `repos` (name, folder, sidebar chat IDs). Written only when the hidden developer command `pitwall.dev.dumpState` is run, for `scripts/dump-tabs.mjs` |
+| Tab dump | `pitwall-dump/<pid>.json` | `version`, `pid`, `windowFolder`, `tabGroups` (tab labels, pinned and active flags, bound session IDs), `repos` (name, folder, sidebar chat IDs), `statuses` (each listed session's row status: needs, working, finished or idle), `counts` (how many need you, are working, finished). Written only when the hidden developer command `pitwall.dev.dumpState` is run, for `scripts/dump-tabs.mjs` and `scripts/compare-status.mjs` |
 
-Unclaimed handoff requests are deleted after 2 minutes, and the other handoff files after 10. To see what is there, run `node scripts/dump-pitwall-windows.mjs`; `--check-privacy` fails if any file holds a key outside the lists above.
+Unclaimed handoff requests are deleted after 2 minutes, and the other handoff files after 10. To see what is there, run `node scripts/dump-pitwall-windows.mjs`; `--check-privacy` fails if any file holds a key outside the lists above, or a lock file is not empty.
+
+The **Pitwall Operations** output logs each status change and pop-up as `[Pitwall] status <id8> <from>→<to> lag=<ms>` and `[Pitwall] popup <needs|finished> <id8> shown|skipped <reason>`: the first 8 characters of a session ID, statuses and timings, never a chat title or a path. The in-window notification itself shows the chat's name, its repo and the waiting reason, inside VS Code only.
 
 The hidden developer command `pitwall.dev.traceTabs` writes tab labels, input kinds (view types, never file paths) and bound session IDs to the **Pitwall Operations** output while it is on. It is off by default, writes no file of its own and changes no settings.
 
