@@ -787,6 +787,32 @@ test('a mouse open of a restored panel chat arms no retry (E11)', async (t) => {
   assert.deepEqual(keys.events, [], 'a click lets the chat keep focus');
 });
 
+// ---- QA round 2, N1: each condition of the same-Tab rule is load-bearing ----
+
+const NOT_SAME_TAB_AGAIN: [string, (tabs: ReturnType<typeof panelTabs>) => void][] = [
+  [
+    'while another tab is active',
+    (tabs) => {
+      const group = stub.window.tabGroups.all[0] as { activeTab: PanelTab };
+      group.activeTab = tabs.editor;
+      stub.window.__fireTabsChanged({ changed: [tabs.panel] });
+      // Back on the held tab with no event, so only the event decides: the timer's own check would also see a moved tab.
+      group.activeTab = tabs.panel;
+    },
+  ],
+  ['alongside an opened tab', (tabs) => stub.window.__fireTabsChanged({ opened: [{ label: 'new.ts', isActive: false }], changed: [tabs.panel] })],
+  ['alongside a closed tab', (tabs) => stub.window.__fireTabsChanged({ closed: [tabs.editor], changed: [tabs.panel] })],
+];
+for (const [shape, fire] of NOT_SAME_TAB_AGAIN) {
+  test(`a changed event naming the held Tab ${shape} still counts as a move and lets go`, async (t) => {
+    const { keys, tabs, at } = await restoredPress(t, { firstVisit: false });
+    await at(100);
+    fire(tabs);
+    await at(3_000);
+    assert.deepEqual(keys.events, ['focus list'], 'not the host\'s same-Tab event: the hold let go');
+  });
+}
+
 // ---- QA round 2, C1: a first visit ends with its hold, whatever group has focus ----
 
 for (const secondPressAt of [1_000, 3_000]) {
