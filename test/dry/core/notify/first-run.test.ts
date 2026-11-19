@@ -6,7 +6,7 @@ import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
-import { FirstRunCheck, NOTIFY_CHECK_KEY, NOTIFY_CHECK_LOCK } from '../../../../src/core/notify/FirstRunCheck';
+import { FirstRunCheck, NOTIFY_CHECK_KEY, NOTIFY_CHECK_LOCK, runAfterRegistration } from '../../../../src/core/notify/FirstRunCheck';
 import type { NotificationState } from '../../../../src/core/notify/notificationState';
 import { memento, shownMessages, stub, tempDir } from '../../support';
 
@@ -176,4 +176,21 @@ test('a stale lock with no marker is replaced, and the check runs once', async (
   assert.equal(await build(memento()).run(), 'skipped');
   assert.equal(shownMessages().length, 1);
   assert.equal(reads(), 1);
+});
+
+test('a failed registration defers the first-run check without claiming the marker', async (t) => {
+  const { make: build, log, dir, reads } = make(t, { toasts: 'on', app: 'off', focus: 'off' });
+  assert.equal(await runAfterRegistration(Promise.resolve('failed'), build(), (l) => log.push(l)), 'deferred');
+  assert.equal(reads(), 0);
+  assert.deepEqual(shownMessages(), []);
+  assert.equal(fs.existsSync(path.join(dir, NOTIFY_CHECK_LOCK)), false);
+  assert.ok(log.includes('[Pitwall] notify-check deferred register-failed'));
+  // The next activation registers fine and the check still has its one run.
+  assert.equal(await runAfterRegistration(Promise.resolve('ok'), build(), (l) => log.push(l)), 'shown');
+  assert.equal(shownMessages().length, 1);
+});
+
+test('the force command runs even when registration failed', async (t) => {
+  const { make: build } = make(t, { toasts: 'on', app: 'off', focus: 'off' });
+  assert.equal(await build().run({ force: true }), 'shown');
 });

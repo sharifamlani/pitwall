@@ -29,6 +29,24 @@ interface MementoLike {
   update(key: string, value: unknown): Thenable<void>;
 }
 
+/**
+ * The automatic check after activation's registration. A registration that did
+ * not return 'ok' (a slow first start timing out) must not use up the one
+ * check: it is deferred, the marker stays unclaimed, and the next activation
+ * (which registers again) runs it.
+ */
+export async function runAfterRegistration(
+  registration: Promise<'ok' | 'failed'>,
+  check: Pick<FirstRunCheck, 'run'>,
+  log?: (line: string) => void
+): Promise<'shown' | 'quiet' | 'skipped' | 'deferred'> {
+  if ((await registration) !== 'ok') {
+    log?.('[Pitwall] notify-check deferred register-failed');
+    return 'deferred';
+  }
+  return check.run();
+}
+
 export class FirstRunCheck {
   constructor(
     private readonly state: MementoLike,
