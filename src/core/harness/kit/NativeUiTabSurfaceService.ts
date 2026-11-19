@@ -144,6 +144,8 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
   private tracing = false;
   /** Every Tab object (any kind) as of the last event, while tracing: tells a re-send from a plain group event. */
   private traceSeen = new Set<vscode.Tab>();
+  /** The last group line traced, so back-to-back identical re-sends log once. */
+  private lastGroupTrace: string | undefined;
   /**
    * Restored tabs not yet visited: this harness's tabs present at activation
    * and not active then. A tab leaves once it has been active and then
@@ -669,12 +671,14 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     const list = (tabs: readonly vscode.Tab[]) => `[${tabs.map((tab) => this.traceTab(tab)).join(', ')}]`;
     this.log(`[Pitwall] trace tabs opened=${list(event.opened)} closed=${list(event.closed)} changed=${list(event.changed)}`);
     this.traceSeen = this.allTabs();
+    this.lastGroupTrace = undefined;
   }
 
   /**
    * The raw tab-group event, before it is handled: how many of the Tab
    * objects seen at the last event it replaced (by identity), and every tab
-   * per group.
+   * per group. A re-send identical to the group event just before it, with
+   * no tab event between, is not logged again.
    */
   private traceGroupEvent(): void {
     if (!this.tracing) {
@@ -685,7 +689,11 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
     const groups = this.getTabGroups();
     const active = groups.findIndex((group) => group.isActive);
     const tabs = groups.flatMap((group) => group.tabs.map((tab) => this.traceTab(tab)));
-    this.log(`[Pitwall] trace groups n=${groups.length} active=${active} replaced=${replaced}/${this.traceSeen.size} tabs=[${tabs.join(', ')}]`);
+    const line = `[Pitwall] trace groups n=${groups.length} active=${active} replaced=${replaced}/${this.traceSeen.size} tabs=[${tabs.join(', ')}]`;
+    if (line !== this.lastGroupTrace) {
+      this.log(line);
+      this.lastGroupTrace = line;
+    }
     this.traceSeen = now;
   }
 

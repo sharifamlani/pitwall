@@ -1087,3 +1087,20 @@ test('a tab Pitwall opened is never a first visit', async () => {
   assert.deepEqual([background, opened].map(first), [false, false], 'only tabs present at activation');
   service.dispose();
 });
+
+test('traceTabs logs a re-sent identical tab model once', async () => {
+  const { world, service, logs } = serialWorld();
+  const cursor = cursorWorkbench(world);
+  await service.openSerially(['aaaa', 'bbbb'], async (id) => void world.open(claudeTab(), `Chat ${id}`));
+  service.toggleTrace();
+  logs.length = 0;
+  cursor.resend();
+  cursor.resend();
+  cursor.resend();
+  const groups = () => logs.filter((line) => line.startsWith('[Pitwall] trace groups '));
+  assert.equal(groups().length, 1, `three identical re-sends, one line: ${groups().join('\n')}`);
+  world.focus(world.groups[0].tabs[0]);
+  cursor.resend();
+  assert.equal(groups().length, 2, 'a re-send after the model changed is logged again');
+  service.dispose();
+});
