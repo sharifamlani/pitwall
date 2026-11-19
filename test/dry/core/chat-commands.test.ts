@@ -586,6 +586,8 @@ async function panelPress(t: Parameters<typeof setup>[0], between?: (f: ReturnTy
 
 test('Ctrl+Down onto an open panel tab refocuses the list once more after the webview activates (E8)', async (t) => {
   const { keys } = await panelPress(t);
+  // Wait out a second settle: a looping retry would refocus again inside it.
+  await afterSettle();
   assert.deepEqual(keys.events, ['focus list', 'focus list'], 'one retry, never a loop');
 });
 
