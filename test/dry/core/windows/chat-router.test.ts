@@ -1231,11 +1231,9 @@ test("open-here opens against this window's folder, even when the row is stored 
 
 test('a chat in a Claude panel of a window Pitwall cannot see gets the window-or-terminal copy', async (t) => {
   const w = world(t);
-  // Its folder (here the launch folder: the record has no cwd) is one no Pitwall window shows.
-  // A panel in this window's folder, or one a Pitwall window shows, routes there (W4(b), tests above).
-  w.transcript(w.other, ID.a, [w.turn(ID.a, w.other)]);
+  w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
   const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, outsideTerminal: () => ({ pid: 777, panel: true }) });
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel elsewhere', ID.a, w.otherWt)] }), 'outside');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel elsewhere', ID.a, w.mainWt)] }), 'outside');
   assert.deepEqual(here.opened, []);
   assert.equal(warnings('That chat is already running in another window or terminal (pid 777). Switch to it there.').length, 1);
   assert.deepEqual(shownMessages().filter((message) => message.includes('another terminal')), []);
@@ -1277,11 +1275,13 @@ test('a live panel process with no bound tab routes to its folder\'s window (ope
   assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.b.slice(0, 8)} → ${w.other} (open-there-unbound)`]);
 });
 
-test("a live panel process in this window's folder with no bound tab opens here", async (t) => {
+test("a live panel process in this window's folder that is not this window's child keeps the outside warning (no second process)", async (t) => {
   const w = world(t);
   const dir = tempDir(t);
   const calls = openFolderCalls();
   w.transcript(w.main, ID.b, [w.turn(ID.b, w.main)]);
+  // This window's own panel children never reach the router as outsiders (outsideProcessOf): this
+  // process belongs to a second window on the same folder, so opening here would fork the session.
   const here = windowOn(t, w, dir, () => w.main, {
     pid: 1001,
     claims: w.main,
@@ -1289,12 +1289,12 @@ test("a live panel process in this window's folder with no bound tab opens here"
     outsideTerminal: (id) => (id === ID.b ? { pid: 39032, panel: true, cwd: w.main } : undefined),
   });
 
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Unbound here', ID.b, w.mainWt)] }), 'here');
-  assert.deepEqual(here.opened.map((entry) => [entry.chat, entry.path]), [['Unbound here', w.main]], 'opened once, here');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel, same folder', ID.b, w.mainWt)] }), 'outside');
+  assert.deepEqual(here.opened, [], 'no openHere');
   assert.deepEqual(filesIn(here.inbox, dir, w.main), [], 'no request file');
   assert.deepEqual(calls, [], 'no window raised');
-  assert.deepEqual(shownMessages(), [], 'no warning');
-  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.b.slice(0, 8)} → here (open-here-unbound)`]);
+  assert.deepEqual(warnings(PANEL_OUTSIDE(39032)), [PANEL_OUTSIDE(39032)]);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.b.slice(0, 8)} → elsewhere (outside-terminal)`]);
 });
 
 test('a live panel process with no cwd in its record routes by the chat\'s launch folder', async (t) => {

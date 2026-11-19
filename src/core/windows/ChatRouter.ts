@@ -268,14 +268,12 @@ export class ChatRouter implements vscode.Disposable {
         // A panel runs in some editor window whose tab Pitwall never bound (a
         // shared title, W4(b)). One window per folder (D35): its folder names
         // the window. Opening there makes the agent's UI re-send its open tab,
-        // never a second process.
+        // never a second process. This window's own panel never gets here (it
+        // is no outsider), so a panel in this window's folder belongs to a
+        // second window on it: opening here would fork the session, so it
+        // keeps the warning below.
         const folder = outside.cwd || ((await this.launchFolder(chat, worktree)) ?? worktree.path);
-        if (this.isThisWindow(folder)) {
-          this.logRoute(id, 'here', 'open-here-unbound');
-          local.push({ chat, worktree: { ...worktree, path: folder } });
-          continue;
-        }
-        if (await this.hasWindow(folder)) {
+        if (!this.isThisWindow(folder) && (await this.hasWindow(folder))) {
           hand(folder, chat.harnessSessionId!, 'open-there-unbound');
           continue;
         }

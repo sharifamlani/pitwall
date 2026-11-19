@@ -3,8 +3,10 @@
  * Pitwall window (Q28, QA #52 C1). A terminal the user started is an outsider.
  * A harness panel whose process is a child of this extension host is this
  * window's own (Pitwall never bound its tab): it is not an outsider, so the
- * chat opens here. Any other panel runs in another window: the router routes
- * it by its folder (`cwd`, D35) and warns only when no Pitwall window shows it.
+ * chat opens here. Any other panel runs in another window: the router hands
+ * it to the Pitwall window on its folder (`cwd`, D35) when that is another
+ * window, and warns otherwise (no window there, or a second window on this
+ * window's folder, where a local open would fork the session).
  */
 export interface LiveProcess {
   pid: number;
