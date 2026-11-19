@@ -12,6 +12,7 @@ import {
   HarnessAdapter,
   NativeUiCapability,
   NativeUiOpenResult,
+  NativeUiSurfaceTracker,
   NativeUiUnavailable,
 } from '../harness/types';
 import { DEFAULT_CHAT_NAME, chatPrimarySessionId } from '../harness/sessionUtils';
@@ -38,6 +39,14 @@ export type PrimaryOpen = 'here' | 'routed' | 'terminal';
 const FOCUS_LIST_COMMAND = 'pitwall.workspacesView.focus';
 /** After a Ctrl+↓/↑ reveals a panel tab, the list is refocused once more this long after the tab settles (E8). */
 const PANEL_SETTLE_MS = 250;
+/**
+ * On the first visit since launch of a restored panel tab, its webview loads
+ * and takes focus late: the one retry waits this long after the press. S1
+ * (12 launches): the last focus movement came at ≤ 556 ms, + 250, rounded (Q43a).
+ */
+const RESTORED_DEADLINE_MS = 800;
+/** The first-visit retry never fires later than this after the press (Q43). */
+const RESTORED_DEADLINE_CAP_MS = 1_200;
 type LinkedChat = ChatSession & { harnessSessionId: string };
 
 export interface ChatCommandDeps {
@@ -236,6 +245,8 @@ export function registerChatCommands(
   let pitwallOpens = 0;
   /** The focus watch of the last Ctrl+↓/↑ terminal open that may still restore the list. */
   let heldList: vscode.Disposable | undefined;
+  /** When the last native-UI open started its reveal: a Ctrl+↓/↑ hold times its first-visit retry from it. */
+  let revealStartedAt = 0;
   context.subscriptions.push({ dispose: () => heldList?.dispose() });
 
   /**
@@ -332,8 +343,16 @@ export function registerChatCommands(
    * after the tab is active. One retry, never a loop, and only while nothing
    * else moved since: an editor, another terminal, the window losing focus,
    * a second tab change or another Pitwall open lets go.
+   *
+   * The held tab changing again with the active tab unchanged is the host's
+   * doing, not the user's (S1: once 77-162 ms after the activation, then a
+   * burst at about +2.3 s), so it is ignored; a switch, open or close still
+   * lets go (Q43a). On the first visit since launch of a restored tab, whose
+   * webview loads now and takes focus late, the retry waits until
+   * RESTORED_DEADLINE_MS after the press, never past RESTORED_DEADLINE_CAP_MS
+   * (E11). `pressedAt` is when the reveal started.
    */
-  const holdListForPanel = (): void => {
+  const holdListForPanel = (surfaces: NativeUiSurfaceTracker | undefined, pressedAt: number): void => {
     heldList?.dispose();
     const opensAtPress = pitwallOpens;
     const activeTab = () => vscode.window.tabGroups.activeTabGroup?.activeTab;
@@ -354,6 +373,15 @@ export function registerChatCommands(
         heldList = undefined;
       }
     };
+    /** When the one retry runs: a settle after the tab settled, or the first-visit deadline after the press. */
+    const retryDelay = (): number => {
+      if (!settled || !surfaces?.isFirstVisitSinceLaunch?.(settled)) {
+        return PANEL_SETTLE_MS;
+      }
+      const now = Date.now();
+      const at = Math.min(Math.max(pressedAt + RESTORED_DEADLINE_MS, now + PANEL_SETTLE_MS), pressedAt + RESTORED_DEADLINE_CAP_MS);
+      return Math.max(0, at - now);
+    };
     const arm = (): void => {
       clearTimeout(timer);
       timer = setTimeout(() => {
@@ -362,13 +390,23 @@ export function registerChatCommands(
         if (stillHeld) {
           void refocusList();
         }
-      }, PANEL_SETTLE_MS);
+      }, retryDelay());
     };
+    /** The held tab changed again, the active tab did not: the host's doing (S1), not a move. */
+    const sameTabAgain = (event: vscode.TabChangeEvent): boolean =>
+      event.opened.length === 0 &&
+      event.closed.length === 0 &&
+      event.changed.length > 0 &&
+      event.changed.every((tab) => tab === settled) &&
+      activeTab() === settled;
     watches.push(
       vscode.window.onDidChangeActiveTextEditor((editor) => editor && letGo()),
       vscode.window.onDidChangeActiveTerminal((terminal) => terminal && letGo()),
       vscode.window.onDidChangeWindowState((state) => !state.focused && letGo()),
-      vscode.window.tabGroups.onDidChangeTabs(() => {
+      vscode.window.tabGroups.onDidChangeTabs((event) => {
+        if (sameTabAgain(event)) {
+          return;
+        }
         // The revealed tab becoming active is the one change expected; a second is the user's.
         tabChanges += 1;
         if (tabChanges > 1) {
@@ -575,6 +613,7 @@ export function registerChatCommands(
     // the tab it creates. A tracker that reads the ID from the tab, or a tab
     // that is already mapped, ignores it.
     surfaces?.expect(sessionId, chat.name);
+    revealStartedAt = Date.now();
     const result = await tryOpen(() => nativeUi.openSession(sessionId, worktree.path));
     if (result.kind !== 'opened') {
       surfaces?.cancelExpect(sessionId);
@@ -650,7 +689,7 @@ export function registerChatCommands(
       }
       if (opened && keepListFocus) {
         await refocusList();
-        holdListForPanel();
+        holdListForPanel(ui.surfaces, revealStartedAt);
       }
       return opened ? 'here' : 'failed';
     };
