@@ -22,6 +22,7 @@ Status and pop-ups (ROADMAP Phase 5).
 - The first Ctrl+↓ after launch onto a restored panel chat keeps the list focused (the 0.5.0 known issue).
 - A session was listed twice when two windows imported it at once. Duplicates now merge without losing stars, names or terminal links.
 - `pitwall.dev.traceTabs` logs a tab model Cursor re-sends unchanged once, not on every re-send.
+- A pop-up click on a chat open in another window's chat panel brings that window forward even when Pitwall hasn't matched the chat to its tab. Before, it warned that the chat was running in another window or terminal and opened nothing. A window that receives the click never opens a chat whose live process belongs to another window.
 
 ### Known issues
 
@@ -34,6 +35,7 @@ Status and pop-ups (ROADMAP Phase 5).
 - The pop-up registration and the first-run "already asked" marker are shared by all Cursor profiles of the Windows user. Removing the registration in one profile turns pop-ups into in-window messages in the others until the next start registers it again.
 - Pop-ups appear about 1.5 to 3 s after the change (PowerShell starts for each one), and slower on a heavily loaded machine.
 - Downgrading to an older version shows merged duplicate chats again. Nothing was deleted.
+- A pop-up click on a chat running in a window with several folders, or in a Cursor window without Pitwall, shows "already running in another window" instead of bringing that window forward. The same happens, rarely, for a Pitwall terminal chat restored a moment ago. Switch to it there; Pitwall never opens a second copy.
 
 ## [0.5.0] - 2026-11-18
 

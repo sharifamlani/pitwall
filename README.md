@@ -58,6 +58,7 @@ On an F1 pit wall, the team watches every car at once and calls in whichever one
 - **The pop-up registration is shared by all Cursor profiles** of the Windows user. Removing it in one profile turns pop-ups into in-window messages in the others until their next start.
 - **Pop-ups appear about 1.5 to 3 s after the change.**
 - **Downgrading shows merged duplicate chats again.** Nothing was deleted.
+- **A pop-up click on a chat running in a window with several folders**, or in a Cursor window without Pitwall, shows "already running in another window" instead of bringing that window forward. Pitwall never opens a second copy.
 
 ## Requirements
 
