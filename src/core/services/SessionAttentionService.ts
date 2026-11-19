@@ -216,6 +216,14 @@ export class SessionAttentionService {
   private readonly frontChats = new Set<string>();
   /** Unlisted live sessions this window already asked discovery about (Q31, N5). */
   private readonly askedUnlisted = new Set<string>();
+  /** The first pass after activation has run: a chat first judged after it joined the list later. */
+  private primed = false;
+  /**
+   * Chats that joined the list after the first pass (a new chat, an import).
+   * They start idle like the row drawn for them, so their first real status
+   * is a transition: a new chat's first turn logs idle→working.
+   */
+  private readonly joinedLate = new Set<string>();
 
   /**
    * Latest turn state per chat with an open terminal. The tree reads this to
@@ -431,21 +439,31 @@ export class SessionAttentionService {
       present.add(chat.id);
       const state = this.rowState.get(chat.id);
       const status = sessionStatus({ live: state, needsYou: this.needsYou(chat.id), seenAt: this.seenAtOf(chat) });
-      const previous = this.rowStatus.get(chat.id);
-      // A change from a placeholder (drawn before any state arrived) or in the first pass is not news.
-      const real = previous !== undefined && this.judgedWithState.has(chat.id) && !priming;
+      const known = this.rowStatus.get(chat.id);
+      if (known === undefined && this.primed && !priming) {
+        this.joinedLate.add(chat.id);
+      }
+      const joinedLate = this.joinedLate.has(chat.id);
+      // A chat that joined the list after the first pass was idle before it.
+      const previous = known ?? (joinedLate ? IDLE : undefined);
+      // A change from a placeholder (drawn before any state arrived) or in the
+      // first pass is not news; a late-joining chat's placeholder is its idle start.
+      const real = previous !== undefined && (this.judgedWithState.has(chat.id) || joinedLate) && !priming;
       if (state) {
         this.judgedWithState.add(chat.id);
       }
       this.noteTurnEnd(chat.id, status, state, real ? previous : undefined);
-      if (previous?.status === status) {
+      if (known?.status === status) {
         continue;
       }
-      this.rowStatus.set(chat.id, { status, statusSince: statusSince(status, state, chat, now, previous === undefined) });
+      this.rowStatus.set(chat.id, { status, statusSince: statusSince(status, state, chat, now, known === undefined) });
       changed.push(chat.id);
-      if (real && chat.harnessSessionId) {
+      if (real && previous.status !== status && chat.harnessSessionId) {
         transitions.push(this.transitionOf(chat.id, chat.harnessSessionId, previous.status, status, state, now));
       }
+    }
+    if (priming) {
+      this.primed = true;
     }
     for (const chatId of [...this.rowStatus.keys()]) {
       if (!present.has(chatId)) {
@@ -468,6 +486,7 @@ export class SessionAttentionService {
     this.rowStatus.delete(chatId);
     this.rowState.delete(chatId);
     this.judgedWithState.delete(chatId);
+    this.joinedLate.delete(chatId);
     this.seenWritten.delete(chatId);
     this.seenTurn.delete(chatId);
     this.pendingWaits.delete(chatId);
@@ -637,7 +656,7 @@ export class SessionAttentionService {
     const liveIds = await this.liveSessionIds(allChats);
     // Discovery's own first pass covers whatever runs at activation.
     if (!prime) {
-      this.askAboutUnlisted(liveIds, allChats);
+      await this.askAboutUnlisted(liveIds, allChats);
     }
     const closedLive = allChats.filter(
       (chat) => !activeIds.has(chat.id) && chat.harnessSessionId && liveIds.get(chat.harness)?.has(chat.harnessSessionId)
@@ -733,24 +752,49 @@ export class SessionAttentionService {
     return result;
   }
 
-  /** Ask discovery once about each live session no listed chat holds (Q31, N5: once per session per window). */
-  private askAboutUnlisted(liveIds: ReadonlyMap<string, ReadonlySet<string>>, chats: readonly ChatSession[]): void {
+  /**
+   * Ask discovery once about each live session no listed chat holds (Q31,
+   * N5: once per session per window), as soon as its turn is under way. A
+   * session's live record appears when its process starts, but its
+   * transcript, which discovery lists from, only with the first prompt: an
+   * ask before that found nothing and was spent, so a new chat waited for
+   * the next 60 s scan and its first turn went untracked (S7).
+   */
+  private async askAboutUnlisted(liveIds: ReadonlyMap<string, ReadonlySet<string>>, chats: readonly ChatSession[]): Promise<void> {
     if (!this.options.onUnlistedLive) {
       return;
     }
     const listed = new Set(chats.flatMap((chat) => chatNativeSessionIds(chat).map((id) => `${chat.harness}\u0000${id}`)));
+    const adapters = new Map(this.adapters(chats).map((adapter) => [adapter.id as string, adapter]));
     const fresh: string[] = [];
     for (const [harness, ids] of liveIds) {
-      for (const id of ids) {
-        const key = `${harness}\u0000${id}`;
-        if (!listed.has(key) && !this.askedUnlisted.has(key)) {
-          this.askedUnlisted.add(key);
+      const unasked = [...ids].filter((id) => !listed.has(`${harness}\u0000${id}`) && !this.askedUnlisted.has(`${harness}\u0000${id}`));
+      if (unasked.length === 0) {
+        continue;
+      }
+      const underWay = await this.underWay(adapters.get(harness));
+      for (const id of unasked) {
+        if (!underWay || underWay.has(id)) {
+          this.askedUnlisted.add(`${harness}\u0000${id}`);
           fresh.push(id);
         }
       }
     }
     if (fresh.length > 0) {
       this.options.onUnlistedLive(fresh);
+    }
+  }
+
+  /** The adapter's live sessions with a turn under way; undefined when it cannot tell. */
+  private async underWay(adapter: HarnessAdapter | undefined): Promise<Set<string> | undefined> {
+    if (!adapter?.liveSessionsUnderWay) {
+      return undefined;
+    }
+    try {
+      return await adapter.liveSessionsUnderWay();
+    } catch (error) {
+      console.error(`[Pitwall] Could not list ${adapter.id} sessions under way:`, error);
+      return undefined;
     }
   }
 
@@ -808,7 +852,8 @@ export class SessionAttentionService {
    * its reason, so a changed reason is a new wait; a restamp of the same
    * reason is the same wait (Q32). R45: a wait may pop only if it cannot
    * predate activation: this service saw the chat without a wait since it
-   * started, or the chat was launched after it started. Otherwise it is
+   * started, the chat was launched after it started, or the live record's
+   * `statusUpdatedAt` dates the wait after it started. Otherwise it is
    * pre-existing (a reload): marked and listed, judged once, never shown. The
    * transcript time only narrows the window from that floor, it never makes
    * a wait eligible.
@@ -826,7 +871,15 @@ export class SessionAttentionService {
     }
     const clear = prime ? undefined : this.lastClearAt.get(chat.id);
     const launched = !prime && chat.createdAt >= this.activatedAt ? chat.createdAt : undefined;
-    const floor = clear ?? launched;
+    // The live record dates the wait's start, and a wait's stamp does not move
+    // while it lasts: a stamp after activation is a wait that began after it,
+    // even for a chat first seen at needs (a placeholder older than the window
+    // that linked to a brand-new session, S7).
+    const stamped =
+      !prime && state.liveStatus === 'waiting' && state.statusUpdatedAt !== undefined && state.statusUpdatedAt >= this.activatedAt
+        ? state.statusUpdatedAt
+        : undefined;
+    const floor = clear ?? launched ?? stamped;
     if (floor === undefined) {
       this.waitStartAt.delete(chat.id);
       this.pendingWaits.set(chat.id, { preExisting: true });

@@ -469,6 +469,16 @@ export interface HarnessAdapter {
   liveSessionIds?(): Promise<Set<string> | undefined>;
 
   /**
+   * The live sessions whose turn is under way (busy or waiting, or a status
+   * Pitwall does not know), from the same record as `liveSessionIds`. A
+   * session that has never been prompted has no transcript yet, so discovery
+   * has nothing to find; the attention service asks discovery about an
+   * unlisted session only once its first turn starts. Undefined when the
+   * harness cannot tell; every unlisted live session is then asked about.
+   */
+  liveSessionsUnderWay?(): Promise<Set<string> | undefined>;
+
+  /**
    * Calls `onChange` soon after the harness's live record changes (Claude: a
    * `*.json` event in `~/.claude/sessions`, debounced 150 ms), so the
    * attention service re-polls at once instead of on its next 4 s tick.

@@ -1171,6 +1171,10 @@ interface PopupFlowOptions extends RowFlowOptions {
   ledgerDir?: string;
   /** The registry's answer for "in front of a focused window anywhere". */
   frontAnywhere?: (sessionId: string) => boolean;
+  /** Live sessions whose turn is under way (busy or waiting); without it the adapter cannot tell. */
+  underWay?: () => Set<string>;
+  /** Runs after each discovery request is recorded (a test's import). */
+  onUnlisted?: (sessionIds: string[]) => void;
 }
 
 /** rowFlow with the whole Phase 5 pop-up path: lock, front anywhere, listed check, log lines. */
@@ -1187,6 +1191,7 @@ function popupFlow(storage: ReturnType<typeof makeStorage>, options: PopupFlowOp
       const states = options.states?.() ?? {};
       return new Map(sessionIds.flatMap((id) => (states[id] ? [[id, states[id]] as [string, HarnessLiveState]] : [])));
     },
+    ...(options.underWay ? { liveSessionsUnderWay: async () => options.underWay!() } : {}),
   });
   const isVisible = (chatId: string) => visible.has(chatId);
   const notifications = new NotificationService(() => undefined, isVisible, {
@@ -1208,7 +1213,13 @@ function popupFlow(storage: ReturnType<typeof makeStorage>, options: PopupFlowOp
     () => undefined,
     (chat) => open.has(chat.id),
     isVisible,
-    { log: (line) => logs.push(line), onUnlistedLive: (sessionIds) => unlisted.push([...sessionIds]) }
+    {
+      log: (line) => logs.push(line),
+      onUnlistedLive: (sessionIds) => {
+        unlisted.push([...sessionIds]);
+        options.onUnlisted?.(sessionIds);
+      },
+    }
   );
   const transitions: StatusTransition[] = [];
   service.onDidTransition((transition) => transitions.push(transition));
@@ -1690,6 +1701,107 @@ test('a live session in an unlisted folder asks discovery to refresh once per se
   assert.equal(toasts().length, 1);
   assert.match(toasts()[0], /Brand-new repo/);
   assert.equal(flow.unlisted.length, 2);
+});
+
+test('a live session not yet listed triggers one discovery refresh when its first turn starts, and is listed within one poll', async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const live = new Set<string>();
+  const underWay = new Set<string>();
+  const states: Record<string, HarnessLiveState> = {};
+  let imported: ChatSession | undefined;
+  const flow = popupFlow(storage, {
+    live: () => live,
+    underWay: () => underWay,
+    states: () => states,
+    // The refresh finds the session's transcript and imports it.
+    onUnlisted: (sessionIds) => {
+      if (sessionIds.includes('s-new') && underWay.has('s-new')) {
+        imported = storage.createChat('wt-c', 'claude', 'New CLI chat', { harnessSessionId: 's-new', autoImported: true });
+      }
+    },
+  });
+  await flow.service.poll(true);
+
+  // `claude` starts in a console: a live record, idle, with no transcript yet.
+  live.add('s-new');
+  states['s-new'] = idleAfter(0);
+  await flow.service.poll();
+  await flow.service.poll();
+  assert.deepEqual(flow.unlisted, [], 'nothing to find before the first prompt writes the transcript');
+
+  // The first prompt: busy, and the transcript now exists.
+  underWay.add('s-new');
+  states['s-new'] = busy(Date.now());
+  await flow.service.poll();
+  assert.deepEqual(flow.unlisted, [['s-new']], 'one refresh, as the first turn starts');
+  assert.ok(imported, 'the refresh listed it');
+  await flow.service.poll();
+  assert.equal(flow.service.statusOf(imported!.id).status, 'working', 'listed and tracked within one poll');
+  assert.deepEqual(
+    flow.statusLines().map((line) => line.replace(/ lag=\d+$/, '')),
+    ['[Pitwall] status s-new idle→working'],
+    "the new chat's first turn is a transition"
+  );
+});
+
+test('the discovery refresh is rate-limited to once per unknown session per window', async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const live = new Set(['s-a']);
+  const underWay = new Set(['s-a']);
+  const flow = popupFlow(storage, { live: () => live, underWay: () => underWay, states: () => ({}) });
+  await flow.service.poll(true);
+  for (let tick = 0; tick < 5; tick++) {
+    await flow.service.poll();
+  }
+  underWay.delete('s-a'); // its turn ends; the refresh found nothing to list
+  await flow.service.poll();
+  underWay.add('s-a'); // and the next one starts
+  await flow.service.poll();
+  assert.deepEqual(flow.unlisted, [['s-a']], 'once, however many ticks and turns see it');
+
+  live.add('s-b');
+  await flow.service.poll();
+  assert.deepEqual(flow.unlisted, [['s-a']], 'another session idle since it started asks nothing yet');
+  underWay.add('s-b');
+  await flow.service.poll();
+  await flow.service.poll();
+  assert.deepEqual(flow.unlisted, [['s-a'], ['s-b']], 'and asks once when its turn starts');
+});
+
+test('a chat first seen after activation at needs pops once across windows (not pre-existing)', async (t) => {
+  windowState().state = { focused: false };
+  const ledgerDir = path.join(tempDir(t), 'pitwall-popups');
+  // A placeholder the user opened an hour ago in the panel: its chat is older than both windows.
+  const openedAt = Date.now() - 60 * 60_000;
+  const windows = [makeStorage(), makeStorage()].map((storage) => {
+    let live: HarnessLiveState | undefined;
+    const flow = popupFlow(storage, { ledgerDir, live: () => new Set(live ? ['s-new'] : []), states: (): Record<string, HarnessLiveState> => (live ? { 's-new': live } : {}) });
+    return { storage, flow, set: (state: HarnessLiveState) => (live = state) };
+  });
+  for (const window of windows) {
+    await window.flow.service.poll(true);
+  }
+
+  // Its first prompt asks for permission before any window has it listed.
+  const stamp = Date.now() + 1;
+  for (const window of windows) {
+    window.storage.createChat('wt-a', 'claude', 'New panel chat', { id: 'chat-a', harnessSessionId: 's-new', createdAt: openedAt, lastAccessedAt: openedAt });
+    window.set(waitingAt(stamp));
+  }
+  for (const window of windows) {
+    await window.flow.service.poll();
+    await window.flow.service.poll();
+  }
+
+  const shown = windows.flatMap((window) => window.flow.shownLines());
+  assert.equal(shown.length, 1, 'its first wait pops exactly once across the windows');
+  assert.deepEqual(windows.flatMap((window) => window.flow.skipped('pre-existing')), [], 'a wait that began after activation is not pre-existing');
+  assert.equal(windows.flatMap((window) => window.flow.skipped('locked')).length, 1, 'the other window loses the lock');
+  for (const window of windows) {
+    assert.equal(window.flow.service.statusOf('chat-a').status, 'needs');
+  }
 });
 
 test("Pitwall's own open or close of a chat makes no transition", async () => {

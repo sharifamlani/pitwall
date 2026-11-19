@@ -283,6 +283,60 @@ test('a CLI session two windows import at once is listed once, under one chat id
   assert.equal(listed(windowA)[0].id, listed(windowB)[0].id, 'both windows show the same row');
 });
 
+test('a refresh for an unlisted live session imports it at once, even while a UI launch is linking or the list is hidden', async (t) => {
+  const f = setup(t);
+  f.service.dispose();
+  let visible = true;
+  const sessions: ReturnType<typeof sessionRecord>[] = [];
+  let scans = 0;
+  const service = new SessionImportService(
+    f.storage,
+    new WorktreeCatalog(f.storage, {
+      listRepositoryWorktrees: () => ({ isGit: true, worktrees: [f.worktree] }),
+      listRepositoryWorktreesAsync: async () => ({ isGit: true, worktrees: [f.worktree] }),
+    } as never),
+    new HarnessRegistry([
+      fakeAdapter('claude', {
+        listSessionsForWorktree: async () => [],
+        listSessionsForRepository: async () => {
+          scans++;
+          return sessions;
+        },
+      }),
+    ]),
+    { scanIntervalMs: 60_000, hotScanIntervalMs: 60_000, isVisible: () => visible, readSettings: () => f.settings }
+  );
+  t.after(() => service.dispose());
+  const settle = async () => {
+    for (let i = 0; i < 5; i++) await flush();
+  };
+
+  // A UI launch in another worktree of the repo is linking (hot for 5 min): scans only poll it.
+  const placeholder = f.chat('New Session', null, { pendingUiLaunch: true });
+  await service.expectChat(placeholder.id, '/work/demo-worktrees/feat-side', { bindSurface: false });
+  service.start();
+  await settle();
+  sessions.push(sessionRecord('claude', 's-cli', { cwd: f.worktree.path, summary: 'CLI chat' }));
+  service.wake();
+  await settle();
+  assert.equal(f.linkedTo('s-cli'), undefined, 'a plain wake while a launch is hot imports nothing');
+  service.refresh();
+  await waitFor(() => f.linkedTo('s-cli'), 'the refresh to import the session');
+  assert.equal(f.storage.getChat(placeholder.id)?.harnessSessionId, null, "the other worktree's placeholder keeps waiting");
+
+  // Nobody can see the list in this window: a plain wake skips the pass, a refresh does not.
+  service.cancelExpectation(placeholder.id);
+  f.storage.deleteChat(placeholder.id, { rememberSession: false });
+  visible = false;
+  sessions.push(sessionRecord('claude', 's-cli-2', { cwd: f.worktree.path, summary: 'Second CLI chat' }));
+  const before = scans;
+  service.wake();
+  await settle();
+  assert.equal(scans, before, 'a hidden list skips the plain pass');
+  service.refresh();
+  await waitFor(() => f.linkedTo('s-cli-2'), 'the refresh while hidden');
+});
+
 test('an import pruned by retention comes back under its shared id once its session is active again', async (t) => {
   const f = setup(t);
   const session = f.appear('s-back', 'Comes back', 8 * DAY);
