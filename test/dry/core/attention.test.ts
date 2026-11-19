@@ -1,5 +1,6 @@
 import { beforeEach, test, TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -1082,7 +1083,8 @@ test('a chat kept in front writes seenAt at most once per finished turn', async 
   assert.equal(flow.seenWrites.length, 2, 'the next finished turn writes once more');
 });
 
-test("a closed chat's wait that began after activation pops once while closed, and reopening it never pops again", async () => {
+test("a closed chat's wait that began after activation pops once while closed, and reopening it never pops again", async (t) => {
+  const clock = useClock(t);
   windowState().state = { focused: true };
   const storage = makeStorage();
   let live: HarnessLiveState = { turnState: 'working', turnEndedAt: null, liveStatus: 'busy' };
@@ -1115,10 +1117,12 @@ test("a closed chat's wait that began after activation pops once while closed, a
   assert.deepEqual(flow.service.sessionsNeedingYou(), [chat.id], 'listed for Go to Next');
   assert.equal(toasts().length, 1, 'the same wait after the reopen: never again');
 
-  // A new wait after the reopen is news again.
-  live = { turnState: 'working', turnEndedAt: null, liveStatus: 'busy', statusUpdatedAt: stamp + 1 };
+  // A new wait after the reopen is news again (ticks 4 s apart, as in the extension).
+  clock.advance(4_000);
+  live = { turnState: 'working', turnEndedAt: null, liveStatus: 'busy', statusUpdatedAt: Date.now() };
   await flow.service.poll();
-  live = { turnState: 'working', turnEndedAt: null, liveStatus: 'waiting', waitingFor: 'permission prompt', writtenAt: stamp + 2, statusUpdatedAt: stamp + 2 };
+  clock.advance(4_000);
+  live = { turnState: 'working', turnEndedAt: null, liveStatus: 'waiting', waitingFor: 'permission prompt', writtenAt: Date.now(), statusUpdatedAt: Date.now() };
   await flow.service.poll();
   assert.equal(toasts().length, 2);
   assert.equal(flow.shownLines().length, 2, 'one shown line per pop-up');
@@ -1670,6 +1674,66 @@ test("Pitwall's own open or close of a chat makes no transition", async () => {
   assert.deepEqual(flow.transitions, []);
   assert.deepEqual(flow.statusLines(), []);
   assert.equal(flow.service.statusOf(chat.id).status, 'idle');
+});
+
+test('compare-status passes a matching walk and fails a missing, extra or mismatched transition, a wrong dump or a slow lag', async (t) => {
+  const dir = tempDir(t);
+  const script = path.resolve(__dirname, '..', '..', '..', 'scripts', 'compare-status.mjs');
+  const t0 = Date.parse('2026-11-19T10:00:00.000Z');
+  const truth = path.join(dir, 'truth.jsonl');
+  // One cycle for session aaaaaaaa: idle → working → needs → working → finished → (opened) idle.
+  const samples = [
+    { t: t0, sid8: 'aaaaaaaa', status: 'idle', waitingFor: null, statusUpdatedAt: t0 - 5_000 },
+    { t: t0 + 1_000, sid8: 'aaaaaaaa', status: 'busy', waitingFor: null, statusUpdatedAt: t0 + 1_000 },
+    { t: t0 + 2_000, sid8: 'aaaaaaaa', status: 'waiting', waitingFor: 'permission prompt', statusUpdatedAt: t0 + 2_000 },
+    { t: t0 + 2_500, sid8: 'aaaaaaaa', status: 'waiting', waitingFor: 'permission prompt', statusUpdatedAt: t0 + 2_400 },
+    { t: t0 + 3_000, sid8: 'aaaaaaaa', status: 'busy', waitingFor: null, statusUpdatedAt: t0 + 3_000 },
+    { t: t0 + 4_000, sid8: 'aaaaaaaa', status: 'idle', waitingFor: null, statusUpdatedAt: t0 + 4_000 },
+  ];
+  fs.writeFileSync(truth, samples.map((sample) => JSON.stringify(sample)).join('\n') + '\n');
+  const at = (ms: number) => new Date(t0 + ms).toISOString();
+  const good = [
+    `[${at(-60_000)}] [Pitwall] status aaaaaaaa idle→finished lag=9`, // before the recording: ignored
+    `[${at(1_200)}] [Pitwall] status aaaaaaaa idle→working lag=200`,
+    `[${at(2_150)}] [Pitwall] status aaaaaaaa working→needs lag=150`,
+    `[${at(3_100)}] [Pitwall] status aaaaaaaa needs→working lag=100`,
+    `[${at(4_300)}] [Pitwall] status aaaaaaaa working→finished lag=300`,
+    `[${at(9_000)}] [Pitwall] route aaaaaaaa → /work/lab (same-folder)`,
+    `[${at(9_010)}] [Pitwall] status aaaaaaaa finished→idle lag=0`,
+  ];
+  const run = (lines: string[], ...extra: string[]) => {
+    const log = path.join(dir, 'ops.log');
+    fs.writeFileSync(log, lines.join('\n') + '\n');
+    return spawnSync(process.execPath, [script, '--truth', truth, '--log', log, ...extra], { encoding: 'utf8' });
+  };
+
+  const ok = run(good, '--max-lag', '2000');
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  assert.match(ok.stdout, /aaaaaaaa expected=5 logged=5 ok/);
+  assert.match(ok.stdout, /compare ok; 5 transitions matched; lag p95=300 max=300/);
+
+  const missing = run(good.filter((line) => !line.includes('needs→working')));
+  assert.equal(missing.status, 1);
+  assert.match(missing.stdout, /mismatch #3: expected needs→working, logged working→finished/);
+  const extra = run([...good, `[${at(9_500)}] [Pitwall] status aaaaaaaa idle→working lag=1`]);
+  assert.equal(extra.status, 1);
+  assert.match(extra.stdout, /extra #6: idle→working/);
+  const unopened = run(good.filter((line) => !line.includes('route')));
+  assert.equal(unopened.status, 1, 'with no open, finished never turns idle');
+  assert.match(unopened.stdout, /extra #5: finished→idle/);
+  const slow = run(good, '--max-lag', '250');
+  assert.equal(slow.status, 1);
+  assert.match(slow.stdout, /lag #4: working→finished lag=300 > 250/);
+
+  const dumps = path.join(dir, 'pitwall-dump');
+  fs.mkdirSync(dumps);
+  fs.writeFileSync(path.join(dumps, '4242.json'), JSON.stringify({ version: 1, statuses: { 'aaaaaaaa-1111-4111-8111-000000000001': 'idle' } }));
+  assert.equal(run(good, '--dump', dumps).status, 0, 'the dump agrees with the final status');
+  fs.writeFileSync(path.join(dumps, '4343.json'), JSON.stringify({ version: 1, statuses: { 'aaaaaaaa-1111-4111-8111-000000000001': 'finished' } }));
+  const wrong = run(good, '--dump', dumps);
+  assert.equal(wrong.status, 1);
+  assert.match(wrong.stdout, /dump 4343\.json: aaaaaaaa shows finished, expected idle/);
+  assert.equal(run(good, '--bogus').status, 2);
 });
 
 test('the state dump carries every listed session status and the counts', async (t) => {
