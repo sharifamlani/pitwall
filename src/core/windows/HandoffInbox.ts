@@ -322,6 +322,7 @@ export class HandoffInbox {
       passDone(undefined);
       return { dispose: () => undefined };
     }
+    this.log('[Pitwall] handoff watch started');
     const dir = this.folderDir(folder);
     const disposables: { dispose(): unknown }[] = [];
     let disposed = false;

@@ -382,7 +382,12 @@ export class ChatRouter implements vscode.Disposable {
     const failed: string[] = [];
     await this.openChats(req.kind, req.sessionIds, async (sessionId) => {
       const chat = this.deps.chatForSession(sessionId);
-      const worktree = chat && (this.deps.worktreeFor?.(chat, req.folder) ?? (await this.deps.worktreeOf(chat)));
+      // The lookup that waits on nothing first; the awaited one (which can wait on the listing) only when it knows nothing.
+      const quick = chat && this.deps.worktreeFor?.(chat, req.folder);
+      if (chat) {
+        this.log(`[Pitwall] claim lookup ${sessionId.slice(0, 8)} (${quick ? 'no-wait' : 'awaited'})`);
+      }
+      const worktree = chat && (quick || (await this.deps.worktreeOf(chat)));
       const opened =
         chat && worktree
           ? await this.deps.openHere(chat, { ...worktree, path: req.folder }, { keepListFocus: false })
@@ -435,6 +440,10 @@ export class ChatRouter implements vscode.Disposable {
     const registry = this.deps.services()?.registry;
     const windows = (await registry?.windows().catch(() => [])) ?? [];
     return windows.find((w) => w.folder && !this.isThisWindow(w.folder) && w.openSessionIds.includes(sessionId))?.folder;
+  }
+
+  private log(line: string): void {
+    (this.deps.log ?? logOperation)(line);
   }
 
   /** Log one routing decision (`here`, or the folder it went to or was missing). */
