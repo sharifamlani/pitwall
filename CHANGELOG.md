@@ -4,6 +4,11 @@ All notable changes to Pitwall are documented here. The format follows [Keep a C
 
 ## [Unreleased]
 
+### Fixed
+
+- The first Ctrl+↓ after launch onto a restored panel chat keeps the list focused (the 0.5.0 known issue).
+- `pitwall.dev.traceTabs` logs a tab model Cursor re-sends unchanged once, not on every re-send.
+
 ## [0.5.0] - 2026-11-18
 
 Windows and tabs: one window per folder (ROADMAP Phase 4).
