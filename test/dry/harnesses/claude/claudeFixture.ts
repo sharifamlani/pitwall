@@ -38,6 +38,8 @@ export const entry = {
   }),
   summary: (summary: string) => ({ type: 'summary', summary }),
   aiTitle: (aiTitle: string) => ({ type: 'ai-title', aiTitle }),
+  /** The user's /rename in Claude: the name Claude's tab shows. */
+  customTitle: (customTitle: string) => ({ type: 'custom-title', customTitle }),
 };
 
 export function claudeProfile(t: Hooks, options: { viaHome?: boolean } = {}) {

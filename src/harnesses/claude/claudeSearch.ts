@@ -28,7 +28,7 @@ export class ClaudeSessionSearch implements SessionSearchSource {
     const projects = this.sessions.getProjectsDirectory();
     const lines = [
       `- Transcripts are JSONL files at ${projects}/<folder>/<session ID>.jsonl, where <folder> is the session's working directory with every character other than A-Z, a-z and 0-9 replaced by "-". The file name without ".jsonl" is the session ID. Directories beside the transcripts (subagents, tool results) are not sessions.`,
-      '- Each line is one JSON object with "type", "timestamp" and "cwd" (the folder the session ran in). An "ai-title" line holds the session\'s name.',
+      '- Each line is one JSON object with "type", "timestamp" and "cwd" (the folder the session ran in). The latest "custom-title" line holds the name the user gave the session; without one, the latest "ai-title" line holds its name.',
       '- The user\'s own prompts are "type":"user" lines whose message content is a string or a list of "text" blocks; most contain `"type":"user","message":{"role":"user","content":"`. Skip lines marked "isMeta":true, "isCompactSummary":true or "isSidechain":true, and prompts that begin with "<" (command output, system reminders).',
       '- Text inside <system-reminder> tags repeats the user\'s standing instructions in every session, so matching it proves nothing.',
       '- Files the agent touched appear in "tool_use" inputs on "type":"assistant" lines; they are good evidence of what was done.',

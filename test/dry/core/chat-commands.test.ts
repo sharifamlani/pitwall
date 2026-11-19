@@ -18,6 +18,7 @@ import { ChatCommandDeps, registerChatCommands } from '../../../src/core/command
 import { registerNavigationCommands } from '../../../src/core/commands/navigation';
 import { ownsFolder } from '../../../src/core/windows/WindowRegistry';
 import { JumpWalk } from '../../../src/core/windows/JumpWalk';
+import { ChatRouter } from '../../../src/core/windows/ChatRouter';
 import { claudeUiSurfaces } from '../../../src/harnesses/claude/claudeUi';
 import { registerSessionImportCommands } from '../../../src/core/commands/sessionImport';
 import { registerRepositoryCommands } from '../../../src/core/commands/repository';
@@ -1671,7 +1672,7 @@ test('Remove and Clear All drop chats only after confirmation, and removed sessi
 
 type Entry = { chatId: string; since: number };
 
-function jumping(t: TestContext, options: { windowFolder?: string; ownsFolder?: boolean } = {}) {
+function jumping(t: TestContext, options: { windowFolder?: string; ownsFolder?: boolean; router?: () => ChatRouter | undefined } = {}) {
   const lists: Record<'needs' | 'working' | 'finished', Entry[]> = { needs: [], working: [], finished: [] };
   const waits = new Map<string, string>();
   const routed: string[] = [];
@@ -1692,7 +1693,7 @@ function jumping(t: TestContext, options: { windowFolder?: string; ownsFolder?: 
       jumpWalk: walk,
       windowFolder: options.ownsFolder ? ownsFolder : () => options.windowFolder ?? '/work/demo',
       log: (line) => log.push(line),
-      router: () => ({ route, launchFolder }) as never,
+      router: options.router ?? (() => ({ route, launchFolder }) as never),
     },
   });
   registerNavigationCommands({ subscriptions: f.subscriptions } as never, { workspacesProvider: {} as never, workspacesTreeView: {} as never, filesTreeView: {} as never });
@@ -1799,6 +1800,46 @@ test('Ctrl+Alt+0 and Next skip the chat in front of the window where you press (
   await runCommand('pitwall.jumpNext');
   assert.deepEqual(f.routed, ['Second'], 'Next skips the chat in front here too; nothing else is left');
   assert.ok(shown('Nothing left in this list.'));
+});
+
+test("a chat live in this window's own panel with no bound tab: a row click, Ctrl+Alt+0 and Next start no process (v0.6.0 own-window fork)", async (t) => {
+  const revealed: string[] = [];
+  const openedHere: string[] = [];
+  let router: ChatRouter | undefined;
+  const f = jumping(t, { router: () => router });
+  const live = f.add('needs', 'Pitwall initial idea', 100, 'input needed');
+  f.add('needs', 'Also waiting', 200, 'input needed');
+  const liveId = live.harnessSessionId!;
+  router = new ChatRouter({
+    services: () => undefined,
+    windowFolder: () => f.main.path,
+    harnessRegistry: { has: () => true, get: () => ({}) as never, all: () => [] },
+    worktreeOf: async (chat) => [f.main, f.feature].find((worktree) => worktree.id === chat.worktreeId),
+    rootsOf: () => [f.main.path, f.feature.path],
+    repoName: () => 'demo',
+    // The tab is titled "Main": Pitwall never bound it.
+    isOpenHere: () => false,
+    chatForSession: (sessionId) => f.storage.getChats().find((chat) => chat.harnessSessionId === sessionId),
+    openHere: async (chat) => (openedHere.push(chat.name), true),
+    startNew: async () => false,
+    // Its process is a child of this extension host.
+    outsideTerminal: async (sessionId) => (sessionId === liveId ? { pid: 4242, panel: true, here: true } : undefined),
+    revealLive: async (_chat, sessionId) => (revealed.push(sessionId), true),
+    log: () => undefined,
+  });
+  t.after(() => router?.dispose());
+  const terminalsBefore = stub.window.terminals.length;
+
+  await runCommand('pitwall.openChat', f.row(live));
+  await runCommand('pitwall.openLongestWaiting');
+  assert.deepEqual(openedHere, [], 'never openHere: no terminal, no new panel process');
+  assert.equal(stub.window.terminals.length, terminalsBefore, 'no terminal');
+  assert.deepEqual(f.claudeUi.opened, [], 'no openSession from Pitwall');
+  assert.deepEqual(revealed, [liveId, liveId], 'row click and Ctrl+Alt+0 both bring the existing tab forward');
+
+  // Next ▸ goes on to the next chat, which is not live: it opens normally.
+  await runCommand('pitwall.jumpNext');
+  assert.deepEqual(openedHere, ['Also waiting']);
 });
 
 test('Ctrl+Alt+0 with none says "Nobody is waiting on you right now."', async (t) => {

@@ -76,6 +76,17 @@ test('Claude opens through its command in the active group; the documented URI i
   assert.equal(stub.__openExternalCalls[0].toString(), `vscode://anthropic.claude-code/open?session=${encodeURIComponent('session/with?chars')}`);
 });
 
+test("revealing a session live in this window's panel uses only Claude's command, never the URI (v0.6.0)", async () => {
+  const calls = command('claude-vscode.editor.open');
+  assert.deepEqual(await claude.revealOpenSession!('session-1', UI_CWD), { kind: 'opened', via: 'command' });
+  assert.equal(calls[0][0], 'session-1', 'the session ID: the extension reveals the panel already holding it');
+
+  windowWith([UI_CWD]);
+  assert.equal((await claude.revealOpenSession!('session-1', UI_CWD)).kind, 'failed', 'no command: nothing is tried');
+  assert.equal(stub.__openExternalCalls.length, 0, 'the URI is never used: its behaviour for an open session is unknown');
+  assert.equal((await claude.revealOpenSession!('session-1', OTHER)).kind, 'workspace-mismatch');
+});
+
 test('the link fallback uses vscode.env.uriScheme (cursor in Cursor)', async () => {
   const env = vscode.env as unknown as { uriScheme: string };
   env.uriScheme = 'cursor';

@@ -38,6 +38,35 @@ test('a session is named by its harness title, then a summary, then its first pr
   assert.equal(await summary(), 'Test suite audit');
 });
 
+// v0.6.0: Claude's tab shows the user's /rename (`custom-title`), not the `ai-title`. Session b3778905
+// held 904 custom-title lines (last "Main") beside aiTitle "Pitwall initial idea", so its tab never bound.
+test("a session the user renamed in Claude is named by its custom title, the tab's own title", async (t) => {
+  const profile = claudeProfile(t);
+  const repo = profile.dir('repo');
+  const service = new ClaudeSessionService();
+  const parsed = async () => {
+    const session = await service.getSessionById(SESSION_ID);
+    return [session?.summary, session?.userTitled];
+  };
+
+  profile.write(SESSION_ID, repo, [entry.user('Please fix the tests'), entry.aiTitle('Pitwall initial idea'), entry.customTitle('Main'), entry.summary('A summary')]);
+  assert.deepEqual(await parsed(), ['Main', true], 'the custom title outranks the ai-title and a summary');
+
+  profile.write(SESSION_ID, repo, [entry.customTitle('Main'), entry.user('Please fix the tests'), entry.aiTitle('Pitwall initial idea')]);
+  assert.deepEqual(await parsed(), ['Main', true], 'a later ai-title does not take it back');
+
+  profile.write(SESSION_ID, repo, [entry.user('Please fix the tests'), entry.customTitle('First name'), entry.aiTitle('Pitwall initial idea'), entry.customTitle('Main')]);
+  assert.deepEqual(await parsed(), ['Main', true], 'the latest custom title wins over an earlier one');
+
+  profile.write(SESSION_ID, repo, [entry.user('Please fix the tests'), entry.aiTitle('Pitwall initial idea'), entry.summary('A summary')]);
+  assert.deepEqual(await parsed(), ['Pitwall initial idea', false], 'no custom title: the ai-title, as before');
+
+  const harness = new ClaudeHarness();
+  profile.write(SESSION_ID, repo, [entry.user('Please fix the tests'), entry.aiTitle('Pitwall initial idea'), entry.customTitle('Main')]);
+  const [listed] = await harness.listSessionsForWorktree(repo);
+  assert.deepEqual([listed.summary, listed.userTitled], ['Main', true], 'the listing the importer and tab adoption read carries it');
+});
+
 test('names and previews come only from prompts the user typed', async (t) => {
   const profile = claudeProfile(t);
   const repo = profile.dir('repo');

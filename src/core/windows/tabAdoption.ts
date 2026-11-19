@@ -25,8 +25,9 @@ export interface TabAdoptionDeps {
  * Adopt the agent tabs Pitwall did not open (live I1): tabs restored after a
  * reload or a relaunch, reopened by the editor's session restore, or opened
  * before activation. A panel here only runs sessions of this window's folder,
- * so the candidates are that folder's sessions: their agent titles (Claude's
- * `ai-title`, which is the tab's title) from the folder's listing and later
+ * so the candidates are that folder's sessions: their agent titles (the
+ * tab's own title: Claude's latest `custom-title`, the user's /rename, else
+ * its `ai-title`) from the folder's listing and later
  * scans, and their row names. The tracker binds a tab only when its title
  * names exactly one of them. Started after the first render; nothing here
  * blocks: the listing runs in the background and the tracker adopts when it

@@ -111,6 +111,29 @@ test('recent native sessions are imported under the harness name, which follows 
   assert.equal(f.storage.getChat(imported.id)?.name, 'My name');
 });
 
+test("a name the user gave the session in Claude (/rename) renames its chat, unless the chat was renamed in Pitwall (v0.6.0)", async (t) => {
+  const f = setup(t);
+  // A chat the user started, named once from Claude's first title (it no longer follows the generated one)...
+  const started = f.chat('Pitwall initial idea', 's-started');
+  // ...and one the user renamed in Pitwall.
+  const renamed = f.chat('My Pitwall name', 's-renamed', { customName: true });
+  const startedSession = f.appear('s-started', 'Pitwall initial idea v2', 60_000);
+  const renamedSession = f.appear('s-renamed', 'Generated title', 60_000);
+  f.service.start();
+  await f.scanned();
+  assert.equal(f.storage.getChat(started.id)?.name, 'Pitwall initial idea', 'a generated title change leaves a user-started chat alone, as before');
+
+  startedSession.summary = 'Main';
+  startedSession.userTitled = true;
+  renamedSession.summary = 'Claude-side name';
+  renamedSession.userTitled = true;
+  await waitFor(() => f.storage.getChat(started.id)?.name === 'Main', "the chat takes the name Claude's tab shows");
+  await f.scanned();
+  assert.equal(f.storage.getChat(renamed.id)?.name, 'My Pitwall name', 'a Pitwall rename is never overwritten');
+  assert.equal(f.storage.getChat(renamed.id)?.customName, true);
+  assert.equal(f.storage.getChat(started.id)?.customName, undefined, 'following Claude is not a Pitwall rename');
+});
+
 test('a session the user removed stays removed, and nothing is imported while the setting is off', async (t) => {
   const removed = setup(t);
   removed.appear('s-removed', 'Removed', 60_000);

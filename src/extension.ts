@@ -47,7 +47,8 @@ import { JumpWalk } from './core/windows/JumpWalk';
 import { WindowServices, startWindowRegistry, startWindowServices } from './core/windows/startWindowServices';
 import { ChatRouter } from './core/windows/ChatRouter';
 import { SIDE_BY_SIDE_MOVE_WAIT_MS, splitSideBySide } from './core/windows/sideBySide';
-import { outsideProcessOf } from './core/windows/outsideProcess';
+import { classifyLiveProcess } from './core/windows/outsideProcess';
+import { raiseThisWindow } from './core/windows/raiseWindow';
 import { parentPidOf } from './core/utils/parentPid';
 import { WindowRegistry, ownsFolder } from './core/windows/WindowRegistry';
 import { startTabAdoption } from './core/windows/tabAdoption';
@@ -199,16 +200,31 @@ export async function activate(context: vscode.ExtensionContext) {
     rootsOf: (worktree) => workspacesProvider.rootsOf(worktree),
     repoName: (folder) => workspacesProvider.repoContaining(folder)?.name ?? path.basename(folder),
     isOpenHere: isChatOpen,
-    // A live process for a session that is not open in any Pitwall window is one Pitwall doesn't own (Q28).
+    // A live process for a session with no tab or terminal Pitwall knows of (Q28): this window's
+    // own panel (a child of this extension host) is marked `here`; any other is an outsider.
     outsideTerminal: async (sessionId) => {
       for (const adapter of harnessRegistry.all()) {
         const live = await adapter.liveProcessOf?.(sessionId);
         if (live) {
-          // This window's own panel (its process is a child of this extension host) is not an outsider.
-          return outsideProcessOf(live, { hostPid: process.pid, parentPidOf });
+          return classifyLiveProcess(live, { hostPid: process.pid, parentPidOf });
         }
       }
       return undefined;
+    },
+    // This window's own panel with a tab Pitwall never bound (v0.6.0): the agent UI reveals the tab
+    // holding the session, never a second process; the title tracker then binds it if its title names one chat.
+    revealLive: async (chat, sessionId) => {
+      const ui = harnessRegistry.has(chat.harness) ? harnessRegistry.get(chat.harness).nativeUi : undefined;
+      const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (!ui?.revealOpenSession || !folder) {
+        return false;
+      }
+      const result = await ui.revealOpenSession(sessionId, folder).catch(() => undefined);
+      if (result?.kind !== 'opened') {
+        return false;
+      }
+      ui.surfaces?.adopt?.();
+      return true;
     },
     openSerially: async (sessionIds, open) => {
       const tracker = tabTracker();
@@ -652,6 +668,8 @@ export async function activate(context: vscode.ExtensionContext) {
         route: (request) => router.route(request),
         activateLocal: (chat) => activateChat(chat, { revealIfHidden: false }),
         log: logOperation,
+        // The window that handled the click comes forward, as a handoff raises its target (v0.6.0).
+        raiseWindow: () => raiseThisWindow(),
       })
     ),
     vscode.commands.registerCommand('pitwall.checkWindowsNotifications', async () => {

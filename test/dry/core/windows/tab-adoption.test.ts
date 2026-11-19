@@ -11,6 +11,8 @@ import { claudeUiSurfaces } from '../../../../src/harnesses/claude/claudeUi';
 import { startTabAdoption } from '../../../../src/core/windows/tabAdoption';
 import type { ChatSession } from '../../../../src/core/types';
 import type { HarnessSession } from '../../../../src/core/harness/types';
+import { ClaudeHarness } from '../../../../src/harnesses/claude/ClaudeHarness';
+import { claudeProfile, entry } from '../../harnesses/claude/claudeFixture';
 
 const LAB_C = 'C:\\lab\\uj-lab-c';
 const LAB_C_WT = 'C:\\lab\\uj-lab-c-wt';
@@ -50,6 +52,26 @@ test("a window's restored tabs bind to its folder's sessions by agent title once
   land([session('095a88d2', 'Lab C one'), session('23c80023', 'Lab C two')]);
   await surfaces.adoptBeforeOpen(1_000);
   assert.deepEqual(bound(), ['095a88d2', '23c80023']);
+  adoption.dispose();
+  surfaces.dispose();
+});
+
+test("a panel tab titled with the session's custom title (the user's /rename in Claude) binds to that session (v0.6.0)", async (t) => {
+  // Session b3778905: tab "Main" (its custom title), aiTitle and row name "Pitwall initial idea".
+  const profile = claudeProfile(t);
+  const folder = profile.dir('pitwall');
+  const id = 'b3778905-8f98-43f8-94de-35553b9f2d2b';
+  profile.write(id, folder, [entry.user('hi'), entry.aiTitle('Pitwall initial idea'), entry.customTitle('Main')]);
+  const harness = new ClaudeHarness();
+  const { surfaces, bound } = restoredWindow(['Main']);
+  const adoption = startTabAdoption({
+    folder,
+    adapters: [{ id: 'claude', nativeUi: { surfaces } as never, listSessionsForWorktree: (target) => harness.listSessionsForWorktree(target) }],
+    chats: () => [chat(id, 'Pitwall initial idea')],
+    worktreePathOf: () => folder,
+  });
+  await surfaces.adoptBeforeOpen(1_000);
+  assert.deepEqual(bound(), [id], 'the tab binds, so a click focuses it instead of reaching the live-process guard');
   adoption.dispose();
   surfaces.dispose();
 });
