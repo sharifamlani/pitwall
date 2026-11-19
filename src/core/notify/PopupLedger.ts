@@ -32,7 +32,9 @@ const LOCK_NAME = /^[A-Za-z0-9_.-]{1,128}\.(needs|finished)\.[1-9]\d*\.lock$/;
 export class PopupLedger {
   constructor(
     private readonly dir: string,
-    private readonly clock: () => number = Date.now
+    private readonly clock: () => number = Date.now,
+    /** The Operations log: `[Pitwall] popup lock failed <code>` (QA N2). */
+    private readonly log?: (line: string) => void
   ) {}
 
   /**
@@ -42,7 +44,8 @@ export class PopupLedger {
    * stamp must never become a `.0` lock.
    *
    * Any other file-system failure (the folder can't be written) answers true:
-   * a pop-up that may show twice beats one that never shows. It is logged.
+   * a pop-up that may show twice beats one that never shows. It is logged to
+   * the Operations channel with its error code (never the path).
    */
   async claim(key: PopupKey): Promise<boolean> {
     if (!SESSION_ID.test(key.sessionId)) {
@@ -64,6 +67,8 @@ export class PopupLedger {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
         return false;
       }
+      const code = (error as NodeJS.ErrnoException).code;
+      this.log?.(`[Pitwall] popup lock failed ${code && /^[A-Z0-9_]+$/.test(code) ? code : 'unknown'}`);
       console.error('[Pitwall] pop-up lock failed; showing the pop-up anyway:', (error as Error).message);
       return true;
     }

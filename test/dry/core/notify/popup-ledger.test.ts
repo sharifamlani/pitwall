@@ -55,6 +55,26 @@ if (child) {
     assert.deepEqual(fs.existsSync(dir) ? fs.readdirSync(dir) : [], [], 'no .0 (or any) lock was written');
   });
 
+  test('a lock error other than EEXIST logs popup lock failed with its code', async (t) => {
+    // The lock folder's parent is a file: creating the folder fails (ENOTDIR or ENOENT), never with EEXIST.
+    const blocker = path.join(tempDir(t), 'not-a-folder');
+    fs.writeFileSync(blocker, '');
+    const log: string[] = [];
+    const ledger = new PopupLedger(path.join(blocker, 'pitwall-popups'), Date.now, (line) => log.push(line));
+    assert.equal(await ledger.claim({ sessionId: SESSION, kind: 'needs', at: 7 }), true, 'a pop-up that may show twice beats one that never shows');
+    assert.equal(log.length, 1);
+    assert.match(log[0], /^\[Pitwall\] popup lock failed [A-Z]+$/);
+    assert.ok(!log[0].endsWith('EEXIST'));
+
+    // A lost claim (EEXIST) logs nothing here: the judge logs "skipped locked".
+    const dir = path.join(tempDir(t), 'pitwall-popups');
+    const quiet: string[] = [];
+    const ok = new PopupLedger(dir, Date.now, (line) => quiet.push(line));
+    await ok.claim({ sessionId: SESSION, kind: 'needs', at: 7 });
+    assert.equal(await ok.claim({ sessionId: SESSION, kind: 'needs', at: 7 }), false);
+    assert.deepEqual(quiet, []);
+  });
+
   test('two processes claiming one transition: exactly one wins', async (t) => {
     const dir = path.join(tempDir(t), 'pitwall-popups');
     for (let round = 0; round < 5; round++) {
