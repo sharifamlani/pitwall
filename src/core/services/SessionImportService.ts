@@ -12,7 +12,7 @@ import {
 import { deepestContainingRoot, samePath } from '../utils/paths';
 import { truncateName } from '../utils/text';
 import { Scope, WorktreeCatalog } from './WorktreeCatalog';
-import { StorageService } from './StorageService';
+import { StorageService, importedChatId } from './StorageService';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** A new UI placeholder links quickly; after this it moves to the slow scan. */
@@ -108,6 +108,8 @@ export class SessionImportService implements vscode.Disposable {
   private scanning = false;
   /** A wake that arrived mid-scan; the scan runs again when it ends. */
   private wakeQueued = false;
+  /** A refresh asked for a full pass; the next scan runs one even while hot or hidden. */
+  private fullQueued = false;
   private disposed = false;
 
   constructor(
@@ -273,6 +275,17 @@ export class SessionImportService implements vscode.Disposable {
     });
   }
 
+  /**
+   * A full pass now, for a live session no row holds yet (Q31, N5): it runs
+   * while a UI launch is linking, when a plain wake only polls that launch,
+   * and while the list is hidden, since its pop-ups do not need the list in
+   * view. The attention service asks at most once per session per window.
+   */
+  refresh(): void {
+    this.fullQueued = true;
+    this.wake();
+  }
+
   dispose(): void {
     this.disposed = true;
     this.stopTimer();
@@ -297,10 +310,12 @@ export class SessionImportService implements vscode.Disposable {
     try {
       const settings = this.readSettings();
       const now = Date.now();
-      const hot = this.hasHotExpectation(now);
+      const full = this.fullQueued;
+      this.fullQueued = false;
+      const hot = !full && this.hasHotExpectation(now);
       // Nothing is linking and nobody can see the rows: skip the whole
       // discovery pass so an idle, hidden sidebar spawns no harness processes.
-      if (!hot && !this.isVisible()) {
+      if (!full && !hot && !this.isVisible()) {
         return;
       }
       const adapters = await this.harnessRegistry.getInstalled();
@@ -744,11 +759,19 @@ export class SessionImportService implements vscode.Disposable {
 
       const name = session.summary?.trim();
       const createdAt = session.lastUpdated?.getTime() ?? lastActive;
+      // The id comes from the session, so another window importing it at the
+      // same moment writes the same record rather than a second row.
       const chat = this.storageService.createChat(
         worktree.id,
         adapter.id,
         name ? truncateName(name) : DEFAULT_CHAT_NAME,
-        { harnessSessionId: session.sessionId, createdAt, lastAccessedAt: lastActive, autoImported: true }
+        {
+          id: importedChatId(adapter.id, session.sessionId),
+          harnessSessionId: session.sessionId,
+          createdAt,
+          lastAccessedAt: lastActive,
+          autoImported: true,
+        }
       );
       index.byId.set(chat.id, chat);
       linked.add(session.sessionId);

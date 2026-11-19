@@ -667,13 +667,13 @@ export async function activate(context: vscode.ExtensionContext) {
     isChatVisible,
     {
       log: logOperation,
-      // A live session no row holds yet: one discovery pass (a new repo) and one import scan (a new
-      // session in a listed repo), Q31. Before their own first passes (after the first render and the
-      // first claim, E16/I3) those passes cover it, so nothing runs early.
+      // A live session no row holds yet, once its first turn has started: one discovery pass (a new
+      // repo) and one full import scan (a new session in a listed repo), Q31. Before their own first
+      // passes (after the first render and the first claim, E16/I3) those passes cover it.
       onUnlistedLive: () => {
         if (scansStarted) {
           repoDiscovery.wake();
-          sessionImporter.wake();
+          sessionImporter.refresh();
         }
       },
     }

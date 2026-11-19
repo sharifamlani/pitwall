@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { HarnessSession } from '../../../src/core/harness/types';
 import { SessionImportService, SessionImportSettings } from '../../../src/core/services/SessionImportService';
+import { importedChatId } from '../../../src/core/services/StorageService';
 import { WorktreeCatalog } from '../../../src/core/services/WorktreeCatalog';
 import { ChatSession, Worktree } from '../../../src/core/types';
 import { fakeAdapter, flush, makeStorage, sessionRecord, waitFor, worktreeRecord } from '../support';
@@ -217,4 +218,141 @@ test('a root nested in another keeps its own sessions, and rows imported under t
   assert.equal(f.linkedTo('s-old')?.worktreeId, f.worktree.id);
   assert.ok(f.storage.getStarredChatIds().has(misplaced.id), 'the star stays');
   assert.equal(f.storage.getChats().filter((chat) => chat.worktreeId === outer.id).length, 1);
+});
+
+/**
+ * A global state shared by several windows, whose whole value a test can roll
+ * back to an older snapshot: another window's write has not reached this
+ * window yet.
+ */
+function sharedState() {
+  const clone = <T>(value: T): T => (value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T));
+  let state: Record<string, unknown> = {};
+  return {
+    get: <T>(key: string, fallback?: T): T => (key in state ? clone(state[key]) : fallback) as T,
+    update: async (key: string, value: unknown): Promise<void> => {
+      if (value === undefined) delete state[key];
+      else state[key] = clone(value);
+    },
+    keys: () => Object.keys(state),
+    setKeysForSync: () => undefined,
+    snapshot: () => clone(state),
+    restore: (snapshot: Record<string, unknown>) => {
+      state = clone(snapshot);
+    },
+  };
+}
+
+test('a CLI session two windows import at once is listed once, under one chat id, in both', async (t) => {
+  const shared = sharedState();
+  const windowA = makeStorage(shared as never);
+  const repo = windowA.addRepository('lab', '/work/lab');
+  const windowB = makeStorage(shared as never);
+  const worktree = worktreeRecord({ id: 'wt-lab', repoId: repo.id, path: '/work/lab' });
+  const git = {
+    listRepositoryWorktrees: () => ({ isGit: true, worktrees: [worktree] }),
+    listRepositoryWorktreesAsync: async () => ({ isGit: true, worktrees: [worktree] }),
+  };
+  // The CLI chat: one harness session (one sessions-file record, one transcript).
+  const sessions = [sessionRecord('claude', 's-cli', { cwd: worktree.path, summary: 'T2-C ready' })];
+  const importer = (storage: typeof windowA) => {
+    const list = async () => sessions;
+    const registry = new HarnessRegistry([fakeAdapter('claude', { listSessionsForWorktree: list, listSessionsForRepository: list })]);
+    const service = new SessionImportService(storage, new WorktreeCatalog(storage, git as never), registry, {
+      scanIntervalMs: 60_000,
+      readSettings: () => ({ enabled: true, retentionDays: 7 }),
+    });
+    t.after(() => service.dispose());
+    return service;
+  };
+  const listed = (storage: typeof windowA) => storage.getChats().filter((chat) => chat.harnessSessionId === 's-cli');
+
+  // Both windows' scans read the store before either import lands.
+  const before = shared.snapshot();
+  importer(windowA).start();
+  await waitFor(() => listed(windowA).length > 0, "window A's import");
+  shared.restore(before); // A's write has not reached window B
+  importer(windowB).start();
+  await waitFor(() => listed(windowB).length > 0, "window B's import");
+  // Each window then writes something else, saving what it holds.
+  windowA.setActiveChatId(undefined);
+  windowB.setActiveChatId(undefined);
+
+  assert.equal(listed(windowA).length, 1, 'window A lists the session once');
+  assert.equal(listed(windowB).length, 1, 'window B lists the session once');
+  assert.equal(listed(windowA)[0].id, listed(windowB)[0].id, 'both windows show the same row');
+});
+
+test('a refresh for an unlisted live session imports it at once, even while a UI launch is linking or the list is hidden', async (t) => {
+  const f = setup(t);
+  f.service.dispose();
+  let visible = true;
+  const sessions: ReturnType<typeof sessionRecord>[] = [];
+  let scans = 0;
+  const service = new SessionImportService(
+    f.storage,
+    new WorktreeCatalog(f.storage, {
+      listRepositoryWorktrees: () => ({ isGit: true, worktrees: [f.worktree] }),
+      listRepositoryWorktreesAsync: async () => ({ isGit: true, worktrees: [f.worktree] }),
+    } as never),
+    new HarnessRegistry([
+      fakeAdapter('claude', {
+        listSessionsForWorktree: async () => [],
+        listSessionsForRepository: async () => {
+          scans++;
+          return sessions;
+        },
+      }),
+    ]),
+    { scanIntervalMs: 60_000, hotScanIntervalMs: 60_000, isVisible: () => visible, readSettings: () => f.settings }
+  );
+  t.after(() => service.dispose());
+  const settle = async () => {
+    for (let i = 0; i < 5; i++) await flush();
+  };
+
+  // A UI launch in another worktree of the repo is linking (hot for 5 min): scans only poll it.
+  const placeholder = f.chat('New Session', null, { pendingUiLaunch: true });
+  await service.expectChat(placeholder.id, '/work/demo-worktrees/feat-side', { bindSurface: false });
+  service.start();
+  await settle();
+  sessions.push(sessionRecord('claude', 's-cli', { cwd: f.worktree.path, summary: 'CLI chat' }));
+  service.wake();
+  await settle();
+  assert.equal(f.linkedTo('s-cli'), undefined, 'a plain wake while a launch is hot imports nothing');
+  service.refresh();
+  await waitFor(() => f.linkedTo('s-cli'), 'the refresh to import the session');
+  assert.equal(f.storage.getChat(placeholder.id)?.harnessSessionId, null, "the other worktree's placeholder keeps waiting");
+
+  // Nobody can see the list in this window: a plain wake skips the pass, a refresh does not.
+  service.cancelExpectation(placeholder.id);
+  f.storage.deleteChat(placeholder.id, { rememberSession: false });
+  visible = false;
+  sessions.push(sessionRecord('claude', 's-cli-2', { cwd: f.worktree.path, summary: 'Second CLI chat' }));
+  const before = scans;
+  service.wake();
+  await settle();
+  assert.equal(scans, before, 'a hidden list skips the plain pass');
+  service.refresh();
+  await waitFor(() => f.linkedTo('s-cli-2'), 'the refresh while hidden');
+});
+
+test('an import pruned by retention comes back under its shared id once its session is active again', async (t) => {
+  const f = setup(t);
+  const session = f.appear('s-back', 'Comes back', 8 * DAY);
+  const old = f.storage.createChat(f.worktree.id, 'claude', 'Comes back', {
+    id: importedChatId('claude', 's-back'),
+    harnessSessionId: 's-back',
+    autoImported: true,
+    createdAt: Date.now() - 8 * DAY,
+    lastAccessedAt: Date.now() - 8 * DAY,
+  });
+  f.service.start();
+  await waitFor(() => !f.storage.getChat(old.id), 'the retention prune');
+
+  session.lastUpdated = new Date();
+  session.lastActivity = Date.now();
+  const back = await waitFor(() => f.linkedTo('s-back'), 'the re-import');
+  assert.equal(back.id, old.id, 'the tombstone of the pruned row does not hide the new import');
+  assert.equal(f.storage.getChats().filter((chat) => chat.harnessSessionId === 's-back').length, 1);
 });

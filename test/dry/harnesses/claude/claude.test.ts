@@ -398,3 +398,20 @@ test('liveSessionIds lists the live sessions in the sessions file, and the tick 
   await Promise.all([harness.getLiveStates([SESSION_ID]), harness.getLiveStates([SESSION_ID])]);
   assert.equal(reads.filter((file) => file.endsWith('.json')).length, 2, 'one folder read (two files) per tick');
 });
+
+test('liveSessionsUnderWay lists the busy, waiting and unknown-status sessions from the same read, never an idle one', async (t) => {
+  const { harness, sessionsDir } = liveHarness(t, { transcriptWrittenAt: 0 });
+  writeSessionFile(sessionsDir, { pid: 4242, sessionId: SESSION_ID, status: 'busy', statusUpdatedAt: 1 });
+  writeSessionFile(sessionsDir, { pid: 4343, sessionId: 'waiting-one', status: 'waiting', waitingFor: 'permission prompt', statusUpdatedAt: 1 });
+  writeSessionFile(sessionsDir, { pid: 4444, sessionId: 'never-prompted', status: 'idle', statusUpdatedAt: 1 });
+  writeSessionFile(sessionsDir, { pid: 4545, sessionId: 'unknown-status', status: 'compacting', statusUpdatedAt: 1 });
+  await harness.liveSessionIds();
+
+  const reads: string[] = [];
+  t.mock.method(fs.promises, 'readFile', async (file: unknown) => {
+    reads.push(String(file));
+    return fs.readFileSync(String(file), 'utf8');
+  });
+  assert.deepEqual([...(await harness.liveSessionsUnderWay())].sort(), [SESSION_ID, 'unknown-status', 'waiting-one'].sort());
+  assert.equal(reads.length, 0, "the tick's liveSessionIds read is reused");
+});

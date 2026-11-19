@@ -199,6 +199,18 @@ export class ClaudeHarness implements HarnessAdapter {
     return result;
   }
 
+  /**
+   * The live sessions that are busy or waiting (or whose status Pitwall does
+   * not know), from the same folder read as the tick's `liveSessionIds`.
+   * Claude writes a session's transcript with its first prompt, so an idle
+   * session that was never prompted has nothing for discovery to find.
+   */
+  async liveSessionsUnderWay(): Promise<Set<string>> {
+    const file = await this.readSessionsFile();
+    const ids = [...file.states].filter(([, state]) => state.status !== 'idle').map(([sessionId]) => sessionId);
+    return new Set([...ids, ...file.unknownStatus]);
+  }
+
   /** Re-poll soon after a `*.json` change in `~/.claude/sessions` (150 ms debounce; `.key` files never count). */
   watchLive(onChange: () => void): vscode.Disposable {
     return this.sessionsFile.watch(onChange);

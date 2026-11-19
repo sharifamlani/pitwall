@@ -97,6 +97,12 @@ export interface ChatSession {
    * Set at creation; records written before Phase 3 get it on first load.
    */
   seenAt?: number;
+  /**
+   * Another chat of the same native session that this one was merged into
+   * (two windows imported the session at once). Kept in the store, hidden
+   * from every read; its state moved to that chat.
+   */
+  mergedInto?: string;
   createdAt: number;
   lastAccessedAt: number;
   status: 'active' | 'idle' | 'closed';

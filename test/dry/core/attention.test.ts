@@ -30,6 +30,7 @@ import {
   fakeNativeUi,
   flush,
   makeStorage,
+  memento,
   runCommand,
   sessionRecord,
   shown,
@@ -1170,6 +1171,10 @@ interface PopupFlowOptions extends RowFlowOptions {
   ledgerDir?: string;
   /** The registry's answer for "in front of a focused window anywhere". */
   frontAnywhere?: (sessionId: string) => boolean;
+  /** Live sessions whose turn is under way (busy or waiting); without it the adapter cannot tell. */
+  underWay?: () => Set<string>;
+  /** Runs after each discovery request is recorded (a test's import). */
+  onUnlisted?: (sessionIds: string[]) => void;
 }
 
 /** rowFlow with the whole Phase 5 pop-up path: lock, front anywhere, listed check, log lines. */
@@ -1186,6 +1191,7 @@ function popupFlow(storage: ReturnType<typeof makeStorage>, options: PopupFlowOp
       const states = options.states?.() ?? {};
       return new Map(sessionIds.flatMap((id) => (states[id] ? [[id, states[id]] as [string, HarnessLiveState]] : [])));
     },
+    ...(options.underWay ? { liveSessionsUnderWay: async () => options.underWay!() } : {}),
   });
   const isVisible = (chatId: string) => visible.has(chatId);
   const notifications = new NotificationService(() => undefined, isVisible, {
@@ -1207,7 +1213,13 @@ function popupFlow(storage: ReturnType<typeof makeStorage>, options: PopupFlowOp
     () => undefined,
     (chat) => open.has(chat.id),
     isVisible,
-    { log: (line) => logs.push(line), onUnlistedLive: (sessionIds) => unlisted.push([...sessionIds]) }
+    {
+      log: (line) => logs.push(line),
+      onUnlistedLive: (sessionIds) => {
+        unlisted.push([...sessionIds]);
+        options.onUnlisted?.(sessionIds);
+      },
+    }
   );
   const transitions: StatusTransition[] = [];
   service.onDidTransition((transition) => transitions.push(transition));
@@ -1578,6 +1590,50 @@ test('a re-poll with the same statusUpdatedAt makes no second transition', async
   assert.equal(flow.shownLines().length, 1);
 });
 
+test('one status line and one notify per transition for a CLI chat stored twice; opening it clears the row you see', async () => {
+  windowState().state = { focused: false };
+  // Two windows imported the CLI session at once before the fix: two chat
+  // records, one harness session (the S7 walk's uj-lab-c).
+  const globalState = memento();
+  const twin = (id: string, createdAt: number) =>
+    chatRecord({ id, worktreeId: 'wt-c', name: 'T2-C ready', harnessSessionId: 's-cli', createdAt, lastAccessedAt: createdAt, seenAt: createdAt, autoImported: true });
+  const t0 = Date.now() - 60_000;
+  await globalState.update('pitwall.chats', [twin('chat-from-a', t0), twin('chat-from-c', t0 + 5)]);
+  const storage = makeStorage(globalState);
+  let live: HarnessLiveState = idleAfter(t0 - 1_000);
+  const flow = popupFlow(storage, { live: () => new Set(['s-cli']), states: () => ({ 's-cli': live }) });
+  assert.equal(storage.getChats().filter((chat) => chat.harnessSessionId === 's-cli').length, 1, 'one row for the session');
+  await flow.service.poll(true);
+
+  live = busy(Date.now());
+  await flow.service.poll();
+  live = waitingAt(Date.now());
+  await flow.service.poll();
+  live = busy(Date.now());
+  await flow.service.poll();
+  live = idleAfter(Date.now() + 1);
+  await flow.service.poll();
+
+  assert.deepEqual(
+    flow.statusLines().map((line) => line.replace(/ lag=\d+$/, '')),
+    [
+      '[Pitwall] status s-cli idle→working',
+      '[Pitwall] status s-cli working→needs',
+      '[Pitwall] status s-cli needs→working',
+      '[Pitwall] status s-cli working→finished',
+    ],
+    'one line per transition'
+  );
+  assert.equal(flow.shownLines().length, 2, 'one pop-up for the wait, one for the finish');
+  assert.deepEqual(flow.skipped('locked'), [], 'no second copy losing its own lock');
+  assert.equal(flow.claims.length, 2, 'one claim per transition');
+
+  const [row] = storage.getChats().filter((chat) => chat.harnessSessionId === 's-cli');
+  flow.service.markSeen(row.id);
+  assert.deepEqual(flow.service.statuses(), { 's-cli': 'idle' }, 'opening the row you see turns it idle');
+  assert.deepEqual(flow.service.counts(), { needs: 0, working: 0, finished: 0 });
+});
+
 test("counts() matches the sidebar list's needs, working and finished rows", async () => {
   windowState().state = { focused: true };
   const storage = makeStorage();
@@ -1645,6 +1701,107 @@ test('a live session in an unlisted folder asks discovery to refresh once per se
   assert.equal(toasts().length, 1);
   assert.match(toasts()[0], /Brand-new repo/);
   assert.equal(flow.unlisted.length, 2);
+});
+
+test('a live session not yet listed triggers one discovery refresh when its first turn starts, and is listed within one poll', async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const live = new Set<string>();
+  const underWay = new Set<string>();
+  const states: Record<string, HarnessLiveState> = {};
+  let imported: ChatSession | undefined;
+  const flow = popupFlow(storage, {
+    live: () => live,
+    underWay: () => underWay,
+    states: () => states,
+    // The refresh finds the session's transcript and imports it.
+    onUnlisted: (sessionIds) => {
+      if (sessionIds.includes('s-new') && underWay.has('s-new')) {
+        imported = storage.createChat('wt-c', 'claude', 'New CLI chat', { harnessSessionId: 's-new', autoImported: true });
+      }
+    },
+  });
+  await flow.service.poll(true);
+
+  // `claude` starts in a console: a live record, idle, with no transcript yet.
+  live.add('s-new');
+  states['s-new'] = idleAfter(0);
+  await flow.service.poll();
+  await flow.service.poll();
+  assert.deepEqual(flow.unlisted, [], 'nothing to find before the first prompt writes the transcript');
+
+  // The first prompt: busy, and the transcript now exists.
+  underWay.add('s-new');
+  states['s-new'] = busy(Date.now());
+  await flow.service.poll();
+  assert.deepEqual(flow.unlisted, [['s-new']], 'one refresh, as the first turn starts');
+  assert.ok(imported, 'the refresh listed it');
+  await flow.service.poll();
+  assert.equal(flow.service.statusOf(imported!.id).status, 'working', 'listed and tracked within one poll');
+  assert.deepEqual(
+    flow.statusLines().map((line) => line.replace(/ lag=\d+$/, '')),
+    ['[Pitwall] status s-new idle→working'],
+    "the new chat's first turn is a transition"
+  );
+});
+
+test('the discovery refresh is rate-limited to once per unknown session per window', async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const live = new Set(['s-a']);
+  const underWay = new Set(['s-a']);
+  const flow = popupFlow(storage, { live: () => live, underWay: () => underWay, states: () => ({}) });
+  await flow.service.poll(true);
+  for (let tick = 0; tick < 5; tick++) {
+    await flow.service.poll();
+  }
+  underWay.delete('s-a'); // its turn ends; the refresh found nothing to list
+  await flow.service.poll();
+  underWay.add('s-a'); // and the next one starts
+  await flow.service.poll();
+  assert.deepEqual(flow.unlisted, [['s-a']], 'once, however many ticks and turns see it');
+
+  live.add('s-b');
+  await flow.service.poll();
+  assert.deepEqual(flow.unlisted, [['s-a']], 'another session idle since it started asks nothing yet');
+  underWay.add('s-b');
+  await flow.service.poll();
+  await flow.service.poll();
+  assert.deepEqual(flow.unlisted, [['s-a'], ['s-b']], 'and asks once when its turn starts');
+});
+
+test('a chat first seen after activation at needs pops once across windows (not pre-existing)', async (t) => {
+  windowState().state = { focused: false };
+  const ledgerDir = path.join(tempDir(t), 'pitwall-popups');
+  // A placeholder the user opened an hour ago in the panel: its chat is older than both windows.
+  const openedAt = Date.now() - 60 * 60_000;
+  const windows = [makeStorage(), makeStorage()].map((storage) => {
+    let live: HarnessLiveState | undefined;
+    const flow = popupFlow(storage, { ledgerDir, live: () => new Set(live ? ['s-new'] : []), states: (): Record<string, HarnessLiveState> => (live ? { 's-new': live } : {}) });
+    return { storage, flow, set: (state: HarnessLiveState) => (live = state) };
+  });
+  for (const window of windows) {
+    await window.flow.service.poll(true);
+  }
+
+  // Its first prompt asks for permission before any window has it listed.
+  const stamp = Date.now() + 1;
+  for (const window of windows) {
+    window.storage.createChat('wt-a', 'claude', 'New panel chat', { id: 'chat-a', harnessSessionId: 's-new', createdAt: openedAt, lastAccessedAt: openedAt });
+    window.set(waitingAt(stamp));
+  }
+  for (const window of windows) {
+    await window.flow.service.poll();
+    await window.flow.service.poll();
+  }
+
+  const shown = windows.flatMap((window) => window.flow.shownLines());
+  assert.equal(shown.length, 1, 'its first wait pops exactly once across the windows');
+  assert.deepEqual(windows.flatMap((window) => window.flow.skipped('pre-existing')), [], 'a wait that began after activation is not pre-existing');
+  assert.equal(windows.flatMap((window) => window.flow.skipped('locked')).length, 1, 'the other window loses the lock');
+  for (const window of windows) {
+    assert.equal(window.flow.service.statusOf('chat-a').status, 'needs');
+  }
 });
 
 test("Pitwall's own open or close of a chat makes no transition", async () => {
@@ -1735,6 +1892,86 @@ test('compare-status passes a matching walk and fails a missing, extra or mismat
   assert.equal(wrong.status, 1);
   assert.match(wrong.stdout, /dump 4343\.json: aaaaaaaa shows finished, expected idle/);
   assert.equal(run(good, '--bogus').status, 2);
+});
+
+test('compare-status --opened-from takes the opened lines from every window, so a window that did not click passes', (t) => {
+  const dir = tempDir(t);
+  const script = path.resolve(__dirname, '..', '..', '..', 'scripts', 'compare-status.mjs');
+  const t0 = Date.parse('2026-11-19T10:00:00.000Z');
+  const at = (ms: number) => new Date(t0 + ms).toISOString();
+  const truth = path.join(dir, 'truth.jsonl');
+  fs.writeFileSync(
+    truth,
+    [
+      { t: t0, sid8: 'aaaaaaaa', status: 'idle', statusUpdatedAt: t0 - 5_000 },
+      { t: t0 + 1_000, sid8: 'aaaaaaaa', status: 'busy', statusUpdatedAt: t0 + 1_000 },
+      { t: t0 + 4_000, sid8: 'aaaaaaaa', status: 'idle', statusUpdatedAt: t0 + 4_000 },
+    ]
+      .map((sample) => JSON.stringify(sample))
+      .join('\n') + '\n'
+  );
+  const write = (name: string, lines: string[]) => {
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, lines.join('\n') + '\n');
+    return file;
+  };
+  const statusLines = [
+    `[${at(1_200)}] [Pitwall] status aaaaaaaa idle→working lag=200`,
+    `[${at(4_300)}] [Pitwall] status aaaaaaaa working→finished lag=300`,
+    `[${at(9_010)}] [Pitwall] status aaaaaaaa finished→idle lag=0`,
+  ];
+  // The user opened the chat in window a; window b only saw it turn idle.
+  const windowA = write('ops-a.log', [...statusLines, `[${at(9_000)}] [Pitwall] popup click aaaaaaaa`]);
+  const windowB = write('ops-b.log', statusLines);
+  const windowC = write('ops-c.log', statusLines);
+  const run = (...extra: string[]) => spawnSync(process.execPath, [script, '--truth', truth, ...extra], { encoding: 'utf8' });
+
+  const alone = run('--log', windowB);
+  assert.equal(alone.status, 1, 'per window, the open is missing');
+  assert.match(alone.stdout, /extra #3: finished→idle/);
+
+  const merged = run('--log', windowB, '--opened-from', windowA, windowB, windowC, '--max-lag', '2000');
+  assert.equal(merged.status, 0, merged.stdout + merged.stderr);
+  assert.match(merged.stdout, /aaaaaaaa expected=3 logged=3 ok/);
+  assert.match(merged.stdout, /compare ok; 3 transitions matched/);
+  // Only --log counts status lines: the other windows' lines are never matched twice.
+  assert.match(run('--opened-from', windowA, '--log', windowA).stdout, /aaaaaaaa expected=3 logged=3 ok/);
+  assert.equal(run('--log', windowB, '--opened-from').status, 2, '--opened-from needs at least one log');
+  assert.equal(run('--log', windowB, '--opened-from', path.join(dir, 'missing.log')).status, 2);
+});
+
+test('compare-status takes idle→needs for a first turn shorter than a tick as a note, not a FAIL', (t) => {
+  const dir = tempDir(t);
+  const script = path.resolve(__dirname, '..', '..', '..', 'scripts', 'compare-status.mjs');
+  const t0 = Date.parse('2026-11-19T10:00:00.000Z');
+  const at = (ms: number) => new Date(t0 + ms).toISOString();
+  const truthFor = (waitAfterMs: number) => {
+    const file = path.join(dir, `truth-${waitAfterMs}.jsonl`);
+    fs.writeFileSync(
+      file,
+      [
+        { t: t0, sid8: 'cccccccc', status: 'idle', statusUpdatedAt: t0 },
+        { t: t0 + 1_000, sid8: 'cccccccc', status: 'busy', statusUpdatedAt: t0 + 1_000 },
+        { t: t0 + 1_000 + waitAfterMs, sid8: 'cccccccc', status: 'waiting', statusUpdatedAt: t0 + 1_000 + waitAfterMs },
+      ]
+        .map((sample) => JSON.stringify(sample))
+        .join('\n') + '\n'
+    );
+    return file;
+  };
+  // A brand-new chat is listed after its first turn started; the first line Pitwall can log is idle→needs.
+  const log = path.join(dir, 'ops.log');
+  fs.writeFileSync(log, `[${at(4_500)}] [Pitwall] status cccccccc idle→needs lag=300\n`);
+  const run = (truth: string) => spawnSync(process.execPath, [script, '--truth', truth, '--log', log], { encoding: 'utf8' });
+
+  const short = run(truthFor(3_000));
+  assert.equal(short.status, 0, short.stdout + short.stderr);
+  assert.match(short.stdout, /NOTE cccccccc #1: first turn shorter than a tick \(3000 ms working\), logged idle→needs for idle→working→needs/);
+  assert.match(short.stdout, /cccccccc expected=1 logged=1 ok/);
+
+  const long = run(truthFor(9_000));
+  assert.equal(long.status, 1, 'a working phase longer than a tick still had to be logged');
+  assert.match(long.stdout, /mismatch #1: expected idle→working, logged idle→needs/);
 });
 
 test('the state dump carries every listed session status and the counts', async (t) => {

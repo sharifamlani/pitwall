@@ -30,7 +30,8 @@ Code hooks (Q45 = A): nothing is written under `~/.claude`.
 - **Transitions.** `SessionAttentionService` turns each row-status change of a listed chat
   into a `StatusTransition {chatId, sessionId, from, to, at, observedAt, waitingFor?}` and
   logs `[Pitwall] status <id8> <from>→<to> lag=<ms>`. The first pass after activation and a
-  row's first judgement are not transitions.
+  row's first judgement are not transitions, except that a chat joining the list after the first
+  pass (a new chat, an import) starts idle, so its first turn logs `idle→working`.
 - **Needs you is the live wait (Q30).** A waiting chat is needs-you on its row, in
   `sessionsNeedingYou()` / `needsYouOrder()` (oldest wait first) and in `counts()`, whether
   or not it is in front. Only the pop-up looks at what is in front.
@@ -38,7 +39,14 @@ Code hooks (Q45 = A): nothing is written under `~/.claude`.
   that finished after a working row, is judged in this order: the kind is enabled → the chat
   is listed → the transition has a stamp → it is not pre-existing → the chat is not in front of
   a focused window anywhere → this window wins the lock. A live session no listed chat holds
-  asks discovery for one refresh, once per session per window.
+  asks discovery for one refresh (a full import pass, even while a UI launch is linking or the
+  list is hidden), once per session per window, when its first turn starts: before that it has
+  no transcript to find. A wait whose `statusUpdatedAt` is after activation is never
+  pre-existing, even on a chat first seen at needs. Auto-imports take a chat id derived from the
+  session, and storage lists one chat per native session, so windows importing at once list it
+  once. Of two stored copies, the one holding user state (star, custom name, terminal, active
+  chat) is listed; the other's state merges into it in one logged write
+  (`dedupe kept <id8> merged <id8>`), and the copy stays stored, hidden and marked `mergedInto`.
 - **Exactly one window speaks (Q32).** Each window tries to create
   `<globalStorage>/pitwall-popups/<sessionId>.<needs|finished>.<at>.lock` with `wx`. Only the
   creator shows the pop-up. `at` is `statusUpdatedAt` (else the transcript's last write) for a

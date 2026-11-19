@@ -8,7 +8,8 @@
  *
  * Usage:
  *   node scripts/compare-status.mjs --truth <truth.jsonl> --log <Pitwall Operations log>
- *                                   [--dump <pitwall-dump folder>] [--max-lag <ms>] [--sessions <id8,id8,...>]
+ *                                   [--opened-from <log> [<log> ...]] [--dump <pitwall-dump folder>]
+ *                                   [--max-lag <ms>] [--sessions <id8,id8,...>]
  *
  * The mapping (plan §5, QA C7). The recording starts with every session idle
  * and seen. Per session, in time order:
@@ -19,10 +20,19 @@
  *   recorder gone (the process exited)    → idle from working or needs; otherwise unchanged
  *   an "opened" log line                  → finished becomes idle; the "busy since" mark resets
  * An opened line is `[Pitwall] route <id8> …`, `[Pitwall] popup click <id8>` or
- * `[Pitwall] popup click <id8> outside`. Each change of the mapped status is
+ * `[Pitwall] popup click <id8> outside`, read from --log and from every
+ * --opened-from log: the route or click line is logged only in the window the
+ * user clicked, but every window then logs finished→idle, so checking a window
+ * that did not click needs the clicking window's log too (pass all of them).
+ * Status lines are read from --log only. Each change of the mapped status is
  * one expected transition. Log lines dated before the recording's first
  * sample are ignored. --sessions limits the check to those id8s (default:
  * every id8 in the recording).
+ *
+ * A brand-new chat is listed only once its first turn has started: when the
+ * recording's first idle→working→needs spans at most one attention tick (4 s)
+ * and Pitwall's first line is idle→needs, that line matches both and a NOTE
+ * says so; it is not a problem.
  *
  * --dump compares each window's `statuses` (from `pitwall.dev.dumpState`,
  * taken after the walk) with the final mapped status of every session.
@@ -43,7 +53,7 @@ function fail(code, message) {
 }
 
 function parseArgs(argv) {
-  const args = { truth: null, log: null, dump: null, maxLag: null, sessions: null };
+  const args = { truth: null, log: null, openedFrom: [], dump: null, maxLag: null, sessions: null };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const value = () => {
@@ -53,12 +63,20 @@ function parseArgs(argv) {
     };
     if (arg === '--truth') args.truth = value();
     else if (arg === '--log') args.log = value();
+    else if (arg === '--opened-from') {
+      const logs = [];
+      while (argv[i + 1] !== undefined && !argv[i + 1].startsWith('--')) logs.push(argv[++i]);
+      if (logs.length === 0) fail(2, '--opened-from needs at least one log');
+      args.openedFrom.push(...logs);
+    }
     else if (arg === '--dump') args.dump = value();
     else if (arg === '--max-lag') args.maxLag = Number(value());
     else if (arg === '--sessions') args.sessions = new Set(value().split(',').filter(Boolean));
     else fail(2, `unknown argument: ${arg}`);
   }
-  if (!args.truth || !args.log) fail(2, 'usage: --truth <truth.jsonl> --log <ops.log> [--dump <dir>] [--max-lag <ms>] [--sessions <id8,...>]');
+  if (!args.truth || !args.log) {
+    fail(2, 'usage: --truth <truth.jsonl> --log <ops.log> [--opened-from <log> ...] [--dump <dir>] [--max-lag <ms>] [--sessions <id8,...>]');
+  }
   if (args.maxLag !== null && !(args.maxLag >= 0)) fail(2, '--max-lag must be a number of ms');
   return args;
 }
@@ -95,27 +113,36 @@ const LINE = /^\[(\d{4}-\d{2}-\d{2}T[^\]]+)\] (.*)$/;
 const STATUS = /^\[Pitwall\] status ([0-9A-Za-z-]{1,8}) (needs|working|finished|idle)→(needs|working|finished|idle) lag=(\d+)$/;
 const OPENED = /^\[Pitwall\] (?:route ([0-9A-Za-z-]{1,8}) |popup click ([0-9A-Za-z-]{1,8})(?: outside)?$)/;
 const logged = new Map(sessions.map((sid8) => [sid8, []]));
-const opened = new Map(sessions.map((sid8) => [sid8, []]));
-for (const raw of readText(args.log).split(/\r?\n/)) {
-  const line = LINE.exec(raw.trim());
-  if (!line) continue;
-  const t = Date.parse(line[1]);
-  if (!(t >= start)) continue;
-  const status = STATUS.exec(line[2]);
+const opened = new Map(sessions.map((sid8) => [sid8, new Set()]));
+/** One log's dated lines from the recording's start on. */
+function* datedLines(file) {
+  for (const raw of readText(file).split(/\r?\n/)) {
+    const line = LINE.exec(raw.trim());
+    if (!line) continue;
+    const t = Date.parse(line[1]);
+    if (t >= start) yield { t, message: line[2] };
+  }
+}
+for (const { t, message } of datedLines(args.log)) {
+  const status = STATUS.exec(message);
   if (status && logged.has(status[1])) {
     logged.get(status[1]).push({ t, from: status[2], to: status[3], lag: Number(status[4]) });
-    continue;
   }
-  const open = OPENED.exec(line[2]);
-  const sid8 = open && (open[1] ?? open[2]);
-  if (sid8 && opened.has(sid8)) opened.get(sid8).push(t);
+}
+// Opened lines from every window's log; a file passed twice counts once.
+for (const file of new Set([args.log, ...args.openedFrom].map((name) => path.resolve(name)))) {
+  for (const { t, message } of datedLines(file)) {
+    const open = OPENED.exec(message);
+    const sid8 = open && (open[1] ?? open[2]);
+    if (sid8 && opened.has(sid8)) opened.get(sid8).add(t);
+  }
 }
 
 /** The expected transitions of one session, by the mapping above, and its final status. */
 function expectedFor(sid8) {
   const events = [
     ...truth.filter((entry) => entry.sid8 === sid8).map((entry) => ({ t: entry.t, kind: 'sample', status: entry.status })),
-    ...opened.get(sid8).map((t) => ({ t, kind: 'opened' })),
+    ...[...opened.get(sid8)].map((t) => ({ t, kind: 'opened' })),
   ].sort((a, b) => a.t - b.t || (a.kind === 'sample' ? -1 : 1));
   let state = 'idle';
   let busySinceOpened = false;
@@ -143,13 +170,29 @@ function expectedFor(sid8) {
   return { transitions, final: state };
 }
 
+/** The attention tick: a working phase shorter than this can fall between two looks. */
+const TICK_MS = 4_000;
+
 const problems = [];
+const notes = [];
 const lags = [];
 const finals = new Map();
 for (const sid8 of sessions) {
-  const { transitions: expected, final } = expectedFor(sid8);
+  const { transitions: recorded, final } = expectedFor(sid8);
   finals.set(sid8, final);
   const actual = logged.get(sid8);
+  // A brand-new chat is listed once its first turn has started; when that
+  // turn reaches its wait within a tick, Pitwall's first line is idle→needs.
+  // That is a note, not a missing working.
+  let expected = recorded;
+  const [first, second] = recorded;
+  if (
+    first?.from === 'idle' && first.to === 'working' && second?.from === 'working' && second.to === 'needs' &&
+    second.t - first.t <= TICK_MS && actual[0]?.from === 'idle' && actual[0].to === 'needs'
+  ) {
+    expected = [{ t: second.t, from: 'idle', to: 'needs' }, ...recorded.slice(2)];
+    notes.push(`${sid8} #1: first turn shorter than a tick (${second.t - first.t} ms working), logged idle→needs for idle→working→needs`);
+  }
   let ok = true;
   const count = Math.max(expected.length, actual.length);
   for (let i = 0; i < count; i++) {
@@ -203,6 +246,7 @@ if (args.dump) {
   }
 }
 
+for (const note of notes) console.log(`NOTE ${note}`);
 for (const problem of problems) console.log(`PROBLEM ${problem}`);
 const sorted = [...lags].sort((a, b) => a - b);
 const p95 = sorted.length ? sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)] : 0;
