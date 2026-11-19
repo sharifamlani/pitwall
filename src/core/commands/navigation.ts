@@ -119,7 +119,8 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
     await openWindow(repo);
   });
 
-  // Ctrl+Alt+0 and its older alias Ctrl+Alt+N (P10).
+  // Ctrl+Alt+0 and its older alias Ctrl+Alt+N (P10). Q39's rules (the longest needs-you wait, never the chat in front here, never a
+  // finished one) live in the session command, which holds the router, the list and the walk Next ▸ continues.
   register('pitwall.openLongestWaiting', () => run('pitwall.openNextSessionNeedingYou'));
 
   // FILES: a visible panel is hidden through the view's own Hide action; a

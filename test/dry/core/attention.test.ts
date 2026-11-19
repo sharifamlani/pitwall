@@ -556,7 +556,7 @@ test("replay of the tester's flow: a prompt that appears while typing in the cha
 
   await runCommand('pitwall.openNextSessionNeedingYou');
   assert.deepEqual(flow.activated, [flow.chatId], 'Go to Next finds it');
-  assert.ok(!shown('No session is waiting for you.'));
+  assert.ok(!shown('Nobody is waiting on you right now.'));
   assert.deepEqual(toasts(), [], 'the prompt appeared while the user was typing in it: no toast');
 });
 
@@ -577,7 +577,7 @@ test('after a reload, an existing wait is listed and Go to Next Session That Nee
   }
   await runCommand('pitwall.openNextSessionNeedingYou');
   assert.deepEqual(flow.activated, [flow.chatId], 'Go to Next finds it');
-  assert.ok(!shown('No session is waiting for you.'));
+  assert.ok(!shown('Nobody is waiting on you right now.'));
   assert.deepEqual(toasts(), [], 'zero toasts, even past the cooldown');
 });
 
@@ -1753,4 +1753,33 @@ test('the state dump carries every listed session status and the counts', async 
   const dump = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.deepEqual(dump.statuses, { 's-1': 'needs', 's-2': 'idle' });
   assert.deepEqual(dump.counts, { needs: 1, working: 0, finished: 0 });
+});
+
+test('chatsWithStatus lists each status oldest first, ties by chat id', async () => {
+  const storage = makeStorage();
+  const sessions = ['n-late', 'n-early', 'n-tie', 'w-1', 'f-new', 'f-old'];
+  const chats = Object.fromEntries(sessions.map((id) => [id, storage.createChat('wt-1', 'claude', id, { harnessSessionId: id })]));
+  const t0 = Date.now();
+  let phase = 0;
+  const states = (): Record<string, HarnessLiveState> => ({
+    'n-late': waitingAt(t0 + 3_000),
+    'n-early': waitingAt(t0 + 1_000),
+    'n-tie': waitingAt(t0 + 1_000),
+    'w-1': busy(),
+    'f-new': phase === 0 ? busy() : idleAfter(t0 + 20),
+    'f-old': phase === 0 ? busy() : idleAfter(t0 + 10),
+  });
+  const flow = popupFlow(storage, { states });
+  Object.values(chats).forEach((chat) => flow.open.add(chat.id));
+  await flow.service.poll(true);
+  phase = 1;
+  await flow.service.poll();
+  await flow.service.poll();
+
+  const ids = (status: 'needs' | 'working' | 'finished') => flow.service.chatsWithStatus(status).map((entry) => entry.chatId);
+  const tied = [chats['n-early'].id, chats['n-tie'].id].sort();
+  assert.deepEqual(ids('needs'), [...tied, chats['n-late'].id], 'oldest wait first; the tie breaks by chat id');
+  assert.deepEqual(ids('working'), [chats['w-1'].id]);
+  assert.deepEqual(ids('finished'), [chats['f-old'].id, chats['f-new'].id], 'the earlier turn end first');
+  assert.deepEqual(flow.service.chatsWithStatus('needs').map((entry) => entry.since), [t0 + 1_000, t0 + 1_000, t0 + 3_000]);
 });

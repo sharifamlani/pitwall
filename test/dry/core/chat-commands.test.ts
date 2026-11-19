@@ -14,8 +14,10 @@ import { quoteShellArgument } from '../../../src/core/harness/cli';
 import { WorktreeCatalog } from '../../../src/core/services/WorktreeCatalog';
 import { SessionImportService } from '../../../src/core/services/SessionImportService';
 import { WorkspaceTreeItem } from '../../../src/core/providers/WorkspacesTreeProvider';
-import { registerChatCommands } from '../../../src/core/commands/chat';
+import { ChatCommandDeps, registerChatCommands } from '../../../src/core/commands/chat';
 import { registerNavigationCommands } from '../../../src/core/commands/navigation';
+import { ownsFolder } from '../../../src/core/windows/WindowRegistry';
+import { JumpWalk } from '../../../src/core/windows/JumpWalk';
 import { claudeUiSurfaces } from '../../../src/harnesses/claude/claudeUi';
 import { registerSessionImportCommands } from '../../../src/core/commands/sessionImport';
 import { registerRepositoryCommands } from '../../../src/core/commands/repository';
@@ -32,6 +34,7 @@ import {
   sessionRecord,
   shown,
   stub,
+  tempDir,
   waitFor,
   worktreeRecord,
 } from '../support';
@@ -53,7 +56,7 @@ function disposeAll(subscriptions: { dispose(): unknown }[]): void {
 function setup(
   t: { after(fn: () => void): void },
   /** `surface` is the defaultSessionSurface setting; null leaves it unset (the shipped default). */
-  options: { notInstalled?: HarnessId[]; surface?: 'terminal' | 'ui' | null } = {}
+  options: { notInstalled?: HarnessId[]; surface?: 'terminal' | 'ui' | null; extra?: Partial<ChatCommandDeps> } = {}
 ) {
   const surface = options.surface === undefined ? 'terminal' : options.surface;
   if (surface) {
@@ -165,6 +168,7 @@ function setup(
       return storage.deleteChats(ids, options);
     },
     refreshTree: () => undefined,
+    ...options.extra,
   });
   registerSessionImportCommands(context, storage, git as never, catalog, workspaces as never, registry, () => undefined);
   registerRepositoryCommands(context, {
@@ -1365,7 +1369,7 @@ test('Go to Next Session That Needs You opens the longest-waiting one, skips a r
 
   f.needingYou.length = 0;
   await runCommand('pitwall.openNextSessionNeedingYou');
-  assert.ok(shown('No session is waiting for you.'));
+  assert.ok(shown('Nobody is waiting on you right now.'));
 });
 
 test('with several session rows selected, Remove, Close, Star and Unstar apply to all of them', async (t) => {
@@ -1463,4 +1467,169 @@ test('Remove and Clear All drop chats only after confirmation, and removed sessi
   assert.ok(shown('Clear all 2 session(s) from "feature-x"?'));
   assert.deepEqual(f.chatsIn(f.feature), []);
   assert.deepEqual([...f.storage.getRemovedSessionKeys()].sort(), ['claude:claude-1', 'codex:codex-1', 'codex:codex-2']);
+});
+
+// ---------------------------------------------------------------------------
+// Row 5.4 (Q38-Q40): the jump list behind the bottom-bar counts, Ctrl+Alt+0
+// and Next ▸. The attention service is faked; the walk file is real.
+// ---------------------------------------------------------------------------
+
+type Entry = { chatId: string; since: number };
+
+function jumping(t: TestContext, options: { windowFolder?: string; ownsFolder?: boolean } = {}) {
+  const lists: Record<'needs' | 'working' | 'finished', Entry[]> = { needs: [], working: [], finished: [] };
+  const waits = new Map<string, string>();
+  const routed: string[] = [];
+  const log: string[] = [];
+  const front = new Set<string>();
+  const walk = new JumpWalk(tempDir(t));
+  const route = async (request: { chats: ChatSession[] }) => {
+    routed.push(request.chats[0].name);
+    return 'routed' as const;
+  };
+  const launchFolder = async (chat: ChatSession, worktree?: Worktree) => (chat.name === 'Away' ? '/work/elsewhere' : worktree?.path);
+  const f = setup(t, {
+    extra: {
+      sessionsNeedingYou: () => lists.needs.map((entry) => entry.chatId),
+      statusList: (status) => lists[status],
+      waitingFor: (chatId) => waits.get(chatId),
+      inFront: (chatId) => front.has(chatId),
+      jumpWalk: walk,
+      windowFolder: options.ownsFolder ? ownsFolder : () => options.windowFolder ?? '/work/demo',
+      log: (line) => log.push(line),
+      router: () => ({ route, launchFolder }) as never,
+    },
+  });
+  registerNavigationCommands({ subscriptions: f.subscriptions } as never, { workspacesProvider: {} as never, workspacesTreeView: {} as never, filesTreeView: {} as never });
+  const add = (status: keyof typeof lists, name: string, since: number, wait?: string, worktree = f.main) => {
+    const chat = f.chat('claude', name, `claude-${name}`, worktree);
+    lists[status].push({ chatId: chat.id, since });
+    if (wait) {
+      waits.set(chat.id, wait);
+    }
+    return chat;
+  };
+  return { ...f, lists, routed, log, front, walk, add };
+}
+
+const lastPick = () => stub.__messages.at(-1)![0] as Array<{ label: string; description?: string; kind?: number }>;
+const lastPickOptions = () => stub.__messages.at(-1)![1] as { placeHolder?: string };
+const branchOf = (worktree: Worktree) => worktree.branch ?? worktree.name;
+
+test('clicking need you lists exactly those chats, oldest wait first, with meta "{repo} · ⎇ {branch} · this window|its own window · {waitingFor}"', async (t) => {
+  const f = jumping(t);
+  f.add('needs', 'Fix map', 100, 'permission prompt', f.feature);
+  f.add('needs', 'One-off apply', 200, 'input needed');
+  f.add('needs', 'Away', 300, 'input needed');
+  f.add('working', 'Busy', 50);
+  f.add('finished', 'Done', 60);
+  stub.__quickPickResponses.push(undefined);
+  await runCommand('pitwall.showStatusList', 'needs');
+  const items = lastPick();
+  assert.equal(items[0].kind, -1, 'a separator first');
+  assert.equal(items[0].label, 'WAITING ON YOU, LONGEST FIRST');
+  assert.deepEqual(
+    items.slice(1).map((item) => [item.label, item.description]),
+    [
+      ['● Fix map', `demo · ⎇ ${branchOf(f.feature)} · its own window · permission prompt`],
+      ['● One-off apply', `demo · ⎇ ${branchOf(f.main)} · this window · input needed`],
+      ['● Away', `demo · ⎇ ${branchOf(f.main)} · its own window · input needed`],
+    ],
+    'only the waiting chats, longest first'
+  );
+  assert.equal(lastPickOptions().placeHolder, '3 need you: pick one to go to it (Enter = top)');
+});
+
+test('"working" and "finished" open the same box with their own group', async (t) => {
+  const f = jumping(t);
+  f.add('working', 'Busy', 1);
+  f.add('finished', 'Done', 2);
+  stub.__quickPickResponses.push(undefined, undefined);
+  await runCommand('pitwall.showStatusList', 'working');
+  assert.equal(lastPick()[0].label, 'WORKING');
+  assert.equal(lastPick()[1].description, `demo · ⎇ ${branchOf(f.main)} · this window`);
+  assert.equal(lastPickOptions().placeHolder, '1 working: pick one to go to it (Enter = top)');
+  await runCommand('pitwall.showStatusList', 'finished');
+  assert.equal(lastPick()[0].label, 'FINISHED');
+  assert.equal(lastPick()[1].label, '● Done');
+});
+
+test('Enter opens the top item through the router, and Next ▸ then visits the one after it', async (t) => {
+  const f = jumping(t);
+  f.add('needs', 'Fix map', 100, 'permission prompt');
+  f.add('needs', 'One-off apply', 200, 'input needed');
+  stub.__setQuickPickHandler((items: Array<{ kind?: number }>) => items.find((item) => item.kind !== -1));
+  await runCommand('pitwall.showStatusList', 'needs');
+  assert.deepEqual(f.routed, ['Fix map'], 'the top item went through the router');
+  assert.deepEqual(f.activated, [], 'a routed open selects nothing in this window');
+  assert.match(f.log.at(-1)!, /^\[Pitwall\] jump \S{8} 1\/2$/);
+  await runCommand('pitwall.jumpNext');
+  assert.deepEqual(f.routed, ['Fix map', 'One-off apply'], 'Next ▸ opens the next in the list order');
+  assert.match(f.log.at(-1)!, /^\[Pitwall\] jump \S{8} 2\/2$/);
+  await runCommand('pitwall.jumpNext');
+  assert.ok(shown('Nothing left in this list.'), 'the walk ran out');
+  assert.equal(f.routed.length, 2);
+  assert.equal(await f.walk.active(), false);
+});
+
+test('an emptied list shows "Nothing left in this list." and opens no box', async (t) => {
+  const f = jumping(t);
+  await runCommand('pitwall.showStatusList', 'finished');
+  assert.ok(shown('Nothing left in this list.'));
+  assert.equal(stub.__messages.filter((entry) => Array.isArray(entry[0])).length, 0);
+  assert.deepEqual(f.routed, []);
+});
+
+test('Ctrl+Alt+0 opens the longest needs-you wait across all sessions and skips finished', async (t) => {
+  const f = jumping(t);
+  f.add('finished', 'Done', 1);
+  f.add('needs', 'Longest', 100, 'input needed');
+  f.add('needs', 'Later', 900, 'input needed');
+  await runCommand('pitwall.openLongestWaiting');
+  assert.deepEqual(f.routed, ['Longest'], 'the finished chat, though older, is not a wait');
+  await runCommand('pitwall.jumpNext');
+  assert.deepEqual(f.routed, ['Longest', 'Later']);
+});
+
+test('Ctrl+Alt+0 and Next skip the chat in front of the window where you press (QA C3)', async (t) => {
+  const f = jumping(t);
+  const first = f.add('needs', 'First', 100, 'input needed');
+  f.add('needs', 'Second', 200, 'input needed');
+  const third = f.add('needs', 'Third', 300, 'input needed');
+  f.front.add(first.id);
+  await runCommand('pitwall.openLongestWaiting');
+  assert.deepEqual(f.routed, ['Second'], 'the longest wait is in front here, so the next longest');
+  f.front.clear();
+  f.front.add(third.id);
+  await runCommand('pitwall.jumpNext');
+  assert.deepEqual(f.routed, ['Second'], 'Next skips the chat in front here too; nothing else is left');
+  assert.ok(shown('Nothing left in this list.'));
+});
+
+test('Ctrl+Alt+0 with none says "Nobody is waiting on you right now."', async (t) => {
+  const f = jumping(t);
+  await runCommand('pitwall.openLongestWaiting');
+  assert.ok(shown('Nobody is waiting on you right now.'));
+  const only = f.add('needs', 'Only', 100, 'input needed');
+  f.front.add(only.id);
+  stub.__messages.length = 0;
+  await runCommand('pitwall.openLongestWaiting');
+  assert.ok(shown('Nobody is waiting on you right now.'), 'the only waiting chat is in front here');
+  assert.deepEqual(f.routed, []);
+});
+
+test('a multi-root window labels no chat "this window"', async (t) => {
+  const f = jumping(t, { ownsFolder: true });
+  const folders = ['/work/demo', '/work/other'].map((fsPath, index) => ({ uri: vscode.Uri.file(fsPath), name: `f${index}`, index }));
+  f.add('needs', 'Mine', 100, 'input needed');
+  stub.__quickPickResponses.push(undefined, undefined);
+
+  (vscode.workspace as { workspaceFolders: unknown }).workspaceFolders = [folders[0]];
+  await runCommand('pitwall.showStatusList', 'needs');
+  assert.match(lastPick()[1].description ?? '', /this window/, 'a single-folder window owns its folder');
+
+  (vscode.workspace as { workspaceFolders: unknown }).workspaceFolders = folders;
+  await runCommand('pitwall.showStatusList', 'needs');
+  assert.match(lastPick()[1].description ?? '', /its own window/, 'the router never treats a multi-root window as owning a folder');
+  assert.ok(!lastPick()[1].description?.includes('this window'));
 });

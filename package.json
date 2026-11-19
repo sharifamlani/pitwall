@@ -618,6 +618,18 @@
         "icon": "$(bell-dot)"
       },
       {
+        "command": "pitwall.showStatusList",
+        "title": "List the Sessions That Need You",
+        "category": "Pitwall",
+        "icon": "$(bell-dot)"
+      },
+      {
+        "command": "pitwall.jumpNext",
+        "title": "Continue to the Next Session That Needs You",
+        "category": "Pitwall",
+        "icon": "$(bell-dot)"
+      },
+      {
         "command": "pitwall.openCurrentRepoWindow",
         "title": "Open Current Repo in Its Window",
         "category": "Pitwall",
@@ -1516,6 +1528,10 @@
         },
         {
           "command": "pitwall.openRepoChats",
+          "when": "false"
+        },
+        {
+          "command": "pitwall.jumpNext",
           "when": "false"
         },
         {

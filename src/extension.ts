@@ -39,12 +39,14 @@ import { commandRegistrar } from './core/commands/common';
 import { debounce } from './core/utils/debounce';
 import { samePath } from './core/utils/paths';
 import { RepoStatusBar } from './core/windows/RepoStatusBar';
+import { AttentionStatusBar } from './core/windows/AttentionStatusBar';
+import { JumpWalk } from './core/windows/JumpWalk';
 import { WindowServices, startWindowRegistry, startWindowServices } from './core/windows/startWindowServices';
 import { ChatRouter } from './core/windows/ChatRouter';
 import { SIDE_BY_SIDE_MOVE_WAIT_MS, splitSideBySide } from './core/windows/sideBySide';
 import { outsideProcessOf } from './core/windows/outsideProcess';
 import { parentPidOf } from './core/utils/parentPid';
-import { WindowRegistry } from './core/windows/WindowRegistry';
+import { WindowRegistry, ownsFolder } from './core/windows/WindowRegistry';
 import { startTabAdoption } from './core/windows/tabAdoption';
 
 /** Panels re-read the worktree this long after its files stop changing. */
@@ -668,6 +670,21 @@ export async function activate(context: vscode.ExtensionContext) {
       context.subscriptions.push({ dispose: () => clearInterval(timer) });
     }
   });
+  // The jump walk behind Next ▸ and the bottom-bar counts (row 5.4, Q38, Q40). The walk file is shared by
+  // every window; this window re-reads it every 2 s so a jump made in another one shows Next ▸ here too.
+  const jumpWalk = new JumpWalk(context.globalStorageUri?.fsPath ?? path.join(os.tmpdir(), 'pitwall-jump'));
+  /** The needs-you chats this window's Next ▸ may open: all but the one in front here (QA C3). */
+  const jumpable = () => attentionService.sessionsNeedingYou().filter((chatId) => !isChatVisible(chatId));
+  afterFirstRender(() => {
+    const bar = new AttentionStatusBar(
+      { counts: () => attentionService.counts(), onDidChange: attentionService.onDidChangeStatus, order: jumpable },
+      jumpWalk
+    );
+    const timer = setInterval(() => void jumpWalk.poll().catch(() => undefined), 2_000);
+    timer.unref?.();
+    context.subscriptions.push(bar, { dispose: () => clearInterval(timer) });
+    bar.refresh();
+  });
   // Records what the user looks at between ticks, for needs-you toasts; never polls.
   context.subscriptions.push(...chatVisibility.onFrontMayChange(() => attentionService.noteFront()));
   // Every row's status and the re-sorts it triggers (rows 3.3, 3.4).
@@ -715,6 +732,13 @@ export async function activate(context: vscode.ExtensionContext) {
     harnessWatcherRegistry,
     sessionImporter,
     sessionsNeedingYou: () => attentionService.sessionsNeedingYou(),
+    statusList: (status) => attentionService.chatsWithStatus(status),
+    waitingFor: (chatId) => attentionService.waitingForOf(chatId),
+    inFront: isChatVisible,
+    jumpWalk,
+    // The folder this window owns, as the router counts it: none in a multi-root or workspace-file window.
+    windowFolder: ownsFolder,
+    log: logOperation,
     selectedRows: () => workspacesTreeView.selection,
     activeWorktree: () => shownWorktree,
     activateChat,
