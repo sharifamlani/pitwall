@@ -76,6 +76,7 @@ interface StubControls {
   __reset(): void;
   __messages: unknown[][];
   __warningResponses: (string | undefined)[];
+  __informationResponses: (string | undefined)[];
   __inputResponses: (string | undefined)[];
   __quickPickResponses: unknown[];
   __openDialogResponses: unknown[];

@@ -125,11 +125,11 @@ function windowOn(
   const inbox = new HandoffInbox(dir, { pid: options.pid, folder: options.claims }, Date.now, (line) => logs.push(line));
   const registry = {
     windowsFor: async (target: string) =>
-      (options.windowsAt ?? []).filter((folder) => samePath(folder, target)).map((folder, index) => ({ pid: 9000 + index, folder, beatAt: Date.now(), openSessionIds: [] })),
+      (options.windowsAt ?? []).filter((folder) => samePath(folder, target)).map((folder, index) => ({ pid: 9000 + index, folder, beatAt: Date.now(), openSessionIds: [], focused: false })),
   };
   const registryWithOpen = {
     ...registry,
-    windows: async () => (options.openIn ?? []).map((entry, index) => ({ pid: entry.pid ?? 8000 + index, folder: entry.folder, beatAt: Date.now(), openSessionIds: entry.sessionIds })),
+    windows: async () => (options.openIn ?? []).map((entry, index) => ({ pid: entry.pid ?? 8000 + index, folder: entry.folder, beatAt: Date.now(), openSessionIds: entry.sessionIds, focused: false })),
   };
   const opened: { chat: string; path: string; worktreeId: string }[] = [];
   const started: string[] = [];

@@ -6,9 +6,13 @@ import * as vscode from 'vscode';
 import {
   NEEDS_INPUT_COOLDOWN_MS,
   SessionAttentionService,
+  StatusTransition,
   shouldNotifyNeedsInput,
 } from '../../../src/core/services/SessionAttentionService';
-import { escapeAppleScript, NotificationService } from '../../../src/core/services/NotificationService';
+import { escapeAppleScript, NotificationService, openFromPopup } from '../../../src/core/services/NotificationService';
+import { PopupKey, PopupLedger } from '../../../src/core/notify/PopupLedger';
+import { ClaudeSessionsFile } from '../../../src/harnesses/claude/ClaudeSessionsFile';
+import { writeDump } from '../../../src/core/windows/dumpState';
 import { HarnessAdapter, HarnessLiveState } from '../../../src/core/harness/types';
 import { ChatSession } from '../../../src/core/types';
 import * as chatVisibility from '../../../src/core/services/chatVisibility';
@@ -23,11 +27,13 @@ import {
   chatRecord,
   fakeAdapter,
   fakeNativeUi,
+  flush,
   makeStorage,
   runCommand,
   sessionRecord,
   shown,
   stub,
+  tempDir,
   worktreeRecord,
 } from '../support';
 
@@ -36,10 +42,17 @@ beforeEach(() => stub.__reset());
 /** An attention service over one chat whose adapter the test drives. */
 function attention(chat: ChatSession, adapter: HarnessAdapter, options: { terminalOpen?: boolean; isChatOpen?: (chat: ChatSession) => boolean; isChatVisible?: () => boolean } = {}) {
   const notified: string[] = [];
+  // Mirrors NotificationService's contract: a pre-existing or in-front wait is skipped, anything else shows.
+  const notify = async (kind: string, target: { detail?: string; preExisting?: boolean; inFront?: boolean }) => {
+    if (target.preExisting) return 'skipped-pre-existing';
+    if (target.inFront) return 'skipped-front';
+    notified.push(target.detail ? `${kind}:${target.detail}` : kind);
+    return 'shown';
+  };
   const service = new SessionAttentionService(
-    { getChats: () => [chat], getRepository: () => ({ name: 'repo' }) } as never,
+    { getChats: () => [chat], getRepository: () => ({ name: 'repo' }), markChatSeen: async () => undefined } as never,
     { get: () => adapter } as never,
-    { notify: (kind: string, target: { detail?: string }) => notified.push(target.detail ? `${kind}:${target.detail}` : kind) } as never,
+    { notify } as never,
     () => worktreeRecord(),
     () => undefined,
     options.isChatOpen ?? (() => options.terminalOpen ?? true),
@@ -48,8 +61,9 @@ function attention(chat: ChatSession, adapter: HarnessAdapter, options: { termin
   return { service, notified };
 }
 
+/** A linked chat; like every stored chat (P16) it has a seen baseline, so a turn that ends after it is finished. */
 const linkedChat = (overrides: Partial<ChatSession> = {}) =>
-  chatRecord({ harnessSessionId: 'session-1', status: 'active', ...overrides });
+  chatRecord({ harnessSessionId: 'session-1', status: 'active', seenAt: 1, ...overrides });
 
 test('a new or changed waiting reason notifies at once; a repeat waits out the cooldown', () => {
   assert.ok(shouldNotifyNeedsInput(undefined, 'permission prompt', undefined, 0));
@@ -88,7 +102,7 @@ test('each finished turn and each wait notifies once; startup state never does',
   assert.equal(service.getTurnState('chat-1'), 'working', 'the tree reads the latest state');
 });
 
-test('a session needs you from an unseen turn end or wait until you visit it, it works again, or it closes', async () => {
+test('a session needs you while it waits, in front or not, until the wait ends; a finished turn is finished, not needs-you (Q30)', async () => {
   let live: HarnessLiveState = { turnState: 'done', turnEndedAt: 500 };
   let visible = false;
   let open = true;
@@ -104,25 +118,26 @@ test('a session needs you from an unseen turn end or wait until you visit it, it
 
   await step({ turnState: 'working', turnEndedAt: null });
   await step({ turnState: 'done', turnEndedAt: 1000 });
-  assert.deepEqual(service.sessionsNeedingYou(), ['chat-1']);
+  assert.deepEqual(service.sessionsNeedingYou(), [], 'a finished turn is not on the needs-you list');
+  assert.equal(service.statusOf('chat-1').status, 'finished');
   service.markSeen('chat-1');
-  assert.deepEqual(service.sessionsNeedingYou(), [], 'visiting clears it');
+  assert.equal(service.statusOf('chat-1').status, 'idle', 'visiting turns it idle');
 
   await step({ turnState: 'working', turnEndedAt: null, waitingFor: 'permission prompt' });
-  assert.deepEqual(service.sessionsNeedingYou(), ['chat-1'], 'a wait mid-turn needs you too');
+  assert.deepEqual(service.sessionsNeedingYou(), ['chat-1'], 'a wait mid-turn needs you');
+  visible = true;
+  await step({ turnState: 'working', turnEndedAt: null, waitingFor: 'permission prompt' });
+  assert.deepEqual(service.sessionsNeedingYou(), ['chat-1'], 'still listed while it is in front (Q30)');
+  service.markSeen('chat-1');
+  assert.deepEqual(service.sessionsNeedingYou(), ['chat-1'], 'visiting does not answer it');
   await step({ turnState: 'working', turnEndedAt: null });
   assert.deepEqual(service.sessionsNeedingYou(), [], 'answered: the agent is working again');
 
-  visible = true;
-  await step({ turnState: 'done', turnEndedAt: 2000 });
-  assert.deepEqual(service.sessionsNeedingYou(), [], 'a turn that ends in front of you is already seen');
-
   visible = false;
-  await step({ turnState: 'working', turnEndedAt: null });
-  await step({ turnState: 'done', turnEndedAt: 3000 });
+  await step({ turnState: 'working', turnEndedAt: null, waitingFor: 'permission prompt' });
   open = false;
   await service.poll();
-  assert.deepEqual(service.sessionsNeedingYou(), [], 'a closed session is forgotten');
+  assert.deepEqual(service.sessionsNeedingYou(), [], 'a closed chat with no live process is not waiting');
 });
 
 test('a harness without live states is polled through discovery', async () => {
@@ -149,17 +164,17 @@ test('a chat open only in its native UI is still polled', async () => {
   assert.equal(service.getTurnState(chat.id), 'done');
 });
 
-test('a notification is suppressed while its session has focus; AppleScript text is escaped', () => {
+test('a notification is suppressed while its session has focus; AppleScript text is escaped', async () => {
   stub.__setConfiguration('notifications.nativeBanner', false);
   const state = (stub.window as unknown as { state: { focused: boolean } });
   const notifications = new NotificationService(() => undefined, () => true);
-  const target = { chat: linkedChat(), context: 'repo · main', detail: 'permission prompt' };
+  const target = { chat: linkedChat(), context: 'repo · main', detail: 'permission prompt', sessionId: 'session-1', at: 1_800_000_000_000 };
 
   state.state = { focused: true };
-  notifications.notify('needs-input', target);
+  assert.equal(await notifications.notify('needs-input', target), 'skipped-front');
   assert.equal(stub.__messages.length, 0);
   state.state = { focused: false };
-  notifications.notify('needs-input', target);
+  assert.equal(await notifications.notify('needs-input', { ...target, at: target.at + 1 }), 'shown');
   assert.equal(stub.__messages.length, 1);
 
   assert.equal(escapeAppleScript('He said "hi"\nbye'), 'He said \\"hi\\" bye');
@@ -194,7 +209,7 @@ function liveAttention(isChatVisible: () => boolean) {
   const adapter = fakeAdapter('claude', { getLiveStates: async () => new Map([['session-1', live]]) });
   const chat = linkedChat();
   const service = new SessionAttentionService(
-    { getChats: () => [chat], getRepository: () => ({ name: 'repo' }) } as never,
+    { getChats: () => [chat], getRepository: () => ({ name: 'repo' }), markChatSeen: async () => undefined } as never,
     { get: () => adapter } as never,
     new NotificationService(() => undefined, isChatVisible),
     () => worktreeRecord(),
@@ -210,9 +225,10 @@ function liveAttention(isChatVisible: () => boolean) {
   };
 }
 
-const WAITING: HarnessLiveState = { turnState: 'working', turnEndedAt: null, waitingFor: 'permission prompt' };
+/** A wait with its stamp (the sessions file's statusUpdatedAt, Q32): a wait with no stamp never pops. */
+const WAITING: HarnessLiveState = { turnState: 'working', turnEndedAt: null, waitingFor: 'permission prompt', writtenAt: Date.now() };
 
-test('a wait that began in front of you is listed once you look away', async (t) => {
+test('a wait that began in front of you is listed at once and stays listed until it ends (Q30), with no toast', async (t) => {
   useClock(t);
   windowState().state = { focused: true };
   let visible = false;
@@ -222,19 +238,15 @@ test('a wait that began in front of you is listed once you look away', async (t)
   visible = true; // the user typed the request into this chat
   set(WAITING);
   await service.poll();
-  assert.deepEqual(service.sessionsNeedingYou(), [], 'in front of you: not listed');
+  assert.deepEqual(service.sessionsNeedingYou(), ['chat-1'], 'in front of you: listed all the same');
 
   visible = false; // the user looks at another tab
   await service.poll();
-  assert.deepEqual(service.sessionsNeedingYou(), ['chat-1'], 'listed on the next tick');
-
-  visible = true;
-  await service.poll();
-  assert.deepEqual(service.sessionsNeedingYou(), [], 'not listed while it is in front again');
+  assert.deepEqual(service.sessionsNeedingYou(), ['chat-1']);
   service.markSeen('chat-1');
-  visible = false;
   await service.poll();
-  assert.deepEqual(service.sessionsNeedingYou(), ['chat-1'], 'visited but unanswered: listed again');
+  assert.deepEqual(service.sessionsNeedingYou(), ['chat-1'], 'visited but unanswered: still listed');
+  assert.deepEqual(toasts(), [], 'it began in front of you: no toast');
 
   set({ turnState: 'working', turnEndedAt: null });
   await service.poll();
@@ -522,7 +534,7 @@ async function needsYouFlow(t: { after(fn: () => void): void }) {
   };
 }
 
-test("replay of the tester's flow: a prompt that appears while typing in the chat's terminal is needs-you once you switch tabs", async (t) => {
+test("replay of the tester's flow: a prompt that appears while typing in the chat's terminal is needs-you, in front or not", async (t) => {
   const clock = useClock(t);
   windowState().state = { focused: true };
   const flow = await needsYouFlow(t);
@@ -533,7 +545,7 @@ test("replay of the tester's flow: a prompt that appears while typing in the cha
   flow.startWaiting(); // "run git status" stops at a permission prompt
   clock.advance(12_000);
   await flow.attentionService.poll();
-  assert.equal(await flow.rowMark(), 'claude-light-working.svg', 'in front of you: the row is still working');
+  assert.equal(await flow.rowMark(), 'claude-light-needs.svg', 'in front of you: the row already shows needs-you (Q30)');
 
   showTabs(settingsTab(), flow.terminalTab()); // the user clicks another editor tab
   clock.advance(4_000);
@@ -642,7 +654,7 @@ function timedFlow(t: TestContext, options: TimedOptions) {
   const terminal = { name: 'Pitwall: Session [chat-1]' };
   const isVisible = visibilityOf([chat], { [chat.id]: terminal });
   const service = new SessionAttentionService(
-    { getChats: () => [chat], getRepository: () => ({ name: 'repo' }) } as never,
+    { getChats: () => [chat], getRepository: () => ({ name: 'repo' }), markChatSeen: async () => undefined } as never,
     { get: () => harness } as never,
     new NotificationService(() => undefined, isVisible),
     () => worktreeRecord(),
@@ -761,8 +773,12 @@ test('after a deny, a stale cached waiting result does not re-mark the chat', as
   flow.service.start();
   await flow.runTo(40_000, [[15_000, flow.away]]);
 
-  const stale = flow.marks.filter((mark) => mark.at > 15_000 && (mark.needs || mark.listed));
+  // Until the 16 s tick the row shows the wait it last saw (Q30: listed even
+  // in front); from that tick on, the stale cached sample (taken at 12 s,
+  // before the deny's write) never marks or lists it again.
+  const stale = flow.marks.filter((mark) => mark.at > 16_000 + FETCH_MS && (mark.needs || mark.listed));
   assert.deepEqual(stale.map((mark) => mark.at).slice(0, 3), [], 'no re-mark or listing from the stale sample');
+  assert.ok(!flow.marks.some((mark) => mark.at > 16_000 && mark.at < 23_500 && mark.needs), 'not while the stale sample is cached');
   assert.deepEqual(toasts(), []);
   assert.ok(flow.fetches() >= 3, 'the cache did refresh during the run');
 });
@@ -997,7 +1013,7 @@ test('a closed session gets a status dot from the sessions file', async () => {
   await flow.service.poll();
   assert.equal(flow.service.statusOf(closedLive.id).status, 'needs');
   assert.deepEqual(flow.changes, [[closedLive.id]], 'only the chat whose status changed');
-  assert.deepEqual(toasts(), [], 'a closed chat never toasts (P5)');
+  assert.deepEqual(toasts(), [], 'a wait with no stamp never toasts (Q32)');
 
   // The discovery scan refreshes the turn state of chats the tick does not poll.
   flow.changes.length = 0;
@@ -1066,12 +1082,11 @@ test('a chat kept in front writes seenAt at most once per finished turn', async 
   assert.equal(flow.seenWrites.length, 2, 'the next finished turn writes once more');
 });
 
-test("closing a chat keeps its row status, and reopening it doesn't toast a pre-existing wait", async () => {
+test("a closed chat's wait that began after activation pops once while closed, and reopening it never pops again", async () => {
   windowState().state = { focused: true };
   const storage = makeStorage();
   let live: HarnessLiveState = { turnState: 'working', turnEndedAt: null, liveStatus: 'busy' };
-  const flow = rowFlow(storage, { live: () => new Set(['s-1']), states: () => ({ 's-1': live }) });
-  // Launched after activation, so a wait it starts while open may toast (R45 floor).
+  const flow = popupFlow(storage, { live: () => new Set(['s-1']), states: () => ({ 's-1': live }) });
   const chat = storage.createChat('wt-1', 'claude', 'Reopened', { harnessSessionId: 's-1' });
   flow.open.add(chat.id);
   await flow.service.poll(true);
@@ -1082,24 +1097,31 @@ test("closing a chat keeps its row status, and reopening it doesn't toast a pre-
   await flow.service.poll();
   assert.equal(flow.service.statusOf(chat.id).status, 'working', 'closing keeps the row status');
 
-  live = { turnState: 'working', turnEndedAt: null, liveStatus: 'waiting', waitingFor: 'permission prompt', writtenAt: Date.now() };
+  const stamp = Date.now();
+  live = { turnState: 'working', turnEndedAt: null, liveStatus: 'waiting', waitingFor: 'permission prompt', writtenAt: stamp, statusUpdatedAt: stamp };
   await flow.service.poll();
   assert.equal(flow.service.statusOf(chat.id).status, 'needs', 'the closed row shows the wait');
-  assert.deepEqual(toasts(), [], 'closed: no toast');
+  assert.equal(toasts().length, 1, 'closed, and the wait began after activation: it pops (Q31)');
+  await flow.service.poll();
+  assert.equal(toasts().length, 1, 'once');
 
   flow.open.add(chat.id);
+  flow.visible.add(chat.id);
+  await flow.service.poll();
+  flow.visible.delete(chat.id);
   await flow.service.poll();
   await flow.service.poll();
   assert.equal(flow.service.statusOf(chat.id).status, 'needs');
   assert.deepEqual(flow.service.sessionsNeedingYou(), [chat.id], 'listed for Go to Next');
-  assert.deepEqual(toasts(), [], 'the wait predates the reopen: no toast (R45)');
+  assert.equal(toasts().length, 1, 'the same wait after the reopen: never again');
 
   // A new wait after the reopen is news again.
-  live = { turnState: 'working', turnEndedAt: null, liveStatus: 'busy' };
+  live = { turnState: 'working', turnEndedAt: null, liveStatus: 'busy', statusUpdatedAt: stamp + 1 };
   await flow.service.poll();
-  live = { turnState: 'working', turnEndedAt: null, liveStatus: 'waiting', waitingFor: 'permission prompt', writtenAt: Date.now() + 1 };
+  live = { turnState: 'working', turnEndedAt: null, liveStatus: 'waiting', waitingFor: 'permission prompt', writtenAt: stamp + 2, statusUpdatedAt: stamp + 2 };
   await flow.service.poll();
-  assert.equal(toasts().length, 1);
+  assert.equal(toasts().length, 2);
+  assert.equal(flow.shownLines().length, 2, 'one shown line per pop-up');
 });
 
 test('at 500 chats a tick stats only open and live sessions-file chats', async () => {
@@ -1134,25 +1156,536 @@ test('at 500 chats a tick stats only open and live sessions-file chats', async (
   assert.equal(service.statusOf('chat-124').status, 'idle');
 });
 
-test('R36–R45 toasts still fire only for open chats', async () => {
+// ---------------------------------------------------------------------------
+// Phase 5 (row 5.1): status and pop-ups for every listed chat, transitions
+// with their lag, and exactly one pop-up per transition (Q29–Q34).
+// ---------------------------------------------------------------------------
+
+interface PopupFlowOptions extends RowFlowOptions {
+  /** A real pop-up lock folder (the shared global storage); without one every claim wins. */
+  ledgerDir?: string;
+  /** The registry's answer for "in front of a focused window anywhere". */
+  frontAnywhere?: (sessionId: string) => boolean;
+}
+
+/** rowFlow with the whole Phase 5 pop-up path: lock, front anywhere, listed check, log lines. */
+function popupFlow(storage: ReturnType<typeof makeStorage>, options: PopupFlowOptions = {}) {
+  const open = options.open ?? new Set<string>();
+  const visible = options.visible ?? new Set<string>();
+  const logs: string[] = [];
+  const unlisted: string[][] = [];
+  const claims: PopupKey[] = [];
+  const ledger = options.ledgerDir ? new PopupLedger(options.ledgerDir) : undefined;
+  const adapter = fakeAdapter('claude', {
+    liveSessionIds: async () => options.live?.() ?? new Set<string>(),
+    getLiveStates: async (sessionIds: string[]) => {
+      const states = options.states?.() ?? {};
+      return new Map(sessionIds.flatMap((id) => (states[id] ? [[id, states[id]] as [string, HarnessLiveState]] : [])));
+    },
+  });
+  const isVisible = (chatId: string) => visible.has(chatId);
+  const notifications = new NotificationService(() => undefined, isVisible, {
+    ledger: {
+      claim: async (key: PopupKey) => {
+        claims.push(key);
+        return ledger ? ledger.claim(key) : true;
+      },
+    },
+    frontAnywhere: (sessionId) => options.frontAnywhere?.(sessionId) ?? false,
+    isListed: (chatId) => storage.getChats().some((chat) => chat.id === chatId),
+    log: (line) => logs.push(line),
+  });
+  const service = new SessionAttentionService(
+    storage,
+    new HarnessRegistry([adapter]),
+    notifications,
+    (id) => worktreeRecord({ id, path: `/repo/${id}` }),
+    () => undefined,
+    (chat) => open.has(chat.id),
+    isVisible,
+    { log: (line) => logs.push(line), onUnlistedLive: (sessionIds) => unlisted.push([...sessionIds]) }
+  );
+  const transitions: StatusTransition[] = [];
+  service.onDidTransition((transition) => transitions.push(transition));
+  return {
+    service,
+    open,
+    visible,
+    logs,
+    claims,
+    unlisted,
+    transitions,
+    shownLines: () => logs.filter((line) => / shown /.test(line)),
+    skipped: (reason: string) => logs.filter((line) => line.endsWith(` skipped ${reason}`)),
+    statusLines: () => logs.filter((line) => line.startsWith('[Pitwall] status ')),
+  };
+}
+
+const busy = (stamp?: number): HarnessLiveState => ({
+  turnState: 'working',
+  turnEndedAt: null,
+  liveStatus: 'busy',
+  ...(stamp ? { statusUpdatedAt: stamp } : {}),
+});
+/** A sessions-file wait: statusUpdatedAt dates it, and the harness reports it as writtenAt too. */
+const waitingAt = (stamp: number, waitingFor = 'permission prompt'): HarnessLiveState => ({
+  turnState: 'working',
+  turnEndedAt: null,
+  liveStatus: 'waiting',
+  waitingFor,
+  writtenAt: stamp,
+  statusUpdatedAt: stamp,
+});
+const idleAfter = (turnEndedAt: number): HarnessLiveState => ({ turnState: 'done', turnEndedAt, liveStatus: 'idle', statusUpdatedAt: turnEndedAt });
+const finishedToasts = () => stub.__messages.map((args) => String(args[0])).filter((text) => text.includes(' finished'));
+
+test('R36–R45 toasts fire for every listed chat', async () => {
   windowState().state = { focused: true };
   const storage = makeStorage();
   const states: Record<string, HarnessLiveState> = {};
-  const flow = rowFlow(storage, { live: () => new Set(['s-open', 's-closed']), states: () => states });
+  const preChat = storage.createChat('wt-3', 'claude', 'Waiting at start', { harnessSessionId: 's-pre' });
+  const flow = popupFlow(storage, { live: () => new Set(['s-open', 's-closed', 's-pre', 's-unlisted']), states: () => states });
   const openChat = storage.createChat('wt-1', 'claude', 'Open chat', { harnessSessionId: 's-open' });
   const closedChat = storage.createChat('wt-2', 'claude', 'Closed chat', { harnessSessionId: 's-closed' });
   flow.open.add(openChat.id);
-  states['s-open'] = { turnState: 'working', turnEndedAt: null, liveStatus: 'busy' };
-  states['s-closed'] = { turnState: 'working', turnEndedAt: null, liveStatus: 'busy' };
+  const t0 = Date.now();
+  states['s-open'] = busy();
+  states['s-closed'] = busy();
+  states['s-pre'] = waitingAt(t0 - 60_000); // already waiting when the window starts
+  states['s-unlisted'] = waitingAt(t0); // a live session Pitwall does not list
   await flow.service.poll(true);
   await flow.service.poll();
 
-  const waiting: HarnessLiveState = { turnState: 'working', turnEndedAt: null, liveStatus: 'waiting', waitingFor: 'permission prompt', writtenAt: Date.now() };
-  states['s-open'] = waiting;
-  states['s-closed'] = waiting;
+  states['s-open'] = waitingAt(t0 + 1);
+  states['s-closed'] = waitingAt(t0 + 2);
   await flow.service.poll();
-  assert.equal(toasts().length, 1, 'one toast, for the open chat');
-  assert.match(toasts()[0], /Open chat/);
-  assert.equal(flow.service.statusOf(closedChat.id).status, 'needs', 'the closed row still shows needs you');
-  assert.deepEqual(flow.service.sessionsNeedingYou(), [openChat.id], 'Go to Next stays open chats (P5)');
+  await flow.service.poll();
+  await flow.service.poll();
+  assert.equal(toasts().length, 2, 'one toast each for the open and the closed chat');
+  assert.equal(toasts().filter((text) => text.includes('Closed chat')).length, 1, 'the closed chat pops once');
+  assert.equal(toasts().filter((text) => text.includes('Open chat')).length, 1);
+  assert.ok(!toasts().some((text) => text.includes('Waiting at start')), 'a wait already there at activation never pops (R45)');
+  assert.equal(flow.shownLines().length, 2, 'exactly one shown per transition');
+  assert.equal(flow.skipped('pre-existing').length, 1, 'the pre-existing wait is judged once, and logged');
+  assert.equal(flow.service.statusOf(closedChat.id).status, 'needs');
+  assert.deepEqual(flow.service.sessionsNeedingYou(), [preChat.id, openChat.id, closedChat.id], 'every listed waiting chat, oldest wait first');
+  assert.ok(!flow.claims.some((key) => key.sessionId === 's-unlisted'), 'an unlisted session never reaches the lock');
+});
+
+test('a waiting chat in front stays on the needs-you list and in counts()', async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  let live = busy();
+  const flow = popupFlow(storage, { states: () => ({ 's-1': live }) });
+  const chat = storage.createChat('wt-1', 'claude', 'In front', { harnessSessionId: 's-1' });
+  flow.open.add(chat.id);
+  flow.visible.add(chat.id);
+  await flow.service.poll(true);
+  live = waitingAt(Date.now());
+  await flow.service.poll();
+  assert.deepEqual(flow.service.sessionsNeedingYou(), [chat.id]);
+  assert.deepEqual(flow.service.needsYouOrder().map((entry) => entry.chatId), [chat.id]);
+  assert.equal(flow.service.needsYou(chat.id), true, 'the row shows needs-you');
+  assert.deepEqual(flow.service.counts(), { needs: 1, working: 0, finished: 0 });
+  assert.deepEqual(toasts(), [], 'in front of you: no pop-up');
+  assert.equal(flow.skipped('front').length, 1);
+});
+
+test('a missing statusUpdatedAt uses the transcript time, else skips with no-stamp; never a .0 lock', async (t) => {
+  windowState().state = { focused: true };
+  const ledgerDir = path.join(tempDir(t), 'pitwall-popups');
+  const storage = makeStorage();
+  const states: Record<string, HarnessLiveState> = { 's-a': busy(), 's-b': busy() };
+  const flow = popupFlow(storage, { ledgerDir, live: () => new Set(['s-a', 's-b']), states: () => states });
+  storage.createChat('wt-1', 'claude', 'Has a transcript time', { harnessSessionId: 's-a' });
+  storage.createChat('wt-2', 'claude', 'Has no stamp', { harnessSessionId: 's-b' });
+  await flow.service.poll(true);
+  const transcriptTime = Date.now() - 500;
+  states['s-a'] = { turnState: 'working', turnEndedAt: null, liveStatus: 'waiting', waitingFor: 'permission prompt', writtenAt: transcriptTime };
+  states['s-b'] = { turnState: 'working', turnEndedAt: null, liveStatus: 'waiting', waitingFor: 'permission prompt' };
+  await flow.service.poll();
+  await flow.service.poll();
+
+  assert.deepEqual(flow.claims, [{ sessionId: 's-a', kind: 'needs', at: transcriptTime }], 'the transcript time keys the lock; no claim without a stamp');
+  assert.equal(toasts().length, 1);
+  assert.match(toasts()[0], /Has a transcript time/);
+  assert.deepEqual(flow.skipped('no-stamp').map((line) => line.split(' ')[3]), ['s-b'], 'logged once, by id8');
+  assert.deepEqual(fs.readdirSync(ledgerDir), [`s-a.needs.${transcriptTime}.lock`]);
+  assert.ok(!fs.readdirSync(ledgerDir).some((name) => /\.0\.lock$/.test(name)));
+
+  // The Claude harness: a sessions file with no statusUpdatedAt is dated by the transcript's last write.
+  const sessionsDir = path.join(tempDir(t), 'sessions');
+  fs.mkdirSync(sessionsDir);
+  fs.writeFileSync(
+    path.join(sessionsDir, '4242.json'),
+    JSON.stringify({ pid: 4242, sessionId: 's-a', pidDomain: 'test:domain', cwd: '/repo', status: 'waiting', waitingFor: 'permission prompt' })
+  );
+  const harness = new ClaudeHarness({
+    agentsService: new ClaudeAgentsService({ command: () => 'claude', enabled: () => false }),
+    sessionsFile: new ClaudeSessionsFile({ dir: () => sessionsDir, isAlive: () => true, pidDomain: async () => 'test:domain' }),
+    sessionService: {
+      getSessionFilePath: () => '/fake/transcript.jsonl',
+      readTurnState: async () => ({ turnState: 'working' as const, turnEndedAt: null }),
+      transcriptWrittenAt: async () => 1_800_000_000_500.75,
+      getProjectsDirectory: () => '/fake/projects',
+    } as never,
+    nativeUi: fakeNativeUi('Claude Code UI').nativeUi,
+  });
+  const state = (await harness.getLiveStates(['s-a'])).get('s-a');
+  assert.equal(state?.writtenAt, 1_800_000_000_500, 'the transcript time, whole ms');
+  assert.equal(state?.statusUpdatedAt, undefined, 'and no invented statusUpdatedAt');
+  harness.dispose();
+});
+
+test('a window that lost the claim never pops the same wait after a later statusUpdatedAt rewrite', async (t) => {
+  windowState().state = { focused: true };
+  const ledgerDir = path.join(tempDir(t), 'pitwall-popups');
+  const storage = makeStorage();
+  let live = busy();
+  const flow = popupFlow(storage, { ledgerDir, live: () => new Set(['s-1']), states: () => ({ 's-1': live }) });
+  storage.createChat('wt-1', 'claude', 'Shared', { harnessSessionId: 's-1' });
+  await flow.service.poll(true);
+  const stamp = Date.now();
+  // Another window saw the same transition first.
+  assert.equal(await new PopupLedger(ledgerDir).claim({ sessionId: 's-1', kind: 'needs', at: stamp }), true);
+
+  live = waitingAt(stamp);
+  await flow.service.poll();
+  assert.deepEqual(toasts(), []);
+  assert.equal(flow.skipped('locked').length, 1, 'lost the claim');
+
+  // Claude restamps the same wait (S2 checks whether it does): still one wait, used up here.
+  live = waitingAt(stamp + 700);
+  await flow.service.poll();
+  await flow.service.poll();
+  assert.deepEqual(toasts(), [], 'no second chance at the same wait');
+  assert.equal(flow.claims.length, 1, 'never claimed again');
+  assert.equal(flow.statusLines().length, 1, 'and the rewrite is no transition');
+});
+
+test('a disabled kind keeps the wait, and it pops once the setting is turned on', async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const states: Record<string, HarnessLiveState> = { 's-wait': busy(), 's-turn': busy() };
+  const flow = popupFlow(storage, { live: () => new Set(['s-wait', 's-turn']), states: () => states });
+  storage.createChat('wt-1', 'claude', 'Asks', { harnessSessionId: 's-wait' });
+  storage.createChat('wt-2', 'claude', 'Works', { harnessSessionId: 's-turn' });
+  await flow.service.poll(true);
+
+  stub.__setConfiguration('notifications.onNeedsInput', false);
+  stub.__setConfiguration('notifications.onTurnEnd', false);
+  states['s-wait'] = waitingAt(Date.now());
+  states['s-turn'] = idleAfter(Date.now() + 1);
+  await flow.service.poll();
+  await flow.service.poll();
+  assert.deepEqual([toasts(), finishedToasts()], [[], []], 'held back by the settings');
+  assert.equal(flow.skipped('disabled').length, 2, 'one line per held-back pop-up, not one per tick');
+
+  stub.__setConfiguration('notifications.onNeedsInput', true);
+  stub.__setConfiguration('notifications.onTurnEnd', true);
+  await flow.service.poll();
+  assert.equal(toasts().length, 1, 'the wait pops once its setting is on');
+  assert.equal(finishedToasts().length, 1, 'and so does the finished turn');
+  await flow.service.poll();
+  assert.equal(flow.shownLines().length, 2, 'once each');
+});
+
+test("the in-window Open on a closed other-folder chat's message routes once through ChatRouter", async () => {
+  windowState().state = { focused: false };
+  stub.__setConfiguration('notifications.nativeBanner', false);
+  const chat = linkedChat({ id: 'chat-far', worktreeId: 'wt-far', name: 'Far chat', harnessSessionId: 's-far' });
+  const routed: unknown[] = [];
+  const activated: string[] = [];
+  let answer: 'routed' | 'here' = 'routed';
+  const open = (chatId: string) =>
+    chatId === chat.id
+      ? openFromPopup(chat, {
+          route: async (request) => {
+            routed.push(request);
+            return answer;
+          },
+          activateLocal: (entry) => activated.push(entry.id),
+        })
+      : Promise.resolve();
+  const notifications = new NotificationService((chatId) => void open(chatId), () => false);
+  stub.__informationResponses.push('Open');
+  assert.equal(await notifications.notify('needs-input', { chat, context: 'far · main', detail: 'permission prompt', sessionId: 's-far', at: 5 }), 'shown');
+  await flush();
+  await flush();
+  assert.deepEqual(routed, [{ kind: 'open', chats: [chat] }], 'one route, through the router (D35)');
+  assert.deepEqual(activated, [], 'routed to its window: nothing is activated here');
+
+  answer = 'here';
+  stub.__informationResponses.push('Open');
+  await notifications.notify('finished', { chat, context: 'far · main', sessionId: 's-far', at: 6 });
+  await flush();
+  await flush();
+  assert.equal(routed.length, 2);
+  assert.deepEqual(activated, [chat.id], 'opened here: its row is selected and marked seen');
+
+  // The extension wires the message's Open to the router, not the old local focus.
+  const source = fs.readFileSync(path.join(process.cwd(), 'src', 'extension.ts'), 'utf8');
+  const wiring = source.slice(source.indexOf('new NotificationService('), source.indexOf('const attentionService = new SessionAttentionService('));
+  assert.ok(/openFromPopup\(/.test(wiring) && /router\.route/.test(wiring), 'Open goes through openFromPopup and router.route');
+  assert.ok(!/focusChat/.test(wiring), 'no local terminalManager.focusChat');
+});
+
+/** Chat commands over one linked chat whose open the given router answers. */
+function goToNextFlow(t: { after(fn: () => void): void }, routeResult: 'routed' | 'here') {
+  const storage = makeStorage();
+  const repo = storage.addRepository('demo', '/work/demo');
+  const worktree = worktreeRecord({ id: 'wt-main', repoId: repo.id, path: '/work/demo' });
+  const registry = new HarnessRegistry([fakeAdapter('claude', { nativeUi: fakeNativeUi('Claude Code UI').nativeUi })]);
+  const watchers = { registerPendingChat: () => undefined };
+  const terminals = new TerminalManager(storage, registry, watchers as never);
+  t.after(() => terminals.dispose());
+  const chat = storage.createChat(worktree.id, 'claude', 'Elsewhere', { harnessSessionId: 's-1' });
+  const activated: string[] = [];
+  const routes: unknown[] = [];
+  registerChatCommands({ subscriptions: [], extensionUri: vscode.Uri.file('/extension') } as never, {
+    storageService: storage,
+    gitService: {} as never,
+    terminalManager: terminals,
+    workspacesProvider: { getWorktreeById: () => worktree, getWorktreeByIdAsync: async () => worktree } as never,
+    harnessRegistry: registry,
+    harnessWatcherRegistry: watchers as never,
+    sessionImporter: { expectChat: async () => undefined, cancelExpectation: () => undefined },
+    sessionsNeedingYou: () => [chat.id],
+    selectedRows: () => [],
+    activeWorktree: () => undefined,
+    activateChat: (entry) => activated.push(entry.id),
+    showWorktree: () => undefined,
+    removeChats: () => [],
+    refreshTree: () => undefined,
+    router: () => ({
+      route: async (request: unknown) => {
+        routes.push(request);
+        return routeResult;
+      },
+    }),
+  });
+  return { chat, activated, routes };
+}
+
+test('Go to Next skips the local activateChat when the open was routed', async (t) => {
+  const routed = goToNextFlow(t, 'routed');
+  await runCommand('pitwall.openNextSessionNeedingYou');
+  assert.equal(routed.routes.length, 1);
+  assert.deepEqual(routed.activated, [], 'its own window marks it seen; this one selects nothing');
+
+  stub.__reset();
+  const here = goToNextFlow(t, 'here');
+  await runCommand('pitwall.openNextSessionNeedingYou');
+  assert.deepEqual(here.activated, [here.chat.id], 'opened here (or outside/gone, Q48): marked seen and selected here');
+});
+
+test('busy → idle on a live record is finished; a pid that disappears mid-turn is idle with no pop-up', async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const states: Record<string, HarnessLiveState> = { 's-done': busy(), 's-died': busy() };
+  const flow = popupFlow(storage, { states: () => states });
+  const done = storage.createChat('wt-1', 'claude', 'Ends normally', { harnessSessionId: 's-done' });
+  const died = storage.createChat('wt-2', 'claude', 'Process dies', { harnessSessionId: 's-died' });
+  flow.open.add(done.id);
+  flow.open.add(died.id);
+  await flow.service.poll(true);
+  await flow.service.poll();
+
+  states['s-done'] = idleAfter(Date.now() + 1);
+  // The process is gone (a complete sessions read lacks it); the transcript still ends mid-turn.
+  states['s-died'] = { turnState: 'working', turnEndedAt: null, running: false };
+  await flow.service.poll();
+  await flow.service.poll();
+  assert.equal(flow.service.statusOf(done.id).status, 'finished');
+  assert.equal(flow.service.statusOf(died.id).status, 'idle', 'a death mid-turn is idle, never working or finished');
+  assert.equal(finishedToasts().length, 1);
+  assert.match(finishedToasts()[0], /Ends normally finished/);
+  assert.deepEqual(
+    flow.transitions.map(({ chatId, from, to }) => [chatId, from, to]),
+    [
+      [done.id, 'working', 'finished'],
+      [died.id, 'working', 'idle'],
+    ]
+  );
+});
+
+test('a chat in front of a focused window in another window does not pop', async () => {
+  windowState().state = { focused: false };
+  const storage = makeStorage();
+  let live = busy();
+  let elsewhere = true;
+  const flow = popupFlow(storage, { live: () => new Set(['s-1']), states: () => ({ 's-1': live }), frontAnywhere: (sessionId) => elsewhere && sessionId === 's-1' });
+  storage.createChat('wt-1', 'claude', 'Open in another window', { harnessSessionId: 's-1' });
+  await flow.service.poll(true);
+  live = waitingAt(Date.now());
+  await flow.service.poll();
+  assert.deepEqual(toasts(), []);
+  assert.equal(flow.skipped('front').length, 1);
+
+  elsewhere = false; // the user moves on without answering
+  await flow.service.poll();
+  assert.deepEqual(toasts(), [], 'in front anywhere uses up the wait');
+});
+
+test('every transition logs status <id8> from→to lag=', async () => {
+  const storage = makeStorage();
+  const sid = 'abcdef12-3456-4789-8abc-def012345678';
+  let live = busy(Date.now());
+  const flow = popupFlow(storage, { live: () => new Set([sid]), states: () => ({ [sid]: live }) });
+  const chat = storage.createChat('wt-1', 'claude', 'Logged', { harnessSessionId: sid });
+  await flow.service.poll(true);
+  const stamp = Date.now() - 250;
+  live = waitingAt(stamp);
+  await flow.service.poll();
+  live = busy(Date.now());
+  await flow.service.poll();
+  live = idleAfter(Date.now() + 5);
+  await flow.service.poll();
+
+  const lines = flow.statusLines();
+  assert.equal(lines.length, 3, lines.join('\n'));
+  assert.match(lines[0], /^\[Pitwall\] status abcdef12 working→needs lag=\d+$/);
+  assert.match(lines[1], /^\[Pitwall\] status abcdef12 needs→working lag=\d+$/);
+  assert.match(lines[2], /^\[Pitwall\] status abcdef12 working→finished lag=\d+$/);
+  assert.ok(Number(lines[0].split('lag=')[1]) >= 250, 'lag = detection time − statusUpdatedAt');
+  assert.ok(lines.every((line) => !line.includes('Logged') && !line.includes('/repo')), 'no title, no path');
+  const [first] = flow.transitions;
+  assert.deepEqual(
+    { chatId: first.chatId, sessionId: first.sessionId, from: first.from, to: first.to, at: first.at, waitingFor: first.waitingFor },
+    { chatId: chat.id, sessionId: sid, from: 'working', to: 'needs', at: stamp, waitingFor: 'permission prompt' }
+  );
+  assert.equal(typeof first.observedAt, 'number');
+});
+
+test('a re-poll with the same statusUpdatedAt makes no second transition', async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  let live = busy();
+  const flow = popupFlow(storage, { live: () => new Set(['s-1']), states: () => ({ 's-1': live }) });
+  storage.createChat('wt-1', 'claude', 'Re-polled', { harnessSessionId: 's-1' });
+  await flow.service.poll(true);
+  live = waitingAt(Date.now());
+  for (let tick = 0; tick < 5; tick++) {
+    await flow.service.poll();
+  }
+  assert.equal(flow.transitions.length, 1);
+  assert.equal(flow.statusLines().length, 1);
+  assert.equal(toasts().length, 1);
+  assert.equal(flow.shownLines().length, 1);
+});
+
+test("counts() matches the sidebar list's needs, working and finished rows", async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const states: Record<string, HarnessLiveState> = { 's-n': busy(), 's-w': busy(), 's-f': busy(), 's-n2': busy() };
+  const flow = popupFlow(storage, { live: () => new Set(['s-n', 's-w', 's-f', 's-n2']), states: () => states });
+  const chats = ['s-n', 's-w', 's-f', 's-n2', 's-quiet'].map((sid, i) => storage.createChat(`wt-${i}`, 'claude', sid, { harnessSessionId: sid }));
+  flow.open.add(chats[1].id);
+  await flow.service.poll(true);
+  states['s-n'] = waitingAt(Date.now());
+  states['s-n2'] = waitingAt(Date.now() + 1, 'input needed');
+  states['s-f'] = idleAfter(Date.now() + 2);
+  await flow.service.poll();
+
+  const rows = chats.map((chat) => flow.service.statusOf(chat.id).status);
+  assert.deepEqual(rows, ['needs', 'working', 'finished', 'needs', 'idle']);
+  const tally = (status: string) => rows.filter((row) => row === status).length;
+  assert.deepEqual(flow.service.counts(), { needs: tally('needs'), working: tally('working'), finished: tally('finished') });
+  flow.service.markSeen(chats[2].id);
+  assert.deepEqual(flow.service.counts(), { needs: 2, working: 1, finished: 0 }, 'opening the finished chat drops it');
+});
+
+test('needsYouOrder() is oldest wait first across open and closed chats', async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const t0 = Date.now() - 10_000;
+  const states: Record<string, HarnessLiveState> = { 'closed-1': busy(), 'open-1': busy(), 'closed-2': busy() };
+  const flow = popupFlow(storage, { live: () => new Set(['closed-1', 'closed-2']), states: () => states });
+  const closed1 = storage.createChat('wt-1', 'claude', 'Closed one', { harnessSessionId: 'closed-1' });
+  const open1 = storage.createChat('wt-2', 'claude', 'Open one', { harnessSessionId: 'open-1' });
+  const closed2 = storage.createChat('wt-3', 'claude', 'Closed two', { harnessSessionId: 'closed-2' });
+  flow.open.add(open1.id);
+  await flow.service.poll(true);
+  states['closed-1'] = waitingAt(t0 + 3_000);
+  states['open-1'] = waitingAt(t0 + 1_000);
+  states['closed-2'] = waitingAt(t0 + 2_000);
+  await flow.service.poll();
+  assert.deepEqual(flow.service.needsYouOrder(), [
+    { chatId: open1.id, since: t0 + 1_000 },
+    { chatId: closed2.id, since: t0 + 2_000 },
+    { chatId: closed1.id, since: t0 + 3_000 },
+  ]);
+  assert.deepEqual(flow.service.sessionsNeedingYou(), [open1.id, closed2.id, closed1.id]);
+});
+
+test('a live session in an unlisted folder asks discovery to refresh once per session per window', async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const live = new Set(['s-new']);
+  const states: Record<string, HarnessLiveState> = { 's-new': busy() };
+  const flow = popupFlow(storage, { live: () => live, states: () => states });
+  await flow.service.poll(true);
+  await flow.service.poll();
+  await flow.service.poll();
+  assert.deepEqual(flow.unlisted, [['s-new']], 'one refresh for it, however many ticks see it');
+  live.add('s-other');
+  await flow.service.poll();
+  assert.deepEqual(flow.unlisted, [['s-new'], ['s-other']], 'another unknown session asks once more');
+
+  // The refresh lists it; its next wait pops (Q31).
+  storage.createChat('wt-new', 'claude', 'Brand-new repo', { harnessSessionId: 's-new' });
+  await flow.service.poll();
+  states['s-new'] = waitingAt(Date.now());
+  await flow.service.poll();
+  assert.equal(toasts().length, 1);
+  assert.match(toasts()[0], /Brand-new repo/);
+  assert.equal(flow.unlisted.length, 2);
+});
+
+test("Pitwall's own open or close of a chat makes no transition", async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const chat = storage.createChat('wt-1', 'claude', 'At rest', { harnessSessionId: 's-1' });
+  const listedAt = storage.getChat(chat.id)!.seenAt!;
+  let running = false;
+  const flow = popupFlow(storage, {
+    live: () => new Set(running ? ['s-1'] : []),
+    // Opening starts an idle process (the panel); the transcript's last turn ended before the chat was listed.
+    states: () => ({ 's-1': running ? idleAfter(listedAt - 60_000) : { turnState: 'done', turnEndedAt: listedAt - 60_000, running: false } }),
+  });
+  await flow.service.poll(true);
+  assert.equal(flow.service.statusOf(chat.id).status, 'idle');
+
+  running = true; // Pitwall opens it in the panel
+  flow.open.add(chat.id);
+  flow.visible.add(chat.id);
+  flow.service.markSeen(chat.id);
+  await flow.service.poll();
+  flow.visible.delete(chat.id);
+  flow.open.delete(chat.id); // and closes the tab
+  await flow.service.poll();
+  running = false; // the process exits
+  await flow.service.poll();
+  await flow.service.poll();
+  assert.deepEqual(flow.transitions, []);
+  assert.deepEqual(flow.statusLines(), []);
+  assert.equal(flow.service.statusOf(chat.id).status, 'idle');
+});
+
+test('the state dump carries every listed session status and the counts', async (t) => {
+  const dir = tempDir(t);
+  const file = writeDump(
+    {
+      dir,
+      pid: 4242,
+      tabs: () => [],
+      windowFolder: () => undefined,
+      statuses: () => ({ 's-1': 'needs', 's-2': 'idle' }),
+      counts: () => ({ needs: 1, working: 0, finished: 0 }),
+    },
+    []
+  );
+  const dump = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.deepEqual(dump.statuses, { 's-1': 'needs', 's-2': 'idle' });
+  assert.deepEqual(dump.counts, { needs: 1, working: 0, finished: 0 });
 });

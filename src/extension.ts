@@ -10,7 +10,8 @@ import { TerminalManager } from './core/services/TerminalManager';
 import { HarnessWatcherRegistry } from './core/harness/HarnessWatcherRegistry';
 import { SessionImportService } from './core/services/SessionImportService';
 import { RepoDiscoveryService } from './core/services/RepoDiscoveryService';
-import { NotificationService } from './core/services/NotificationService';
+import { NotificationService, openFromPopup } from './core/services/NotificationService';
+import { POPUPS_DIR, PopupLedger } from './core/notify/PopupLedger';
 import { SessionAttentionService } from './core/services/SessionAttentionService';
 import { SessionSearchService } from './core/services/SessionSearchService';
 import * as chatVisibility from './core/services/chatVisibility';
@@ -50,6 +51,8 @@ const FILE_CHANGE_DEBOUNCE_MS = 300;
 const HIDDEN_LIST_START_MS = 3_000;
 /** Startup work after the first render waits at most this long for a handoff's claimed chats to open (I3). */
 const CLAIM_FIRST_MAX_MS = 3_000;
+/** Every window sweeps old pop-up locks this often, besides once after its first render (Q32). */
+const POPUP_SWEEP_MS = 5 * 60_000;
 
 export async function activate(context: vscode.ExtensionContext) {
   // Startup timing (E16): this line and the tree's "first render" bracket
@@ -263,11 +266,19 @@ export async function activate(context: vscode.ExtensionContext) {
         const surfaces = harnessRegistry.get(chat.harness).nativeUi?.surfaces;
         return surfaces ? ids.filter((id) => surfaces.isOpen(id)) : [];
       });
-    const beat = debounce(() => void registry.beat(openSessionIds()).catch(() => undefined), 50);
+    // The chat in front and window focus ride along (Q33): no other window pops a chat in front of a focused window here.
+    const beat = debounce(
+      () =>
+        void registry
+          .beat({ openSessionIds: openSessionIds(), front: chatVisibility.frontSessionId(visibilitySources), focused: vscode.window.state.focused })
+          .catch(() => undefined),
+      50
+    );
     const showWindows = debounce(() => void registry.windows().then((windows) => workspacesProvider.setWindows(windows)), 500);
     context.subscriptions.push(
       terminalManager.onTerminalStateChange(() => beat()),
       ...harnessRegistry.all().flatMap((adapter) => (adapter.nativeUi?.surfaces ? [adapter.nativeUi.surfaces.onDidChange(() => beat())] : [])),
+      ...chatVisibility.onFrontMayChange(() => beat()),
       registry.onDidChange(() => showWindows()),
       { dispose: () => (beat.cancel(), showWindows.cancel()) }
     );
@@ -558,15 +569,26 @@ export async function activate(context: vscode.ExtensionContext) {
 
   /** Whether the chat's terminal or native-UI tab is the one in front of the user. */
   const isChatVisible = (chatId: string): boolean => chatVisibility.isChatVisible(visibilitySources, chatId);
+  // One lock per transition in the shared global storage: exactly one window pops it (Q32).
+  const popupLedger = context.globalStorageUri ? new PopupLedger(path.join(context.globalStorageUri.fsPath, POPUPS_DIR)) : undefined;
   const notificationService = new NotificationService(
+    // The message's Open goes through the router like every other open (D35, Q35).
     (chatId) => {
       const chat = storageService.getChat(chatId);
       if (chat) {
-        terminalManager.focusChat(chatId);
-        activateChat(chat, { revealIfHidden: false });
+        void openFromPopup(chat, {
+          route: (request) => router.route(request),
+          activateLocal: (entry) => activateChat(entry, { revealIfHidden: false }),
+        }).catch((error) => console.error('[Pitwall] Could not open the chat from its notification:', error));
       }
     },
-    isChatVisible
+    isChatVisible,
+    {
+      ledger: popupLedger,
+      frontAnywhere: (sessionId) => (windowServices?.registry ?? earlyRegistry)?.frontAnywhere(sessionId) ?? false,
+      isListed: (chatId) => storageService.getChat(chatId) !== undefined,
+      log: logOperation,
+    }
   );
   const attentionService = new SessionAttentionService(
     storageService,
@@ -576,11 +598,31 @@ export async function activate(context: vscode.ExtensionContext) {
     // Turn and needs-you changes swap the row mark (beating mark, orange or green dot).
     () => workspacesProvider.softRefresh(),
     isChatOpen,
-    isChatVisible
+    isChatVisible,
+    {
+      log: logOperation,
+      // A live session in a folder the list doesn't have yet: one discovery pass, then the importer (Q31).
+      onUnlistedLive: () => {
+        repoDiscovery.wake();
+        sessionImporter.wake();
+      },
+    }
   );
   markChatSeen = (chatId) => attentionService.markSeen(chatId);
   noteSessions = (sessions) => attentionService.noteSessions(sessions);
   attentionService.start();
+  // After the first render (E16): re-poll within 150 ms of a sessions-file
+  // change, and sweep pop-up locks older than 10 min now and every 5 min.
+  afterFirstRender(() => {
+    context.subscriptions.push(attentionService.watchLive());
+    if (popupLedger) {
+      const sweep = () => void popupLedger.sweep().catch(() => undefined);
+      sweep();
+      const timer = setInterval(sweep, POPUP_SWEEP_MS);
+      timer.unref?.();
+      context.subscriptions.push({ dispose: () => clearInterval(timer) });
+    }
+  });
   // Records what the user looks at between ticks, for needs-you toasts; never polls.
   context.subscriptions.push(...chatVisibility.onFrontMayChange(() => attentionService.noteFront()));
   // Every row's status and the re-sorts it triggers (rows 3.3, 3.4).
@@ -613,6 +655,8 @@ export async function activate(context: vscode.ExtensionContext) {
       pid: process.pid,
       tabs: () => tabTracker()?.describeTabs?.() ?? [],
       windowFolder: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      statuses: () => attentionService.statuses(),
+      counts: () => attentionService.counts(),
     },
     traceTabs: () => tabTracker()?.toggleTrace?.() ?? false,
   });

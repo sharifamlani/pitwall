@@ -1135,7 +1135,8 @@ function attentionOverTerminals(t: { after(fn: () => void): void }, f: ReturnTyp
   return {
     service,
     putInFront,
-    wait: () => (live = { turnState: 'working', turnEndedAt: null, waitingFor: 'permission prompt' }),
+    // Stamped, as the sessions file stamps every wait: a wait with no stamp never pops (Q32).
+    wait: () => (live = { turnState: 'working', turnEndedAt: null, waitingFor: 'permission prompt', writtenAt: Date.now() }),
     /** Poll on a 4 s tick, like the service's timer. */
     ticks: async (count: number) => {
       for (let i = 0; i < count; i++) {
