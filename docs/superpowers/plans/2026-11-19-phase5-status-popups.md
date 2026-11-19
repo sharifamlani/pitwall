@@ -34,7 +34,7 @@
 ```
 PITWALL PHASE 5 — phase plan
 ─────────────────────────────────────────────
-Plan : Plan, QA review, Sharif's go      [████████████████⏸...] waiting on you
+Plan : Plan, QA review, Sharif's go      [██████████████████..] ⏳ in progress (Sharif answered Q45–Q47; QA re-review)
 T1   : Ctrl+↓ onto a restored tab
 T2   : Status for every session
 T3   : Windows pop-up + click → router
@@ -682,6 +682,8 @@ Tests: `attention.test.ts`, `window-registry.test.ts`, `claude-sessions-file.tes
 | Other Phase 4 known issues (multi-root, type-ahead, flicker, slow parent lookup, binds within 2 s or 30 s, "+" row marker, side-by-side wait, startup in a handoff window) | Deferred | No Phase 5 code path; they stay in the v0.6.0 handoff |
 
 ## 9. Open questions for Sharif (recommendation first)
+
+**Answered 2026-11-19 (Sharif): Q45 = A (sessions file only; no hooks in v0.6.0; opt-in hooks become a Phase 7 row), Q46 = A (per-user HKCU AUMID key, removable by command and on uninstall), Q47 = A (the bell writes only `pitwall.sound.*`, on the user's click, user target).** Everything below marked "if Q46 = A" or "Q45 = A" now applies unconditionally.
 
 | # | Question | Recommended | Options and trade-offs | Changes |
 |---|---|---|---|---|

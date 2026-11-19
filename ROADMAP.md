@@ -4,7 +4,7 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.65 · 2026-11-19
+> v0.66 · 2026-11-19
 
 ---
 
@@ -13,7 +13,7 @@
 - **Current phase:** Phase 5 — Status + pop-ups. Phase 4 closed 2026-11-18 with tag `v0.5.0` (scorecard 19/19).
 - **Current step:** Phase 5 plan drafted ([2026-11-19-phase5-status-popups.md](docs/superpowers/plans/2026-11-19-phase5-status-popups.md): 7 tasks, E1–E18; Task 1 = the v0.5.0 known issue, first Ctrl+↓ onto a restored panel tab). In QA review.
 - **Last update:** 2026-11-19
-- **Next action:** QA reviews the plan; fix round; then Sharif answers Q45 (hooks: sessions file only, recommended), Q46 (pop-up sender: one per-user registry key) and Q47 (bell writes `pitwall.sound.*` settings). Then Task 1.
+- **Next action:** QA re-reviews the plan diff (round 1 fixes, `56fbb73`); on APPROVE dispatch Task 1 (Ctrl+↓ onto a restored tab). Sharif answered Q45–Q47 (2026-11-19): sessions file only, no hooks; per-user AUMID key for the pop-up sender; bell writes `pitwall.sound.*` on click.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -216,7 +216,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
-| 5.1 | "Needs you" / "finished" from the sessions file + hooks (PermissionRequest, Notification, Stop) (was 4.2) | ⏸ | ✅ | — | T1, T11 |
+| 5.1 | "Needs you" / "finished" from the sessions file (hooks deferred to 7.6, Sharif Q45 2026-11-19) (was 4.2) | ⏸ | ✅ | — | T1, T11 |
 | 5.2 | Windows pop-up under Pitwall's own sender; click → right window + chat (was 4.3) | ⏸ | ✅ | — | D20, T2 |
 | 5.3 | Sound switches, off by default (was 4.4) | ⏸ | ✅ | — | D27, T12 |
 | 5.4 | Bottom-bar counts → jump list; Ctrl+Alt+0 = longest wait | ⏸ | ✅ | — | D25 |
@@ -252,6 +252,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 | 7.3 | Remote Control per chat + its test T19 (was 6.3) | ⏸ | ⏸ | — | D38 |
 | 7.4 | One-window hub (all repos' chats in one window), if Claude Code ever resumes chats from other folders | ⏸ | ⏸ | — | D35, tests doc recon |
 | 7.5 | Feature request to Anthropic for per-session folders (parked by Sharif) | ⏸ | ⏸ | — | tests doc recon |
+| 7.6 | Opt-in Claude Code hooks (PermissionRequest, Notification, Stop) with consent and a clean uninstall, if the sessions file proves too slow or misses a status (deferred from 5.1) | ⏸ | ⏸ | — | Sharif Q45 2026-11-19 |
 
 ---
 
@@ -352,6 +353,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.59 · 2026-11-18.** Row 4.6 amended by live evidence: Claude's EnterWorktree moves a session's transcript into the worktree's project folder, so such a chat belongs in the worktree window (the old premise "stays in the main window" was wrong); a plain `cd` keeps it under main. The plan's Q2/E10 now say the project folder decides. T3 (router) in build.
 - **v0.60 · 2026-11-18.** Row 4.6 refined again by live data: Claude files a transcript under the session's current folder (the worktree while it runs there after EnterWorktree, main again after /exit), so the router follows wherever the file is now. T3 router PR #51: E3 shape, E6, E11, menus, the cold open (Pitwall's part 2.0–2.5 s), the line-clear 12/12 and E8 pass live; a fresh builder is closing the sdk-cli bypass and adding a route log line. Weekly usage about 76%.
 - **v0.61 · 2026-11-18.** Rows 4.2, 4.6, 4.8 ✅: the router merged (PR #51 → `d12d768`, 4 QA rounds plus 3 live walks). A click on any chat lands in its folder's window (opened if needed); sdk-cli chats route and then open in a terminal there; a chat already open stays where it is (one process per session); "+" starts in the repo's window; cold-open warning at 60 s; a line-clear before the typed resume line. Known issues for the handoff: a moved chat's row stays under main; multi-root windows are invisible to open-there; type-ahead before the late rename; a ~270 ms terminal flicker. T4 owns the outside-terminal second-process guard.
+- **v0.66 · 2026-11-19.** Sharif answered the Phase 5 plan questions: Q45 sessions file only (row 5.1 amended, hooks → new row 7.6), Q46 pop-ups under Pitwall via one per-user AUMID registry key (removable), Q47 the bell writes only `pitwall.sound.*` on click. QA round 1 fixes on the plan at `56fbb73`, re-review pending.
 - **v0.65 · 2026-11-19.** Phase 5 plan drafted (draft for QA review): 7 tasks, criteria E1–E18, smokes S1–S10. Task 1 folds in the v0.5.0 known issue (first Ctrl+↓ onto a restored panel tab after launch; Sharif 2026-11-19). Open for Sharif: Q45 hooks (recommend sessions file only, hooks to Phase 7), Q46 pop-up sender (per-user AppUserModelId registry key), Q47 bell writes `pitwall.sound.*`.
 - **v0.64 · 2026-11-18.** Phase 4 ✅, tag `v0.5.0` (annotated, on `846a3e1`). Rows 4.5 and 4.7 ✅. After the T8 walk: PR #54 (restored and handoff tabs bound, misbind, re-raise, worktree claim, FILES drop), #55 and #56 (Ctrl+↓ keeps list focus onto open terminal and visited panel tabs), #53 (docs, version 0.5.0), #57 (scorecard, amendments). Independent evaluator: 19/19 on `3351749`. Sharif amended E8 (a restored panel tab's first visit after launch is excluded, fixed in v0.5.1) and E16 (a load gate targeted at the test profile replaces "quiet machine"). The Phase 4 post ships with the 10 s clip. Next: Phase 5 plan.
 - **v0.63 · 2026-11-18.** Row 4.9 ✅. T8 live walk on `14b8347`: 8/12 walks passed; failures were tabs Cursor restores (reload, relaunch, session restore) and tabs opened in a handoff-started window not bound, an unbound tab taken for the next open (misbind), an intermittent handoff that never opened a window, a 6.25 s worktree-window claim, a 1.56 s empty-window first render, and a FILES drop onto a repo row doing nothing. PR #54 → `852c4c4` (2 QA rounds, 2 live re-walks): restored tabs bound by a unique title, pre-existing tabs never bound without proof, registry entry written at activate, a git-free worktree claim, one re-raise at 45 s plus an "Open its window" toast, its own FILES drag mime. Real CUA tab drags keep bindings. "Ready to type" holds for terminal chats, not panel chats. Next: evaluator, then `v0.5.0`.
