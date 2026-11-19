@@ -50,6 +50,8 @@ export interface ClaudeSessionsFileOptions {
 
 /** File events re-poll this long after the last one in a burst. */
 export const WATCH_DEBOUNCE_MS = 150;
+/** A steady stream of events still re-polls at least this often (QA N3): the debounce never waits longer. */
+export const WATCH_MAX_WAIT_MS = 500;
 const REWATCH_MS = 4_000;
 
 /**
@@ -148,7 +150,8 @@ export class ClaudeSessionsFile {
   }
 
   /**
-   * Calls `onChange` 150 ms after the last `*.json` event in a burst, so a
+   * Calls `onChange` 150 ms after the last `*.json` event in a burst, and at
+   * most 500 ms after a burst's first event while it goes on, so a
    * status change reaches the rows within a tick's fraction instead of up to
    * 4 s later. Events for any other name (the `.key` files) are dropped from
    * the event alone: nothing is opened or stat-ed to judge them, and an event
@@ -161,14 +164,20 @@ export class ClaudeSessionsFile {
     let pending: NodeJS.Timeout | undefined;
     let retry: NodeJS.Timeout | undefined;
     let disposed = false;
+    /** When the current burst's first event came; undefined between bursts. */
+    let burstStart: number | undefined;
     const fire = () => {
       clearTimeout(pending);
+      const now = Date.now();
+      burstStart ??= now;
+      const delay = Math.max(0, Math.min(WATCH_DEBOUNCE_MS, burstStart + WATCH_MAX_WAIT_MS - now));
       pending = setTimeout(() => {
         pending = undefined;
+        burstStart = undefined;
         if (!disposed) {
           onChange();
         }
-      }, WATCH_DEBOUNCE_MS);
+      }, delay);
       pending.unref?.();
     };
     const scheduleRetry = () => {
