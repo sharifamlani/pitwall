@@ -24,6 +24,7 @@ import {
   sameValue,
   stampTime,
 } from './storageOverlay';
+import { logOperation } from './OperationLog';
 
 /** How long a user removal keeps a session out of auto-import. */
 const REMOVED_SESSION_TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -65,10 +66,12 @@ export interface AddRepositoryOptions {
   origin?: 'manual' | 'discovered';
 }
 
-/** For tests: the window's clock and its stamp tag (0–999). */
+/** For tests: the window's clock and its stamp tag (0–999), and the Operations log. */
 export interface StorageServiceOptions {
   now?: () => number;
   windowTag?: number;
+  /** Where the dedupe logs `[Pitwall] dedupe kept <id8> merged <id8>`. Default: the Operations log. */
+  log?: (line: string) => void;
 }
 
 /**
@@ -95,18 +98,44 @@ export function importedChatId(harness: HarnessId, sessionId: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
+/** The global state a dedupe ranks by: every window reads the same values. */
+interface DedupeContext {
+  starred: Set<string>;
+  /** Chats with a terminal PID record in any workspace folder. */
+  withTerminal: Set<string>;
+  active: string | undefined;
+}
+
 /**
- * Which of two chats holding one native session is listed: a chat the user
- * started over an import, then the older, then the lower id. Every window
- * judges by stored fields only, so all of them pick the same row.
+ * Which of two chats holding one native session is listed (QA, PR #64 round
+ * 2): the one holding user state first, so nothing the user did is hidden.
+ * In order: not already merged away, starred, renamed, with a Pitwall
+ * terminal, the active chat; then a chat the user started over an import,
+ * the older, the lower id. Every input is global state, so every window
+ * picks the same row.
  */
-function listedFirst(a: LegacyChatSession, b: LegacyChatSession): number {
-  const imported = (chat: LegacyChatSession) => (chat.autoImported ? 1 : 0);
-  return (
-    imported(a) - imported(b) ||
-    (a.createdAt ?? 0) - (b.createdAt ?? 0) ||
-    (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
-  );
+function listedFirst(a: ChatSession, b: ChatSession, context: DedupeContext): number {
+  const rank = (chat: ChatSession): number[] => [
+    chat.mergedInto ? 1 : 0,
+    context.starred.has(chat.id) ? 0 : 1,
+    chat.customName ? 0 : 1,
+    context.withTerminal.has(chat.id) ? 0 : 1,
+    context.active === chat.id ? 0 : 1,
+    chat.autoImported ? 1 : 0,
+    chat.createdAt ?? 0,
+  ];
+  const [ra, rb] = [rank(a), rank(b)];
+  for (let i = 0; i < ra.length; i++) {
+    if (ra[i] !== rb[i]) {
+      return ra[i] - rb[i];
+    }
+  }
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/** The key one native session's chats share, or undefined for a chat with no session yet. */
+function sessionKey(chat: ChatSession): string | undefined {
+  return chat.harnessSessionId ? `${chat.harness}\u0000${chat.harnessSessionId}` : undefined;
 }
 
 /**
@@ -164,6 +193,11 @@ export class StorageService {
    */
   private readonly pidOverlay: RecordOverlay<number>;
   private readonly guarded: GuardedCollection[];
+  private readonly log: (line: string) => void;
+  /** A dedupe merge is being written; reads inside it must not start another. */
+  private merging = false;
+  /** Per kept chat, the hidden chats merged into it, as of the last read. */
+  private mergedAliases = new Map<string, string[]>();
 
   /**
    * @param isKnownHarness Whether a stored harness id is enabled in this
@@ -176,6 +210,7 @@ export class StorageService {
     options: StorageServiceOptions = {}
   ) {
     this.now = options.now ?? Date.now;
+    this.log = options.log ?? logOperation;
     this.clock = new StampClock(this.now, options.windowTag);
     const clock = this.clock;
     this.repositoryOverlay = new RecordOverlay({ fields: true, clock });
@@ -585,64 +620,24 @@ export class StorageService {
 
   // Chats
 
-  /** Stored chats, as stored, with stamps and this window's writes applied; one per native session. */
+  /** Stored chats, as stored, with stamps and this window's writes applied. Merged-away duplicates included. */
   private mergedChats(): { value: LegacyChatSession[]; stamped: Stamped<LegacyChatSession> } {
-    const merged = this.mergedList(
+    return this.mergedList(
       STORAGE_KEYS.CHATS,
       this.storedList<LegacyChatSession>(STORAGE_KEYS.CHATS),
       this.chatOverlay,
       (chat) => chat?.id
     );
-    return { value: this.withoutDuplicateSessions(merged.value), stamped: merged.stamped };
   }
 
   /**
-   * Keep one chat per native session (`listedFirst`). Two windows importing
-   * one session at once, before imports had a shared id, stored it under two
-   * chat ids, and the session was listed, tracked and popped twice. A
-   * duplicate this window wrote is withdrawn; the rest leave the store with
-   * the collection's next write, like a record stored twice under one id.
+   * Every stored chat, hidden duplicates included: what a chats write starts
+   * from, so no write ever drops a record. Chats written before multi-harness
+   * support only have `claudeSessionId`; they are migrated here so the rest
+   * of the extension treats every chat generically. A chat without a "seen"
+   * baseline gets the time it is first loaded (P16).
    */
-  private withoutDuplicateSessions(chats: LegacyChatSession[]): LegacyChatSession[] {
-    const listed = new Map<string, LegacyChatSession>();
-    let dropped: Set<LegacyChatSession> | undefined;
-    for (const chat of chats) {
-      const sessionId = chat?.harnessSessionId ?? chat?.claudeSessionId;
-      if (!sessionId) {
-        continue;
-      }
-      const key = `${chat.harness ?? 'claude'}\u0000${sessionId}`;
-      const kept = listed.get(key);
-      if (!kept) {
-        listed.set(key, chat);
-        continue;
-      }
-      dropped ??= new Set();
-      if (listedFirst(chat, kept) < 0) {
-        listed.set(key, chat);
-        dropped.add(kept);
-      } else {
-        dropped.add(chat);
-      }
-    }
-    if (!dropped) {
-      return chats;
-    }
-    for (const chat of dropped) {
-      if (this.chatOverlay.wrote(chat.id)) {
-        this.chatOverlay.note(chat.id, null);
-      }
-    }
-    return chats.filter((chat) => !dropped!.has(chat));
-  }
-
-  /**
-   * Every stored chat. Chats written before multi-harness support only have
-   * `claudeSessionId`; they are migrated here so the rest of the extension
-   * treats every chat generically. A chat without a "seen" baseline gets the
-   * time it is first loaded (P16).
-   */
-  getChats(): ChatSession[] {
+  private allChats(): ChatSession[] {
     const stored = this.mergedChats().value;
     const isMigrated = (chat: LegacyChatSession): chat is ChatSession =>
       chat.harness !== undefined && chat.harnessSessionId !== undefined;
@@ -668,6 +663,151 @@ export class StorageService {
     });
     void this.set(STORAGE_KEYS.CHATS, chats);
     return chats;
+  }
+
+  /**
+   * Every listed chat: one per native session. Two windows importing one
+   * session at once, before imports had a shared id, stored it under two chat
+   * ids, and it was listed, tracked and popped twice. The row holding the
+   * user's state is kept (`listedFirst`); the other copies are hidden from
+   * every read but stay in the store. The first read that finds a pair not
+   * merged yet merges it, in one explicit write (`mergeDuplicates`).
+   */
+  getChats(): ChatSession[] {
+    return this.listedChats(true);
+  }
+
+  private listedChats(mayMerge: boolean): ChatSession[] {
+    const all = this.allChats();
+    const groups = this.duplicateGroups(all);
+    if (groups.length === 0) {
+      if (this.mergedAliases.size > 0) {
+        this.mergedAliases = new Map();
+      }
+      return all;
+    }
+    const context = this.dedupeContext();
+    const merges = groups.map((group) => {
+      const [winner, ...losers] = [...group].sort((a, b) => listedFirst(a, b, context));
+      return { winner, losers };
+    });
+    if (mayMerge && !this.merging && merges.some(({ winner, losers }) => winner.mergedInto || losers.some((loser) => loser.mergedInto !== winner.id))) {
+      this.mergeDuplicates(merges, all, context);
+      return this.listedChats(false);
+    }
+    this.mergedAliases = new Map(merges.map(({ winner, losers }) => [winner.id, losers.map((loser) => loser.id)]));
+    const hidden = new Set(merges.flatMap(({ losers }) => losers.map((loser) => loser.id)));
+    return all.filter((chat) => !hidden.has(chat.id));
+  }
+
+  /**
+   * Hidden chats merged into a listed one, as of the last read. A terminal a
+   * hidden copy still runs is that row's terminal: opening the row must show
+   * it, never start a second agent on the session.
+   */
+  mergedChatIds(chatId: string): readonly string[] {
+    return this.mergedAliases.get(chatId) ?? [];
+  }
+
+  /** Sessions held by more than one chat. */
+  private duplicateGroups(chats: readonly ChatSession[]): ChatSession[][] {
+    const bySession = new Map<string, ChatSession[]>();
+    let duplicated = false;
+    for (const chat of chats) {
+      const key = sessionKey(chat);
+      if (!key) {
+        continue;
+      }
+      const group = bySession.get(key);
+      if (group) {
+        group.push(chat);
+        duplicated = true;
+      } else {
+        bySession.set(key, [chat]);
+      }
+    }
+    return duplicated ? [...bySession.values()].filter((group) => group.length > 1) : [];
+  }
+
+  private dedupeContext(): DedupeContext {
+    const withTerminal = new Set<string>();
+    for (const pids of Object.values(this.getTerminalPidRecords())) {
+      Object.keys(pids).forEach((chatId) => withTerminal.add(chatId));
+    }
+    return { starred: this.getStarredChatIds(), withTerminal, active: this.getActiveChatId() };
+  }
+
+  /**
+   * Merge each duplicate into its kept row, in one explicit write (never as a
+   * side effect of another write): the row is starred if either was, takes a
+   * custom name only the copy had, and the later seen and last-used times;
+   * the star, the active chat and the terminal PID records move to its id.
+   * Each copy stays stored, marked `mergedInto`, so nothing is lost for good;
+   * a later release can prune them.
+   */
+  private mergeDuplicates(
+    merges: Array<{ winner: ChatSession; losers: ChatSession[] }>,
+    all: ChatSession[],
+    context: DedupeContext
+  ): void {
+    this.merging = true;
+    try {
+      const chats = [...all];
+      const indexOf = new Map(chats.map((chat, index) => [chat.id, index]));
+      const pidRecords = this.getTerminalPidRecords();
+      let nextActive: string | undefined;
+      const change = (chat: ChatSession, updates: Partial<ChatSession>) => {
+        const index = indexOf.get(chat.id)!;
+        const previous = chats[index];
+        const next: ChatSession = { ...previous, ...updates };
+        if (next.mergedInto === undefined) {
+          delete next.mergedInto;
+        }
+        if (!sameValue(previous, next)) {
+          chats[index] = next;
+          this.chatOverlay.note(chat.id, next, previous);
+        }
+      };
+      for (const { winner, losers } of merges) {
+        const named = losers.find((loser) => loser.customName);
+        change(winner, {
+          ...(!winner.customName && named ? { name: named.name, customName: true } : {}),
+          seenAt: Math.max(winner.seenAt ?? 0, ...losers.map((loser) => loser.seenAt ?? 0)),
+          lastAccessedAt: Math.max(winner.lastAccessedAt ?? 0, ...losers.map((loser) => loser.lastAccessedAt ?? 0)),
+          mergedInto: undefined,
+        });
+        for (const loser of losers) {
+          change(loser, { mergedInto: winner.id });
+          if (context.starred.has(loser.id)) {
+            this.starOverlay.note(winner.id, winner.id);
+            this.starOverlay.note(loser.id, null);
+          }
+          if (context.active === loser.id) {
+            nextActive = winner.id;
+          }
+          for (const [workspace, pids] of Object.entries(pidRecords)) {
+            const pid = pids[loser.id];
+            if (pid === undefined) {
+              continue;
+            }
+            if (pids[winner.id] === undefined) {
+              this.pidOverlay.note(pidId(workspace, winner.id), pid);
+            }
+            this.pidOverlay.note(pidId(workspace, loser.id), null);
+          }
+          if (loser.mergedInto !== winner.id) {
+            this.log(`[Pitwall] dedupe kept ${winner.id.slice(0, 8)} merged ${loser.id.slice(0, 8)}`);
+          }
+        }
+      }
+      // The chats write also saves the star and PID records this merge noted.
+      void this.set(STORAGE_KEYS.CHATS, chats);
+      if (nextActive) {
+        void this.context.globalState.update(STORAGE_KEYS.ACTIVE_CHAT, nextActive);
+      }
+    } finally {
+      this.merging = false;
+    }
   }
 
   getChatsByWorktree(worktreeId: string): ChatSession[] {
@@ -699,8 +839,8 @@ export class StorageService {
       ...withoutUndefined(fields),
     };
     // Read before noting: the merged list includes noted records, and the
-    // chat would then be written twice.
-    const chats = this.getChats();
+    // chat would then be written twice. Hidden duplicates are written too.
+    const chats = this.allChats();
     this.chatOverlay.note(chat.id, chat);
     void this.set(STORAGE_KEYS.CHATS, [...chats, chat]);
     return chat;
@@ -719,7 +859,8 @@ export class StorageService {
     id: string,
     updates: Partial<ChatSession>
   ): { chat: ChatSession | undefined; written: Thenable<void> } {
-    const chats = this.getChats();
+    // From every stored chat, so the write keeps hidden duplicates.
+    const chats = this.allChats();
     const index = chats.findIndex((c) => c.id === id);
     if (index === -1) {
       return { chat: undefined, written: Promise.resolve() };
@@ -749,8 +890,11 @@ export class StorageService {
       return [];
     }
 
-    const chats = this.getChats();
-    const removed = chats.filter((chat) => idSet.has(chat.id));
+    // A hidden duplicate goes with the row it was merged into; the rest stay.
+    const chats = this.allChats();
+    const requested = chats.filter((chat) => idSet.has(chat.id));
+    const removed = chats.filter((chat) => idSet.has(chat.id) || (chat.mergedInto !== undefined && idSet.has(chat.mergedInto)));
+    removed.forEach((chat) => idSet.add(chat.id));
     if (options.rememberSession !== false) {
       for (const chat of removed) {
         if (chat.harnessSessionId) {
@@ -764,7 +908,7 @@ export class StorageService {
     void this.set(STORAGE_KEYS.CHATS, chats.filter((chat) => !idSet.has(chat.id)));
     // Forget every requested id: a pid record can outlive its chat.
     this.forgetTerminalPids(idSet);
-    return removed.map((chat) => chat.id);
+    return requested.map((chat) => chat.id);
   }
 
   deleteChatsByWorktree(worktreeId: string, options: { rememberSession?: boolean } = {}): string[] {

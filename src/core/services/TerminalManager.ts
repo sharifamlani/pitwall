@@ -282,6 +282,15 @@ export class TerminalManager {
       existingTerminal.dispose();
     }
 
+    // A hidden duplicate of this session merged into this row (two windows
+    // imported it at once) may still run its terminal: that is this row's
+    // agent, so show it rather than start a second one on the session.
+    const merged = this.liveMergedTerminal(chat.id);
+    if (merged) {
+      merged.show(preserveFocus);
+      return merged;
+    }
+
     // A restored tab is this chat's terminal even before its resume command
     // is sent. Its resumability check can still be running; treating it as
     // unowned would let this click launch a second agent.
@@ -1070,11 +1079,22 @@ export class TerminalManager {
     );
   }
 
-  /** Whether a chat's terminal is mapped and still running. */
+  /** The live terminal of a hidden duplicate merged into this chat, if one runs. */
+  private liveMergedTerminal(chatId: string): vscode.Terminal | undefined {
+    for (const mergedId of this.storageService.mergedChatIds(chatId)) {
+      const terminal = this.terminals.get(mergedId);
+      if (terminal && isLiveTerminal(terminal)) {
+        return terminal;
+      }
+    }
+    return undefined;
+  }
+
+  /** Whether a chat's terminal is mapped and still running (its own, or a merged duplicate's). */
   isActive(chatId: string): boolean {
     const terminal = this.terminals.get(chatId);
     if (!terminal) {
-      return false;
+      return this.liveMergedTerminal(chatId) !== undefined;
     }
     if (isLiveTerminal(terminal)) {
       return true;

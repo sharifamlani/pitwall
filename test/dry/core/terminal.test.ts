@@ -48,6 +48,7 @@ function setup(
   });
 
   return {
+    globalState,
     storage,
     manager,
     registrations,
@@ -119,6 +120,30 @@ test('an open chat is focused, not relaunched; an exited process is replaced', a
   assert.ok(first.disposed);
 });
 
+test('a session stored twice whose hidden copy has a live Pitwall terminal: a row click focuses that terminal, no second process', async (t) => {
+  stub.workspace.workspaceFolders = [{ uri: { fsPath: '/workspace/dup' } }];
+  // Before the dedupe both copies were listed, and the user opened the newer one in a terminal.
+  const f = setup(t, { chats: [{ id: 'bbbb2200-new', harnessSessionId: 'dup', createdAt: 2_000, autoImported: true }] });
+  const running = (await f.open('bbbb2200-new'))!;
+  await waitFor(() => f.storage.getTerminalPids()['bbbb2200-new'] !== undefined, 'the terminal PID record');
+  // The other window's copy arrives, and the user had starred that one: it is the row kept.
+  const stored = f.globalState.get<ChatSession[]>(STORAGE_KEYS.CHATS, []);
+  await f.globalState.update(STORAGE_KEYS.CHATS, [
+    ...stored,
+    chatRecord({ id: 'aaaa1100-old', worktreeId: WORKTREE.id, harnessSessionId: 'dup', createdAt: 1_000, autoImported: true }),
+  ]);
+  await f.globalState.update(STORAGE_KEYS.STARRED_CHATS, ['aaaa1100-old']);
+  assert.deepEqual(f.storage.getChats().map((chat) => chat.id), ['aaaa1100-old'], 'the starred copy is the row you see');
+  const pid = f.storage.getTerminalPids();
+  assert.ok(pid['aaaa1100-old'] !== undefined && pid['bbbb2200-new'] === undefined, 'the PID record follows the kept row');
+
+  // The user clicks the row.
+  const opened = await f.open('aaaa1100-old');
+  assert.equal(opened, running, 'the live terminal is focused');
+  assert.equal(stub.window.terminals.length, 1, 'no second agent process starts');
+  assert.equal(f.manager.isActive('aaaa1100-old'), true, 'the row shows open');
+});
+
 test('openChat with preserveFocus shows a new or live terminal without taking focus (Q4)', async (t) => {
   const f = setup(t, { chats: [{ id: 'chat', harnessSessionId: 'linked' }] });
   const launched = (await f.manager.openChat(f.chat('chat'), WORKTREE, { preserveFocus: true })) as unknown as FakeTerminal;
@@ -176,7 +201,7 @@ test('after a reload, a tab whose pty has the recorded PID is adopted and never 
       { id: 'abcdef00-live', harnessSessionId: 'linked', status: 'active' },
       { id: 'ab12cd00-unlinked', status: 'active' },
       { id: 'ccddee00-exited', status: 'active' },
-      { id: 'eeff0000-late', harnessSessionId: 'linked', status: 'active' },
+      { id: 'eeff0000-late', harnessSessionId: 'linked-late', status: 'active' },
     ],
   });
   const pids: Record<string, number> = { 'abcdef00-live': 7001, 'ab12cd00-unlinked': 7002, 'ccddee00-exited': 7003, 'eeff0000-late': 7004 };

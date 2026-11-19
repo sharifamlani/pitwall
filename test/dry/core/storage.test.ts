@@ -494,14 +494,112 @@ test('one harness session stored under two chat ids reads as one row in every wi
   windowA.setActiveChatId('x');
   assert.deepEqual(rows(windowB).map((chat) => chat.id), [winner], 'B shows the same row');
   assert.deepEqual(
-    savedAt<{ id: string; harnessSessionId: string }[]>(globalState, STORAGE_KEYS.CHATS).map((chat) => chat.harnessSessionId).sort(),
-    ['s-cli', 's-other'],
-    'the store keeps one record per session'
+    savedAt<{ id: string }[]>(globalState, STORAGE_KEYS.CHATS).map((chat) => chat.id).sort(),
+    [a.id, b.id, windowB.getChats().find((chat) => chat.name === 'Other')!.id].sort(),
+    'the hidden copy stays in the store (nothing irreversible)'
   );
 
   // A user-started chat of the session wins over an import of it, whatever its age.
   const own = windowA.createChat('wt-1', 'claude', 'Mine', { harnessSessionId: 's-cli', createdAt: 5_000 });
   assert.deepEqual(rows(windowA).map((chat) => chat.id), [own.id]);
+});
+
+// PR #64 round 2 (QA): the dedupe picks the row by user state, merges the
+// loser's state into it, and never deletes the loser.
+
+type TwinChat = { id: string; name: string; customName?: boolean; seenAt?: number; lastAccessedAt: number; mergedInto?: string };
+const SESSION_DUP = 's-dup';
+/** The session imported twice (createdAt 1000 and 2000); `extra` is the store's other keys. */
+async function twinStore(newer: Partial<TwinChat>, extra: Record<string, unknown> = {}, older: Partial<TwinChat> = {}) {
+  const globalState = echoingMemento();
+  const twin = (id: string, createdAt: number, fields: Partial<TwinChat>) => ({
+    id, harness: 'claude', harnessSessionId: SESSION_DUP, worktreeId: 'wt-1', name: 'CLI chat',
+    createdAt, lastAccessedAt: createdAt, seenAt: createdAt, status: 'idle', autoImported: true, ...fields,
+  });
+  await globalState.update(STORAGE_KEYS.CHATS, [twin('chat-old', 1_000, older), twin('chat-new', 2_000, newer)]);
+  for (const [key, value] of Object.entries(extra)) {
+    await globalState.update(key, value);
+  }
+  const logs: string[] = [];
+  const window = () =>
+    new StorageService({ globalState, workspaceState: memento() } as unknown as vscode.ExtensionContext, () => true, { log: (line) => logs.push(line) });
+  return { globalState, logs, windowA: window(), windowB: window() };
+}
+const dupRows = (storage: StorageService) => storage.getChats().filter((chat) => chat.harnessSessionId === SESSION_DUP);
+const storedTwins = (g: ReturnType<typeof echoingMemento>) =>
+  savedAt<TwinChat[]>(g, STORAGE_KEYS.CHATS).filter((chat) => chat.id === 'chat-old' || chat.id === 'chat-new');
+/** Both windows list one row, the same one; the other copy is still stored, marked, and hidden from every read. */
+function assertOneRowKept(f: Awaited<ReturnType<typeof twinStore>>, winner: string, loser: string) {
+  assert.deepEqual(dupRows(f.windowA).map((chat) => chat.id), [winner], 'window A lists the row holding the user state');
+  assert.deepEqual(dupRows(f.windowB).map((chat) => chat.id), [winner], 'window B lists the same row');
+  for (const window of [f.windowA, f.windowB]) {
+    assert.equal(window.getChat(loser), undefined, 'the loser is hidden from reads');
+    assert.ok(!window.getStarredChats().some((chat) => chat.id === loser));
+  }
+  const stored = storedTwins(f.globalState);
+  assert.equal(stored.length, 2, 'both records stay in the store');
+  assert.equal(stored.find((chat) => chat.id === loser)?.mergedInto, winner, 'the loser is marked merged into the winner');
+}
+
+test('dedupe: the dropped copy held the star; the starred row is kept and stays starred in both windows', async () => {
+  const f = await twinStore({}, { [STORAGE_KEYS.STARRED_CHATS]: ['chat-new'] });
+  assertOneRowKept(f, 'chat-new', 'chat-old');
+  assert.deepEqual(f.windowA.getStarredChats().map((chat) => chat.id), ['chat-new']);
+  assert.deepEqual(f.windowB.getStarredChats().map((chat) => chat.id), ['chat-new']);
+});
+
+test('dedupe: the dropped copy held the custom name; the renamed row is kept with its name', async () => {
+  const f = await twinStore({ name: 'My name', customName: true });
+  assertOneRowKept(f, 'chat-new', 'chat-old');
+  assert.deepEqual(dupRows(f.windowB).map((chat) => [chat.name, chat.customName]), [['My name', true]]);
+});
+
+test('dedupe: the dropped copy was the active chat; it is kept and stays active', async () => {
+  const f = await twinStore({}, { [STORAGE_KEYS.ACTIVE_CHAT]: 'chat-new' });
+  assertOneRowKept(f, 'chat-new', 'chat-old');
+  assert.equal(f.windowA.getActiveChatId(), 'chat-new');
+  assert.equal(f.windowB.getActiveChatId(), 'chat-new');
+});
+
+test('dedupe: the dropped copy had a Pitwall terminal; it is kept with its PID record', async () => {
+  stub.workspace.workspaceFolders = [{ uri: { fsPath: '/workspace/dup' } }];
+  const folder = '/workspace/dup';
+  const f = await twinStore({}, { [STORAGE_KEYS.TERMINAL_PIDS]: { [folder]: { 'chat-new': 4242 } } });
+  assertOneRowKept(f, 'chat-new', 'chat-old');
+  assert.deepEqual(f.windowA.getTerminalPids(), { 'chat-new': 4242 });
+  assert.deepEqual(f.windowB.getTerminalPids(), { 'chat-new': 4242 });
+});
+
+test('dedupe: state on both copies merges into the kept row in one logged write, and a user-started chat keeps the import’s state', async () => {
+  stub.workspace.workspaceFolders = [{ uri: { fsPath: '/workspace/dup' } }];
+  const folder = '/workspace/dup';
+  // The older copy is starred (it wins); the newer one has the name, the focus, the terminal and the later times.
+  const f = await twinStore(
+    { name: 'My name', customName: true, seenAt: 9_000, lastAccessedAt: 8_000 },
+    {
+      [STORAGE_KEYS.STARRED_CHATS]: ['chat-old'],
+      [STORAGE_KEYS.ACTIVE_CHAT]: 'chat-new',
+      [STORAGE_KEYS.TERMINAL_PIDS]: { [folder]: { 'chat-new': 4242 } },
+    }
+  );
+  assertOneRowKept(f, 'chat-old', 'chat-new');
+  const [kept] = dupRows(f.windowA);
+  assert.deepEqual([kept.name, kept.customName, kept.seenAt, kept.lastAccessedAt], ['My name', true, 9_000, 8_000], 'name and times merge in');
+  for (const window of [f.windowA, f.windowB]) {
+    assert.deepEqual(window.getStarredChats().map((chat) => chat.id), ['chat-old']);
+    assert.equal(window.getActiveChatId(), 'chat-old', 'the active chat points at the kept row');
+    assert.deepEqual(window.getTerminalPids(), { 'chat-old': 4242 }, 'the PID record points at the kept row');
+  }
+  assert.deepEqual(f.logs, ['[Pitwall] dedupe kept chat-old merged chat-new'], 'one explicit merge, logged once');
+  const before = f.globalState.snapshots.length;
+  dupRows(f.windowA);
+  dupRows(f.windowB);
+  assert.equal(f.globalState.snapshots.length, before, 'a merged pair is not written again');
+
+  // A user-started chat wins over an import and still takes the import's later times.
+  const g = await twinStore({ seenAt: 7_000, lastAccessedAt: 6_000 }, {}, { autoImported: false } as Partial<TwinChat>);
+  assertOneRowKept(g, 'chat-old', 'chat-new');
+  assert.deepEqual(dupRows(g.windowB).map((chat) => [chat.seenAt, chat.lastAccessedAt]), [[7_000, 6_000]]);
 });
 
 test('the overlay lets go of a write once the store shows it, so another window’s later write wins', () => {

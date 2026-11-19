@@ -43,8 +43,10 @@ Code hooks (Q45 = A): nothing is written under `~/.claude`.
   list is hidden), once per session per window, when its first turn starts: before that it has
   no transcript to find. A wait whose `statusUpdatedAt` is after activation is never
   pre-existing, even on a chat first seen at needs. Auto-imports take a chat id derived from the
-  session, and storage keeps one chat per native session, so windows importing at once list it
-  once.
+  session, and storage lists one chat per native session, so windows importing at once list it
+  once. Of two stored copies, the one holding user state (star, custom name, terminal, active
+  chat) is listed; the other's state merges into it in one logged write
+  (`dedupe kept <id8> merged <id8>`), and the copy stays stored, hidden and marked `mergedInto`.
 - **Exactly one window speaks (Q32).** Each window tries to create
   `<globalStorage>/pitwall-popups/<sessionId>.<needs|finished>.<at>.lock` with `wx`. Only the
   creator shows the pop-up. `at` is `statusUpdatedAt` (else the transcript's last write) for a
