@@ -326,6 +326,39 @@ test("unregister removes the AppUserModelId key and Windows' Notifications\\Sett
   assert.ok(!/[*?]|HKLM|Get-ChildItem|\$/.test(script.replace(/-ErrorAction SilentlyContinue/g, '')), 'constant paths: no wildcard, no variable, no other hive');
 });
 
+test('the host script guards on the AUMID key, and a host answering failed unregistered falls back in-window', async () => {
+  // The constant suffix tests for the one key, then answers `failed unregistered`, before it makes a notifier.
+  const guard = `Test-Path -LiteralPath '${AUMID_KEY}'`;
+  const at = HOST_SCRIPT_SUFFIX.indexOf(guard);
+  assert.ok(at >= 0, 'HOST_SCRIPT_SUFFIX tests for the AUMID key');
+  assert.ok(at < HOST_SCRIPT_SUFFIX.indexOf('CreateToastNotifier'), 'before CreateToastNotifier');
+  const after = HOST_SCRIPT_SUFFIX.slice(at, HOST_SCRIPT_SUFFIX.indexOf('\n', at));
+  assert.ok(after.includes("'failed unregistered'") && after.includes('exit 2'), 'the guard leads to failed unregistered');
+
+  // Spawn spy only: a host that says the key is gone makes show() fail, and the in-window message takes over once.
+  const { spawn, calls } = spy((call) => setImmediate(() => call.host.finish('failed unregistered\r\n', 2)));
+  const log: string[] = [];
+  const toast = new WindowsToast(spawn, 'win32', { log: (line) => log.push(line) });
+  assert.equal(await toast.show(payload()), 'failed');
+  assert.deepEqual(log, ['[Pitwall] toast failed unregistered']);
+  assert.equal(calls.length, 1);
+
+  const service = new NotificationService(() => undefined, () => false, { toast, log: (line) => log.push(line) });
+  const target: PopupTarget = {
+    chat: chatRecord({ id: 'chat-a', name: 'Fix map', harnessSessionId: SESSION }),
+    context: 'uj-lab-b · main',
+    repo: 'uj-lab-b',
+    detail: 'permission prompt',
+    sessionId: SESSION,
+    at: Date.now() - 200,
+  };
+  assert.equal(await service.notify('needs-input', target), 'shown');
+  await service.whenDelivered();
+  await flush();
+  assert.equal(shownMessages().length, 1, 'exactly one in-window message');
+  assert.ok(log.some((line) => /popup needs 5f0c3d4e shown lag=\d+ sound=off via=in-window/.test(line)));
+});
+
 test('the uninstall script removes the key', async () => {
   const { spawn, calls } = spy((call) => setImmediate(() => call.host.finish('')));
   await removeRegistration(new WindowsToast(spawn, 'win32'));

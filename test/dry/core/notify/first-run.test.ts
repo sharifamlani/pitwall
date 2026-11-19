@@ -147,6 +147,25 @@ test("two windows whose globalState hasn't synced (separate mementos, one dir) s
   assert.equal(reads(), 1);
 });
 
+test('a lock holding done, older than 60 s, still skips a window with an empty memento', async (t) => {
+  const { make: build, dir, reads } = make(t, { toasts: 'off', app: 'on', focus: 'off' });
+  const lock = path.join(dir, NOTIFY_CHECK_LOCK);
+  // claim() leaves the marker behind: a first window asks once and writes done.
+  assert.equal(await build(memento()).run(), 'shown');
+  assert.equal(fs.readFileSync(lock, 'utf8'), 'done', 'claim writes the done marker');
+  // Aged past the stale limit, the marker still wins over "an old empty lock is a crashed window's".
+  const old = new Date(Date.now() - 5 * 60_000);
+  fs.utimesSync(lock, old, old);
+  assert.equal(await build(memento()).run(), 'skipped', 'a later window with an empty memento is skipped');
+  assert.equal(shownMessages().length, 1);
+  assert.equal(reads(), 1);
+  // Written by hand too: done, old, empty memento.
+  fs.writeFileSync(lock, 'done');
+  fs.utimesSync(lock, old, old);
+  assert.equal(await build(memento()).run(), 'skipped');
+  assert.equal(shownMessages().length, 1);
+});
+
 test('a stale lock with no marker is replaced, and the check runs once', async (t) => {
   const { make: build, dir, reads } = make(t, { toasts: 'off', app: 'on', focus: 'off' });
   const lock = path.join(dir, NOTIFY_CHECK_LOCK);

@@ -4,7 +4,7 @@ import { ChatSession } from '../types';
 import type { PopupKey } from '../notify/PopupLedger';
 import { popupCopy, ToastPayload } from '../notify/toastXml';
 import { AUMID } from '../notify/WindowsToast';
-import { isOpenableSessionId, openUri, OPEN_PATH, URI_AUTHORITY } from '../notify/PopupUriHandler';
+import { isOpenableSessionId, openUri } from '../notify/PopupUriHandler';
 
 export type AttentionKind = 'finished' | 'needs-input';
 
@@ -262,7 +262,7 @@ export class NotificationService {
         title: 'Pitwall: test sound',
         body: 'This is how a pop-up sounds.',
         sound: true,
-        openUri: `${vscode.env.uriScheme}://${URI_AUTHORITY}${OPEN_PATH}`,
+        noLaunch: true,
         tag: 'pitwall-test',
       };
       if ((await toast.show(payload).catch(() => 'failed' as const)) === 'shown') {

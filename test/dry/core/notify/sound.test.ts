@@ -11,7 +11,7 @@ import pkg from '../../../../package.json';
 import { SoundSwitches, registerSoundUi, showSoundMenu } from '../../../../src/core/notify/SoundSwitches';
 import { NotificationService, PopupTarget } from '../../../../src/core/services/NotificationService';
 import { AUMID, WindowsToast, SpawnFn } from '../../../../src/core/notify/WindowsToast';
-import type { ToastPayload } from '../../../../src/core/notify/toastXml';
+import { toastXml, ToastPayload } from '../../../../src/core/notify/toastXml';
 import { chatRecord, flush, shownMessages, stub } from '../../support';
 
 const SESSION = '5f0c3d4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f';
@@ -205,6 +205,22 @@ test('Test sound shows one toast with sound on, whatever the switches, and logs 
   const bare = new NotificationService(() => undefined, () => false, { log: (line) => log.push(line) });
   await bare.testSound();
   assert.deepEqual(shownMessages(), ['Pitwall: test sound']);
+});
+
+test('the Test sound toast has no launch and only a Dismiss action', async () => {
+  const { service, shows } = wired();
+  await service.testSound();
+  const xml = toastXml(shows[0]);
+  assert.ok(!/launch=/.test(xml), 'no launch attribute');
+  assert.ok(!/activationType="protocol"/.test(xml), 'no protocol activation');
+  assert.ok(!/Open chat|cursor:\/\/|vscode:\/\//.test(xml), 'no Open chat, no link');
+  assert.equal((xml.match(/<action /g) ?? []).length, 1, 'one action');
+  assert.match(xml, /<action content="Dismiss" activationType="system" arguments="dismiss"\/>/);
+  assert.match(xml, /<audio src="ms-winsoundevent:Notification.Default"\/>/);
+  // A real pop-up keeps its launch and both buttons.
+  const real = toastXml({ ...shows[0], noLaunch: false, openUri: `vscode://sharifamlani.pitwall/open?session=${SESSION}` });
+  assert.match(real, /launch="vscode:\/\/sharifamlani\.pitwall\/open\?session=/);
+  assert.match(real, /Open chat/);
 });
 
 test("the macOS banner plays Glass only when its kind's switch is on", async () => {

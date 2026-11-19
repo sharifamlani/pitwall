@@ -13,8 +13,10 @@ export interface ToastPayload {
   attribution?: string;
   /** Play Windows' "Notification.Default" (Q41); otherwise silent. */
   sound: boolean;
-  /** What a click on the body or Open chat launches (Q37). */
-  openUri: string;
+  /** What a click on the body or Open chat launches (Q37). Unused when `noLaunch`. */
+  openUri?: string;
+  /** The Test sound toast: no launch, no Open chat, Dismiss only (QA N2). */
+  noLaunch?: boolean;
   /** `<id8>-<kind>`: a newer pop-up for the same chat and kind replaces the older one. */
   tag: string;
 }
@@ -60,21 +62,24 @@ export function escapeXml(text: string): string {
 /**
  * The toast XML. Every text node and attribute value is escaped. A click on
  * the body (`launch`) and on Open chat both launch `openUri` by protocol;
- * Dismiss is Windows' own dismiss. `<audio>` follows `sound`.
+ * Dismiss is Windows' own dismiss. `<audio>` follows `sound`. With `noLaunch`
+ * (the Test sound toast) there is no launch and no Open chat: Dismiss only.
  */
 export function toastXml(p: ToastPayload): string {
-  const uri = escapeXml(p.openUri);
+  const uri = escapeXml(p.openUri ?? '');
+  const launch = p.noLaunch ? '' : ` launch="${uri}" activationType="protocol"`;
+  const open = p.noLaunch ? '' : `<action content="Open chat" activationType="protocol" arguments="${uri}"/>`;
   const attribution = p.attribution ? `<text placement="attribution">${escapeXml(p.attribution)}</text>` : '';
   const audio = p.sound ? '<audio src="ms-winsoundevent:Notification.Default"/>' : '<audio silent="true"/>';
   return (
-    `<toast launch="${uri}" activationType="protocol">` +
+    `<toast${launch}>` +
     '<visual><binding template="ToastGeneric">' +
     `<text>${escapeXml(p.title)}</text>` +
     `<text>${escapeXml(p.body)}</text>` +
     attribution +
     '</binding></visual>' +
     '<actions>' +
-    `<action content="Open chat" activationType="protocol" arguments="${uri}"/>` +
+    open +
     '<action content="Dismiss" activationType="system" arguments="dismiss"/>' +
     '</actions>' +
     audio +
