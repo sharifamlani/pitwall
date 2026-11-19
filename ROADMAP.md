@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.72 · 2026-11-19
+> v0.73 · 2026-11-19
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 5 — Status + pop-ups. Phase 4 closed 2026-11-18 with tag `v0.5.0` (scorecard 19/19).
-- **Current step:** All six build tasks are merged except the T2 live fix (PR #64, in QA round 2): T5 → `c2d1f06`, T1 fix → `ae19051`, T6 → `8d5e1d0`, T4 sound → `01a9b95`. Live: S2–S8 PASS (S8: one Windows pop-up per transition across 3 windows, 6/6); T1 re-walk passes E11 as amended by Q51 (Sharif: check at 1.2 s; a click inside the 0.8 s hold is a known limit).
+- **Current step:** All Phase 5 code merged; release candidate main `5f27f95` (CI green). Rows 5.3–5.5 walked clean live. T2 live fix merged (PR #64 → `11093f3`) and re-walked: E2 30/30 per window, E4 12/12; E3 pop-up lag 8/12 under ~97% CPU load, to be re-measured on a quiet machine in the release walk. First-run fix merged (PR #66 → `5f27f95`).
 - **Last update:** 2026-11-19
-- **Next action:** merge #64 on approval → tester re-walks T2 on panel chats (E2/E3/E4) and live-checks T4/T5/T6 → T7: full walk W1–W10, independent evaluator, Sharif's one real pop-up click (Q49), tag `v0.6.0`.
+- **Next action:** release docs PR (CHANGELOG 0.6.0, README, version) → tester's release walk W1–W10 on a quiet machine → independent evaluator E1–E18 → merge, tag `v0.6.0` → Sharif's one real pop-up click (Q49).
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -216,11 +216,11 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
-| 5.1 | "Needs you" / "finished" from the sessions file (hooks deferred to 7.6, Sharif Q45 2026-11-19) (was 4.2) | ⏳ | ✅ | T2 `2e028a8`; live fix PR #64 in QA | T1, T11 |
+| 5.1 | "Needs you" / "finished" from the sessions file (hooks deferred to 7.6, Sharif Q45 2026-11-19) (was 4.2) | ⏳ | ✅ | T2 `2e028a8` + fix `11093f3` (PR #64); E2/E4 PASS; E3 re-measure in walk | T1, T11 |
 | 5.2 | Windows pop-up under Pitwall's own sender; click → right window + chat (was 4.3) | ⏳ | ✅ | T3 `6f97e19`; S3/S4/S8 PASS; W3/W4 at close | D20, T2 |
-| 5.3 | Sound switches, off by default (was 4.4) | ⏳ | ✅ | T4 `01a9b95`; S5 PASS; E7 live pending | D27, T12 |
-| 5.4 | Bottom-bar counts → jump list; Ctrl+Alt+0 = longest wait | ⏳ | ✅ | T5 `c2d1f06`; E8/E9 live pending | D25 |
-| 5.5 | First-run check: Windows notifications off / Focus assist on → offer `ms-settings:notifications` | ⏳ | ✅ | T6 `8d5e1d0`; S6 PASS; E10 live pending | tests doc T2 |
+| 5.3 | Sound switches, off by default (was 4.4) | ✅ | ✅ | 2026-11-19 · T4 `01a9b95` (PR #65); E7 live PASS | D27, T12 |
+| 5.4 | Bottom-bar counts → jump list; Ctrl+Alt+0 = longest wait | ✅ | ✅ | 2026-11-19 · T5 `c2d1f06` (PR #61); E8/E9 live PASS (known issue: unbound restored tab) | D25 |
+| 5.5 | First-run check: Windows notifications off / Focus assist on → offer `ms-settings:notifications` | ✅ | ✅ | 2026-11-19 · T6 `8d5e1d0` (PR #63) + fix `5f27f95` (PR #66); E10 live PASS | tests doc T2 |
 
 ### Phase 6 — Package + launch
 **Goal:** An installable `.vsix`, running in Sharif's daily Cursor, and the repo ready for contributors.
@@ -353,6 +353,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.59 · 2026-11-18.** Row 4.6 amended by live evidence: Claude's EnterWorktree moves a session's transcript into the worktree's project folder, so such a chat belongs in the worktree window (the old premise "stays in the main window" was wrong); a plain `cd` keeps it under main. The plan's Q2/E10 now say the project folder decides. T3 (router) in build.
 - **v0.60 · 2026-11-18.** Row 4.6 refined again by live data: Claude files a transcript under the session's current folder (the worktree while it runs there after EnterWorktree, main again after /exit), so the router follows wherever the file is now. T3 router PR #51: E3 shape, E6, E11, menus, the cold open (Pitwall's part 2.0–2.5 s), the line-clear 12/12 and E8 pass live; a fresh builder is closing the sdk-cli bypass and adding a route log line. Weekly usage about 76%.
 - **v0.61 · 2026-11-18.** Rows 4.2, 4.6, 4.8 ✅: the router merged (PR #51 → `d12d768`, 4 QA rounds plus 3 live walks). A click on any chat lands in its folder's window (opened if needed); sdk-cli chats route and then open in a terminal there; a chat already open stays where it is (one process per session); "+" starts in the repo's window; cold-open warning at 60 s; a line-clear before the typed resume line. Known issues for the handoff: a moved chat's row stays under main; multi-root windows are invisible to open-there; type-ahead before the late rename; a ~270 ms terminal flicker. T4 owns the outside-terminal second-process guard.
+- **v0.73 · 2026-11-19.** Rows 5.3 (sound), 5.4 (counts + jump list) and 5.5 (first-run check) ✅ after live checks. T2 live fix merged (PR #64 → `11093f3`; duplicate chats merged without losing stars, names or terminal links, nothing deleted) and re-walked: status 30/30 per window, one pop-up per transition 12/12, new chats listed within ~5 s. First-run fix merged (PR #66 → `5f27f95`: a failed registration no longer spends the one automatic check). Open: E3 pop-up lag 8/12 under heavy load (1.5–2.8 s quiet); re-measured in the release walk, with a long-lived pop-up host as the fallback.
 - **v0.72 · 2026-11-19.** T4 sound switches + bell merged (PR #65 → `01a9b95`; QA mutations caught incl. the removed-registration fallback). S8 PASS: 6 transitions across 3 windows on extension panel chats → exactly 6 Windows pop-ups, 12 lock skips, 6 distinct tags, 0 leftover hosts (pop-up lag 1.5–2.6 s, PowerShell start-up). T1 re-walk on `ae19051`: next ↓ moves 3/3, re-sent tab followed 3/3; Q51 (Sharif) amends E11 to check focus at 1.2 s and records the click-inside-hold limit. T2 live fix round 2 (duplicate chats merged without losing stars, names or terminal links; nothing deleted) in QA. Rows 5.1–5.5 → ⏳ (merged, live checks pending).
 - **v0.71 · 2026-11-19.** T5 merged (PR #61 → `c2d1f06`), T1 fix for Cursor re-sending its tab model mid-hold merged (PR #62 → `ae19051`), T6 merged (PR #63 → `8d5e1d0`; durable once-asked marker). Smokes: S3 (sender "Pitwall" + icon, kept in Action Center), S4 (click → right chat 4/4; foreground 3/3 from a real foreground launch), S5 (1 chime on / 0 off), S6 (Focus assist read; 0 Defender flags) all PASS. Q50 (Sharif): live criteria run on Claude Code extension panel chats; one CLI chat only for terminal cases. Cursor asks "Allow … to open this URI?" on every pop-up click until "Do not ask me again" (docs at close). Rows 5.1–5.5 flip after their live checks.
 - **v0.70 · 2026-11-19.** T3 merged (PR #60 → `6f97e19`; QA 18/18 mutations incl. pop-up text injection; #60+#61 together 763/0/9). Q49 (Sharif): walk pop-up clicks are simulated with the retargeted `--open-url` command, because `cursor://` belongs to the default profile; Sharif clicks one real pop-up after `v0.6.0`. Live checks on real Cursor: T2 panel chats PASS (status 10/10 per window, one pop-up per transition 12/12), but a CLI chat is listed twice and a new chat is tracked late; T1 E12 0/3 (tab model re-sent mid-hold). Both back in Build. S2 PASS (sessions file alone is enough; Q45 holds). T5 in QA round 2; T6 dispatched.
