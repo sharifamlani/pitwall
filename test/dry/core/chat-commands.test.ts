@@ -509,6 +509,39 @@ test('terminal path calls show(true) only when the marker is set', async (t) => 
   assert.notEqual(f.lastTerminal(), keyed);
 });
 
+const MOVES_AFTER_THE_PRESS: [string, () => void][] = [
+  ['an editor took focus', () => stub.window.__focusTextEditor({ document: { uri: vscode.Uri.file('/work/demo/file.ts') } })],
+  ['a different terminal became active', () => stub.window.__focusTerminal(stub.window.createTerminal({ name: 'user shell' }))],
+  ['the window lost focus', () => stub.window.__fireWindowState(false)],
+];
+
+for (const [moved, move] of MOVES_AFTER_THE_PRESS) {
+  test(`Ctrl+Down onto an open terminal does not refocus the list when ${moved} after the key press (E8)`, async (t) => {
+    const f = setup(t, { surface: 'terminal' });
+    const chat = f.chat('claude', 'Already open', 'claude-1');
+    const keys = listKeys(f.row(chat));
+    await keys.press();
+    const live = f.lastTerminal();
+    const show = live.show.bind(live);
+    let moving = true;
+    live.show = (preserveFocus?: boolean) => {
+      show(preserveFocus);
+      if (moving) move();
+    };
+    t.after(() => stub.window.__fireWindowState(true));
+    keys.events.length = 0;
+
+    await keys.press();
+    await settle();
+    assert.deepEqual(keys.events, [], 'the list does not take focus back from where the user went');
+
+    // A mouse click carries no Ctrl+Down marker: it never refocuses the list.
+    moving = false;
+    await runCommand('pitwall.openChat', f.row(chat));
+    assert.deepEqual(keys.events, [], 'a click lets the chat take focus');
+  });
+}
+
 test('Ctrl+Down onto a chat whose panel tab is already open reveals it, then refocuses the list (E8)', async (t) => {
   const f = setup(t, { surface: 'ui' });
   const chat = f.chat('claude', 'Open in panel', 'claude-1');
