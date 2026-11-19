@@ -1940,6 +1940,40 @@ test('compare-status --opened-from takes the opened lines from every window, so 
   assert.equal(run('--log', windowB, '--opened-from', path.join(dir, 'missing.log')).status, 2);
 });
 
+test('compare-status takes idle→needs for a first turn shorter than a tick as a note, not a FAIL', (t) => {
+  const dir = tempDir(t);
+  const script = path.resolve(__dirname, '..', '..', '..', 'scripts', 'compare-status.mjs');
+  const t0 = Date.parse('2026-11-19T10:00:00.000Z');
+  const at = (ms: number) => new Date(t0 + ms).toISOString();
+  const truthFor = (waitAfterMs: number) => {
+    const file = path.join(dir, `truth-${waitAfterMs}.jsonl`);
+    fs.writeFileSync(
+      file,
+      [
+        { t: t0, sid8: 'cccccccc', status: 'idle', statusUpdatedAt: t0 },
+        { t: t0 + 1_000, sid8: 'cccccccc', status: 'busy', statusUpdatedAt: t0 + 1_000 },
+        { t: t0 + 1_000 + waitAfterMs, sid8: 'cccccccc', status: 'waiting', statusUpdatedAt: t0 + 1_000 + waitAfterMs },
+      ]
+        .map((sample) => JSON.stringify(sample))
+        .join('\n') + '\n'
+    );
+    return file;
+  };
+  // A brand-new chat is listed after its first turn started; the first line Pitwall can log is idle→needs.
+  const log = path.join(dir, 'ops.log');
+  fs.writeFileSync(log, `[${at(4_500)}] [Pitwall] status cccccccc idle→needs lag=300\n`);
+  const run = (truth: string) => spawnSync(process.execPath, [script, '--truth', truth, '--log', log], { encoding: 'utf8' });
+
+  const short = run(truthFor(3_000));
+  assert.equal(short.status, 0, short.stdout + short.stderr);
+  assert.match(short.stdout, /NOTE cccccccc #1: first turn shorter than a tick \(3000 ms working\), logged idle→needs for idle→working→needs/);
+  assert.match(short.stdout, /cccccccc expected=1 logged=1 ok/);
+
+  const long = run(truthFor(9_000));
+  assert.equal(long.status, 1, 'a working phase longer than a tick still had to be logged');
+  assert.match(long.stdout, /mismatch #1: expected idle→working, logged idle→needs/);
+});
+
 test('the state dump carries every listed session status and the counts', async (t) => {
   const dir = tempDir(t);
   const file = writeDump(

@@ -29,6 +29,11 @@
  * sample are ignored. --sessions limits the check to those id8s (default:
  * every id8 in the recording).
  *
+ * A brand-new chat is listed only once its first turn has started: when the
+ * recording's first idle→working→needs spans at most one attention tick (4 s)
+ * and Pitwall's first line is idle→needs, that line matches both and a NOTE
+ * says so; it is not a problem.
+ *
  * --dump compares each window's `statuses` (from `pitwall.dev.dumpState`,
  * taken after the walk) with the final mapped status of every session.
  * --max-lag fails any matched status line whose lag is over it (E3: 2000).
@@ -165,13 +170,29 @@ function expectedFor(sid8) {
   return { transitions, final: state };
 }
 
+/** The attention tick: a working phase shorter than this can fall between two looks. */
+const TICK_MS = 4_000;
+
 const problems = [];
+const notes = [];
 const lags = [];
 const finals = new Map();
 for (const sid8 of sessions) {
-  const { transitions: expected, final } = expectedFor(sid8);
+  const { transitions: recorded, final } = expectedFor(sid8);
   finals.set(sid8, final);
   const actual = logged.get(sid8);
+  // A brand-new chat is listed once its first turn has started; when that
+  // turn reaches its wait within a tick, Pitwall's first line is idle→needs.
+  // That is a note, not a missing working.
+  let expected = recorded;
+  const [first, second] = recorded;
+  if (
+    first?.from === 'idle' && first.to === 'working' && second?.from === 'working' && second.to === 'needs' &&
+    second.t - first.t <= TICK_MS && actual[0]?.from === 'idle' && actual[0].to === 'needs'
+  ) {
+    expected = [{ t: second.t, from: 'idle', to: 'needs' }, ...recorded.slice(2)];
+    notes.push(`${sid8} #1: first turn shorter than a tick (${second.t - first.t} ms working), logged idle→needs for idle→working→needs`);
+  }
   let ok = true;
   const count = Math.max(expected.length, actual.length);
   for (let i = 0; i < count; i++) {
@@ -225,6 +246,7 @@ if (args.dump) {
   }
 }
 
+for (const note of notes) console.log(`NOTE ${note}`);
 for (const problem of problems) console.log(`PROBLEM ${problem}`);
 const sorted = [...lags].sort((a, b) => a - b);
 const p95 = sorted.length ? sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)] : 0;
