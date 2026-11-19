@@ -23,6 +23,8 @@ Status and pop-ups (ROADMAP Phase 5).
 - A session was listed twice when two windows imported it at once. Duplicates now merge without losing stars, names or terminal links.
 - `pitwall.dev.traceTabs` logs a tab model Cursor re-sends unchanged once, not on every re-send.
 - A pop-up click on a chat open in another window's chat panel brings that window forward even when Pitwall hasn't matched the chat to its tab. Before, it warned that the chat was running in another window or terminal and opened nothing. A window that receives the click never opens a chat whose live process belongs to another window.
+- A click on a chat that is already running in this window's Claude chat panel (pop-up, row, Ctrl+Alt+0 or `Next ▸`) no longer starts a second copy of it in a terminal when Pitwall hasn't matched the chat to its tab. Pitwall brings that tab forward, or says the chat is already open in this window's Claude panel and opens nothing. Clicking a pop-up also brings the window forward.
+- Chat names now match Claude's tab titles. A chat you renamed inside Claude (`/rename`) shows that name in Pitwall, so Pitwall matches it to its tab. A name you gave the chat in Pitwall is kept.
 
 ### Known issues
 
