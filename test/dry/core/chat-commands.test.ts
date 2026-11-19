@@ -553,6 +553,44 @@ test('Ctrl+Down onto a chat whose panel tab is already open reveals it, then ref
   assert.deepEqual(keys.events, ['focus list'], 'refocused once after the reveal');
 });
 
+const afterSettle = () => new Promise((resolve) => setTimeout(resolve, 450));
+
+/** A Ctrl+Down onto an open panel tab; the revealed webview activates a moment after the first refocus. */
+async function panelPress(t: Parameters<typeof setup>[0], between?: () => void) {
+  // Earlier tests' panel retries are still pending (their command is not this test's); let them end first.
+  await afterSettle();
+  const f = setup(t, { surface: 'ui' });
+  const chat = f.chat('claude', 'Open in panel', 'claude-1');
+  f.claudeUi.surfaces.open.add('claude-1');
+  const keys = listKeys(f.row(chat));
+  t.after(() => stub.window.__fireWindowState(true));
+  await keys.press();
+  assert.deepEqual(keys.events, ['focus list'], 'refocused right after the reveal');
+  // The tab becomes active, then Claude's webview takes focus.
+  stub.window.__fireTabsChanged({ changed: [{}] });
+  between?.();
+  await afterSettle();
+  return keys;
+}
+
+test('Ctrl+Down onto an open panel tab refocuses the list once more after the webview activates (E8)', async (t) => {
+  const keys = await panelPress(t);
+  assert.deepEqual(keys.events, ['focus list', 'focus list'], 'one retry, never a loop');
+});
+
+test('the panel retry does not run once the user moved (E8)', async (t) => {
+  const editor = { document: { uri: vscode.Uri.file('/work/demo/file.ts') } };
+  const keys = await panelPress(t, () => stub.window.__focusTextEditor(editor));
+  assert.deepEqual(keys.events, ['focus list'], 'the editor keeps focus');
+});
+
+test('the panel retry lets go when the window lost focus or a second tab change came (E8)', async (t) => {
+  const blurred = await panelPress(t, () => stub.window.__fireWindowState(false));
+  assert.deepEqual(blurred.events, ['focus list']);
+  const second = await panelPress(t, () => stub.window.__fireTabsChanged({ changed: [{}] }));
+  assert.deepEqual(second.events, ['focus list'], 'a second tab change means the user moved');
+});
+
 test('Ctrl+Down onto a chat with no terminal creates it, renames it, then refocuses the list', async (t) => {
   const f = setup(t, { surface: 'terminal' });
   const chat = f.chat('claude', 'Reply', 'claude-1');

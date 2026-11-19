@@ -36,6 +36,8 @@ type SessionSurface = 'terminal' | 'ui';
 export type PrimaryOpen = 'here' | 'routed' | 'terminal';
 /** The Repos list's focus command, contributed by the workbench for the view. */
 const FOCUS_LIST_COMMAND = 'pitwall.workspacesView.focus';
+/** After a Ctrl+↓/↑ reveals a panel tab, the list is refocused once more this long after the tab settles (E8). */
+const PANEL_SETTLE_MS = 250;
 type LinkedChat = ChatSession & { harnessSessionId: string };
 
 export interface ChatCommandDeps {
@@ -324,6 +326,63 @@ export function registerChatCommands(
   };
 
   /**
+   * Claude's chat panel takes focus again once its revealed webview has
+   * activated, after the refocus above (E8). Nothing public reveals a panel
+   * tab without focus, so the list is refocused once more, a short settle
+   * after the tab is active. One retry, never a loop, and only while nothing
+   * else moved since: an editor, another terminal, the window losing focus,
+   * a second tab change or another Pitwall open lets go.
+   */
+  const holdListForPanel = (): void => {
+    heldList?.dispose();
+    const opensAtPress = pitwallOpens;
+    const activeTab = () => vscode.window.tabGroups.activeTabGroup?.activeTab;
+    let settled = activeTab();
+    let tabChanges = 0;
+    let timer: NodeJS.Timeout | undefined;
+    const watches: vscode.Disposable[] = [];
+    const watch: vscode.Disposable = {
+      dispose: () => {
+        clearTimeout(timer);
+        watches.forEach((entry) => entry.dispose());
+      },
+    };
+    heldList = watch;
+    const letGo = (): void => {
+      watch.dispose();
+      if (heldList === watch) {
+        heldList = undefined;
+      }
+    };
+    const arm = (): void => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const stillHeld = heldList === watch && pitwallOpens === opensAtPress && activeTab() === settled;
+        letGo();
+        if (stillHeld) {
+          void refocusList();
+        }
+      }, PANEL_SETTLE_MS);
+    };
+    watches.push(
+      vscode.window.onDidChangeActiveTextEditor((editor) => editor && letGo()),
+      vscode.window.onDidChangeActiveTerminal((terminal) => terminal && letGo()),
+      vscode.window.onDidChangeWindowState((state) => !state.focused && letGo()),
+      vscode.window.tabGroups.onDidChangeTabs(() => {
+        // The revealed tab becoming active is the one change expected; a second is the user's.
+        tabChanges += 1;
+        if (tabChanges > 1) {
+          letGo();
+          return;
+        }
+        settled = activeTab();
+        arm();
+      })
+    );
+    arm();
+  };
+
+  /**
    * Put keyboard focus back on the Repos list after an open in this window
    * (Q4). The webview takes focus with its tab, at the open itself (S1b), so
    * this runs right after the awaited open; no timer.
@@ -591,6 +650,7 @@ export function registerChatCommands(
       }
       if (opened && keepListFocus) {
         await refocusList();
+        holdListForPanel();
       }
       return opened ? 'here' : 'failed';
     };
