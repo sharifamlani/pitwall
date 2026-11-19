@@ -879,6 +879,201 @@ for (const secondPressAt of [1_000, 3_000]) {
   });
 }
 
+// ---- Fix round, live E12 0/3: Cursor re-sends the whole tab model during the hold ----
+
+type ResentTab = { label: string; input: unknown; isActive: boolean };
+
+/**
+ * A Ctrl+Down onto a panel tab in Cursor's tab model, on fake timers from the
+ * press, with the real tracker seeded at activation. One group: a file tab and
+ * the panel tab. `firstVisit` restores the panel tab unshown (E11); otherwise
+ * it was shown at activation and the user moved to the file before the press.
+ * The events have the shapes E12 recorded live: the activation names the panel
+ * tab alone, then `resend()` replaces every Tab object (order and the active
+ * place kept) with a group event only, then the same-Tab event names the new
+ * object. Tabs are read by place (`panel()`, `editor()`), since a re-send
+ * replaces them.
+ */
+async function resentPress(t: TestContext, options: { firstVisit: boolean }) {
+  const f = setup(t, { surface: 'ui' });
+  const chat = f.chat('claude', 'Open in panel', 'claude-1');
+  f.claudeUi.surfaces.open.add('claude-1');
+  const group = {
+    isActive: true,
+    viewColumn: 1,
+    activeTab: undefined as ResentTab | undefined,
+    tabs: [
+      { label: 'file.ts', input: new vscode.TabInputText(vscode.Uri.file('/work/demo/file.ts')), isActive: false },
+      { label: 'Open in panel', input: new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel'), isActive: false },
+    ] as ResentTab[],
+  };
+  stub.window.tabGroups.all = [group];
+  const editor = () => group.tabs[0];
+  const panel = () => group.tabs[1];
+  const setActive = (tab: ResentTab) => {
+    for (const other of group.tabs) other.isActive = other === tab;
+    group.activeTab = tab;
+  };
+  setActive(options.firstVisit ? editor() : panel());
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() });
+  const logs: string[] = [];
+  const tracker = claudeUiSurfaces({ log: (line: string) => void logs.push(line) });
+  t.after(() => tracker.dispose());
+  tracker.toggleTrace();
+  const surfaces = f.claudeUi.surfaces.tracker;
+  surfaces.isFirstVisitSinceLaunch = (tab) => tracker.isFirstVisitSinceLaunch(tab);
+  surfaces.endFirstVisit = (tab) => tracker.endFirstVisit(tab);
+  (surfaces as { followHeldTab?: (tab: vscode.Tab) => vscode.Tab | undefined }).followHeldTab = (tab) => tracker.followHeldTab(tab);
+  if (!options.firstVisit) {
+    // The user left the panel tab before the press: shown at activation, so not a first visit.
+    setActive(editor());
+    stub.window.__fireTabsChanged({ changed: [editor(), panel()] });
+  }
+  const tabs = {
+    editor,
+    panel,
+    /** The user switches to another tab. */
+    show: (tab: ResentTab) => {
+      const previous = group.activeTab as ResentTab;
+      setActive(tab);
+      stub.window.__fireTabsChanged({ changed: [tab, previous] });
+    },
+    /** Cursor re-sends the model: every Tab object replaced, same order and active place, a group event only. */
+    resend: () => {
+      const activeAt = group.tabs.indexOf(group.activeTab as ResentTab);
+      group.tabs = group.tabs.map((tab) => ({ ...tab }));
+      group.activeTab = group.tabs[activeAt];
+      stub.window.__fireTabGroupsChanged();
+    },
+    /** The held tab changes again, on whatever Tab object the model has now. */
+    sameTab: () => stub.window.__fireTabsChanged({ changed: [panel()] }),
+  };
+  const keys = listKeys(f.row(chat));
+  t.after(() => stub.window.__fireWindowState(true));
+  let now = 0;
+  const at = async (ms: number) => {
+    t.mock.timers.tick(ms - now);
+    now = ms;
+    await settle();
+  };
+  await keys.press();
+  assert.deepEqual(keys.events, ['focus list'], 'refocused right after the reveal');
+  // E12: the activation names the panel tab alone.
+  setActive(panel());
+  stub.window.__fireTabsChanged({ changed: [panel()] });
+  return { f, keys, tabs, at, tracker, logs };
+}
+
+test('a re-sent tab model during the hold does not let go; the retry refocuses the list at 800 ms', async (t) => {
+  const { keys, tabs, at, logs } = await resentPress(t, { firstVisit: true });
+  await at(5);
+  tabs.resend();
+  await at(110);
+  tabs.sameTab();
+  await at(799);
+  assert.deepEqual(keys.events, ['focus list'], 'still held, waiting for the first-visit deadline');
+  await at(800);
+  assert.deepEqual(keys.events, ['focus list', 'focus list'], 'the one retry, at 800 ms after the press');
+  await at(2_300);
+  tabs.sameTab();
+  tabs.sameTab();
+  tabs.sameTab();
+  await at(3_000);
+  assert.deepEqual(keys.events, ['focus list', 'focus list'], 'one retry, never a loop');
+  const follows = logs.filter((line) => line.includes('hold follows re-sent tab'));
+  assert.equal(follows.length, 1, `the trace shows the hold following the re-sent tab once: ${logs.join('\n')}`);
+  assert.ok(follows[0].startsWith('[Pitwall] trace '), 'on the trace channel');
+  assert.ok(!follows[0].includes('Open in panel'), 'no titles');
+});
+
+test('a re-sent tab model with the tab trace off logs nothing about the hold', async (t) => {
+  const { keys, tabs, at, tracker, logs } = await resentPress(t, { firstVisit: true });
+  tracker.toggleTrace();
+  logs.length = 0;
+  await at(5);
+  tabs.resend();
+  await at(110);
+  tabs.sameTab();
+  await at(800);
+  assert.deepEqual(keys.events, ['focus list', 'focus list']);
+  assert.deepEqual(logs.filter((line) => line.includes('hold follows')), [], 'trace channel only');
+});
+
+const RESENT_HELD_TAB_MOVES: [string, (tabs: Awaited<ReturnType<typeof resentPress>>['tabs']) => void][] = [
+  ['the user switched tabs', (tabs) => tabs.show(tabs.editor())],
+  ['a tab opened', () => stub.window.__fireTabsChanged({ opened: [{ label: 'new.ts', input: undefined, isActive: false }] })],
+  ['the held tab closed', (tabs) => stub.window.__fireTabsChanged({ closed: [tabs.panel()] })],
+  ['another tab changed', (tabs) => stub.window.__fireTabsChanged({ changed: [tabs.editor()] })],
+];
+for (const firstVisit of [false, true]) {
+  for (const [moved, move] of RESENT_HELD_TAB_MOVES) {
+    test(`after a re-send, a real switch to another tab still lets go: ${moved} (${firstVisit ? 'first visit' : '250 ms path'})`, async (t) => {
+      const { keys, tabs, at } = await resentPress(t, { firstVisit });
+      await at(5);
+      tabs.resend();
+      await at(110);
+      tabs.sameTab();
+      await at(150);
+      move(tabs);
+      await at(3_000);
+      assert.deepEqual(keys.events, ['focus list'], 'where the user went keeps focus');
+    });
+  }
+}
+
+test('after a re-send, the timer still refocuses (still-held check by identity, not object)', async (t) => {
+  // No tab event after the re-send: only the timer's own check sees the replaced Tab.
+  const { keys, tabs, at } = await resentPress(t, { firstVisit: false });
+  await at(100);
+  tabs.resend();
+  await at(249);
+  assert.deepEqual(keys.events, ['focus list']);
+  await at(250);
+  assert.deepEqual(keys.events, ['focus list', 'focus list'], 'the held tab, re-sent, is still the held tab');
+  await at(3_000);
+  assert.deepEqual(keys.events, ['focus list', 'focus list'], 'one retry');
+});
+
+test('first-visit state follows a re-sent tab: the hold reads it on the new Tab and ends that visit', async (t) => {
+  const { keys, tabs, at, tracker } = await resentPress(t, { firstVisit: true });
+  await at(5);
+  tabs.resend();
+  await at(110);
+  tabs.sameTab();
+  await at(400);
+  assert.equal(tracker.isFirstVisitSinceLaunch(tabs.panel() as unknown as vscode.Tab), true, 'the re-sent Tab is still on its first visit');
+  await at(800);
+  assert.deepEqual(keys.events, ['focus list', 'focus list']);
+  assert.equal(
+    tracker.isFirstVisitSinceLaunch(tabs.panel() as unknown as vscode.Tab),
+    false,
+    'the hold ended the visit of the Tab the editor has now, not the replaced one'
+  );
+});
+
+test('a re-send after the retry: the next Ctrl+Down onto the same tab retries at 250 ms, not 800', async (t) => {
+  const { keys, tabs, at } = await resentPress(t, { firstVisit: true });
+  await at(5);
+  tabs.resend();
+  await at(110);
+  tabs.sameTab();
+  await at(800);
+  assert.equal(keys.events.length, 2);
+  // The user goes back to the file, then presses Ctrl+Down onto the panel tab again.
+  tabs.show(tabs.editor());
+  tabs.resend();
+  await at(1_500);
+  await keys.press();
+  assert.equal(keys.events.length, 3, 'refocused right after the second reveal');
+  tabs.show(tabs.panel());
+  await at(1_500 + 249);
+  assert.equal(keys.events.length, 3);
+  await at(1_500 + 250);
+  assert.equal(keys.events.length, 4, 'a later visit, across re-sends, retries at 250 ms');
+  await at(4_000);
+  assert.equal(keys.events.length, 4, 'one retry');
+});
+
 test('a mouse open of a panel chat arms no retry (E8)', async (t) => {
   const f = setup(t, { surface: 'ui' });
   const chat = f.chat('claude', 'Clicked', 'claude-1');
