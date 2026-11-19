@@ -19,7 +19,7 @@ from pathlib import Path
 
 _ALLOWED = re.compile(
     r"^(package\.json|README\.md|LICENSE|CHANGELOG\.md|THIRD_PARTY_NOTICES\.md"
-    r"|out/extension\.js"
+    r"|out/(extension|uninstall)\.js"
     r"|resources/icons/[^/]+\.(png|svg)"
     r"|resources/icons/harness/[^/]+\.svg)$"
 )
@@ -32,6 +32,7 @@ _REQUIRED_FILES = (
     "CHANGELOG.md",
     "THIRD_PARTY_NOTICES.md",
     "out/extension.js",
+    "out/uninstall.js",
 )
 _REQUIRED_PATTERNS = (
     r"resources/icons/[^/]+\.(png|svg)",

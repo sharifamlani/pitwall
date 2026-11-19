@@ -9,6 +9,7 @@ ENTRIES = [
     "extension/changelog.md",
     "extension/LICENSE.txt",
     "extension/out/extension.js",
+    "extension/out/uninstall.js",
 ]
 
 

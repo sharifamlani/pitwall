@@ -5,14 +5,15 @@ const watch = process.argv.includes('--watch');
 
 async function main() {
   const ctx = await esbuild.context({
-    entryPoints: ['src/extension.ts'],
+    // The extension, and the `vscode:uninstall` script that removes the pop-up registration (Q46).
+    entryPoints: ['src/extension.ts', 'src/uninstall.ts'],
     bundle: true,
     format: 'cjs',
     minify: production,
     sourcemap: !production,
     sourcesContent: false,
     platform: 'node',
-    outfile: 'out/extension.js',
+    outdir: 'out',
     external: ['vscode'],
     logLevel: 'info',
   });
