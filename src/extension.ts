@@ -13,7 +13,7 @@ import { RepoDiscoveryService } from './core/services/RepoDiscoveryService';
 import { NotificationService, openFromPopup } from './core/services/NotificationService';
 import { POPUPS_DIR, PopupLedger } from './core/notify/PopupLedger';
 import { WindowsToast } from './core/notify/WindowsToast';
-import { FirstRunCheck } from './core/notify/FirstRunCheck';
+import { FirstRunCheck, runAfterRegistration } from './core/notify/FirstRunCheck';
 import { notificationState, readersFor } from './core/notify/notificationState';
 import { SoundSwitches, registerSoundUi } from './core/notify/SoundSwitches';
 import { PopupUriHandler } from './core/notify/PopupUriHandler';
@@ -690,7 +690,9 @@ export async function activate(context: vscode.ExtensionContext) {
     if (windowsToast) {
       registration = windowsToast.registerAumid(vscode.Uri.joinPath(context.extensionUri, 'resources', 'icons', 'pitwall.png').fsPath);
       // The first-run check reads Pitwall's own switch, which Windows knows only once the sender is registered (Q42).
-      void registration.then(() => notifyCheck?.run()).catch(() => undefined);
+      if (notifyCheck) {
+        void runAfterRegistration(registration, notifyCheck, logOperation).catch(() => undefined);
+      }
     }
     if (popupLedger) {
       const sweep = () => void popupLedger.sweep().catch(() => undefined);
