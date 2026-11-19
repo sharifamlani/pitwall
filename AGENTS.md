@@ -22,6 +22,30 @@ This is the only instruction file: Claude Code (v2.1.277+), Codex, opencode, and
 `AGENTS.md`-aware tools load it automatically. `ARCHITECTURE.md` is reference material and
 is not loaded every session; read the relevant section when you touch that subsystem.
 
+## Agent roles
+
+The roles (Main, QA, Tester, Evaluator, Marketing), their paste-in prompts and the learning loop
+live in [`.devcontainer/AGENT_ROLES.md`](.devcontainer/AGENT_ROLES.md), so they travel with the
+dev container to other repos. Each role reads its list in
+[`.devcontainer/agent-lessons.md`](.devcontainer/agent-lessons.md) before every job, and adds a
+line when a bug gets past it.
+
+The rule that comes first: a feature is done when a real user can use it smoothly, proven by the
+Tester using the real app like the owner. Timings and scorecards come after.
+
+### Pitwall specifics
+
+- {PRODUCT} = Pitwall; {OWNER} = Sharif. Agents report only to Main, and Main talks to Sharif.
+- **The Tester's real-use setup:** a separate Cursor profile (`--user-data-dir`), never Sharif's
+  own. Upgrade from the previous release with 3+ windows open, default settings (no
+  `focusOnStartup`), Pitwall's sidebar hidden in some windows, chats renamed with `/rename`, one
+  repo with 40+ sessions, and chats live in the Claude panel and in terminals.
+- **Every open path, every walk:** row click, pop-up click, Ctrl+Alt+0, `Next ▸`, each on live and
+  stopped chats, in this window and another, with the `claude` process count checked before and
+  after. A second process for a live chat is a FAIL.
+- Pop-up clicks are simulated in the test profile, because `cursor://` belongs to the default
+  profile. Each release adds one real pop-up click in Sharif's setup, done by Sharif.
+
 ## How we think
 
 - **One seam per harness.** Claude Code, opencode, Codex, and Pi disagree about session

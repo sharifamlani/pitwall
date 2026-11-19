@@ -4,6 +4,10 @@
 
 Pitwall is a Cursor / VS Code extension: one sidebar showing every Claude Code session across all repos, with status dots and Windows pop-ups. Clicking a session opens it in the **official Claude Code extension's chat panel**. Origin and decisions: `transcripts/inital_idea.md` (local only).
 
+## Agent roles
+
+The team's roles, prompts and learning loop are in [`.devcontainer/AGENT_ROLES.md`](.devcontainer/AGENT_ROLES.md); Pitwall's specifics are under "Agent roles" in [AGENTS.md](AGENTS.md). The Tester's user walk, in a real-use setup, passes before any timing, grading or release.
+
 ## Layout
 
 - **Extension** = TypeScript, built with npm, at the repo root (`package.json`, `src/`, `test/`). Arrives in Phase 1 from Agntree.
