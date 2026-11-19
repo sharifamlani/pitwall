@@ -4,16 +4,16 @@
 >
 > This is CANON. All forward direction flows from here. Plan-creation order in [`docs/superpowers/plans/`](docs/superpowers/plans/) follows §3 Phase order. Before creating any new plan, verify the work has a Phase in §3. If it doesn't, propose a §3 edit first.
 
-> v0.66 · 2026-11-19
+> v0.67 · 2026-11-19
 
 ---
 
 ## §0 You are here
 
 - **Current phase:** Phase 5 — Status + pop-ups. Phase 4 closed 2026-11-18 with tag `v0.5.0` (scorecard 19/19).
-- **Current step:** Phase 5 plan drafted ([2026-11-19-phase5-status-popups.md](docs/superpowers/plans/2026-11-19-phase5-status-popups.md): 7 tasks, E1–E18; Task 1 = the v0.5.0 known issue, first Ctrl+↓ onto a restored panel tab). In QA review.
+- **Current step:** Phase 5 plan approved (QA APPROVE at `a816c9b`; Sharif answered Q45–Q47). Smoke S1 (restored-tab focus-steal timing) running with the tester; it sets Task 1's deadline.
 - **Last update:** 2026-11-19
-- **Next action:** QA re-reviews the plan diff (round 1 fixes, `56fbb73`); on APPROVE dispatch Task 1 (Ctrl+↓ onto a restored tab). Sharif answered Q45–Q47 (2026-11-19): sessions file only, no hooks; per-user AUMID key for the pop-up sender; bell writes `pitwall.sound.*` on click.
+- **Next action:** S1 result → dispatch Task 1 (`phase5/task-1-restored-ctrl-down`), and Task 2 (status for every session) in parallel per the plan's waves.
 
 Update §0 every working session. Any commit touching ROADMAP edits §0.
 
@@ -211,8 +211,8 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 **Goal:** You find out the moment a chat needs you or finishes, without looking.
 **Entry gate:** Phase 4 ✅ (`v0.5.0`).
 **Exit gate:** Status matches ground truth across 3 live sessions; pop-ups fire for needs-you and finished, and a click lands on the right chat; tag `v0.6.0`.
-**Status:** ⏳ plan in review.
-**Plan:** [2026-11-19-phase5-status-popups.md](docs/superpowers/plans/2026-11-19-phase5-status-popups.md) (draft for QA review)
+**Status:** ⏳ in progress (plan approved 2026-11-19).
+**Plan:** [2026-11-19-phase5-status-popups.md](docs/superpowers/plans/2026-11-19-phase5-status-popups.md) (QA APPROVE `a816c9b`)
 
 | # | Action | Status | Plan? | Date · Commit / Plan | Source |
 |---|---|---|---|---|---|
@@ -353,6 +353,7 @@ Phase 0 Foundation ✅ → 1 Import Agntree → 2 Windows parity → 3 Sidebar v
 - **v0.59 · 2026-11-18.** Row 4.6 amended by live evidence: Claude's EnterWorktree moves a session's transcript into the worktree's project folder, so such a chat belongs in the worktree window (the old premise "stays in the main window" was wrong); a plain `cd` keeps it under main. The plan's Q2/E10 now say the project folder decides. T3 (router) in build.
 - **v0.60 · 2026-11-18.** Row 4.6 refined again by live data: Claude files a transcript under the session's current folder (the worktree while it runs there after EnterWorktree, main again after /exit), so the router follows wherever the file is now. T3 router PR #51: E3 shape, E6, E11, menus, the cold open (Pitwall's part 2.0–2.5 s), the line-clear 12/12 and E8 pass live; a fresh builder is closing the sdk-cli bypass and adding a route log line. Weekly usage about 76%.
 - **v0.61 · 2026-11-18.** Rows 4.2, 4.6, 4.8 ✅: the router merged (PR #51 → `d12d768`, 4 QA rounds plus 3 live walks). A click on any chat lands in its folder's window (opened if needed); sdk-cli chats route and then open in a terminal there; a chat already open stays where it is (one process per session); "+" starts in the repo's window; cold-open warning at 60 s; a line-clear before the typed resume line. Known issues for the handoff: a moved chat's row stays under main; multi-root windows are invisible to open-there; type-ahead before the late rename; a ~270 ms terminal flicker. T4 owns the outside-terminal second-process guard.
+- **v0.67 · 2026-11-19.** Phase 5 plan approved by QA at `a816c9b` after 2 rounds (round 1: 2 blockers — pop-up click on a chat live in another terminal, toast-script injection — plus 9 changes; round 2: separate `outside` counter). Smoke S1 dispatched to the tester.
 - **v0.66 · 2026-11-19.** Sharif answered the Phase 5 plan questions: Q45 sessions file only (row 5.1 amended, hooks → new row 7.6), Q46 pop-ups under Pitwall via one per-user AUMID registry key (removable), Q47 the bell writes only `pitwall.sound.*` on click. QA round 1 fixes on the plan at `56fbb73`, re-review pending.
 - **v0.65 · 2026-11-19.** Phase 5 plan drafted (draft for QA review): 7 tasks, criteria E1–E18, smokes S1–S10. Task 1 folds in the v0.5.0 known issue (first Ctrl+↓ onto a restored panel tab after launch; Sharif 2026-11-19). Open for Sharif: Q45 hooks (recommend sessions file only, hooks to Phase 7), Q46 pop-up sender (per-user AppUserModelId registry key), Q47 bell writes `pitwall.sound.*`.
 - **v0.64 · 2026-11-18.** Phase 4 ✅, tag `v0.5.0` (annotated, on `846a3e1`). Rows 4.5 and 4.7 ✅. After the T8 walk: PR #54 (restored and handoff tabs bound, misbind, re-raise, worktree claim, FILES drop), #55 and #56 (Ctrl+↓ keeps list focus onto open terminal and visited panel tabs), #53 (docs, version 0.5.0), #57 (scorecard, amendments). Independent evaluator: 19/19 on `3351749`. Sharif amended E8 (a restored panel tab's first visit after launch is excluded, fixed in v0.5.1) and E16 (a load gate targeted at the test profile replaces "quiet machine"). The Phase 4 post ships with the 10 s clip. Next: Phase 5 plan.
