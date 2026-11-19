@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { registerSessionSearchCommands } from '../../../src/core/commands/sessionSearch';
+import { SessionSearchCommandDeps, registerSessionSearchCommands } from '../../../src/core/commands/sessionSearch';
 import { quoteShellArgument } from '../../../src/core/harness/cli';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { HarnessAdapter, SessionSearchRunRequest } from '../../../src/core/harness/types';
@@ -17,12 +17,12 @@ import { GitService } from '../../../src/core/services/GitService';
 import { SessionSearchService } from '../../../src/core/services/SessionSearchService';
 import { WorktreeCatalog } from '../../../src/core/services/WorktreeCatalog';
 import { ChatSession, SessionSearchMatch, SessionSearchRecord } from '../../../src/core/types';
-import { fakeAdapter, fakeSearchRunner, makeStorage, runCommand, sessionRecord, stub, tempDir, waitFor } from '../support';
+import { fakeAdapter, fakeSearchRunner, makeStorage, runCommand, sessionRecord, shownMessages, stub, tempDir, waitFor } from '../support';
 
 beforeEach(() => stub.__reset());
 
 /** A plain-folder root `app`, a folder outside every root, and the commands over a fake harness. */
-function setup(t: { after(fn: () => void): void }, adapter: Partial<HarnessAdapter> = {}) {
+function setup(t: { after(fn: () => void): void }, adapter: Partial<HarnessAdapter> = {}, extra: Partial<SessionSearchCommandDeps> = {}) {
   const scratch = tempDir(t);
   const root = path.join(scratch, 'app');
   const outside = path.join(scratch, 'elsewhere');
@@ -59,6 +59,7 @@ function setup(t: { after(fn: () => void): void }, adapter: Partial<HarnessAdapt
     activateChat: (chat) => activated.push(chat),
     refreshTree: () => undefined,
     isViewVisible: () => true,
+    ...extra,
   });
   return { root, outside, storage, catalog, runs, opened, activated };
 }
@@ -143,6 +144,32 @@ test('in PowerShell, a found session outside every root resumes a quoted full-pa
   await runCommand('pitwall.resumeSearchMatch', found({ sessionId: 's3', cwd: outside }));
   const [terminal] = stub.window.terminals;
   assert.ok(terminal.sent[0].startsWith("& '"), terminal.sent[0]);
+});
+
+test('a found session outside every root that is live elsewhere is never resumed a second time (QA #72)', async (t) => {
+  // The harness's own record: a terminal the user started.
+  const { outside } = setup(t, { liveProcessOf: async (id) => (id === 's4' ? { pid: 555, panel: false } : undefined) });
+  await runCommand('pitwall.resumeSearchMatch', found({ sessionId: 's4', cwd: outside }));
+  assert.equal(stub.window.terminals.length, 0, 'no claude --resume beside the live process');
+  assert.ok(shownMessages().includes('That chat is already running in another terminal (pid 555). Switch to it there.'));
+
+  await runCommand('pitwall.resumeSearchMatch', found({ sessionId: 's5', cwd: outside }));
+  assert.deepEqual(stub.window.terminals.map((terminal) => terminal.sent[0]), ['claude --resume s5'], 'live nowhere: it resumes');
+});
+
+test("a found session live in this window's own panel or another window's panel is named as such, and nothing starts", async (t) => {
+  const live: Record<string, { pid: number; panel?: boolean; here?: boolean }> = {
+    own: { pid: 4242, panel: true, here: true },
+    win: { pid: 888, panel: true },
+  };
+  const { outside } = setup(t, {}, { liveProcess: async (id) => live[id] });
+  await runCommand('pitwall.resumeSearchMatch', found({ sessionId: 'own', cwd: outside }));
+  await runCommand('pitwall.resumeSearchMatch', found({ sessionId: 'win', cwd: outside }));
+  assert.equal(stub.window.terminals.length, 0);
+  assert.deepEqual(shownMessages(), [
+    "That chat is already open in this window's Claude panel. Switch to its tab there.",
+    'That chat is already running in another window or terminal (pid 888). Switch to it there.',
+  ]);
 });
 
 /** The finder over a fake harness whose agent replies `answer` and whose record confirms with `verify`. */

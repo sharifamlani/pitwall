@@ -506,9 +506,11 @@ export interface HarnessAdapter {
    * editor panel (not a terminal) started it. Pitwall uses it to refuse a
    * second process for a chat that runs in a terminal it doesn't own (Q28).
    * `cwd`, when the record has one, is the process's folder: for a panel,
-   * the folder of the window it runs in (D35).
+   * the folder of the window it runs in (D35). `startedAt`, when the record
+   * has one, is when the process started: with the pid it names one process,
+   * since the OS reuses pids.
    */
-  liveProcessOf?(sessionId: string): Promise<{ pid: number; panel: boolean; cwd?: string } | undefined>;
+  liveProcessOf?(sessionId: string): Promise<{ pid: number; panel: boolean; cwd?: string; startedAt?: number } | undefined>;
 
   /**
    * The folder a session's window is (Q2): the one its agent's UI resumes it

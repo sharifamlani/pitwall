@@ -48,36 +48,36 @@ export async function parentPidOf(pid: number, options: ParentPidOptions = {}): 
 }
 
 /**
- * A parent lookup that asks the OS once per pid: a process never changes its
- * parent. Lookups for the same pid at once share one query. A failed or
- * timed-out answer is not kept, so the next click asks again. Bounded, so a
- * long session's dead pids fall out.
+ * A parent lookup that asks the OS once per process: a process never changes
+ * its parent. The OS reuses pids, so a process is its pid plus an `identity`
+ * (its start time, else its session; QA #72): a new process on an old pid is
+ * asked again, never given the old process's parent. A lookup with no
+ * identity is never cached. Lookups for the same process at once share one
+ * query. A failed, rejected or timed-out answer is not kept, so the next click
+ * asks again. Bounded, so a long session's dead processes fall out.
  */
 export function cachedParentPid(
   lookup: (pid: number) => Promise<number | undefined> = (pid) => parentPidOf(pid),
   limit = 64
-): (pid: number) => Promise<number | undefined> {
-  const cache = new BoundedCache<number, Promise<number | undefined>>(limit);
-  return (pid) => {
-    const known = cache.get(pid);
+): (pid: number, identity?: string) => Promise<number | undefined> {
+  const cache = new BoundedCache<string, Promise<number | undefined>>(limit);
+  return (pid, identity) => {
+    const safe = (): Promise<number | undefined> => lookup(pid).catch(() => undefined);
+    if (identity === undefined) {
+      return safe();
+    }
+    const key = `${pid}|${identity}`;
+    const known = cache.get(key);
     if (known) {
       return known;
     }
-    const asked = lookup(pid).then(
-      (parent) => {
-        if (parent === undefined && cache.get(pid) === asked) {
-          cache.delete(pid);
-        }
-        return parent;
-      },
-      () => {
-        if (cache.get(pid) === asked) {
-          cache.delete(pid);
-        }
-        return undefined;
+    const asked: Promise<number | undefined> = safe().then((parent) => {
+      if (parent === undefined && cache.get(key) === asked) {
+        cache.delete(key);
       }
-    );
-    cache.set(pid, asked);
+      return parent;
+    });
+    cache.set(key, asked);
     return asked;
   };
 }

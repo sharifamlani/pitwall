@@ -192,6 +192,21 @@ export async function activate(context: vscode.ExtensionContext) {
   const tabTracker = () => harnessRegistry.all().find((adapter) => adapter.nativeUi?.surfaces?.openSerially)?.nativeUi?.surfaces;
   /** A panel's parent, asked of the OS once per pid (each Windows query starts PowerShell). */
   const parentPidOf = cachedParentPid();
+  /**
+   * A live process for a session (Q28): this window's own panel (a child of
+   * this extension host) is marked `here`; any other is an outsider. Shared by
+   * the router and the session finder's resume.
+   */
+  const liveProcess = async (sessionId: string) => {
+    for (const adapter of harnessRegistry.all()) {
+      const live = await adapter.liveProcessOf?.(sessionId);
+      if (live) {
+        // The start time (else the session) names the process: a pid this window's old panel had may be another window's now.
+        return classifyLiveProcess({ ...live, sessionId }, { hostPid: process.pid, parentPidOf });
+      }
+    }
+    return undefined;
+  };
   const router = new ChatRouter({
     services: () => windowServices,
     // Claude's own rule: a window's folder is its first workspace folder.
@@ -202,17 +217,8 @@ export async function activate(context: vscode.ExtensionContext) {
     rootsOf: (worktree) => workspacesProvider.rootsOf(worktree),
     repoName: (folder) => workspacesProvider.repoContaining(folder)?.name ?? path.basename(folder),
     isOpenHere: isChatOpen,
-    // A live process for a session with no tab or terminal Pitwall knows of (Q28): this window's
-    // own panel (a child of this extension host) is marked `here`; any other is an outsider.
-    outsideTerminal: async (sessionId) => {
-      for (const adapter of harnessRegistry.all()) {
-        const live = await adapter.liveProcessOf?.(sessionId);
-        if (live) {
-          return classifyLiveProcess(live, { hostPid: process.pid, parentPidOf });
-        }
-      }
-      return undefined;
-    },
+    // Asked only for a session with no tab or terminal Pitwall knows of.
+    outsideTerminal: liveProcess,
     // This window's own panel with a tab Pitwall never bound (v0.6.0): the agent UI reveals the tab
     // holding the session, never a second process; the title tracker then binds it if its title names one chat.
     revealLive: async (chat, sessionId) => {
@@ -856,6 +862,7 @@ export async function activate(context: vscode.ExtensionContext) {
     activateChat,
     refreshTree,
     isViewVisible: () => sessionSearchTreeView.visible,
+    liveProcess,
   });
   // The Keyboard Shortcuts editor, filtered to this extension's commands.
   register('pitwall.openKeybindings', () =>

@@ -1952,6 +1952,20 @@ test('Open in Terminal on a chat with its own Pitwall terminal reveals that term
   assert.deepEqual([stub.window.terminals.length, terminal.shown, f.lookups.length], [1, 2, asked], 'its own terminal, focused again');
 });
 
+test("Open in Claude UI on a chat live in its own Pitwall terminal offers Close and Open, never the outside warning (M6)", async (t) => {
+  const live: Record<string, { pid: number; panel?: boolean }> = {};
+  const f = guarded(t, live, { surface: 'terminal' });
+  const chat = f.chat('claude', 'Mine', 'claude-mine');
+  await runCommand('pitwall.openChatInTerminal', f.row(chat));
+  // Its own terminal's process is now the live one.
+  live['claude-mine'] = { pid: 9100, panel: false };
+  stub.__warningResponses.push(undefined);
+  await runCommand('pitwall.openClaudeUi', f.row(chat));
+  assert.ok(shown('Close the terminal for "Mine"?'), 'the user may move it to the panel');
+  assert.ok(!shown(TERMINAL_OUTSIDE(9100)), 'Pitwall knows its own terminal');
+  assert.deepEqual([f.claudeUi.opened, f.lookups], [[], ['claude-mine']], 'no lookup once its terminal owns it');
+});
+
 test('Open in Claude UI on a chat live in an outside terminal or another window opens no new panel and no terminal', async (t) => {
   const f = guarded(t, LIVE, { surface: 'ui' });
   for (const id of ['claude-term', 'claude-win', 'claude-here']) {

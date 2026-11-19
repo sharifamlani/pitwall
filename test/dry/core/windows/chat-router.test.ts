@@ -1477,15 +1477,21 @@ test('the Claude harness marks a claude-vscode entry as a panel', async (t) => {
   const dir = tempDir(t, 't4-entry-');
   const { ClaudeSessionsFile, localPidDomain } = await import('../../../../src/harnesses/claude/ClaudeSessionsFile');
   const domain = await localPidDomain();
-  const entry = (sessionId: string, entrypoint: string) =>
+  const entry = (sessionId: string, entrypoint: string, extra: object = {}) =>
     fs.writeFileSync(
       path.join(dir, `${sessionId.slice(0, 4)}.json`),
-      JSON.stringify({ sessionId, pid: process.pid, pidDomain: domain, status: 'idle', statusUpdatedAt: 1, cwd: 'C:/x', entrypoint })
+      JSON.stringify({ sessionId, pid: process.pid, pidDomain: domain, status: 'idle', statusUpdatedAt: 1, cwd: 'C:/x', entrypoint, ...extra })
     );
   entry(ID.a, 'claude-vscode');
   entry(ID.b, 'cli');
+  entry(ID.c, 'claude-vscode', { startedAt: 1790000000000 });
   const harness = new ClaudeHarness({ sessionsFile: new ClaudeSessionsFile({ dir: () => dir }) } as never);
   assert.deepEqual(await harness.liveProcessOf?.(ID.a), { pid: process.pid, panel: true, cwd: 'C:/x' }, "the record's cwd names the panel's window (D35)");
+  assert.deepEqual(
+    await harness.liveProcessOf?.(ID.c),
+    { pid: process.pid, panel: true, cwd: 'C:/x', startedAt: 1790000000000 },
+    "the record's start time tells a reused pid from the process that had it (QA #72)"
+  );
   assert.deepEqual(await harness.liveProcessOf?.(ID.b), { pid: process.pid, panel: false, cwd: 'C:/x' });
 });
 

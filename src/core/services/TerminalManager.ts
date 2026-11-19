@@ -52,6 +52,12 @@ export const RESTORED_SHELL_TIMEOUT_MS = 10000;
  */
 export const REVIVED_SHELL_READY_CAP_MS = 60_000;
 
+/** QA #72, new copy: restored tabs left as plain shells because their chats went on running elsewhere. One message per restore. */
+export const runningElsewhereMessage = (names: string[]): string =>
+  `${names.map((name) => `"${name}"`).join(', ')} ${names.length === 1 ? 'is' : 'are'} already running elsewhere, so ${
+    names.length === 1 ? 'its restored terminal was' : 'their restored terminals were'
+  } not resumed. Click the chat to switch to it.`;
+
 /** A launched tab and the waits its command start is observed through. */
 interface StartedTerminal {
   terminal: vscode.Terminal;
@@ -1337,6 +1343,15 @@ export class TerminalManager {
     this.stateEmitter.fire({ chatId, state: 'opened' });
   }
 
+  /** Whether the harness's own record shows a live process for this chat's session. A failed read is not live. */
+  private async liveElsewhere(chat: ChatSession): Promise<boolean> {
+    if (!chat.harnessSessionId || !this.harnessRegistry.has(chat.harness)) {
+      return false;
+    }
+    const live = await Promise.resolve(this.harnessRegistry.get(chat.harness).liveProcessOf?.(chat.harnessSessionId)).catch(() => undefined);
+    return live !== undefined;
+  }
+
   /**
    * Resume every restored tab that VS Code revived as a new shell. A chat is
    * only resumed into its own tab: the workspace must have recorded a PID for
@@ -1475,6 +1490,7 @@ export class TerminalManager {
 
     // Resumability checks read the harness's own store, so overlap them. The
     // sends and their storage writes stay ordered to avoid lost updates.
+    const runningElsewhere: string[] = [];
     const prepared = await Promise.all(
       candidates.map(async ({ chat, terminal }) => {
         if (this.isDisposed) {
@@ -1488,6 +1504,15 @@ export class TerminalManager {
           this.restoringChats.delete(chat.id);
           return undefined;
         }
+        // The pty this chat ran in died with the window, so a live process
+        // for its session started elsewhere while the window was closed (a
+        // terminal, a panel, another window). A `--resume` here would fork it
+        // (Q28): leave the tab a plain shell, unheld, so a click routes it.
+        if (latest.harnessSessionId && (await this.liveElsewhere(latest))) {
+          this.restoringChats.delete(chat.id);
+          runningElsewhere.push(latest.name);
+          return undefined;
+        }
         const launch = await this.prepareLaunch(latest, worktree.path, false);
         if (!launch) {
           this.restoringChats.delete(chat.id);
@@ -1499,6 +1524,9 @@ export class TerminalManager {
         return { chat: latest, terminal, launch, worktreePath: worktree.path };
       })
     );
+    if (runningElsewhere.length > 0 && !this.isDisposed) {
+      void vscode.window.showWarningMessage(runningElsewhereMessage(runningElsewhere));
+    }
 
     const revived: StartedTerminal[] = [];
     for (const item of prepared) {

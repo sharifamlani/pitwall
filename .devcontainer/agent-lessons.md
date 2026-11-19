@@ -24,6 +24,7 @@ check enforces it.
   panel, background window). (Pitwall #70.)
 - For anything that opens or starts a process, trace every caller and confirm none can start a
   second one for something already running. (Pitwall #71.)
+- For any cache keyed by an OS id (pid, handle, port, window id), write what happens when the OS reuses that id for a different object; block if a stale entry can lead to opening or starting something. (Pitwall #72.)
 
 ## Test (the Tester reads before walking)
 
