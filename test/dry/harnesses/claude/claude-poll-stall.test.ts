@@ -237,7 +237,10 @@ function unknownStatusLoad(t: Parameters<typeof claudeProfile>[0]) {
   const storage = makeStorage();
   const worktrees = new Map([['wt', worktreeRecord({ id: 'wt', repoId: 'r', path: lab })]]);
   profile.write(PROBE_SESSION, lab, [entry.user('go'), entry.assistant('x')]);
-  storage.createChat('wt', 'claude', 'Chat', { harnessSessionId: PROBE_SESSION });
+  const chat = storage.createChat('wt', 'claude', 'Chat', { harnessSessionId: PROBE_SESSION });
+  // Listed well before activation: created in the same ms as the service, R45 would count it as launched
+  // after activation (createdAt >= activatedAt), and its wait could pop (ubuntu CI on 153cccc).
+  storage.updateChat(chat.id, { createdAt: Date.now() - 60_000 });
   // A known-status session keeps the folder available; ours has a future CLI's status value.
   fs.writeFileSync(path.join(sessionsDir, '1.json'), JSON.stringify({ pid: 1, sessionId: 'other-0000', cwd: lab, pidDomain: DOMAIN, status: 'busy', statusUpdatedAt: Date.now() }));
   fs.writeFileSync(
