@@ -213,6 +213,7 @@ export class SessionAttentionService {
    * How long the extension host's event loop was held at once during each
    * poll, for the slow-poll line: a poll whose steps all waited while the
    * loop was held was kept by something else on the host, not its reads.
+   * Enabled only while a poll runs.
    */
   private loopDelay: IntervalHistogram | undefined;
 
@@ -675,16 +676,18 @@ export class SessionAttentionService {
     }
     this.ticking = true;
     const timer = new StepTimer();
-    if (!this.loopDelay && !this.disposed) {
-      this.loopDelay = monitorEventLoopDelay({ resolution: 20 });
-      this.loopDelay.enable();
-    }
-    this.loopDelay?.reset();
+    // Sampled only while a poll runs: its 20 ms timer would otherwise tick for
+    // the host's whole life in every window, and the slow-poll line reads only
+    // its max over the poll.
+    this.loopDelay ??= monitorEventLoopDelay({ resolution: 20 });
+    this.loopDelay.reset();
+    this.loopDelay.enable();
     try {
       await this.checkTurns(prime, timer);
     } catch (error) {
       console.error('[Pitwall] Attention check failed:', error);
     } finally {
+      this.loopDelay.disable();
       this.ticking = false;
     }
     const tookMs = timer.elapsed();
