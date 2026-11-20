@@ -281,17 +281,21 @@ test('the Settings page groups the two keys under Sound', () => {
 test('a toast for a removed registration fails as unregistered and falls back to the in-window message', async () => {
   const log: string[] = [];
   let script = '';
+  // The warm pop-up host: its script, `ready`, then one answer per pop-up line.
   const spawn = ((_command: string, _args: readonly string[]) => {
     const host = Object.assign(new EventEmitter(), {
       stdout: new EventEmitter(),
       stdin: {
-        end: (data: string) => {
-          script = data;
-          setImmediate(() => {
-            host.stdout.emit('data', Buffer.from('failed unregistered\r\n'));
-            host.emit('close', 2);
-          });
+        write: (data: string) => {
+          if (!script) {
+            script = data;
+            setImmediate(() => host.stdout.emit('data', Buffer.from('ready\r\n')));
+          } else {
+            setImmediate(() => host.stdout.emit('data', Buffer.from('failed unregistered\r\n')));
+          }
+          return true;
         },
+        end: () => setImmediate(() => host.emit('close', 0)),
         on: () => undefined,
       },
       kill: () => true,
@@ -307,9 +311,11 @@ test('a toast for a removed registration fails as unregistered and falls back to
   assert.equal(shownMessages().length, 1, 'the in-window message takes over, once');
   assert.ok(log.some((line) => /popup needs 5f0c3d4e shown lag=\d+ sound=off via=in-window/.test(line)));
 
-  // The script checks the one constant key before it creates the notifier.
-  const check = script.indexOf("Test-Path -LiteralPath 'HKCU:\\Software\\Classes\\AppUserModelId\\sharifamlani.pitwall'");
+  // Per pop-up, the script checks the one constant key before it creates the notifier that shows.
+  const perPopup = script.slice(script.indexOf('[Console]::In.ReadLine()'));
+  const check = perPopup.indexOf("Test-Path -LiteralPath 'HKCU:\\Software\\Classes\\AppUserModelId\\sharifamlani.pitwall'");
   assert.ok(check > 0, 'the host script tests for the AUMID key');
-  assert.ok(check < script.indexOf('CreateToastNotifier'), 'before CreateToastNotifier');
-  assert.match(script, /failed unregistered'; exit 2/);
+  assert.ok(check < perPopup.indexOf('CreateToastNotifier([string]$j.aumid)'), 'before CreateToastNotifier');
+  assert.match(perPopup, /failed unregistered'; continue/);
+  toast.dispose();
 });

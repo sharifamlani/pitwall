@@ -10,7 +10,7 @@ import {
   StatusTransition,
   shouldNotifyNeedsInput,
 } from '../../../src/core/services/SessionAttentionService';
-import { escapeAppleScript, NotificationService, openFromPopup } from '../../../src/core/services/NotificationService';
+import { escapeAppleScript, NotificationOptions, NotificationService, openFromPopup } from '../../../src/core/services/NotificationService';
 import { PopupKey, PopupLedger } from '../../../src/core/notify/PopupLedger';
 import { ClaudeSessionsFile } from '../../../src/harnesses/claude/ClaudeSessionsFile';
 import { writeDump } from '../../../src/core/windows/dumpState';
@@ -1178,6 +1178,8 @@ interface PopupFlowOptions extends RowFlowOptions {
   unboundFront?: (chat: ChatSession) => boolean;
   /** Runs after each discovery request is recorded (a test's import); returns the sessions still worth asking about again. */
   onUnlisted?: (sessionIds: string[]) => void | readonly string[] | Promise<void | readonly string[]>;
+  /** The Windows pop-up host; without one every pop-up is the in-window message. */
+  toast?: NotificationOptions['toast'];
 }
 
 /** rowFlow with the whole Phase 5 pop-up path: lock, front anywhere, listed check, log lines. */
@@ -1208,6 +1210,7 @@ function popupFlow(storage: ReturnType<typeof makeStorage>, options: PopupFlowOp
     isListed: (chatId) => storage.getChats().some((chat) => chat.id === chatId),
     unboundFront: options.unboundFront,
     log: (line) => logs.push(line),
+    toast: options.toast,
   });
   const service = new SessionAttentionService(
     storage,
@@ -1575,6 +1578,37 @@ test('every transition logs status <id8> from→to lag=', async () => {
     { chatId: chat.id, sessionId: sid, from: 'working', to: 'needs', at: stamp, waitingFor: 'permission prompt' }
   );
   assert.equal(typeof first.observedAt, 'number');
+});
+
+test('the tick warms the pop-up host while a chat works or a pop-up is pending, and not while all are idle', async () => {
+  const storage = makeStorage();
+  const sid = 'abcdef12-3456-4789-8abc-def012345678';
+  let warmed = 0;
+  const shown: string[] = [];
+  let live: HarnessLiveState = idleAfter(Date.now() - 60_000);
+  const flow = popupFlow(storage, {
+    live: () => new Set([sid]),
+    states: () => ({ [sid]: live }),
+    toast: { show: async (p) => (shown.push(p.tag), 'shown'), warm: () => warmed++ },
+  });
+  storage.createChat('wt-1', 'claude', 'Warm', { harnessSessionId: sid });
+  await flow.service.poll(true);
+  await flow.service.poll();
+  assert.equal(warmed, 0, 'an idle chat warms nothing');
+
+  live = busy(Date.now());
+  await flow.service.poll();
+  assert.equal(warmed, 1, 'a working chat warms the host before its pop-up');
+  await flow.service.poll();
+  assert.equal(warmed, 2, 'each tick while it works keeps it warm (restarts the idle clock)');
+
+  live = idleAfter(Date.now() + 5);
+  await flow.service.poll();
+  assert.ok(warmed >= 3, 'the finished turn still pending a pop-up warms it on that tick');
+  assert.deepEqual(shown, ['abcdef12-finished'], 'and the pop-up goes to the host');
+  const after = warmed;
+  await flow.service.poll();
+  assert.equal(warmed, after, 'nothing left to pop: no more warming');
 });
 
 test('a re-poll with the same statusUpdatedAt makes no second transition', async () => {

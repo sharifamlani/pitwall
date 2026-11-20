@@ -779,6 +779,10 @@ export class SessionAttentionService {
       }
     }
     this.recomputeStatuses(allChats, false, prime);
+    // A chat at work (or a pop-up still pending) may pop soon: keep the pop-up host warm meanwhile.
+    if (this.pendingWaits.size > 0 || this.pendingFinished.size > 0 || [...this.rowStatus.values()].some((row) => row.status === 'working')) {
+      this.notifications.prepare?.();
+    }
     await this.judgePopups(allChats, activeIds);
 
     if (turnStatesChanged || this.rowMarkKey() !== rowMarksBefore) {
