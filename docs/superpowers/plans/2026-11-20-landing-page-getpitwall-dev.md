@@ -8,8 +8,8 @@ LANDING PAGE — phase plan
 ─────────────────────────────────
 Phase L1 : Design mockup (canvas v9)       [████████████████████] ✅ (approved)
 Phase L1b: GitHub chip + download pop-up   [████████████████████] ✅ (canvas v11)
-Phase L2 : Domain getpitwall.dev           [██████████⏸.........] waiting on you (phone number)
-Phase L3 : Publish to Open VSX + Marketplace
+Phase L2 : Domain getpitwall.dev           [████████████████████] ✅ (Vercel order 01M7WZMMMRD74TYYHXPAXC7A0Z, 1 yr, auto-renew off)
+Phase L3 : Publish to Open VSX + Marketplace [⏸...................] waiting on you (§3 approval)
 Phase L4 : Static site + install buttons
 Phase L5 : Deploy + end-to-end install walk
 ```
