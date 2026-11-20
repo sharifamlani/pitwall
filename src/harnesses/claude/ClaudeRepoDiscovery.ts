@@ -88,6 +88,9 @@ export class ClaudeRepoDiscovery {
           }
           continue;
         }
+        if (counts) {
+          counts.sessions = (counts.sessions ?? 0) + 1;
+        }
         const folder = byCwd.get(head.cwd);
         if (!folder) {
           byCwd.set(head.cwd, { cwd: head.cwd, firstEntryAt: head.startedAt, lastActivity: stats.mtimeMs });

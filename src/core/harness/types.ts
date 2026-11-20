@@ -24,6 +24,8 @@ export interface DiscoveredFolder {
 export interface DiscoveryCounts {
   /** Session files skipped because they name no folder, or cannot be read. */
   skipped: number;
+  /** Session files in the window that named a folder. */
+  sessions?: number;
 }
 
 /** A session as discovered from a harness, normalized for Pitwall. */

@@ -23,6 +23,8 @@ const PENDING_LINK_WINDOW_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_SCAN_INTERVAL_MS = 60 * 1000;
 const DEFAULT_HOT_SCAN_INTERVAL_MS = 3_000;
 const MAX_IMPORTS_PER_SCAN = 50;
+/** A full scan after the first is logged only when it takes at least this long. */
+const SLOW_SCAN_MS = 500;
 /**
  * Listing worktrees costs one synchronous `git` call per repository, and the
  * hot scan runs every few seconds. Sessions created inside this window are
@@ -62,6 +64,8 @@ export interface SessionImportServiceOptions {
   onSessionsListed?: (sessions: HarnessSession[]) => void;
   /** Settings are read per scan so a change applies without a reload. */
   readSettings?: () => SessionImportSettings;
+  /** The Operations log: each full scan's repos, sessions and time, to match a CPU spike to it. */
+  log?: (line: string) => void;
 }
 
 /** What `importLive` did with each live session it was asked about. */
@@ -109,6 +113,7 @@ export class SessionImportService implements vscode.Disposable {
   private readonly onChatsChanged: (event: SessionImportEvent) => void;
   private readonly onSessionsListed: (sessions: HarnessSession[]) => void;
   private readonly readSettings: () => SessionImportSettings;
+  private readonly log: (line: string) => void;
 
   private readonly expectations = new Map<string, PendingUiExpectation>();
   private readonly configListener: vscode.Disposable;
@@ -118,6 +123,8 @@ export class SessionImportService implements vscode.Disposable {
   private scanning = false;
   /** A wake that arrived mid-scan; the scan runs again when it ends. */
   private wakeQueued = false;
+  /** The first full scan has been logged; later ones log only when slow. */
+  private firstScanLogged = false;
   /** A refresh asked for a full pass; the next scan runs one even while hot or hidden. */
   private fullQueued = false;
   /** Targeted imports waiting for the scan in progress to end. */
@@ -138,6 +145,7 @@ export class SessionImportService implements vscode.Disposable {
     this.isVisible = options.isVisible ?? (() => true);
     this.onChatsChanged = options.onChatsChanged ?? (() => undefined);
     this.onSessionsListed = options.onSessionsListed ?? (() => undefined);
+    this.log = options.log ?? (() => undefined);
     this.readSettings =
       options.readSettings ??
       (() => {
@@ -511,6 +519,14 @@ export class SessionImportService implements vscode.Disposable {
       const retentionMs = settings.retentionDays * DAY_MS;
       const starred = this.storageService.getStarredChatIds();
       const listings = await this.listRepositorySessions(scopes, adapters);
+      const listedMs = Date.now() - now;
+      if (!this.firstScanLogged || listedMs >= SLOW_SCAN_MS) {
+        this.firstScanLogged = true;
+        this.log(
+          `[Pitwall] import scan: ${scopes.length} repos, ` +
+            `${listings.reduce((sum, listing) => sum + listing.sessions.length, 0)} sessions, ${listedMs} ms`
+        );
+      }
       this.onSessionsListed(listings.flatMap((listing) => listing.sessions));
       // Roots can nest, and a listing for the outer root includes the inner
       // root's sessions; each goes to the deepest worktree across all roots.

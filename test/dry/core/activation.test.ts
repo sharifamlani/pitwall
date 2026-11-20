@@ -285,7 +285,7 @@ function watchStartupIo(t: { after(fn: () => unknown): void }, hold: { transcrip
   let released = false;
   const wait = () => (released ? Promise.resolve() : new Promise<void>((resolve) => held.push(resolve)));
   const { readFileSync } = nodeFs;
-  const { readFile, readdir } = nodeFs.promises;
+  const { readFile, readdir, open } = nodeFs.promises;
   const { execFileSync: blockingRun } = childProcess;
   const mutableFs = nodeFs as unknown as Record<string, unknown>;
   const mutablePromises = nodeFs.promises as unknown as Record<string, unknown>;
@@ -297,6 +297,11 @@ function watchStartupIo(t: { after(fn: () => unknown): void }, hold: { transcrip
   mutablePromises.readFile = async (file: unknown, ...rest: unknown[]) => {
     if (hold.transcripts && String(file).endsWith('.jsonl')) await wait();
     return (readFile as (...args: unknown[]) => unknown)(file, ...rest);
+  };
+  // The session scan reads a transcript in chunks through a file handle.
+  mutablePromises.open = async (file: unknown, ...rest: unknown[]) => {
+    if (hold.transcripts && String(file).endsWith('.jsonl')) await wait();
+    return (open as (...args: unknown[]) => unknown)(file, ...rest);
   };
   mutablePromises.readdir = async (dir: unknown, ...rest: unknown[]) => {
     if (hold.projectsDir && path.resolve(String(dir)) === hold.projectsDir) await wait();
@@ -312,7 +317,7 @@ function watchStartupIo(t: { after(fn: () => unknown): void }, hold: { transcrip
   };
   t.after(() => {
     mutableFs.readFileSync = readFileSync;
-    Object.assign(mutablePromises, { readFile, readdir });
+    Object.assign(mutablePromises, { readFile, readdir, open });
     mutableChild.execFileSync = blockingRun;
     release();
   });

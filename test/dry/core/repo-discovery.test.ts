@@ -14,6 +14,7 @@ import { activate } from '../../../src/extension';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { GitService } from '../../../src/core/services/GitService';
 import { RepoDiscoveryService } from '../../../src/core/services/RepoDiscoveryService';
+import { disposeOperationLog } from '../../../src/core/services/OperationLog';
 import { registerRepositoryCommands } from '../../../src/core/commands/repository';
 import { DiscoveredFolder } from '../../../src/core/harness/types';
 import { Repository } from '../../../src/core/types';
@@ -369,6 +370,42 @@ test('discovery never runs before the first render and its failure is logged, no
   assert.equal(calls, 1);
   assert.match(String(errors[0][0]), /\[Pitwall\] discovery/);
   assert.deepEqual(await service.scan(), { added: [], skipped: 0 }, 'a failing pass resolves');
+});
+
+test('with the list hidden, each discovery pass writes a timestamped start and a finish with counts and time to Pitwall Operations', async (t) => {
+  const profile = claudeProfile(t);
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const lab = makeRepo(profile.root, 'lab');
+  const other = path.join(profile.root, 'notes');
+  fs.mkdirSync(other);
+  profile.write('s1', lab, [entry.user('first task', iso(Date.now() - 60_000)), entry.assistant('done')]);
+  profile.write('s2', lab, [entry.user('second task', iso(Date.now() - 30_000)), entry.assistant('done')]);
+  profile.write('s3', other, [entry.user('notes', iso(Date.now() - 10_000)), entry.assistant('done')]);
+
+  const context = {
+    subscriptions: [] as { dispose(): unknown }[],
+    globalState: memento(),
+    workspaceState: memento(),
+    extensionUri: vscode.Uri.file('/extension'),
+    extension: { id: 'sharifamlani.pitwall' },
+  };
+  t.after(() => context.subscriptions.forEach((subscription) => subscription.dispose()));
+  // A fresh channel: an earlier test's lives on past the stub's reset.
+  disposeOperationLog();
+  t.after(disposeOperationLog);
+  await activate(context as never);
+  const operations = () => stub.__outputChannels.find((channel) => channel.name === 'Pitwall Operations')?.lines ?? [];
+  const finished = () => operations().find((line) => line.includes('[Pitwall] discovery finished'));
+
+  // The view never shows: the first pass starts after the hidden-list fallback (#70).
+  await waitFor(() => finished() !== undefined, 'the first pass finished', 10_000);
+  const started = operations().find((line) => line.includes('[Pitwall] discovery started'));
+  const stamp = /^\[(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\] /;
+  assert.match(started ?? '', stamp, 'the start is timestamped');
+  assert.match(finished()!, stamp, 'the finish is timestamped');
+  assert.match(finished()!, /\] \[Pitwall\] discovery finished: 2 repos \(2 new\), 3 sessions, 0 skipped, \d+ ms$/);
+  assert.ok(operations().indexOf(started!) < operations().indexOf(finished()!), 'start before finish');
+  assert.ok(!operations().some((line) => line.includes(profile.root)), 'no paths in the log');
 });
 
 test('the manifest: 14-day retention, discovery on by default, Dismiss replaces Remove on repo rows', () => {

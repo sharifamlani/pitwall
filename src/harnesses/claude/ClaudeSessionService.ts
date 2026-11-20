@@ -12,6 +12,7 @@ import {
   readTurnStateTail,
 } from './ClaudeTurnState';
 import { RecordPathCatalog, StatCache } from '../../core/harness/kit/recordCache';
+import { BoundedCache } from '../../core/utils/boundedCache';
 import { parseJsonLine, readJsonlTail, scanJsonlLines } from '../../core/utils/jsonlTail';
 import { claudeConfigDir, claudeProjectDirOverride } from './claudeConfig';
 
@@ -70,12 +71,24 @@ export class ClaudeSessionService {
    * recent (its mtime is), never as a full read on the extension host (E16).
    */
   private static readonly ACTIVITY_TAIL_MAX_BYTES = 1024 * 1024;
+  /** How much of a transcript a parse reads between yields to the extension host. */
+  private static readonly PARSE_CHUNK_BYTES = 1024 * 1024;
+  /** Bytes before a parse's end kept to tell an append from a rewrite. */
+  private static readonly PARSE_CHECK_BYTES = 64;
 
   private readonly claudeDir: string;
   private readonly projectsDir: string;
   private readonly projectDirOverride: string | null;
   /** Parsed sessions keyed by file path, invalidated by mtime+size. */
   private readonly sessionFileCache = new StatCache<ClaudeSession | null>(
+    ClaudeSessionService.CACHE_LIMIT
+  );
+  /**
+   * Each transcript's parse so far, resumed when the file has only grown, so
+   * a live transcript of hundreds of MB is parsed once, then only its new
+   * lines (0.6.0 walk).
+   */
+  private readonly parseProgress = new BoundedCache<string, ParseProgress>(
     ClaudeSessionService.CACHE_LIMIT
   );
   /** Session ID to transcript path, refreshed when a cached path disappears. */
@@ -254,20 +267,93 @@ export class ClaudeSessionService {
    * Read without blocking the extension host: a scan parses every transcript
    * of every repository (129 at 1 MB each on the E16 profile), and a
    * synchronous read held the list's first render behind all of them.
+   *
+   * The file is read in 1 MB chunks with a yield between each, and never held
+   * as one string: a whole-file read blocked the host for about a second per
+   * 250 MB, and a transcript past V8's string limit (~512 MB) could not be
+   * read at all. Transcripts only append, so a file that has only grown
+   * since its last parse resumes where that parse ended; a file that shrank
+   * or changed before that point is parsed again from the start.
    */
   private async parseSessionFile(filePath: string, sessionId: string, stats: fs.Stats): Promise<ClaudeSession | null> {
+    // Taken out while it runs: a concurrent parse of the same file starts
+    // its own instead of feeding this one's lines twice.
+    const previous = this.parseProgress.get(filePath);
+    this.parseProgress.delete(filePath);
     if (stats.size === 0) {
       return null;
     }
-    const parser = new TranscriptParser(sessionId, filePath, stats.mtime);
+    let handle: fs.promises.FileHandle;
     try {
-      for (const line of (await fs.promises.readFile(filePath, 'utf-8')).split('\n')) {
-        parser.add(line);
-      }
+      handle = await fs.promises.open(filePath, 'r');
     } catch {
       return null;
     }
-    return parser.finish();
+    try {
+      const progress: ParseProgress =
+        previous && (await this.continues(handle, previous, stats.size))
+          ? previous
+          : { parser: new TranscriptParser(sessionId, filePath), offset: 0, check: Buffer.alloc(0) };
+      await this.parseFrom(handle, progress, stats.size);
+      this.parseProgress.set(filePath, progress);
+      return progress.parser.finish(stats.mtime);
+    } catch {
+      return null;
+    } finally {
+      await handle.close().catch(() => undefined);
+    }
+  }
+
+  /** Whether the file still holds what a parse read, so it may resume at its end. */
+  private async continues(handle: fs.promises.FileHandle, progress: ParseProgress, size: number): Promise<boolean> {
+    if (size < progress.offset) {
+      return false;
+    }
+    const length = progress.check.length;
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buffer, 0, length, progress.offset - length);
+    return bytesRead === length && buffer.equals(progress.check);
+  }
+
+  /**
+   * Feed the parser every line from the progress offset to `size`, chunk by
+   * chunk. A line is cut at its newline byte, which never occurs inside a
+   * UTF-8 sequence. A last line without its newline is read as a whole-file
+   * parse reads it; one that is not JSON yet (a write in progress) is left
+   * for the next parse.
+   */
+  private async parseFrom(handle: fs.promises.FileHandle, progress: ParseProgress, size: number): Promise<void> {
+    let position = progress.offset;
+    let pending: Buffer[] = [];
+    while (position < size) {
+      const buffer = Buffer.alloc(Math.min(ClaudeSessionService.PARSE_CHUNK_BYTES, size - position));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+      if (bytesRead === 0) {
+        break;
+      }
+      const chunk = buffer.subarray(0, bytesRead);
+      position += bytesRead;
+      let start = 0;
+      for (let newline = chunk.indexOf(10); newline >= 0; newline = chunk.indexOf(10, start)) {
+        pending.push(chunk.subarray(start, newline));
+        progress.parser.add(Buffer.concat(pending).toString('utf8'));
+        pending = [];
+        start = newline + 1;
+        progress.offset = position - chunk.length + start;
+      }
+      if (start < chunk.length) {
+        pending.push(chunk.subarray(start));
+      }
+    }
+    const rest = Buffer.concat(pending).toString('utf8');
+    if (rest && parseJsonLine(rest) !== undefined) {
+      progress.parser.add(rest);
+      progress.offset = position;
+    }
+    const checkStart = Math.max(0, progress.offset - ClaudeSessionService.PARSE_CHECK_BYTES);
+    const check = Buffer.alloc(progress.offset - checkStart);
+    const { bytesRead } = await handle.read(check, 0, check.length, checkStart);
+    progress.check = check.subarray(0, bytesRead);
   }
 
   /**
@@ -466,7 +552,7 @@ export class ClaudeSessionService {
       return fresh.value ? { session: fresh.value } : null;
     }
 
-    const parser = fresh ? undefined : new TranscriptParser(sessionId, filePath, stats.mtime);
+    const parser = fresh ? undefined : new TranscriptParser(sessionId, filePath);
     let prompt: PreviewMessage | undefined;
     try {
       await scanJsonlLines(filePath, (line) => {
@@ -484,12 +570,19 @@ export class ClaudeSessionService {
       return null;
     }
 
-    const session = parser ? parser.finish() : fresh!.value;
+    const session = parser ? parser.finish(stats.mtime) : fresh!.value;
     if (parser) {
       this.sessionFileCache.set(filePath, stats, session);
     }
     return session ? { session, prompt } : null;
   }
+}
+
+/** A transcript's parse so far: the parser, the bytes it has read, and the bytes just before that point. */
+interface ParseProgress {
+  parser: TranscriptParser;
+  offset: number;
+  check: Buffer;
 }
 
 /** A transcript line's fields, as Claude writes them; any may be missing or odd. */
@@ -512,12 +605,12 @@ class TranscriptParser {
   // authoritative pending-agent count the attention tick also uses.
   private readonly turnSignals: ClaudeTurnSignals = { lastConversation: null, pendingBackgroundAgents: null };
 
-  constructor(sessionId: string, filePath: string, mtime: Date) {
+  constructor(sessionId: string, filePath: string) {
     this.session = {
       sessionId,
       cwd: '',
       summary: null,
-      lastUpdated: mtime,
+      lastUpdated: null,
       lastPromptAt: null,
       filePath,
       hasMessages: false,
@@ -621,14 +714,21 @@ class TranscriptParser {
     }
   }
 
-  /** The session, or null when no line placed it in a folder. */
-  finish(): ClaudeSession | null {
-    const session = this.session;
+  /**
+   * The session as of the lines read so far, or null when no line placed it
+   * in a folder. A new object each call, so the parse can go on after it.
+   */
+  finish(mtime: Date): ClaudeSession | null {
     // The tail reader and the full parser share this derivation so the
     // attention tick and the tree cannot disagree about a session's state.
     const turn = deriveClaudeTurnState(this.turnSignals);
-    session.turnState = turn.turnState;
-    session.turnEndedAt = turn.turnEndedAt;
+    const session: ClaudeSession = {
+      ...this.session,
+      lastUpdated: mtime,
+      recentUserPrompts: [...this.session.recentUserPrompts],
+      turnState: turn.turnState,
+      turnEndedAt: turn.turnEndedAt,
+    };
 
     // The user's own name for the session, then Claude's, then a summary,
     // then the first prompt.

@@ -130,6 +130,8 @@ function statusSince(status: SessionStatus, state: RowState | undefined, chat: C
 }
 
 const TICK_MS = 4_000;
+/** A poll at least this long is logged with its time, so a CPU spike can be matched to it. */
+const SLOW_POLL_MS = 500;
 export const NEEDS_INPUT_COOLDOWN_MS = 60_000;
 
 /**
@@ -648,12 +650,17 @@ export class SessionAttentionService {
       return;
     }
     this.ticking = true;
+    const started = Date.now();
     try {
       await this.checkTurns(prime);
     } catch (error) {
       console.error('[Pitwall] Attention check failed:', error);
     } finally {
       this.ticking = false;
+    }
+    const tookMs = Date.now() - started;
+    if (tookMs >= SLOW_POLL_MS) {
+      this.options.log?.(`[Pitwall] status poll took ${tookMs} ms (${this.polledChats.size} chats read)`);
     }
     if (this.pollQueued) {
       this.pollQueued = false;
