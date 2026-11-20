@@ -14,6 +14,8 @@ export interface UnlistedLiveDeps {
   fullRefresh(): void;
   /** Re-poll the attention service, so a chat just listed is tracked at once. */
   pollAttention(): void;
+  /** The session is still live and no row holds it (the attention service's view). */
+  stillUnlisted(sessionId: string): boolean;
 }
 
 /** Sessions in unlisted folders kept for discovery's next added repo; a bound on a window's memory. */
@@ -31,7 +33,9 @@ const MAX_UNPLACED = 50;
  * - One in a folder no listed repo holds wakes discovery once per window
  *   and is not retried on a timer: a full transcript parse each time would
  *   block the extension host (QA on #73). It is imported again when
- *   discovery adds repos (`onReposAdded`).
+ *   discovery adds repos (`onReposAdded`), unless it ended or was listed
+ *   some other way (a full scan) by then: those are dropped, so they hold
+ *   no place under the bound and are never read again.
  * - An adapter that can't read one session gets the full import scan.
  */
 export function createUnlistedLiveHandler(deps: UnlistedLiveDeps) {
@@ -40,11 +44,21 @@ export function createUnlistedLiveHandler(deps: UnlistedLiveDeps) {
   /** Live sessions placed in no listed repo, waiting for discovery to add theirs. */
   const unplaced = new Set<string>();
 
+  /** Drop the sessions that ended or got listed some other way. */
+  const prune = (): void => {
+    for (const id of unplaced) {
+      if (!deps.stillUnlisted(id)) {
+        unplaced.delete(id);
+      }
+    }
+  };
+
   const importNow = async (sessionIds: readonly string[]): Promise<LiveImportResult> => {
     const result = await deps.importLive(sessionIds);
     for (const id of sessionIds) {
       unplaced.delete(id);
     }
+    prune();
     for (const id of result.unplaced) {
       if (unplaced.size < MAX_UNPLACED) {
         unplaced.add(id);
@@ -78,6 +92,7 @@ export function createUnlistedLiveHandler(deps: UnlistedLiveDeps) {
 
     /** Discovery added repos: the live sessions it may have placed are imported now. */
     async onReposAdded(): Promise<void> {
+      prune();
       if (unplaced.size > 0) {
         await importNow([...unplaced]);
       }

@@ -601,6 +601,7 @@ export async function activate(context: vscode.ExtensionContext) {
     wakeDiscovery: () => repoDiscovery.wake(),
     fullRefresh: () => sessionImporter.refresh(),
     pollAttention: () => void attentionService.poll(),
+    stillUnlisted: (sessionId) => attentionService.isUnlistedLive(sessionId),
   });
 
   // Repos found from the agents' sessions (ADR 0019), after the list first
@@ -674,12 +675,15 @@ export async function activate(context: vscode.ExtensionContext) {
       ledger: popupLedger,
       frontAnywhere: (sessionId) => (windowServices?.registry ?? earlyRegistry)?.frontAnywhere(sessionId) ?? false,
       isListed: (chatId) => storageService.getChat(chatId) !== undefined,
-      // A brand-new chat's tab, in front before it binds, is in front (PR #73).
+      // A brand-new chat's tab, in front before it binds, is in front: only the one new chat with no
+      // open surface that started after the tab opened (PR #73, QA round 2).
       unboundFront: (chat) =>
         chatVisibility.unboundTabMayBeChat(chat, {
           adapters: () => harnessRegistry.all(),
+          chats: () => storageService.getChats(),
           worktreePathOf: (entry) => workspacesProvider.getWorktreeById(entry.worktreeId)?.path,
           folders: () => (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath),
+          isOpenAnywhere: (entry) => workspacesProvider.isOpenAnywhere(entry),
         }),
       log: logOperation,
       toast: windowsToast,

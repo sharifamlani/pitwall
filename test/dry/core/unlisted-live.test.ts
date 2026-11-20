@@ -11,7 +11,10 @@ import type { LiveImportResult } from '../../../src/core/services/SessionImportS
 function wiring(answers: Array<(ids: readonly string[]) => LiveImportResult>, started = true) {
   const calls = { imports: [] as string[][], discovery: 0, refresh: 0, polls: 0, deferred: 0 };
   let scansStarted = started;
+  /** Sessions that ended or got listed some other way (a full scan), as the attention service sees them. */
+  const gone = new Set<string>();
   const handler = createUnlistedLiveHandler({
+    stillUnlisted: (id) => !gone.has(id),
     scansStarted: () => scansStarted,
     deferUntilScans: () => calls.deferred++,
     importLive: async (ids) => {
@@ -23,7 +26,7 @@ function wiring(answers: Array<(ids: readonly string[]) => LiveImportResult>, st
     fullRefresh: () => calls.refresh++,
     pollAttention: () => calls.polls++,
   });
-  return { handler, calls, start: () => (scansStarted = true) };
+  return { handler, calls, gone, start: () => (scansStarted = true) };
 }
 
 const none: LiveImportResult = { retry: [], unplaced: [], unsupported: [] };
@@ -64,4 +67,26 @@ test('an adapter that cannot read one session falls back to discovery and one fu
   const { handler, calls } = wiring([() => ({ ...none, unsupported: ['s-1'] })]);
   assert.deepEqual(await handler.ask(['s-1']), []);
   assert.deepEqual([calls.discovery, calls.refresh], [1, 1]);
+});
+
+test('an unplaced session that ends, or is listed some other way, before discovery adds its repo is dropped, not imported again', async () => {
+  const { handler, calls, gone } = wiring([() => ({ ...none, unplaced: ['s-ended', 's-scanned', 's-live'] })]);
+  await handler.ask(['s-ended', 's-scanned', 's-live']);
+  gone.add('s-ended'); // its process exited
+  gone.add('s-scanned'); // a full scan listed it
+  await handler.onReposAdded();
+  assert.deepEqual(calls.imports.at(-1), ['s-live'], 'only the one still live and unlisted');
+  gone.add('s-live');
+  await handler.onReposAdded();
+  assert.equal(calls.imports.length, 2, 'nothing left: no import at all');
+});
+
+test('sessions that ended free their place under the unplaced bound', async () => {
+  const fifty = Array.from({ length: 50 }, (_, index) => `s-${index}`);
+  const { handler, calls, gone } = wiring([() => ({ ...none, unplaced: fifty }), () => ({ ...none, unplaced: ['s-late'] })]);
+  await handler.ask(fifty);
+  fifty.forEach((id) => gone.add(id));
+  await handler.ask(['s-late']);
+  await handler.onReposAdded();
+  assert.deepEqual(calls.imports.at(-1), ['s-late'], 'kept, though fifty were held before it');
 });

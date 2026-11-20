@@ -381,7 +381,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   }
 
   /** Open in this window (a terminal or a tab) or as a tab in any other (Q12). */
-  private isOpenAnywhere(chat: ChatSession): boolean {
+  isOpenAnywhere(chat: ChatSession): boolean {
     return this.chatOpenProvider(chat) || chatNativeSessionIds(chat).some((id) => this.openAnywhere.has(id));
   }
 

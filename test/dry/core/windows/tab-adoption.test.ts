@@ -16,7 +16,7 @@ import { claudeProfile, entry } from '../../harnesses/claude/claudeFixture';
 import { HarnessRegistry } from '../../../../src/core/harness/HarnessRegistry';
 import { SessionImportService } from '../../../../src/core/services/SessionImportService';
 import { WorktreeCatalog } from '../../../../src/core/services/WorktreeCatalog';
-import { unboundTabMayBeChat } from '../../../../src/core/services/chatVisibility';
+import { UNBOUND_FRONT_MAX_MS, unboundTabMayBeChat } from '../../../../src/core/services/chatVisibility';
 import { fakeAdapter, makeStorage, sessionRecord, worktreeRecord } from '../../support';
 
 const LAB_C = 'C:\\lab\\uj-lab-c';
@@ -138,7 +138,7 @@ test('an empty window adopts nothing and lists nothing', () => {
   surfaces.dispose();
 });
 
-test("a brand-new chat's tab binds once importLive reads its session, and until then counts as in front as an unbound tab (QA on #73)", async (t) => {
+test("a brand-new chat's tab binds once importLive reads its session (QA on #73)", async (t) => {
   const { surfaces, bound } = restoredWindow(['Night ferry story']);
   const storage = makeStorage();
   const repo = storage.addRepository('uj-lab-c', LAB_C);
@@ -167,23 +167,140 @@ test("a brand-new chat's tab binds once importLive reads its session, and until 
     onSessionsListed: listed.event,
   });
   await surfaces.adoptBeforeOpen(1_000);
-  assert.equal(surfaces.activeTabUnbound(), true, 'the new tab is in front, bound to nothing');
+  assert.deepEqual(bound(), [undefined], 'the tab is in front, bound to nothing');
 
   await importer.importLive(['12f645db']);
   const chat = storage.getChats().find((entry) => entry.harnessSessionId === '12f645db')!;
   assert.ok(chat, 'listed');
   assert.deepEqual(bound(), ['12f645db'], 'the tab binds to it at once');
-  assert.equal(surfaces.activeTabUnbound(), false);
-  assert.equal(unboundTabMayBeChat(chat, { adapters: () => [adapter], worktreePathOf: () => LAB_C, folders: () => [LAB_C] }), false, 'bound: the ordinary front check takes over');
-
-  // Before a tab binds, a chat of this folder without a bound tab counts as possibly in front; one of another folder or harness never does.
-  const fresh = restoredWindow(['Claude Code']);
-  const freshAdapter = { ...adapter, nativeUi: { surfaces: fresh.surfaces } as never };
-  const unbound = { adapters: () => [freshAdapter], worktreePathOf: () => LAB_C, folders: () => [LAB_C] };
-  assert.equal(unboundTabMayBeChat(chat, unbound), true);
-  assert.equal(unboundTabMayBeChat(chat, { ...unbound, worktreePathOf: () => LAB_C_WT }), false, "another folder's chat");
-  assert.equal(unboundTabMayBeChat({ ...chat, harness: 'codex' } as ChatSession, unbound), false, "another harness's chat");
+  assert.equal(surfaces.activeUnboundTabOpenedAt(), undefined, 'bound: no unbound tab in front');
+  assert.equal(
+    unboundTabMayBeChat(chat, { adapters: () => [adapter], chats: () => [chat], worktreePathOf: () => LAB_C, folders: () => [LAB_C], isOpenAnywhere: () => false }),
+    false,
+    'bound: the ordinary front check takes over'
+  );
   adoption.dispose();
   surfaces.dispose();
-  fresh.surfaces.dispose();
+});
+
+// ---------------------------------------------------------------------------
+// The unbound-tab front heuristic (QA round 2 on #73): an unbound tab the
+// user opened stands for one chat only, a chat with no open surface anywhere
+// that started after the tab opened, and only while exactly one chat fits.
+// ---------------------------------------------------------------------------
+
+/** A window whose Claude tabs the real tracker watches: `restored` were there before it started; `open` is a tab opening now. */
+function liveWindow(restored: string[] = []) {
+  const tabOf = (label: string) => ({ label, input: new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel'), isActive: false });
+  const group = { isActive: true, viewColumn: 1, activeTab: undefined as unknown, tabs: restored.map(tabOf) as unknown[] };
+  group.activeTab = group.tabs[group.tabs.length - 1];
+  let fire: (event: vscode.TabChangeEvent) => void = () => undefined;
+  const surfaces = claudeUiSurfaces({
+    getTabGroups: () => [group] as never,
+    onDidChangeTabs: (listener) => ((fire = listener), { dispose: () => undefined }),
+    onDidChangeTabGroups: () => ({ dispose: () => undefined }),
+    log: () => undefined,
+  });
+  return {
+    surfaces,
+    open(label: string) {
+      const tab = tabOf(label);
+      group.tabs.push(tab);
+      group.activeTab = tab;
+      fire({ opened: [tab], closed: [], changed: [] } as never);
+      return tab;
+    },
+    show(tab: unknown) {
+      group.activeTab = tab;
+      fire({ opened: [], closed: [], changed: [tab] } as never);
+    },
+  };
+}
+
+const HOUR = 60 * 60_000;
+const listedChat = (harnessSessionId: string, createdAt: number, worktreeId = 'wt-c'): ChatSession =>
+  ({ id: `chat-${harnessSessionId}`, harness: 'claude', harnessSessionId, name: harnessSessionId, worktreeId, createdAt, lastAccessedAt: createdAt }) as ChatSession;
+
+/** The heuristic's inputs over one window: every chat listed, `open` the chats with a surface anywhere. */
+function frontDeps(window: ReturnType<typeof liveWindow>, chats: () => ChatSession[], open: Set<string> = new Set(), now?: () => number) {
+  return {
+    adapters: () => [{ id: 'claude', nativeUi: { surfaces: window.surfaces } } as never],
+    chats,
+    worktreePathOf: (chat: ChatSession) => (chat.worktreeId === 'wt-c' ? LAB_C : LAB_C_WT),
+    folders: () => [LAB_C],
+    isOpenAnywhere: (chat: ChatSession) => open.has(chat.id) || window.surfaces.isOpen(chat.harnessSessionId!),
+    ...(now ? { now } : {}),
+  };
+}
+
+test('an unbound tab the user opened stands for the one chat of this folder that started after it, with no open surface', (t) => {
+  const window = liveWindow();
+  t.after(() => window.surfaces.dispose());
+  window.open('Claude Code');
+  const fresh = listedChat('s-new', Date.now());
+  const chats = [fresh];
+  assert.equal(unboundTabMayBeChat(fresh, frontDeps(window, () => chats)), true, 'the new chat being watched');
+  assert.equal(unboundTabMayBeChat({ ...fresh, harness: 'codex' } as ChatSession, frontDeps(window, () => chats)), false, "another harness's chat");
+  const elsewhere = listedChat('s-wt', Date.now(), 'wt-other');
+  assert.equal(unboundTabMayBeChat(elsewhere, frontDeps(window, () => [fresh, elsewhere])), false, "another folder's chat");
+});
+
+test('an unbound tab never stands for a chat that started before it opened (an hour-old chat, open or not)', (t) => {
+  const window = liveWindow();
+  t.after(() => window.surfaces.dispose());
+  const old = listedChat('s-old', Date.now() - HOUR);
+  window.open('Claude Code');
+  const chats = [old];
+  assert.equal(unboundTabMayBeChat(old, frontDeps(window, () => chats)), false, 'no surface (an outside terminal): older than the tab');
+  assert.equal(unboundTabMayBeChat(old, frontDeps(window, () => chats, new Set([old.id]))), false, 'in a Pitwall terminal: it has its own surface');
+});
+
+test('a chat with an open surface anywhere is never the unbound tab, and leaves the one chat that fits (R4)', (t) => {
+  const window = liveWindow();
+  t.after(() => window.surfaces.dispose());
+  const unboundTab = window.open('Claude Code');
+  const bound = listedChat('s-bound', Date.now());
+  window.surfaces.expect('s-bound', 'Bound chat');
+  window.open('Bound chat');
+  assert.equal(window.surfaces.isOpen('s-bound'), true, 'its own tab bound');
+  window.show(unboundTab);
+  assert.notEqual(window.surfaces.activeUnboundTabOpenedAt(), undefined, 'the unbound tab is in front again');
+  const terminal = listedChat('s-term', Date.now());
+  const otherWindow = listedChat('s-other', Date.now());
+  const fresh = listedChat('s-new', Date.now());
+  const chats = [bound, terminal, otherWindow, fresh];
+  const deps = frontDeps(window, () => chats, new Set([terminal.id, otherWindow.id]));
+  assert.equal(unboundTabMayBeChat(bound, deps), false, 'a chat with a bound tab here');
+  assert.equal(unboundTabMayBeChat(terminal, deps), false, 'a chat in a terminal');
+  assert.equal(unboundTabMayBeChat(otherWindow, deps), false, "a chat open in another window (the registry's openSessionIds)");
+  assert.equal(unboundTabMayBeChat(fresh, deps), true, 'the one chat that fits');
+});
+
+test('two chats that fit: the unbound tab stands for neither', (t) => {
+  const window = liveWindow();
+  t.after(() => window.surfaces.dispose());
+  window.open('Claude Code');
+  const chats = [listedChat('s-one', Date.now()), listedChat('s-two', Date.now())];
+  for (const chat of chats) {
+    assert.equal(unboundTabMayBeChat(chat, frontDeps(window, () => chats)), false, chat.harnessSessionId!);
+  }
+});
+
+test('a restored unbound tab (no open time) never stands for any chat', (t) => {
+  const window = liveWindow(['Claude Code']);
+  t.after(() => window.surfaces.dispose());
+  assert.equal(window.surfaces.activeUnboundTabOpenedAt(), undefined);
+  const fresh = listedChat('s-new', Date.now());
+  assert.equal(unboundTabMayBeChat(fresh, frontDeps(window, () => [fresh])), false);
+});
+
+test('an unbound tab stands for its chat for a bounded time only (UNBOUND_FRONT_MAX_MS)', (t) => {
+  const window = liveWindow();
+  t.after(() => window.surfaces.dispose());
+  const openedAt = Date.now();
+  window.open('Claude Code');
+  const fresh = listedChat('s-new', openedAt);
+  const at = (now: number) => frontDeps(window, () => [fresh], new Set(), () => now);
+  assert.equal(unboundTabMayBeChat(fresh, at(openedAt + UNBOUND_FRONT_MAX_MS)), true);
+  assert.equal(unboundTabMayBeChat(fresh, at(openedAt + UNBOUND_FRONT_MAX_MS + 1_000)), false, 'a tab left unbound that long holds no new chat');
 });

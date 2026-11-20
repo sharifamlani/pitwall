@@ -720,6 +720,61 @@ test('with the Pitwall view hidden for the whole life of the window, a brand-new
   await scans.stop(f.context);
 });
 
+test("discovery adding repos imports again the live sessions it may have placed, and drops one that ended (R7: onAdded → onReposAdded)", async (t) => {
+  const lab = labFolder(t);
+  const f = await seededActivation(t, [], {}, [lab.repository]);
+  const { SessionAttentionService } = await import('../../../src/core/services/SessionAttentionService');
+  // The session's own import finds it in a folder no listed repo holds, every time.
+  const imports: string[][] = [];
+  const importLive = SessionImportService.prototype.importLive;
+  SessionImportService.prototype.importLive = async function (sessionIds: readonly string[]) {
+    imports.push([...sessionIds]);
+    return { retry: [], unplaced: [...sessionIds], unsupported: [] };
+  };
+  // The attention service's view of the session: live, no row.
+  let stillLive = true;
+  const isUnlistedLive = SessionAttentionService.prototype.isUnlistedLive;
+  SessionAttentionService.prototype.isUnlistedLive = () => stillLive;
+  // The two services the extension made, as they start.
+  let attention: { options: { onUnlistedLive?: (ids: string[]) => unknown } } | undefined;
+  const attentionStart = SessionAttentionService.prototype.start;
+  SessionAttentionService.prototype.start = function (this: InstanceType<typeof SessionAttentionService>) {
+    attention = this as never;
+    return attentionStart.call(this);
+  };
+  const scans = watchFirstScans(t);
+  let discovery: { onAdded: (roots: string[]) => void } | undefined;
+  const discoveryStart = RepoDiscoveryService.prototype.start;
+  RepoDiscoveryService.prototype.start = function (this: RepoDiscoveryService, gate: PromiseLike<unknown>) {
+    discovery = this as never;
+    return discoveryStart.call(this, gate);
+  };
+  t.after(() => {
+    SessionImportService.prototype.importLive = importLive;
+    SessionAttentionService.prototype.isUnlistedLive = isUnlistedLive;
+    SessionAttentionService.prototype.start = attentionStart;
+    RepoDiscoveryService.prototype.start = discoveryStart;
+  });
+  await f.start();
+  await scans.advance(HIDDEN_LIST_START_MS);
+  await scans.runUntil(() => scans.order.length === 2, 'the first scans, view hidden');
+  assert.ok(attention?.options.onUnlistedLive && discovery, 'both services started');
+
+  // The attention tick asks about a live session no row holds: its import places it in no listed repo.
+  await attention.options.onUnlistedLive(['s-new-repo']);
+  assert.deepEqual(imports, [['s-new-repo']]);
+  // Discovery adds its repo: the extension's onAdded imports it again.
+  discovery.onAdded([lab.repository.rootPath]);
+  await scans.drain();
+  assert.deepEqual(imports, [['s-new-repo'], ['s-new-repo']], 'imported again when discovery adds repos');
+  // It ended before discovery's next addition: dropped, never read again.
+  stillLive = false;
+  discovery.onAdded([lab.repository.rootPath]);
+  await scans.drain();
+  assert.equal(imports.length, 2, 'an ended session is not imported again');
+  await scans.stop(f.context);
+});
+
 test('a live session asked about before the first scans start, in a hidden window a handoff started, is listed once they do and pops up', async (t) => {
   // The view stays hidden, and a handoff's open hangs, so the first scans
   // wait out CLAIM_FIRST_MAX_MS after the hidden fallback (about 6 s in).

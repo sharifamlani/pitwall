@@ -503,9 +503,12 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       : undefined;
   }
 
-  activeTabUnbound(): boolean {
+  activeUnboundTabOpenedAt(): number | undefined {
     const activeTab = this.getTabGroups().find((group) => group.isActive)?.activeTab;
-    return Boolean(activeTab && this.isUiTab(activeTab) && !this.activeSessionId());
+    if (!activeTab || !this.isUiTab(activeTab) || this.activeSessionId()) {
+      return undefined;
+    }
+    return this.openedAt.get(activeTab)?.at;
   }
 
   async closeSurface(sessionId: string): Promise<boolean> {

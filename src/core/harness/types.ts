@@ -265,11 +265,14 @@ export interface NativeUiSurfaceTracker extends vscode.Disposable {
   /** The native session whose surface is the active editor tab, if any. */
   activeSessionId(): string | undefined;
   /**
-   * Whether the active editor tab is one of this harness's tabs that no
-   * session is bound to yet (a brand-new chat's tab before it binds): the
-   * user may be watching a chat Pitwall cannot name yet (PR #73).
+   * When the active editor tab opened in this window, if it is one of this
+   * harness's tabs that no session is bound to yet (a brand-new chat's tab
+   * before it binds): the user may be watching a chat Pitwall cannot name yet
+   * (PR #73). Undefined when the active tab is bound, is not this harness's,
+   * or was already there when the tracker started (a restored tab has no
+   * open time, so it can never stand for a new chat).
    */
-  activeTabUnbound?(): boolean;
+  activeUnboundTabOpenedAt?(): number | undefined;
   /** Whether this native session currently has an open native-UI tab. */
   isOpen(sessionId: string): boolean;
   /**

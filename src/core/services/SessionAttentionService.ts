@@ -302,6 +302,20 @@ export class SessionAttentionService {
     return { dispose: () => watchers.forEach((watcher) => watcher.dispose()) };
   }
 
+  /**
+   * Whether this window still tracks the session as live with no row (it was
+   * asked about and has neither ended nor been listed since). The unlisted-
+   * live handler drops a session waiting for discovery once this is false.
+   */
+  isUnlistedLive(sessionId: string): boolean {
+    for (const key of this.unlistedAsks.keys()) {
+      if (key.endsWith(`\u0000${sessionId}`)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   dispose(): void {
     this.disposed = true;
     if (this.timer) {
