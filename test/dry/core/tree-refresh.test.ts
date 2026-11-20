@@ -550,6 +550,10 @@ test('Enter or a click on the row already selected is never redirected; a new se
   await view.__mouseClick({ id: chatRow(at(chats, 0, 1)) }); // already selected: no selection change
   assert.deepEqual(opened, [at(chats, 0, 1).id, at(chats, 0, 1).id], 'the selected row opened both times');
   assert.deepEqual(applied, [[chatRow(at(chats, 0, 1))]], 'its selection was applied once, as it happened');
+  // The workbench reports the same selection again (after a refresh); Enter follows at once.
+  view.__select([view.__rowOf(chatRow(at(chats, 0, 1)))]);
+  await view.__click({ id: chatRow(at(chats, 0, 1)) });
+  assert.deepEqual(opened.at(-1), at(chats, 0, 1).id, 'a selection that did not change is never a click');
   // A click that newly selects chat 0.0 (now slot 2, where 0.1 sat) is aimed at 0.1.
   await view.__mouseClick({ id: chatRow(at(chats, 0, 0)) });
   assert.deepEqual(opened.at(-1), at(chats, 0, 1).id);
@@ -624,6 +628,21 @@ test('a selection made by a reveal (the tab focus and hotkeys reveal through rev
   // A click on that row (already selected) or Enter opens it.
   await view.__mouseClick({ id: repoRowId(repos[0]) });
   assert.deepEqual(openedRepos, [repos[0].id], 'the revealed row opened');
+});
+
+test("a reveal's selection that lands after a move is still never a click (QA #80 A2)", async (t) => {
+  const { tree, view, chats, repos, setStatus, openedRepos } = await ownerList(t);
+  const applied = wireClicks(t, tree, view);
+  // The workbench takes 900 ms to carry out the reveal; a move lands meanwhile.
+  view.__revealRoundTripMs = 900;
+  const revealing = tree.revealRow(view as never, view.__rowOf(repoRowId(repos[2])) as WorkspaceTreeItem, { select: true, focus: false });
+  setStatus(at(chats, 2, 4), 'needs'); // repo2 jumps from slot 14 to slot 0
+  await waitFor(() => view.__childIds()[0] === repoRowId(repos[2]) && screen(tree).length === 21, 'repo2 on top');
+  await revealing;
+  assert.deepEqual(applied.at(-1), [repoRowId(repos[2])], 'the selection the reveal made was applied at once');
+  // Enter, or a click on the selected row, right after.
+  await view.__mouseClick({ id: repoRowId(repos[2]) });
+  assert.deepEqual(openedRepos, [repos[2].id], 'the revealed row opened');
 });
 
 test('a hotkey (Ctrl+Alt+1) reveal forgets the old order: the next click opens the row it lands on', async (t) => {
@@ -739,15 +758,17 @@ test('a move captured while an earlier redraw is still on its way is never match
   await waitFor(() => view.elementRefreshes > 0, "repo0's new rows on their way");
   // Pitwall reveals a row (forgetting the order) while repo0's rows are still on their way...
   await tree.revealRow(view as never, view.__rowOf(repoRowId(repos[1])) as WorkspaceTreeItem, { select: true, focus: false });
-  // ...and a second move lands before them: repo2 jumps to the top.
-  setStatus(at(chats, 2, 1), 'working');
+  // ...and a second move is captured before they land: chat 1.3 heads repo1
+  // (idle, newer than every other idle chat; repo0 is working, so the repos keep their order).
+  setStatus(at(chats, 1, 3), 'idle', Date.now() - 2 * HOUR);
   await waitFor(
-    () => view.__childIds()[0] === repoRowId(repos[2]) && screen(tree).length === 21 && screen(tree)[1] === chatRow(at(chats, 2, 1)),
+    () => screen(tree).length === 21 && screen(tree)[1] === chatRow(at(chats, 0, 1)) && screen(tree)[8] === chatRow(at(chats, 1, 3)),
     'both moves on screen',
     4_000
   );
-  await view.__mouseClick({ id: chatRow(at(chats, 2, 1)) });
-  assert.deepEqual(opened, [at(chats, 2, 1).id], 'the clicked chat opened');
+  // Chat 1.3 is at slot 8. The screen never showed a partial order to aim at.
+  await view.__mouseClick({ id: chatRow(at(chats, 1, 3)) });
+  assert.deepEqual(opened, [at(chats, 1, 3).id], 'the clicked chat opened');
   assert.deepEqual(openedRepos, []);
 });
 

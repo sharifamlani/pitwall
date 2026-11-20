@@ -29,7 +29,7 @@ export const AIM_WINDOW_MS = 800;
 export const CLICK_PAIR_MS = 50;
 /** How long a selection Pitwall asked for (a reveal) is expected. */
 export const EXPECTED_SELECTION_MS = 5_000;
-/** How long a keyboard move's selection is expected. */
+/** How long after a keyboard move no selection is taken for a click; at least `AIM_WINDOW_MS`. */
 export const KEYBOARD_SELECTION_MS = 1_000;
 /** A redraw whose rows the editor has not all asked for within this long is not trusted. */
 export const REDRAW_SETTLE_MS = 2_500;
@@ -194,10 +194,13 @@ export class AimedClicks<T extends { id?: string }> {
     this.forget();
   }
 
-  /** A keyboard move is about to select a row (and may scroll the list): its selection is never a click. */
+  /**
+   * A keyboard move is about to select a row: no selection is taken for a
+   * click for `KEYBOARD_SELECTION_MS`, which outlasts any aim window still
+   * open, so a keyboard move needs no forgetting of its own.
+   */
   expectKeyboardSelection(): void {
     this.keyboardUntil = this.clock() + KEYBOARD_SELECTION_MS;
-    this.forget();
   }
 
   /**

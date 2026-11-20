@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AIM_WINDOW_MS, AimedClicks, aimedRowId } from '../../../src/core/providers/aimedClick';
+import { AIM_WINDOW_MS, AimedClicks, KEYBOARD_SELECTION_MS, aimedRowId } from '../../../src/core/providers/aimedClick';
 
 test('the aimed row is the one the clicked slot held before the move', () => {
   assert.equal(aimedRowId(['r', 'a', 'b', 'c'], ['r', 'b', 'a', 'c'], 'b'), 'a', 'two rows swapped');
@@ -46,7 +46,8 @@ test('Up then Enter 120 ms later on a focused row that just moved never opens a 
 test("a double-click's second click on the row just redirected goes to the same aimed row", () => {
   let now = 1_000;
   const clicks = new AimedClicks<{ id: string }>(() => now);
-  const apply = () => undefined;
+  const applied: string[][] = [];
+  const apply = ({ selection }: { selection: readonly { id: string }[] }) => applied.push(selection.map((row) => row.id));
   clicks.willRedraw(['r', 'a', 'b'], false, ['r']);
   clicks.fetched('r', true, () => ['r', 'b', 'a']);
   clicks.select([{ id: 'b' }], ['r', 'b', 'a'], apply);
@@ -59,6 +60,7 @@ test("a double-click's second click on the row just redirected goes to the same 
   now += 200;
   clicks.select([{ id: 'b' }], ['r', 'b', 'a'], apply);
   assert.equal(clicks.claim('b')?.aimed, 'a', 'a new selection of b');
+  assert.ok(!applied.some(([id]) => id === 'b'), "b's selection is held for the redirect, never applied");
   now += 100;
   assert.equal(clicks.claim('b')?.aimed, 'a', 'b still selected: the command alone');
   now += 500;
@@ -70,6 +72,8 @@ test('a click opens the clicked row when the slot is unsure or nothing moved the
   assert.equal(aimedRowId(['r', 'a', 'b'], ['r', 'a', 'b'], 'a'), undefined, 'the row did not move');
   assert.equal(aimedRowId(['r', 'a'], ['r', 'b', 'a'], 'a'), undefined, 'the old slot held nothing');
   assert.equal(aimedRowId(['r', 'a', 'b'], ['r', 'b'], 'b'), undefined, 'the row aimed at is gone');
+  assert.equal(aimedRowId(['r', 'a', 'b'], ['r', 'b', 'n'], 'b'), undefined, 'the row aimed at is gone, a new one came');
+  assert.ok(KEYBOARD_SELECTION_MS >= AIM_WINDOW_MS, 'a keyboard move outlasts any aim window still open');
   assert.equal(aimedRowId(['r', 'a', 'b'], ['r', 'b', 'a'], 'x'), undefined, 'the clicked row is not shown');
 });
 
