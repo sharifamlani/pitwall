@@ -171,6 +171,11 @@ export interface FakeTreeView {
   /** The user expands a row; its children re-render with it from then on. */
   __expand(item: unknown): Promise<void>;
   /**
+   * The user collapses a row: its children are no longer fetched on a
+   * refresh. `report: false` leaves out `onDidCollapseElement`.
+   */
+  __collapse(item: unknown, options?: { report?: boolean }): void;
+  /**
    * The user clicks a row: runs the command the workbench holds for it, as
    * the editor's CommandsConverter handed it over. A disposed cache id logs
    * "Actual command not found, wanted to execute <id>" to `treeErrors`.

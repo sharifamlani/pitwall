@@ -9,7 +9,7 @@
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/providers/WorkspacesTreeProvider';
+import { CHILDREN_AWAIT_TIMEOUT_MS, WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/providers/WorkspacesTreeProvider';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { SessionStatus } from '../../../src/core/providers/sessionStatus';
 import { ChatSession, Repository } from '../../../src/core/types';
@@ -35,6 +35,9 @@ async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo 
   const chats: ChatSession[] = [];
   const repoList: Repository[] = [];
   const since = Date.now() - 3 * HOUR;
+  /** Each session's last reply, shown only in its row's tooltip. */
+  const replies = new Map<string, { text: string; timestamp: null }>();
+  const metadataGate: { current?: Deferred; calls: number } = { calls: 0 };
   for (let r = 0; r < repos; r++) {
     const repo = storage.addRepository(`repo${r}`, `/work/repo${r}`);
     repoList.push(repo);
@@ -55,7 +58,19 @@ async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo 
     storage,
     { ...fakeWorktreeListing((_root: string, repoId: string) => listing(repoId)), getAheadBehind: () => null } as never,
     terminals as never,
-    new HarnessRegistry([fakeAdapter('claude', { getSessionMetadata: async () => ({ lastActivity: since, preview: [] }) })]),
+    new HarnessRegistry([
+      fakeAdapter('claude', {
+        getSessionMetadata: async (sessionId: string) => {
+          // A gate set by a test holds every read made while it is set.
+          const held = metadataGate.current;
+          if (held) {
+            metadataGate.calls += 1;
+            await held.promise;
+          }
+          return { lastActivity: since, preview: [], lastReply: replies.get(sessionId) ?? null };
+        },
+      }),
+    ]),
     vscode.Uri.file('/extension')
   );
   t.after(() => tree.dispose());
@@ -83,7 +98,11 @@ async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo 
   ];
   t.after(() => registrations.forEach((registration) => registration.dispose()));
 
-  const view = vscode.window.createTreeView('pitwall.workspacesView', { treeDataProvider: tree }) as unknown as FakeTreeView;
+  const treeView = vscode.window.createTreeView('pitwall.workspacesView', { treeDataProvider: tree });
+  // As extension.ts wires it.
+  const collapses = treeView.onDidCollapseElement(({ element }) => tree.onRowCollapsed(element));
+  t.after(() => collapses.dispose());
+  const view = treeView as unknown as FakeTreeView;
   const roots = (await waitFor(
     async () => {
       const rows = (await view.__render()) as WorkspaceTreeItem[] | undefined;
@@ -101,7 +120,30 @@ async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo 
   view.fullRefreshes = 0;
   view.elementRefreshes = 0;
   view.ignoredRefreshes = 0;
-  return { tree, view, storage, chats, repos: repoList, setStatus, opened, openedRepos, fires };
+  return { tree, view, storage, chats, repos: repoList, setStatus, opened, openedRepos, fires, replies, metadataGate };
+}
+
+interface Deferred {
+  promise: Promise<void>;
+  resolve(): void;
+}
+
+function deferred(): Deferred {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => (resolve = done));
+  return { promise, resolve };
+}
+
+/** The provider's private state a test inspects (the editor-side view of it is in the stub). */
+function internals(tree: WorkspacesTreeProvider) {
+  return tree as unknown as { flushing: boolean; renderedChildren: Map<string, unknown> };
+}
+
+/** The row the editor holds at the top of the top repo, and its chat. */
+function topChat(view: FakeTreeView, chats: ChatSession[]) {
+  const repoRow = view.__rowOf(view.__childIds()[0]!) as WorkspaceTreeItem;
+  const rowId = view.__childIds(repoRow)[0]!;
+  return { repoRow, rowId, chat: chats.find((candidate) => `chat-${candidate.id}` === rowId)! };
 }
 
 test('a chat row drawn before a full refresh still opens its chat when clicked in the gap', async (t) => {
@@ -211,4 +253,201 @@ test("a reveal after a chat is added waits until the editor has its repo's new s
   assert.equal(settled, false, 'not settled before the editor asks for the new rows');
   await waiting;
   assert.ok(view.__childIds(view.__rowOf(repoRowId)).includes(`chat-${added.id}`), 'settled once the editor holds the new row');
+});
+
+/** What a row shows besides its description, for "only the description changed". */
+function otherText(row: WorkspaceTreeItem) {
+  return JSON.stringify([row.label, tooltipText(row), row.contextValue, row.collapsibleState, row.iconPath]);
+}
+
+function tooltipText(row: WorkspaceTreeItem): string | undefined {
+  return typeof row.tooltip === 'string' ? row.tooltip : row.tooltip?.value;
+}
+
+test('a repo the user collapsed never holds a reveal, and expanding it later fires no stale reveal (QA #74 F1)', async (t) => {
+  const { tree, view, storage, repos, fires } = await ownerList(t);
+  const repoRow = view.__rowOf(`repository-${repos[0].id}`) as WorkspaceTreeItem;
+  view.__collapse(repoRow);
+  // A chat is added under the collapsed repo: only the repo row's summary changes.
+  const added = storage.createChat(`wt-${repos[0].name}`, 'claude', 'added chat', { harnessSessionId: 'added' });
+  tree.softRefresh();
+  let reveals = 0;
+  const started = Date.now();
+  const revealing = tree.revealWhenSettled(async () => {
+    reveals += 1;
+  });
+  await waitFor(() => reveals > 0, 'the reveal');
+  await revealing;
+  assert.ok(Date.now() - started < CHILDREN_AWAIT_TIMEOUT_MS, `revealed in ${Date.now() - started} ms, before the backstop`);
+  assert.deepEqual(([] as unknown[]).concat(fires[0]), [repoRow], 'the collapsed repo row alone is refreshed');
+  assert.match(String(repoRow.description), /^7 sessions$/, 'the held repo row shows its new summary');
+
+  await view.__expand(repoRow);
+  await sleep(400);
+  assert.equal(reveals, 1, 'expanding the repo fired no second reveal');
+  assert.ok(view.__childIds(repoRow).includes(`chat-${added.id}`), 'the expanded repo shows the new chat');
+  assert.deepEqual(view.treeErrors, []);
+});
+
+test('a collapse the extension never hears of holds a reveal only until the backstop (QA #74 F1)', async (t) => {
+  const { tree, view, storage, repos, fires } = await ownerList(t);
+  const repoRow = view.__rowOf(`repository-${repos[0].id}`) as WorkspaceTreeItem;
+  view.__collapse(repoRow, { report: false });
+  storage.createChat(`wt-${repos[0].name}`, 'claude', 'added chat', { harnessSessionId: 'added' });
+  tree.softRefresh();
+  await waitFor(() => fires.length > 0, 'the refresh');
+  let reveals = 0;
+  const started = Date.now();
+  void tree.revealWhenSettled(async () => {
+    reveals += 1;
+  });
+  await sleep(300);
+  assert.equal(reveals, 0, 'still waiting for session rows the editor will never fetch');
+  await waitFor(() => reveals > 0, 'the reveal after the backstop', CHILDREN_AWAIT_TIMEOUT_MS + 2_000);
+  assert.ok(Date.now() - started < CHILDREN_AWAIT_TIMEOUT_MS + 1_000, `revealed after ${Date.now() - started} ms`);
+
+  await view.__expand(repoRow);
+  await sleep(400);
+  assert.equal(reveals, 1, 'expanding the repo fired no second reveal');
+});
+
+test("a chat opened in another window refreshes its repo row, though only the repo's summary changes", async (t) => {
+  const { tree, view, chats, fires } = await ownerList(t);
+  const { repoRow, rowId, chat } = topChat(view, chats);
+  const before = otherText(repoRow);
+  tree.setWindows([{ folder: '/elsewhere', openSessionIds: [chat.harnessSessionId!] }]);
+  await waitFor(() => fires.length > 0, 'a refresh');
+  await sleep(400);
+  assert.equal(view.fullRefreshes, 0);
+  assert.equal(view.ignoredRefreshes, 0);
+  // The repo row's refresh redraws its session rows too.
+  assert.deepEqual(([] as unknown[]).concat(...fires), [repoRow]);
+  assert.match(String(repoRow.description), /^1 open$/);
+  assert.equal(otherText(repoRow), before, "nothing but the repo row's description changed");
+  assert.match(String((view.__rowOf(rowId) as WorkspaceTreeItem).description), / · open$/, 'the chat row shows " · open"');
+});
+
+test("a chat's status time moving refreshes its row, though its label, menu and icon stay", async (t) => {
+  const { view, chats, setStatus, fires } = await ownerList(t);
+  const { rowId, chat } = topChat(view, chats);
+  setStatus(chat, 'finished', Date.now() - 2 * HOUR);
+  await waitFor(() => fires.length > 0, 'the first refresh');
+  await sleep(600);
+  const chatRow = view.__rowOf(rowId) as WorkspaceTreeItem;
+  assert.match(String(chatRow.description), /finished · 2h/);
+  const shape = (row: WorkspaceTreeItem) => JSON.stringify([row.label, row.contextValue, row.collapsibleState, row.iconPath]);
+  const before = shape(chatRow);
+  fires.length = 0;
+  // Finished again just now: same status, place and icon; only "2h" becomes "now" (description and tooltip).
+  setStatus(chat, 'finished');
+  await waitFor(() => fires.length > 0, 'a refresh');
+  await sleep(400);
+  assert.equal(view.ignoredRefreshes, 0);
+  assert.deepEqual(([] as unknown[]).concat(...fires), [chatRow], 'that row alone');
+  assert.doesNotMatch(String(chatRow.description), /2h/);
+  assert.equal(shape(chatRow), before, 'label, menu, collapse state and icon are unchanged');
+});
+
+test('a new last reply refreshes its row, though only its tooltip changes', async (t) => {
+  const { tree, view, chats, fires, replies } = await ownerList(t);
+  const { rowId, chat } = topChat(view, chats);
+  const chatRow = view.__rowOf(rowId) as WorkspaceTreeItem;
+  const description = chatRow.description;
+  replies.set(chat.harnessSessionId!, { text: 'All tests pass.', timestamp: null });
+  tree.softRefresh();
+  await waitFor(() => fires.length > 0, 'a refresh');
+  await sleep(400);
+  assert.deepEqual(([] as unknown[]).concat(...fires), [chatRow]);
+  assert.equal(chatRow.description, description);
+  assert.match(tooltipText(chatRow) ?? '', /All tests pass\./);
+});
+
+test('drawing a row again reuses its click command (VS Code throws on a second registration)', async (t) => {
+  const { tree, view, chats, repos, opened } = await ownerList(t);
+  // ownerList drew every row once; the editor and search draw them again.
+  await view.__render();
+  for (const repo of repos) {
+    await tree.sessionRowsOfRepoRow(view.__rowOf(`repository-${repo.id}`) as WorkspaceTreeItem);
+  }
+  const rowCommands = (await vscode.commands.getCommands()).filter((id) => id.startsWith('_pitwall.row.'));
+  assert.equal(rowCommands.length, repos.length + chats.length, 'one command per row');
+  await view.__click({ id: `chat-${chats[2].id}` });
+  assert.deepEqual(opened, [chats[2].id]);
+});
+
+test('rows the editor takes while a pass draws are compared in a new pass, not the rows it held before', async (t) => {
+  const { view, chats, setStatus, metadataGate } = await ownerList(t);
+  const { repoRow, chat } = topChat(view, chats);
+  const gate = deferred();
+  metadataGate.current = gate;
+  setStatus(chat, 'needs'); // the repo row's summary becomes "1 needs you"
+  await waitFor(() => metadataGate.calls > 0, 'the pass reading metadata');
+  metadataGate.current = undefined;
+  // The workbench renders the list again meanwhile (it was shown again).
+  await view.__render();
+  assert.notEqual(view.__rowOf(repoRow.id!), repoRow, 'the editor holds new row objects');
+  gate.resolve();
+  await sleep(800);
+  assert.equal(view.ignoredRefreshes, 0, 'no refresh named a row the editor no longer holds');
+  assert.match(String((view.__rowOf(repoRow.id!) as WorkspaceTreeItem).description), /needs you/);
+});
+
+test('session rows answered after a full refresh overtook them are never compared against', async (t) => {
+  const { tree, view, chats, setStatus, metadataGate, fires } = await ownerList(t);
+  const { repoRow, rowId, chat } = topChat(view, chats);
+  const gate = deferred();
+  metadataGate.current = gate;
+  // The editor asks for a repo's session rows, and a full refresh overtakes the answer.
+  const overtaken = tree.getChildren(repoRow);
+  await waitFor(() => metadataGate.calls > 0, 'the answer reading metadata');
+  metadataGate.current = undefined;
+  tree.refresh();
+  await waitFor(() => view.fullRefreshes > 0, 'the full refresh');
+  await tree.whenSettled();
+  await waitFor(() => internals(tree).renderedChildren.size === 3, 'the expanded repos rendered again');
+  gate.resolve();
+  await overtaken;
+  fires.length = 0;
+  setStatus(chat, 'working'); // the row's text changes; its place and its repo row's text do not
+  await waitFor(() => fires.length > 0, 'a refresh');
+  await sleep(400);
+  assert.equal(view.ignoredRefreshes, 0, 'every refreshed row is one the editor holds');
+  assert.match(String((view.__rowOf(rowId) as WorkspaceTreeItem).description), /working/);
+});
+
+test("a chat moving up inside its repo makes a reveal wait for that repo's new session rows", async (t) => {
+  const { tree, view, chats, setStatus, fires } = await ownerList(t);
+  view.__renderDelayMs = 150;
+  const repoRow = view.__rowOf(view.__childIds()[0]!) as WorkspaceTreeItem;
+  const lastId = view.__childIds(repoRow).at(-1)!;
+  const chat = chats.find((candidate) => `chat-${candidate.id}` === lastId)!;
+  const descriptionBefore = repoRow.description;
+  setStatus(chat, 'working'); // working sits above idle inside a repo; the repo's summary stays
+  let settled = false;
+  const waiting = tree.whenSettled().then(() => {
+    settled = true;
+  });
+  await waitFor(() => fires.length > 0, 'the refresh');
+  assert.equal(view.fullRefreshes, 0);
+  assert.deepEqual(([] as unknown[]).concat(fires[0]), [repoRow], 'the repo row is refreshed to redraw its rows');
+  assert.equal(repoRow.description, descriptionBefore, "the repo row's own text did not change");
+  await sleep(50);
+  assert.equal(settled, false, 'not settled before the editor asks for the moved rows');
+  await waiting;
+  assert.equal(view.__childIds(repoRow)[0], lastId, 'settled once the editor holds the new order');
+});
+
+test("a removed chat's click command is disposed once the editor's rows no longer show it (QA #74 F5)", async (t) => {
+  const { tree, view, storage, chats, repos } = await ownerList(t);
+  const removed = chats[3];
+  const kept = chats[4];
+  const repoRow = view.__rowOf(`repository-${repos.find((repo) => `wt-${repo.name}` === removed.worktreeId)!.id}`);
+  const command = `_pitwall.row.chat-${removed.id}`;
+  assert.ok((await vscode.commands.getCommands()).includes(command));
+  storage.deleteChats([removed.id]);
+  tree.softRefresh();
+  await tree.whenSettled();
+  await waitFor(async () => !(await vscode.commands.getCommands()).includes(command), 'the command disposed');
+  assert.ok((await vscode.commands.getCommands()).includes(`_pitwall.row.chat-${kept.id}`), 'other rows keep theirs');
+  assert.ok(!view.__childIds(repoRow).includes(`chat-${removed.id}`), 'the editor no longer shows the removed row');
 });

@@ -637,6 +637,7 @@ module.exports = {
     createTreeView: (id, options) => {
       const visibility = new EventEmitter();
       const selection = new EventEmitter();
+      const collapse = new EventEmitter();
       const provider = options?.treeDataProvider;
       /**
        * The rows the extension host still knows, by id. As in the editor's
@@ -784,6 +785,16 @@ module.exports = {
           await fetchChildren(item);
         },
         /**
+         * The user collapses a row. The workbench then never fetches its
+         * children on a refresh (AsyncDataTree `refreshNode` marks a collapsed
+         * node stale and gives it no children). `report: false` leaves out
+         * `onDidCollapseElement`, for a collapse the extension never hears of.
+         */
+        __collapse: (item, { report = true } = {}) => {
+          expanded.delete(item.id);
+          if (report) collapse.fire({ element: item });
+        },
+        /**
          * The user clicks a row: the workbench runs the command it holds for
          * the row's id, as `TreeView`'s `onDidOpen` does. A disposed cache id
          * is logged to `treeErrors` and nothing runs.
@@ -833,6 +844,7 @@ module.exports = {
         },
         onDidChangeVisibility: visibility.event,
         onDidChangeSelection: selection.event,
+        onDidCollapseElement: collapse.event,
         /** Test helper: the user selects rows; `selection` changes before listeners run. */
         __select: (items) => {
           view.selection = items;
@@ -1123,8 +1135,19 @@ module.exports = {
   },
   commands: {
     registerCommand: (id, handler) => {
+      // VS Code throws on a second registration of a live id ("command '…' already exists").
+      // Enforced for internal commands (a leading underscore, such as the
+      // `_pitwall.row.*` row clicks); tests deliberately re-register public
+      // `pitwall.*` commands with fakes.
+      if (id.startsWith('_') && commandHandlers.has(id)) {
+        throw new Error(`command '${id}' already exists`);
+      }
       commandHandlers.set(id, handler);
-      return { dispose: () => commandHandlers.delete(id) };
+      return {
+        dispose: () => {
+          if (commandHandlers.get(id) === handler) commandHandlers.delete(id);
+        },
+      };
     },
     getCommands: async () => Array.from(commandHandlers.keys()),
     executeCommand: async (id, ...args) => {

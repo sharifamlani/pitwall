@@ -25,6 +25,14 @@ const REFRESH_DEBOUNCE_MS = 300;
  */
 export const REFRESH_COALESCE_MS = 300;
 /**
+ * The longest a reveal waits for the editor to ask again for a refreshed
+ * repo row's session rows. The editor never asks for a collapsed row's
+ * children, so a collapse it did not report would otherwise hold every
+ * reveal until the user expanded that repo again.
+ */
+export const CHILDREN_AWAIT_TIMEOUT_MS = 1500;
+const ROW_COMMAND_PREFIX = '_pitwall.row.';
+/**
  * Before a repository's first listing this session, a background listing
  * may reuse one the session scan made this recently (and vice versa).
  */
@@ -88,7 +96,7 @@ export class WorkspaceTreeItem extends vscode.TreeItem {
  * leading underscore keeps it out of the keyboard-shortcuts list.
  */
 export function rowCommandId(rowId: string): string {
-  return `_pitwall.row.${rowId}`;
+  return `${ROW_COMMAND_PREFIX}${rowId}`;
 }
 
 /** What a row shows: two drawings with the same key look the same. */
@@ -212,6 +220,8 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   private flushAgain = false;
   /** A full refresh was held for a reveal (L1). */
   private heldFull = false;
+  /** Gives up waiting on `childrenAwaited` (see `CHILDREN_AWAIT_TIMEOUT_MS`). */
+  private childrenAwaitTimer: NodeJS.Timeout | undefined;
   /** Row click commands, by command id (see `rowCommandId`). */
   private readonly rowCommands = new Map<string, vscode.Disposable>();
 
@@ -316,6 +326,8 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     clearTimeout(this.hiddenListTimer);
     clearTimeout(this.flushTimer);
     this.flushTimer = undefined;
+    clearTimeout(this.childrenAwaitTimer);
+    this.childrenAwaitTimer = undefined;
     this.onGitChange.cancel();
     this.statusSubscription?.dispose();
     for (const disposable of [...this.disposables, ...this.repoWatchers, ...this.rowCommands.values()]) {
@@ -439,6 +451,8 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     this.renderedRoots = undefined;
     this.renderedChildren.clear();
     this.childrenAwaited.clear();
+    clearTimeout(this.childrenAwaitTimer);
+    this.childrenAwaitTimer = undefined;
     this.changeEmitter.fire(undefined);
   }
 
@@ -598,6 +612,56 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     if (changed.length > 0) {
       this.changeEmitter.fire(changed);
     }
+    if (this.childrenAwaited.size > 0) {
+      this.armChildrenAwaitTimer();
+    }
+    return true;
+  }
+
+  /**
+   * Stop waiting for the session rows of repos the editor has not asked
+   * about within `CHILDREN_AWAIT_TIMEOUT_MS`. Armed once and never pushed
+   * back, so a list that keeps changing cannot hold reveals forever.
+   */
+  private armChildrenAwaitTimer(): void {
+    if (this.childrenAwaitTimer || this.disposed) {
+      return;
+    }
+    this.childrenAwaitTimer = setTimeout(() => {
+      this.childrenAwaitTimer = undefined;
+      if (this.childrenAwaited.size === 0) {
+        return;
+      }
+      this.childrenAwaited.clear();
+      if (this.isQuiet()) {
+        this.settle();
+      }
+    }, CHILDREN_AWAIT_TIMEOUT_MS);
+  }
+
+  /**
+   * The user collapsed a row (`TreeView.onDidCollapseElement`). The editor
+   * keeps no session rows under a collapsed repo and never asks for them on
+   * a refresh, so they are neither compared against nor waited for until the
+   * repo is expanded again, when the editor asks for them afresh.
+   */
+  onRowCollapsed(item: WorkspaceTreeItem): void {
+    if (item.itemType !== 'repository' || !item.id) {
+      return;
+    }
+    this.renderedChildren.delete(item.id);
+    if (this.stopAwaiting(item.id) && this.renderPending && this.isQuiet()) {
+      this.settle();
+    }
+  }
+
+  /** Stop waiting for one repo row's session rows; true when that was the last one awaited. */
+  private stopAwaiting(rowId: string): boolean {
+    if (!this.childrenAwaited.delete(rowId) || this.childrenAwaited.size > 0) {
+      return false;
+    }
+    clearTimeout(this.childrenAwaitTimer);
+    this.childrenAwaitTimer = undefined;
     return true;
   }
 
@@ -609,9 +673,40 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   /** Resolve every `whenSettled` waiter. */
   private settle(): void {
     this.renderPending = false;
+    this.pruneRowCommands();
     const waiters = this.settleWaiters;
     this.settleWaiters = [];
     waiters.forEach((resolve) => resolve());
+  }
+
+  /**
+   * Dispose the click commands of rows whose chat or repo is gone. Runs only
+   * once the editor's rows are up to date, so no row it still shows loses
+   * its command.
+   */
+  private pruneRowCommands(): void {
+    const shown = new Set<string | undefined>((this.renderedRoots ?? []).map((row) => row.item.id));
+    for (const rows of this.renderedChildren.values()) {
+      rows.forEach((row) => shown.add(row.item.id));
+    }
+    for (const [command, registration] of this.rowCommands) {
+      const rowId = command.slice(ROW_COMMAND_PREFIX.length);
+      if (!shown.has(rowId) && !this.rowExists(rowId)) {
+        registration.dispose();
+        this.rowCommands.delete(command);
+      }
+    }
+  }
+
+  /** Whether the chat or repo a row id names is still stored. */
+  private rowExists(rowId: string): boolean {
+    if (rowId.startsWith('chat-')) {
+      return this.storageService.getChat(rowId.slice('chat-'.length)) !== undefined;
+    }
+    if (rowId.startsWith('repository-')) {
+      return this.storageService.getRepository(rowId.slice('repository-'.length)) !== undefined;
+    }
+    return true;
   }
 
   /** A row's click command (see `rowCommandId`), registered the first time the row is drawn. */
@@ -745,7 +840,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
         // An answer a full refresh overtook is one the editor drops.
         if (element.id && epoch === this.fullRefreshEpoch) {
           this.renderedChildren.set(element.id, rows.map((item) => ({ item, key: rowKey(item) })));
-          if (this.childrenAwaited.delete(element.id) && this.childrenAwaited.size === 0 && this.isQuiet()) {
+          if (this.stopAwaiting(element.id) && this.isQuiet()) {
             this.settle();
           }
         }
