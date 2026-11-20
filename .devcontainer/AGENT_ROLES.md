@@ -33,11 +33,13 @@ needs a fresh yes.
 
 ## The three agents
 
-- **Main builds.** Its job is to write the code.
-- **QA reviews the code.** It checks for bugs and issues, the way it has been doing, and writes the verdict.
-- **Test acts as the end user.** It uses the real product the way {OWNER} does, and reports what works and what doesn't.
+| Agent | Job | Output |
+|---|---|---|
+| **Main** | Builds: writes the code for each feature or fix. | Code, ready for review |
+| **QA** | Reviews the code for bugs and issues. | Verdict at the exact sha: APPROVE or CHANGES, with numbered findings |
+| **Test** | Acts as the end user, using the real product the way {OWNER} does. | PASS or FAIL per feature, with steps and evidence |
 
-The sections below give each agent's full prompt, plus the Marketing and Auditor roles that support them.
+Each agent's full prompt is in its section below. Marketing and Auditor support the three.
 
 ## The learning loop
 
