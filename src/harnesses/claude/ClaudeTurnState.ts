@@ -13,7 +13,7 @@ export interface ClaudeConversationEntry {
 /** The two transcript facts that decide whether a Claude turn is over. */
 export interface ClaudeTurnSignals {
   lastConversation: ClaudeConversationEntry | null;
-  /** `turn_duration.pendingBackgroundAgentCount`; null when absent. */
+  /** `pendingBackgroundAgentCount` of a `turn_duration` after the last conversation entry; null when there is none. */
   pendingBackgroundAgents: number | null;
 }
 
@@ -81,6 +81,9 @@ export function observeClaudeTurnEntry(
     (record.type === 'user' || record.type === 'assistant') &&
     !record.isSidechain
   ) {
+    // A `turn_duration` reports on the turn that ended just before it, so a
+    // later conversation entry belongs to a newer turn that has not reported.
+    signals.pendingBackgroundAgents = null;
     const stopReason = record.message?.stop_reason;
     const timestamp = record.timestamp
       ? new Date(record.timestamp as string | number).getTime()
@@ -132,22 +135,23 @@ function scanEntries(entries: unknown[]): JsonlTailScan<ClaudeTurnReading> {
     observeClaudeTurnEntry(entry, signals);
   }
 
-  const lastConversation = signals.lastConversation;
-
+  // The window runs to the end of the file, so once it holds the last
+  // conversation entry it also holds the `turn_duration` that may follow it.
+  // Current Claude transcripts carry none at all: waiting for one widened the
+  // window to the file's start after every finished turn, a whole-file read
+  // per write of a live transcript (hundreds of MB), and the attention tick
+  // waited behind it (0.6.0 walk: 5–8 s status and pop-up lag).
   return {
     value: deriveClaudeTurnState(signals),
-    decided:
-      lastConversation !== null &&
-      (!endsTurn(lastConversation) || signals.pendingBackgroundAgents !== null),
+    decided: signals.lastConversation !== null,
   };
 }
 
 /**
- * Read only the tail of a transcript, growing the window until the latest
- * conversation entry is complete and, for a finished assistant turn, a
- * `turn_duration` is visible. If the deciding entries are not found, the same
- * reader expands to the start of the file rather than falling back to a full
- * parse.
+ * Read only the tail of a transcript, growing the window until it holds the
+ * latest conversation entry (and so any `turn_duration` after it). Only a
+ * transcript with no conversation entry near its end reads further back, up
+ * to its start, rather than falling back to a full parse.
  *
  * Returns null when the file cannot be read; an empty or not-yet-conversational
  * transcript is `working`, matching the full parser's default.
