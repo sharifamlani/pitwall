@@ -7,7 +7,8 @@
 LANDING PAGE — phase plan
 ─────────────────────────────────
 Phase L1 : Design mockup (canvas v9)       [████████████████████] ✅ (approved)
-Phase L2 : Domain getpitwall.dev           [██████████⏸.........] waiting on you
+Phase L1b: GitHub chip + download pop-up   [████████████████████] ✅ (canvas v11)
+Phase L2 : Domain getpitwall.dev           [██████████⏸.........] waiting on you (phone number)
 Phase L3 : Publish to Open VSX + Marketplace
 Phase L4 : Static site + install buttons
 Phase L5 : Deploy + end-to-end install walk
@@ -37,6 +38,7 @@ Extension ID `sharifamlani.pitwall` comes from `package.json` (`publisher` + `na
 | 6.4b | Publish to VS Code Marketplace with `VSCE_PAT` (publisher `sharifamlani`) | **new** |
 | 6.3 | `gh release create` with the `.vsix` attached | also attach an unversioned copy `pitwall.vsix` so `releases/latest/download/pitwall.vsix` always works |
 | 6.7 | Landing page live at getpitwall.dev with both install buttons and the fallback | **new** |
+| 6.8 | Tip jar: `.github/FUNDING.yml` (`github: sharifamlani`, `buy_me_a_coffee: <handle>`) and `"sponsor": {"url": "https://github.com/sponsors/sharifamlani"}` in `package.json` (Sponsor button on the repo and on the extension page in both editors) | **new**; needs Sharif's GitHub Sponsors profile and Buy Me a Coffee page first |
 | Q3 | Open VSX / Marketplace, or `.vsix` only | **answered:** both stores + `.vsix` |
 
 ## Folder / file structure
@@ -47,7 +49,9 @@ pitwall/
 │   ├── _README.md                          what this folder is, how it deploys, who owns it
 │   ├── index.html                          the canvas v9 design as static HTML (intro lights,
 │   │                                       typewriter hero, live sessions demo, sections)
-│   ├── install.js                          button click → editor link → 2 s fallback panel
+│   ├── install.js                          button click → download pop-up → editor link →
+│   │                                       2 s fallback; tip jar (3 presets, BMC, GitHub Sponsors)
+│   ├── stars.js                            GitHub star count for the nav chip (cached fetch)
 │   ├── favicon.svg                         the four-dot status row mark
 │   └── vercel.json                         static config, security headers, no build step
 ├── scripts/
