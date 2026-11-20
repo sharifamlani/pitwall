@@ -149,6 +149,11 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - Soften claims about platforms nobody tested (macOS).
 - Flag drafts over the length target.
 - Put the repo link in the first comment, never in the post.
+- Lead each bullet with the job the product does for the reader ("it notifies you, so you don't have to
+  wait"); a metric is optional support. In pre-approval packages, give every metric bullet a job-only
+  fallback. At GO, drop any number that can't be filled cleanly (not measured, different conditions,
+  n-of-n mismatch) instead of stalling the post. (Pitwall 2026-11-20: Sharif, approving v0.6.0: "You
+  don't need to include the metrics. Just remember the jobs to be done.")
 - A release post is pre-approved before the tag; the tag on origin is the GO. Post within the hour,
   with no second ask. Fill only the walk's measured numbers, and drop any line the walk didn't prove.
   Any other edit needs a fresh yes. (Sharif, 2026-11-20.)
