@@ -49,7 +49,7 @@ export type OpenTrigger =
 /** An open's trigger, and for a row click what the selection did just before. */
 export interface OpenSource {
   via: OpenTrigger;
-  /** Extra `key=value` words for the line, such as `selected=new+12ms` or `redirect=<from>→<to>`. */
+  /** Extra `key=value` words for the line, such as `selected=new+12ms lag=0ms`. */
   detail?: string;
 }
 
