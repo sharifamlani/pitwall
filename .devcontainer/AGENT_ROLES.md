@@ -194,7 +194,14 @@ reviewers to save cost.
 > 7. **Compaction.** Each of the four working roles (Main, QA, Tester, Marketing) compacts at its
 >    milestones (after a verified merge or walk, after a review round, before a long wave) using
 >    the `milestone-compaction` skill, and flags the weekly limit at ~70%. Check each role does it
->    and flag any role that is past a milestone without compacting.
+>    and flag any role that is past a milestone without compacting. You own compaction for QA as
+>    well (the owner ran QA's compaction by hand on 19 Nov; from now on you coordinate it).
+> 8. **Lessons owner.** You own `.devcontainer/agent-lessons.md`. Each cycle, read the work and
+>    messages that matter (PR verdicts, FAILs, walk reports, audit replies), not whole transcripts.
+>    When an agent does something wrong, add the rule to its list, with the moment it came from.
+>    When an agent does something well, add a `Keep:` line to its list. Each line is one rule,
+>    with its source. Tell the role in its next message what you added, and why. Remove a rule
+>    once a test or check enforces it. Your own mistakes go in the "Audit" list.
 >
 > **Compaction coordinator.** You are the lead on compaction for Main, QA, Tester and Marketing.
 > Agree the timing with each role, and never interrupt a walk or a review. Each role saves its state
