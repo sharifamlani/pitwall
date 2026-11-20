@@ -193,6 +193,16 @@ export class ClaudeAgentsService {
   }
 
   /**
+   * The last answer at any age, or undefined when there is none (no call yet,
+   * or a settings change dropped it). A poll serves it while a fresh call
+   * runs; its `observedAt` stays the old call's start, so the R40 drop still
+   * discards a wait the transcript has moved past. Never spawns.
+   */
+  staleSnapshot(): ClaudeAgentsSnapshot | undefined {
+    return this.cache?.snapshot;
+  }
+
+  /**
    * The states plus `observedAt`, the start of the call that produced them.
    * A cached answer keeps its original stamp, so callers can tell how old a
    * "waiting" row may be.

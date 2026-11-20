@@ -220,3 +220,153 @@ test('the claude agents answer still reaches the row, re-polled the moment it la
   assert.equal(live.waitingFor, 'permission prompt');
   assert.equal(load.agentCalls(), 1, 'still one call: the answer is cached');
 });
+
+// ---------------------------------------------------------------------------
+// A poll with no `claude agents` answer is not a "no wait" sample (QA F1, F2
+// on #79; adapted from QA's zz79-probe.test.ts).
+// ---------------------------------------------------------------------------
+
+const PROBE_SESSION = 'aaaaaaaa-0000-4000-8000-0000000000aa';
+
+/** One open chat whose sessions file has a status Pitwall doesn't know; `claude agents` says it waits on a prompt. */
+function unknownStatusLoad(t: Parameters<typeof claudeProfile>[0]) {
+  const profile = claudeProfile(t);
+  const sessionsDir = path.join(profile.root, 'sessions');
+  fs.mkdirSync(sessionsDir, { recursive: true });
+  const lab = profile.dir('lab');
+  const storage = makeStorage();
+  const worktrees = new Map([['wt', worktreeRecord({ id: 'wt', repoId: 'r', path: lab })]]);
+  profile.write(PROBE_SESSION, lab, [entry.user('go'), entry.assistant('x')]);
+  storage.createChat('wt', 'claude', 'Chat', { harnessSessionId: PROBE_SESSION });
+  // A known-status session keeps the folder available; ours has a future CLI's status value.
+  fs.writeFileSync(path.join(sessionsDir, '1.json'), JSON.stringify({ pid: 1, sessionId: 'other-0000', cwd: lab, pidDomain: DOMAIN, status: 'busy', statusUpdatedAt: Date.now() }));
+  fs.writeFileSync(
+    path.join(sessionsDir, '2.json'),
+    JSON.stringify({ pid: 2, sessionId: PROBE_SESSION, cwd: lab, pidDomain: DOMAIN, entrypoint: 'claude-vscode', status: 'compacting', statusUpdatedAt: Date.now() - 60_000 })
+  );
+  let offset = 0;
+  let calls = 0;
+  const agents = new ClaudeAgentsService({
+    command: () => 'fake-claude',
+    enabled: () => true,
+    now: () => Date.now() + offset,
+    exec: async () => {
+      calls++;
+      await sleep(50);
+      return JSON.stringify([{ sessionId: PROBE_SESSION, status: 'waiting', waitingFor: 'permission prompt' }]);
+    },
+  });
+  const harness = new ClaudeHarness({
+    sessionService: new ClaudeSessionService(),
+    sessionsFile: new ClaudeSessionsFile({ dir: () => sessionsDir, isAlive: () => true, pidDomain: async () => DOMAIN }),
+    agentsService: agents,
+  });
+  const pops: { kind: string; preExisting?: boolean }[] = [];
+  const service = new SessionAttentionService(
+    storage,
+    new HarnessRegistry([harness]),
+    {
+      notify: async (kind: string, target: { preExisting?: boolean }) => {
+        pops.push({ kind, preExisting: target.preExisting });
+        return target.preExisting ? 'skipped-pre-existing' : 'shown';
+      },
+    } as never,
+    (id) => worktrees.get(id),
+    () => undefined,
+    () => true,
+    () => false,
+    { log: () => undefined }
+  );
+  t.after(() => service.dispose());
+  return {
+    service,
+    harness,
+    agents,
+    pops,
+    calls: () => calls,
+    /** Ages the agents cache past its 10 s TTL. */
+    expire: () => {
+      offset += 20_000;
+    },
+    tear: () => fs.writeFileSync(path.join(sessionsDir, '2.json'), `{"pid": 2, "sessionId": "${PROBE_SESSION.slice(0, 8)}`),
+  };
+}
+
+test('a wait from before activation that only claude agents knows is judged pre-existing, not popped, when the answer lands after the first poll (QA F1, R45)', async (t) => {
+  const load = unknownStatusLoad(t);
+  const watching = load.service.watchLive();
+  t.after(() => watching.dispose());
+  await load.service.poll(true);
+  await load.agents.getSnapshot();
+  await sleep(50);
+  await load.service.poll();
+  assert.equal(load.calls(), 1);
+  assert.ok(load.pops.length > 0, 'the wait was judged');
+  assert.deepEqual(load.pops.filter((pop) => !pop.preExisting), [], 'a wait from before activation popped as new');
+});
+
+test('before the first claude agents answer, a session only it can place reads as unknown, never as "no wait" (QA F1)', async (t) => {
+  const load = unknownStatusLoad(t);
+  const first = (await load.harness.getLiveStates([PROBE_SESSION])).get(PROBE_SESSION)!;
+  assert.equal(first.liveUnknown, true);
+  assert.equal(first.waitingFor, undefined);
+  await load.agents.getSnapshot();
+  const answered = (await load.harness.getLiveStates([PROBE_SESSION])).get(PROBE_SESSION)!;
+  assert.equal(answered.liveUnknown, undefined, 'an answered session is known');
+  assert.equal(answered.waitingFor, 'permission prompt');
+});
+
+test('a steady wait only claude agents knows keeps its reason through every 10 s cache expiry, and never pops again (QA F2)', async (t) => {
+  const load = unknownStatusLoad(t);
+  await load.service.poll(true);
+  await load.agents.getSnapshot();
+  await sleep(20);
+  await load.service.poll();
+  const before = load.pops.length;
+  const seen: (string | undefined)[] = [];
+  for (let i = 0; i < 3; i++) {
+    load.expire();
+    seen.push((await load.harness.getLiveStates([PROBE_SESSION])).get(PROBE_SESSION)?.waitingFor);
+    await load.agents.getSnapshot();
+    seen.push((await load.harness.getLiveStates([PROBE_SESSION])).get(PROBE_SESSION)?.waitingFor);
+  }
+  load.expire();
+  await load.service.poll();
+  await load.agents.getSnapshot();
+  await sleep(20);
+  await load.service.poll();
+  assert.deepEqual(seen, Array(6).fill('permission prompt'), 'the wait vanished on the poll after a cache expiry');
+  assert.equal(load.pops.length, before, 'the steady wait popped again');
+});
+
+test('with no claude agents answer at all (a settings change dropped it), a waiting row stays needs-you and its wait neither ends nor pops again (QA F1)', async (t) => {
+  const load = unknownStatusLoad(t);
+  const chatId = load.service['storage'].getChats()[0].id;
+  await load.service.poll(true);
+  await load.agents.getSnapshot();
+  await load.service.poll();
+  assert.equal(load.service.statusOf(chatId).status, 'needs');
+  const judged = load.pops.length;
+  // What a change to Pitwall's settings does: the cached answer is gone.
+  (load.agents as unknown as { cache: unknown }).cache = undefined;
+  await load.service.poll();
+  assert.equal(load.service.statusOf(chatId).status, 'needs', 'the row kept its last status while the answer was unknown');
+  assert.equal(load.service.needsYou(chatId), true);
+  await load.agents.getSnapshot();
+  await load.service.poll();
+  assert.equal(load.service.statusOf(chatId).status, 'needs');
+  assert.equal(load.pops.length, judged, 'the same wait was judged again');
+});
+
+test('a torn read with only a stale claude agents answer keeps the wait on its first poll (QA F2)', async (t) => {
+  const load = unknownStatusLoad(t);
+  await load.harness.getLiveStates([PROBE_SESSION]);
+  await load.agents.getSnapshot();
+  assert.equal((await load.harness.getLiveStates([PROBE_SESSION])).get(PROBE_SESSION)?.waitingFor, 'permission prompt');
+  load.expire();
+  load.tear();
+  const torn = (await load.harness.getLiveStates([PROBE_SESSION])).get(PROBE_SESSION)!;
+  assert.equal(torn.waitingFor, 'permission prompt', 'a half-written file with a stale cache cleared the wait');
+  assert.equal(torn.liveStatus, 'waiting');
+  assert.equal(load.calls(), 2, 'the stale answer is refreshed in the background');
+});

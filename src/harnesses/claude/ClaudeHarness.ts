@@ -269,11 +269,13 @@ export class ClaudeHarness implements HarnessAdapter {
    * no status until its chat is loaded (2.8 s for a 300 MB chat), so every
    * resume made both windows' polls wait for it, and every other chat's
    * status and pop-up with them (0.6.0 RC gate: 2.7–5.3 s polls). A fresh
-   * cached answer is used as before; otherwise the call starts in the
-   * background, this poll reads the folder alone (as with the needs-you
-   * switch off), and the answer re-polls the moment it lands. Only a folder
-   * that cannot be listed (an older CLI: the CLI is the only live source)
-   * still waits for it.
+   * cached answer is used as before. Otherwise the call starts in the
+   * background, this poll is served the last answer at any age
+   * (stale-while-revalidate: an expiring cache never blanks a wait, QA F2 on
+   * #79), and the new answer re-polls the moment it lands. With no answer at
+   * all yet, undefined: the sessions that need one read as `liveUnknown`
+   * (QA F1). Only a folder that cannot be listed (an older CLI: the CLI is
+   * the only live source) still waits for it.
    */
   private agentsFor(file: ClaudeSessionsSnapshot): ClaudeAgentsSnapshot | Promise<ClaudeAgentsSnapshot> | undefined {
     if (!file.listed) {
@@ -292,7 +294,7 @@ export class ClaudeHarness implements HarnessAdapter {
       .finally(() => {
         this.agentsRefresh = undefined;
       });
-    return undefined;
+    return this.agentsService.staleSnapshot();
   }
 
   /** The folder read a `liveSessionIds` call just made, or a fresh one. */
@@ -415,6 +417,8 @@ export class ClaudeHarness implements HarnessAdapter {
             ...(live ? { liveStatus: live.status } : {}),
             ...(live && live.statusUpdatedAt > 0 ? { statusUpdatedAt: live.statusUpdatedAt } : {}),
             ...(notRunning(sessionId) ? { running: false } : {}),
+            // A session only `claude agents` can place, before its first answer: unknown, never "no wait".
+            ...(!agentsSnapshot && needsFallback(file, sessionId) ? { liveUnknown: true } : {}),
           });
           return;
         }

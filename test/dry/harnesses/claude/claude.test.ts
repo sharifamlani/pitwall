@@ -258,7 +258,7 @@ function writeSessionFile(dir: string, record: Record<string, unknown>): void {
 /** A harness over a synthetic transcript, a sessions folder, and a fake `claude agents` that counts its calls. */
 function liveHarness(
   t: Parameters<typeof claudeProfile>[0],
-  options: { agents?: object[]; transcriptWrittenAt?: number | null; sessionIds?: string[] } = {}
+  options: { agents?: object[]; transcriptWrittenAt?: number | null; sessionIds?: string[]; agentsDelayMs?: number } = {}
 ) {
   const profile = claudeProfile(t);
   const repo = profile.dir('repo');
@@ -282,6 +282,9 @@ function liveHarness(
     now: () => Date.now() + clockOffset,
     exec: async () => {
       agentCalls++;
+      if (options.agentsDelayMs) {
+        await new Promise((resolve) => setTimeout(resolve, options.agentsDelayMs));
+      }
       return JSON.stringify(options.agents ?? []);
     },
   });
@@ -446,6 +449,25 @@ test('a claude agents call a poll did not wait for re-polls every live watcher w
   assert.equal(dropped, 0, 'a disposed watcher is never called');
   assert.equal((await harness.getLiveStates([SESSION_ID])).get(SESSION_ID)?.liveStatus, 'busy', 'the re-poll gets the answer');
   assert.equal(agentCalls(), 1);
+});
+
+test('a disposed harness never calls a watcher when a claude agents call it started lands afterwards (QA F3)', async (t) => {
+  const { harness, sessionsDir, agentCalls, agentsAnswered } = liveHarness(t, {
+    agents: [{ sessionId: SESSION_ID, status: 'busy' }],
+    transcriptWrittenAt: 0,
+    agentsDelayMs: 100,
+  });
+  writeSessionFile(sessionsDir, { pid: 4343, sessionId: 'someone-else', status: 'busy', statusUpdatedAt: 1 });
+  writeSessionFile(sessionsDir, { pid: 4242, sessionId: SESSION_ID });
+  let called = 0;
+  const watching = harness.watchLive(() => called++);
+  t.after(() => watching.dispose());
+  await harness.getLiveStates([SESSION_ID]);
+  assert.equal(agentCalls(), 1, 'the call is in flight');
+  harness.dispose();
+  await agentsAnswered();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(called, 0, 'a watcher of a disposed harness was called');
 });
 
 test('a torn read that hides a session waiting on the previous tick keeps its previous file state for one tick (R45 residual)', async (t) => {
