@@ -228,6 +228,45 @@ test('a released shell is the user’s: Remove never closes it by its old title,
   assert.equal(shell.disposed, false, 'the dev server keeps running');
 });
 
+test('after a reload, a released shell is not adopted back by its recorded pid: Remove leaves it, and the chat opens a fresh terminal (QA H1 on #75)', async (t) => {
+  const f = setup(t, {
+    chats: [{ id: '23c80023-lab', name: 'Lab Notes', harnessSessionId: 'lab-notes' }],
+    agentStartGraceMs: 0,
+    adapter: { sessionEnded: async () => true },
+  });
+  const shell = (await f.open('23c80023-lab'))!;
+  assert.equal(await f.manager.releaseExitedAgent('23c80023-lab'), true);
+  assert.equal(f.storage.getTerminalPids()['23c80023-lab'], undefined, 'its pid is no longer the chat’s');
+  shell.sendText('npm run dev');
+  // The reload: the pty survives and restore looks for recorded pids.
+  const restore = f.manager.beginRestoreSync(() => WORKTREE);
+  await restore.adopted;
+  await restore.complete;
+  assert.equal(f.manager.getChatIdForTerminal(shell as never), undefined, 'not adopted as the chat');
+  f.manager.closeChat('23c80023-lab');
+  assert.equal(shell.disposed, false, 'Remove leaves what the user runs there');
+  const next = (await f.open('23c80023-lab'))!;
+  assert.notEqual(next, shell, 'the chat opens in one new terminal');
+  assert.deepEqual(next.sent, ['claude --resume lab-notes']);
+});
+
+test('after a quit, a revived released shell gets no resume line (QA H1 on #75)', async (t) => {
+  const f = setup(t, {
+    chats: [{ id: '23c80023-lab', name: 'Lab Notes', harnessSessionId: 'lab-notes' }],
+    agentStartGraceMs: 0,
+    adapter: { sessionEnded: async () => true, isSessionResumable: async () => true },
+  });
+  const shell = (await f.open('23c80023-lab'))!;
+  assert.equal(await f.manager.releaseExitedAgent('23c80023-lab'), true);
+  f.close(shell);
+  const revived = f.restoredTab(shell.name, 8123);
+  const restore = f.manager.beginRestoreSync(() => WORKTREE);
+  await restore.adopted;
+  await restore.complete;
+  assert.deepEqual(revived.sent, [], 'nothing typed into the user’s shell');
+  assert.equal(f.manager.getChatIdForTerminal(revived as never), undefined);
+});
+
 test('a release whose terminal changes while the record is read releases nothing (QA on #75, M2)', async (t) => {
   /** Each record read waits for its own answer. */
   const answers: ((ended: boolean) => void)[] = [];
@@ -774,6 +813,26 @@ test('a revived tab Pitwall is resuming is never released while its agent may st
   await waitFor(() => tab.sent.length > 0, 'the resume line');
   assert.equal(await f.manager.releaseExitedAgent('a2a2a200-revive'), false, 'right after its resume line: a second process would fork it');
   assert.equal(f.manager.getTerminal('a2a2a200-revive'), tab as never);
+});
+
+test('a revived shell slower to start than the grace still gets the full grace after its resume line (QA R6 on #75)', async (t) => {
+  stub.__setLateShellIntegration(true);
+  const grace = 200;
+  const f = setup(t, {
+    chats: [{ id: 'a3a3a300-slow', harnessSessionId: 's4', status: 'closed' }],
+    agentStartGraceMs: grace,
+    adapter: { sessionEnded: async () => true },
+  });
+  await f.storage.rememberTerminalPid('a3a3a300-slow', 7901);
+  const tab = f.restoredTab('Pitwall: Slow Revive [a3a3a3]', 8901);
+
+  await f.manager.beginRestoreSync(() => WORKTREE).complete;
+  // The shell takes longer than the whole grace to report ready.
+  await new Promise((resolve) => setTimeout(resolve, grace + 100));
+  stub.window.__integrateShell(tab);
+  await waitFor(() => tab.sent.length > 0, 'the resume line');
+  assert.equal(await f.manager.releaseExitedAgent('a3a3a300-slow'), false, 'the grace restarts at the resume line');
+  assert.equal(f.manager.getTerminal('a3a3a300-slow'), tab as never);
 });
 
 test('with shell integration turned off, a revived tab is resumed at once', async (t) => {

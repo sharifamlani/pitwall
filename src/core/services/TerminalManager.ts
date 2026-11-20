@@ -1199,6 +1199,9 @@ export class TerminalManager {
     }
     this.releasedShells.add(terminal);
     this.handleTerminalClosed(chatId, terminal);
+    // Its pty is alive, so the recorded PID would let a reload adopt it back
+    // as the chat, and a quit's revive type a resume line into it (QA H1).
+    await this.storageService.forgetTerminalPid(chatId).catch(() => undefined);
     return true;
   }
 

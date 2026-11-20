@@ -193,6 +193,16 @@ test('after /clear the same process runs on under a new session id: the old id n
   assert.equal(await sessions.ended('lab-notes'), false);
 });
 
+test('a session seen live only under an unknown status reads as ended once its process is gone (QA R4 on #75)', async (t) => {
+  const dir = path.join(tempDir(t), 'sessions');
+  const alive = new Set([62]);
+  writeSession(dir, { pid: 62, sessionId: 'odd-only', status: 'compacting', statusUpdatedAt: 1 });
+  const sessions = sessionsFile(dir, alive);
+  assert.equal(await sessions.ended('odd-only'), false, 'live, status unknown to this build');
+  alive.delete(62);
+  assert.equal(await sessions.ended('odd-only'), true, 'its pid is gone from a complete read');
+});
+
 test('an unknown status or an unreadable pid domain never reads as ended', async (t) => {
   const dir = path.join(tempDir(t), 'sessions');
   writeSession(dir, { pid: 61, sessionId: 'odd', status: 'idle', statusUpdatedAt: 1 });
