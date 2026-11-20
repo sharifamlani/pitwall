@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ChatSession } from '../types';
 import { HarnessAdapter } from '../harness/types';
 import { chatNativeSessionIds } from '../harness/sessionUtils';
+import { samePath } from '../utils/paths';
 
 /** What deciding "which chat is in front" reads from the rest of the extension. */
 export interface ChatVisibilitySources {
@@ -73,6 +74,80 @@ function chatIdOfActiveTab(sources: ChatVisibilitySources): string | undefined {
     return chatId && sources.isPitwallActivation?.(chatId) ? undefined : chatId;
   }
   return activeNativeUiChatId(sources);
+}
+
+/**
+ * How long after it opened an unbound tab can still stand for a new chat. A
+ * new chat's tab binds once its title names the chat, seconds into the first
+ * turn; a tab left unbound longer holds no new chat, so it silences nothing.
+ */
+export const UNBOUND_FRONT_MAX_MS = 10 * 60_000;
+
+/** What the unbound-tab front check reads (PR #73). */
+export interface UnboundFrontDeps {
+  adapters(): readonly HarnessAdapter[];
+  /** Every listed chat: the tab stands for one only when exactly one fits. */
+  chats(): readonly ChatSession[];
+  worktreePathOf(chat: ChatSession): string | undefined;
+  folders(): readonly string[];
+  /** A terminal or tab of the chat is open in this window, or a tab in another (the registry's openSessionIds). */
+  isOpenAnywhere(chat: ChatSession): boolean;
+  now?(): number;
+}
+
+/**
+ * Whether this window's active tab may be this chat's own, not bound yet
+ * (PR #73). A brand-new chat's tab binds only once its title names the chat,
+ * so a user watching its first turn would otherwise get a pop-up.
+ *
+ * The active tab must be a native-UI tab of the chat's harness that no
+ * session is bound to and that opened in this window under
+ * UNBOUND_FRONT_MAX_MS ago (a restored tab has no open time, so it counts
+ * for nothing). It stands for a chat only when exactly one listed chat fits:
+ * one of this window's folders, with no open surface anywhere (a chat in a
+ * terminal or with its own tab is never in a tab it does not have), run by
+ * the harness's panel by its live record (a `claude` in an outside terminal
+ * is not; unknown counts as not), whose session started at or after the tab
+ * opened. So it can never silence an
+ * older chat, or either of two new ones. Focus is the caller's check.
+ */
+export function unboundTabMayBeChat(chat: ChatSession, deps: UnboundFrontDeps): boolean {
+  const adapter = deps.adapters().find((entry) => entry.id === chat.harness);
+  const surfaces = adapter?.nativeUi?.surfaces;
+  const openedAt = surfaces?.activeUnboundTabOpenedAt?.();
+  if (openedAt === undefined || (deps.now?.() ?? Date.now()) - openedAt > UNBOUND_FRONT_MAX_MS) {
+    return false;
+  }
+  const folders = deps.folders();
+  const fits = (candidate: ChatSession): boolean => {
+    const worktreePath = deps.worktreePathOf(candidate);
+    return (
+      candidate.harness === chat.harness &&
+      Boolean(candidate.harnessSessionId) &&
+      sessionStartedAt(candidate) >= openedAt &&
+      Boolean(worktreePath && folders.some((folder) => samePath(folder, worktreePath))) &&
+      !deps.isOpenAnywhere(candidate) &&
+      // Only a panel process can be in a panel tab: a chat started in a terminal never fits, and
+      // neither does one whose start the live record doesn't say (QA #73 round 3, G1).
+      adapter?.isPanelSession?.(candidate.harnessSessionId ?? '') === true
+    );
+  };
+  if (!fits(chat)) {
+    return false;
+  }
+  const candidates = deps.chats().filter(fits);
+  return candidates.length === 1 && candidates[0].id === chat.id;
+}
+
+/**
+ * The latest the chat's session can have started: the earlier of when its
+ * row was made and its last known activity, neither of which can be before
+ * the session began. A chat with neither counts as started before any tab,
+ * so it never fits.
+ */
+function sessionStartedAt(chat: ChatSession): number {
+  const stamps = [chat.createdAt, chat.lastAccessedAt].filter((stamp) => Number.isFinite(stamp));
+  return stamps.length > 0 ? Math.min(...stamps) : Number.NEGATIVE_INFINITY;
 }
 
 /** Whether this chat is the one in front of the user right now. */

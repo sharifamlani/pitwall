@@ -1,0 +1,95 @@
+/**
+ * The extension's answer to "a live session no row holds" (Q31, new-chat
+ * pickup, PR #73): the targeted import, the retry answer, discovery for a
+ * new repo (never on a timer), and the full-refresh fallback.
+ */
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createUnlistedLiveHandler } from '../../../src/core/services/unlistedLive';
+import type { LiveImportResult } from '../../../src/core/services/SessionImportService';
+
+function wiring(answers: Array<(ids: readonly string[]) => LiveImportResult>, started = true) {
+  const calls = { imports: [] as string[][], discovery: 0, refresh: 0, polls: 0, deferred: 0 };
+  let scansStarted = started;
+  /** Sessions that ended or got listed some other way (a full scan), as the attention service sees them. */
+  const gone = new Set<string>();
+  const handler = createUnlistedLiveHandler({
+    stillUnlisted: (id) => !gone.has(id),
+    scansStarted: () => scansStarted,
+    deferUntilScans: () => calls.deferred++,
+    importLive: async (ids) => {
+      calls.imports.push([...ids]);
+      const next = answers.shift();
+      return next ? next(ids) : { retry: [], unplaced: [], unsupported: [] };
+    },
+    wakeDiscovery: () => calls.discovery++,
+    fullRefresh: () => calls.refresh++,
+    pollAttention: () => calls.polls++,
+  });
+  return { handler, calls, gone, start: () => (scansStarted = true) };
+}
+
+const none: LiveImportResult = { retry: [], unplaced: [], unsupported: [] };
+
+test('before the first scans start, an ask is kept for them and answered "ask again"', async () => {
+  const { handler, calls } = wiring([], false);
+  assert.deepEqual(await handler.ask(['s-1']), ['s-1']);
+  assert.deepEqual([calls.deferred, calls.imports.length], [1, 0], 'kept; nothing imported early (E16/I3)');
+});
+
+test('a session with nothing to import yet is answered "ask again"; one listed polls attention at once', async () => {
+  const { handler, calls } = wiring([() => ({ ...none, retry: ['s-1'] }), () => none]);
+  assert.deepEqual(await handler.ask(['s-1']), ['s-1'], 'the attention service retries it with backoff');
+  assert.equal(calls.polls, 0);
+  assert.deepEqual(await handler.ask(['s-1']), [], 'listed: settled');
+  assert.equal(calls.polls, 1, 'its turn is tracked from now, not the next tick');
+  assert.deepEqual([calls.discovery, calls.refresh], [0, 0], 'no discovery pass and no full scan for a session in a listed repo');
+});
+
+test('a session in an unlisted folder wakes discovery once, is never retried on a timer, and is imported again when discovery adds repos', async () => {
+  const { handler, calls } = wiring([
+    () => ({ ...none, unplaced: ['s-new-repo'] }),
+    () => ({ ...none, unplaced: ['s-new-repo'] }),
+    () => none,
+  ]);
+  assert.deepEqual(await handler.ask(['s-new-repo']), [], 'not retried: each retry would parse its whole transcript again');
+  assert.equal(calls.discovery, 1);
+  await handler.ask(['s-new-repo']);
+  assert.equal(calls.discovery, 1, 'once per session per window');
+  await handler.onReposAdded();
+  assert.deepEqual(calls.imports.at(-1), ['s-new-repo'], 'discovery added repos: imported again');
+  assert.equal(calls.polls, 1, 'and tracked at once');
+  await handler.onReposAdded();
+  assert.equal(calls.imports.length, 3, 'nothing left to import');
+});
+
+test('an adapter that cannot read one session falls back to discovery and one full import scan', async () => {
+  const { handler, calls } = wiring([() => ({ ...none, unsupported: ['s-1'] })]);
+  assert.deepEqual(await handler.ask(['s-1']), []);
+  assert.deepEqual([calls.discovery, calls.refresh], [1, 1]);
+});
+
+test('an unplaced session that ends, or is listed some other way, before discovery adds its repo is dropped, not imported again', async () => {
+  const { handler, calls, gone } = wiring([() => ({ ...none, unplaced: ['s-ended', 's-scanned', 's-live'] })]);
+  await handler.ask(['s-ended', 's-scanned', 's-live']);
+  gone.add('s-ended'); // its process exited
+  gone.add('s-scanned'); // a full scan listed it
+  await handler.onReposAdded();
+  assert.deepEqual(calls.imports.at(-1), ['s-live'], 'only the one still live and unlisted');
+  gone.add('s-live');
+  await handler.onReposAdded();
+  assert.equal(calls.imports.length, 2, 'nothing left: no import at all');
+});
+
+test('sessions that ended free their place under the unplaced bound', async () => {
+  const fifty = Array.from({ length: 50 }, (_, index) => `s-${index}`);
+  const { handler, calls, gone } = wiring([() => ({ ...none, unplaced: fifty }), () => ({ ...none, unplaced: ['s-late'] })]);
+  await handler.ask(fifty);
+  fifty.forEach((id) => gone.add(id));
+  await handler.ask(['s-late']);
+  assert.equal(calls.imports.length, 2);
+  await handler.onReposAdded();
+  // Its own import, not the ask's: the ask's import made room by dropping the fifty that ended (QA #73 round 3, U6).
+  assert.equal(calls.imports.length, 3, 'discovery added repos: s-late imported again');
+  assert.deepEqual(calls.imports.at(-1), ['s-late'], 'kept, though fifty were held before it');
+});

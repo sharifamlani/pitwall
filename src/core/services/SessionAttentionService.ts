@@ -46,10 +46,40 @@ export interface AttentionOptions {
   /** The Operations log (`[Pitwall] status <id8> <from>→<to> lag=<ms>`). */
   log?: (line: string) => void;
   /**
-   * Live sessions no listed chat holds (a repo Pitwall doesn't list yet):
-   * asks discovery for one refresh, at most once per session per window (Q31).
+   * Live sessions no listed chat holds (a new chat, or a repo Pitwall doesn't
+   * list yet), as each one's turn starts (Q31). The answer names the
+   * sessions that had nothing to import yet: they are asked about again,
+   * with backoff (UNLISTED_RETRY_MS), up to UNLISTED_MAX_ASKS times per turn.
+   * Any other session, or no answer, is asked about once per window.
    */
-  onUnlistedLive?: (sessionIds: string[]) => void;
+  onUnlistedLive?: (sessionIds: string[]) => void | readonly string[] | PromiseLike<void | readonly string[]>;
+}
+
+/**
+ * The waits between asks about one unlisted live session whose transcript
+ * had nothing to import yet: Claude marks a turn busy before it writes the
+ * prompt to the transcript, so the first ask can come too early (12f645db).
+ */
+export const UNLISTED_RETRY_MS: readonly number[] = [1_000, 2_000, 4_000, 8_000, 16_000];
+/** Asks about one unlisted session per turn: about 31 s of tries, then none until its next turn starts. */
+export const UNLISTED_MAX_ASKS = UNLISTED_RETRY_MS.length + 1;
+
+/** One unlisted live session's asks (new-chat pickup). */
+interface UnlistedAsk {
+  /** Asks in the current turn. */
+  asks: number;
+  /** The next ask may go out. */
+  due: boolean;
+  /** An ask's answer is pending. */
+  inFlight: boolean;
+  /** Answered for good (listed, removed, or no answer): never asked again in this window. */
+  settled: boolean;
+  /** Its turn was under way at the last look; a new turn re-arms the asks. */
+  underWay: boolean;
+  /** A new turn started while an ask was in flight: its answer re-arms the asks. */
+  resetPending?: boolean;
+  /** The backoff before the next ask. */
+  timer?: NodeJS.Timeout;
 }
 
 const IDLE: ChatStatus = { status: 'idle', statusSince: 0 };
@@ -216,6 +246,9 @@ export class SessionAttentionService {
   private readonly frontChats = new Set<string>();
   /** Unlisted live sessions this window already asked discovery about (Q31, N5). */
   private readonly askedUnlisted = new Set<string>();
+  /** Each unlisted live session's asks: retried while its transcript had nothing to import (new-chat pickup). */
+  private readonly unlistedAsks = new Map<string, UnlistedAsk>();
+  private disposed = false;
   /** The first pass after activation has run: a chat first judged after it joined the list later. */
   private primed = false;
   /**
@@ -269,11 +302,30 @@ export class SessionAttentionService {
     return { dispose: () => watchers.forEach((watcher) => watcher.dispose()) };
   }
 
+  /**
+   * Whether this window still tracks the session as live with no row (it was
+   * asked about and has neither ended nor been listed since). The unlisted-
+   * live handler drops a session waiting for discovery once this is false.
+   */
+  isUnlistedLive(sessionId: string): boolean {
+    for (const key of this.unlistedAsks.keys()) {
+      if (key.endsWith(`\u0000${sessionId}`)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   dispose(): void {
+    this.disposed = true;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
     }
+    for (const ask of this.unlistedAsks.values()) {
+      clearTimeout(ask.timer);
+    }
+    this.unlistedAsks.clear();
     this.statusEmitter.dispose();
     this.transitionEmitter.dispose();
   }
@@ -753,12 +805,16 @@ export class SessionAttentionService {
   }
 
   /**
-   * Ask discovery once about each live session no listed chat holds (Q31,
-   * N5: once per session per window), as soon as its turn is under way. A
-   * session's live record appears when its process starts, but its
-   * transcript, which discovery lists from, only with the first prompt: an
-   * ask before that found nothing and was spent, so a new chat waited for
-   * the next 60 s scan and its first turn went untracked (S7).
+   * Ask about each live session no listed chat holds (Q31), as soon as its
+   * turn is under way. A session's live record appears when its process
+   * starts, but its transcript, which the import reads, only with the first
+   * prompt (S7), and Claude marks the turn busy before it writes that
+   * prompt. A single ask could come too early and be spent, and a window
+   * whose list stays hidden runs no ordinary scans, so the chat was never
+   * listed (12f645db). So a session the answer says had nothing to import
+   * yet is asked again after a backoff, at most UNLISTED_MAX_ASKS times a
+   * turn, and its next turn starts the tries over; any other answer (or
+   * none) settles it for this window, once per session as before (N5).
    */
   private async askAboutUnlisted(liveIds: ReadonlyMap<string, ReadonlySet<string>>, chats: readonly ChatSession[]): Promise<void> {
     if (!this.options.onUnlistedLive) {
@@ -766,22 +822,117 @@ export class SessionAttentionService {
     }
     const listed = new Set(chats.flatMap((chat) => chatNativeSessionIds(chat).map((id) => `${chat.harness}\u0000${id}`)));
     const adapters = new Map(this.adapters(chats).map((adapter) => [adapter.id as string, adapter]));
-    const fresh: string[] = [];
+    const unlisted = new Set<string>();
+    const fresh: Array<{ key: string; id: string; ask: UnlistedAsk }> = [];
     for (const [harness, ids] of liveIds) {
-      const unasked = [...ids].filter((id) => !listed.has(`${harness}\u0000${id}`) && !this.askedUnlisted.has(`${harness}\u0000${id}`));
-      if (unasked.length === 0) {
+      const candidates = [...ids].filter((id) => {
+        const key = `${harness}\u0000${id}`;
+        if (listed.has(key)) {
+          return false;
+        }
+        unlisted.add(key);
+        return !this.unlistedAsks.get(key)?.settled && !(this.askedUnlisted.has(key) && !this.unlistedAsks.has(key));
+      });
+      if (candidates.length === 0) {
         continue;
       }
       const underWay = await this.underWay(adapters.get(harness));
-      for (const id of unasked) {
-        if (!underWay || underWay.has(id)) {
-          this.askedUnlisted.add(`${harness}\u0000${id}`);
-          fresh.push(id);
+      for (const id of candidates) {
+        const key = `${harness}\u0000${id}`;
+        const turnUnderWay = !underWay || underWay.has(id);
+        let ask = this.unlistedAsks.get(key);
+        if (!ask) {
+          // Nothing to find before the first prompt writes the transcript.
+          if (!turnUnderWay) {
+            continue;
+          }
+          ask = { asks: 0, due: true, inFlight: false, settled: false, underWay: true };
+          this.unlistedAsks.set(key, ask);
+        } else if (turnUnderWay && !ask.underWay) {
+          // A new turn of a session still unlisted: its tries start over
+          // (once the ask in flight is answered, if one is).
+          if (ask.inFlight) {
+            ask.resetPending = true;
+          } else {
+            clearTimeout(ask.timer);
+            ask.timer = undefined;
+            ask.asks = 0;
+            ask.due = true;
+          }
+        }
+        ask.underWay = turnUnderWay;
+        if (ask.due && !ask.inFlight && ask.asks < UNLISTED_MAX_ASKS) {
+          ask.asks++;
+          ask.due = false;
+          ask.inFlight = true;
+          this.askedUnlisted.add(key);
+          fresh.push({ key, id, ask });
         }
       }
     }
-    if (fresh.length > 0) {
-      this.options.onUnlistedLive(fresh);
+    // A session that ended or got listed is done with.
+    for (const [key, ask] of this.unlistedAsks) {
+      if (!unlisted.has(key)) {
+        clearTimeout(ask.timer);
+        this.unlistedAsks.delete(key);
+      }
+    }
+    if (fresh.length === 0) {
+      return;
+    }
+    let answer: void | readonly string[] | PromiseLike<void | readonly string[]>;
+    try {
+      answer = this.options.onUnlistedLive(fresh.map((entry) => entry.id));
+    } catch (error) {
+      console.error('[Pitwall] Could not ask about unlisted sessions:', error);
+      answer = undefined;
+    }
+    // The answer may take a read or a scan; the tick never waits for it.
+    void Promise.resolve(answer).then(
+      (retry) => this.noteUnlistedAnswer(fresh, new Set(retry ?? [])),
+      (error) => {
+        console.error('[Pitwall] Could not ask about unlisted sessions:', error);
+        this.noteUnlistedAnswer(fresh, new Set());
+      }
+    );
+  }
+
+  /**
+   * A session with nothing to import yet is asked about again after its
+   * backoff, the timer polling at once, so a first turn is listed within
+   * about a second of its transcript landing (target: 5 s). Every other
+   * answer settles it for this window, as before (Q31, N5).
+   */
+  private noteUnlistedAnswer(asked: ReadonlyArray<{ key: string; id: string; ask: UnlistedAsk }>, retry: ReadonlySet<string>): void {
+    for (const { key, id, ask } of asked) {
+      ask.inFlight = false;
+      if (this.disposed || this.unlistedAsks.get(key) !== ask) {
+        continue;
+      }
+      if (!retry.has(id)) {
+        ask.settled = true;
+        continue;
+      }
+      if (ask.resetPending) {
+        // A new turn started while this ask was out: start its tries over now.
+        ask.resetPending = false;
+        clearTimeout(ask.timer);
+        ask.timer = undefined;
+        ask.asks = 0;
+        ask.due = true;
+        void this.poll();
+        continue;
+      }
+      if (ask.asks >= UNLISTED_MAX_ASKS) {
+        continue; // spent until its next turn starts
+      }
+      clearTimeout(ask.timer);
+      ask.timer = setTimeout(() => {
+        ask.timer = undefined;
+        ask.due = true;
+        void this.poll();
+      }, UNLISTED_RETRY_MS[Math.min(ask.asks, UNLISTED_RETRY_MS.length) - 1]);
+      ask.timer.unref?.();
     }
   }
 

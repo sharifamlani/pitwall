@@ -264,6 +264,15 @@ export interface NativeUiSurfaceTracker extends vscode.Disposable {
   ): void;
   /** The native session whose surface is the active editor tab, if any. */
   activeSessionId(): string | undefined;
+  /**
+   * When the active editor tab opened in this window, if it is one of this
+   * harness's tabs that no session is bound to yet (a brand-new chat's tab
+   * before it binds): the user may be watching a chat Pitwall cannot name yet
+   * (PR #73). Undefined when the active tab is bound, is not this harness's,
+   * or was already there when the tracker started (a restored tab has no
+   * open time, so it can never stand for a new chat).
+   */
+  activeUnboundTabOpenedAt?(): number | undefined;
   /** Whether this native session currently has an open native-UI tab. */
   isOpen(sessionId: string): boolean;
   /**
@@ -462,6 +471,14 @@ export interface HarnessAdapter {
   ): Promise<HarnessSession[]>;
 
   /**
+   * One session by ID, read from its own record alone (Claude: its one
+   * transcript), so a new live session can be listed without a full scan.
+   * Null while the record does not exist or does not place the session in a
+   * folder yet. Undefined (not implemented) sends callers to a full scan.
+   */
+  getSession?(sessionId: string): Promise<HarnessSession | null>;
+
+  /**
    * Live state for specific sessions, when the harness has a cheaper way to
    * answer than a full discovery pass. The attention tick prefers this.
    * `cwd` scopes a harness whose record lookup depends on the working
@@ -511,6 +528,14 @@ export interface HarnessAdapter {
    * since the OS reuses pids.
    */
   liveProcessOf?(sessionId: string): Promise<{ pid: number; panel: boolean; cwd?: string; startedAt?: number } | undefined>;
+
+  /**
+   * Whether the harness's own editor panel (not a terminal) runs this
+   * session, by the last live record read (the attention tick's): a sync
+   * read for pop-up checks. Undefined when the record does not list the
+   * session or does not say where it started (PR #73, QA round 3).
+   */
+  isPanelSession?(sessionId: string): boolean | undefined;
 
   /**
    * The folder a session's window is (Q2): the one its agent's UI resumes it

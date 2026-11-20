@@ -503,6 +503,14 @@ export class NativeUiTabSurfaceService implements NativeUiSurfaceTracker {
       : undefined;
   }
 
+  activeUnboundTabOpenedAt(): number | undefined {
+    const activeTab = this.getTabGroups().find((group) => group.isActive)?.activeTab;
+    if (!activeTab || !this.isUiTab(activeTab) || this.activeSessionId()) {
+      return undefined;
+    }
+    return this.openedAt.get(activeTab)?.at;
+  }
+
   async closeSurface(sessionId: string): Promise<boolean> {
     const tab = this.sessionTabs.get(sessionId)?.values().next().value;
     return tab ? vscode.window.tabGroups.close(tab, true) : false;

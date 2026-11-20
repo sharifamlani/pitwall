@@ -58,6 +58,7 @@ export type NewChatFields = Partial<
     | 'autoImported'
     | 'createdAt'
     | 'lastAccessedAt'
+    | 'seenAt'
   >
 >;
 

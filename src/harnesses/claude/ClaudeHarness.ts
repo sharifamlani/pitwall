@@ -65,6 +65,8 @@ export class ClaudeHarness implements HarnessAdapter {
   private sharedRead: { at: number; snapshot: Promise<ClaudeSessionsSnapshot> } | undefined;
   /** Sessions the last complete `liveSessionIds` read listed. */
   private lastLiveIds = new Set<string>();
+  /** Where each session's process started (`cli`, `claude-vscode`, ...), from the last `liveSessionIds` read. */
+  private lastEntrypoints = new Map<string, string | undefined>();
   /** The last waiting state the folder showed per session (R45 residual). */
   private readonly lastFileWaits = new Map<string, ClaudeSessionFileState>();
   /** Sessions whose wait the previous tick carried over a torn read. */
@@ -154,6 +156,12 @@ export class ClaudeHarness implements HarnessAdapter {
     return sessions.map(toHarnessSession);
   }
 
+  /** One session from its own transcript; null until the transcript exists and a line names its cwd. */
+  async getSession(sessionId: string): Promise<HarnessSession | null> {
+    const session = await this.sessionService.getSessionById(sessionId);
+    return session ? toHarnessSession(session) : null;
+  }
+
   async getSessionMetadata(
     sessionId: string,
     _cwd?: string
@@ -205,7 +213,16 @@ export class ClaudeHarness implements HarnessAdapter {
     const ids = new Set([...file.states.keys(), ...file.unknownStatus]);
     const result = file.partial ? new Set([...ids, ...this.lastLiveIds]) : ids;
     this.lastLiveIds = file.partial ? new Set() : ids;
+    const entrypoints = new Map([...file.states].map(([sessionId, state]) => [sessionId, state.entrypoint] as const));
+    // A torn read keeps what the previous read knew of the sessions it missed.
+    this.lastEntrypoints = file.partial ? new Map([...this.lastEntrypoints, ...entrypoints]) : entrypoints;
     return result;
+  }
+
+  /** Whether the Claude Code panel runs this session, by the tick's last read; undefined when it doesn't say. */
+  isPanelSession(sessionId: string): boolean | undefined {
+    const entrypoint = this.lastEntrypoints.get(sessionId);
+    return entrypoint === undefined ? undefined : entrypoint === 'claude-vscode';
   }
 
   /**

@@ -614,6 +614,214 @@ test('with the Pitwall view never shown, the first scans start after HIDDEN_LIST
   await scans.stop(f.context);
 });
 
+test('with the Pitwall view hidden for the whole life of the window, a brand-new chat whose transcript lands after its turn starts is listed within 5 s and pops up once (12f645db)', async (t) => {
+  const lab = labFolder(t);
+  const f = await seededActivation(t, [], {}, [lab.repository]);
+  const { ClaudeSessionService } = await import('../../../src/harnesses/claude/ClaudeSessionService');
+  const findForRepository = ClaudeSessionService.prototype.findSessionsForRepository;
+  let fullScans = 0;
+  ClaudeSessionService.prototype.findSessionsForRepository = function (this: InstanceType<typeof ClaudeSessionService>, ...args: Parameters<typeof findForRepository>) {
+    fullScans++;
+    return findForRepository.apply(this, args);
+  };
+  t.after(() => (ClaudeSessionService.prototype.findSessionsForRepository = findForRepository));
+  const { SessionAttentionService } = await import('../../../src/core/services/SessionAttentionService');
+  const asks: string[] = [];
+  const attentionProto = SessionAttentionService.prototype as unknown as Record<string, unknown>;
+  const ask = attentionProto.askAboutUnlisted as (...args: unknown[]) => Promise<void>;
+  attentionProto.askAboutUnlisted = async function (this: { askedUnlisted: Set<string> }, ...args: unknown[]) {
+    await ask.apply(this, args);
+    asks.push(...this.askedUnlisted);
+  };
+  t.after(() => (attentionProto.askAboutUnlisted = ask));
+  // The importer's work in flight (a scan, or a targeted import), so the transcript can land after the first ask's work ends.
+  let importing = 0;
+  const importerProto = SessionImportService.prototype as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+  for (const name of ['scan', 'importLive']) {
+    const original = importerProto[name];
+    if (!original) continue;
+    importerProto[name] = async function (this: unknown, ...args: unknown[]) {
+      importing++;
+      try {
+        return await original.apply(this, args);
+      } finally {
+        importing--;
+      }
+    };
+    t.after(() => (importerProto[name] = original));
+  }
+  const scans = watchFirstScans(t);
+  await f.start();
+  await scans.advance(HIDDEN_LIST_START_MS);
+  await scans.runUntil(() => scans.order.length === 2, 'the first scans, view hidden');
+  await scans.advance(8_000);
+
+  // Claude Code: Open in New Tab, then the first prompt. The live record says busy
+  // before Claude writes the transcript, so the first ask finds nothing to import.
+  const sessionId = '12f645db-c23e-4bfa-990a-9e8939f69777';
+  const cwd = lab.repository.rootPath;
+  const sessions = path.join(f.claudeDir, 'sessions');
+  fs.mkdirSync(sessions, { recursive: true });
+  const domain = await localPidDomain();
+  const record = (status: string) =>
+    fs.writeFileSync(
+      path.join(sessions, `${process.pid}.json`),
+      JSON.stringify({ pid: process.pid, sessionId, pidDomain: domain, cwd, status, statusUpdatedAt: Date.now(), entrypoint: 'claude-vscode' })
+    );
+  const line = (entry: object) => `${JSON.stringify({ timestamp: new Date().toISOString(), cwd, sessionId, ...entry })}\n`;
+  const transcript = path.join(f.claudeDir, 'projects', encodeClaudeProjectPath(cwd), `${sessionId}.jsonl`);
+  const scansBefore = fullScans;
+  record('busy');
+  let elapsed = 0;
+  /** Let `ms` of real time pass for git and file work, without the mocked timers. */
+  const realPause = async (ms: number) => {
+    const until = performance.now() + ms;
+    while (performance.now() < until) await new Promise((resolve) => setImmediate(resolve));
+  };
+  for (; !asks.some((key) => key.endsWith(sessionId)); elapsed += 50) {
+    assert.ok(elapsed <= 8_000, 'the window asks about the new session as its turn starts (within two ticks)');
+    await scans.advance(50);
+    await realPause(5);
+  }
+  // Let that ask's work (a full scan, or a read of the one transcript) finish before the transcript lands.
+  await realPause(20);
+  for (let waited = 0; importing > 0; waited++) {
+    assert.ok(waited < 1_000, "the first ask's import work ends");
+    await realPause(10);
+  }
+  fs.mkdirSync(path.dirname(transcript), { recursive: true });
+  fs.writeFileSync(transcript, line({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'Write a short story about a night ferry' }] } }));
+  const listed = () => f.storedChats().some((chat) => chat.harnessSessionId === sessionId);
+  for (let spins = 0; !listed(); spins++) {
+    assert.ok(elapsed <= 5_000, `listed within 5 s of the turn start, view hidden (${elapsed} ms)`);
+    assert.ok(spins < 3_000, 'the import work ends');
+    // The clock moves only while the importer is idle: its real git and file work takes
+    // machine time, which a loaded test run must not charge to the 5 s.
+    if (importing > 0) {
+      await realPause(5);
+      continue;
+    }
+    await scans.advance(50);
+    elapsed += 50;
+    await realPause(5);
+  }
+  assert.equal(fullScans, scansBefore, 'picked up without a full scan of every transcript');
+
+  // The 15 s turn ends unseen: exactly one finished pop-up.
+  await scans.advance(Math.max(0, 15_000 - elapsed));
+  await scans.finishAfterImport(f.storedChats, sessionId, () => {
+    fs.appendFileSync(transcript, line({ type: 'assistant', message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: 'The ferry left at midnight.' }] } }));
+    record('idle');
+  });
+  await scans.runUntil(() => scans.notified.includes(`finished ${sessionId}`), 'the finished pop-up');
+  await scans.advance(20_000);
+  assert.equal(scans.notified.filter((entry) => entry === `finished ${sessionId}`).length, 1, 'one finished pop-up');
+  assert.ok(!scans.order.includes('render'), 'the view was never opened');
+  await scans.stop(f.context);
+});
+
+test("the extension's unbound-tab front check stands for a new chat only while it is open nowhere (QA #73 round 3, U8)", async (t) => {
+  const lab = labFolder(t);
+  const now = Date.now();
+  const f = await seededActivation(
+    t,
+    [{ id: 'a0a0a0a0-new', name: 'New chat', harnessSessionId: 's-new', status: 'idle', worktreeId: lab.worktreeId, createdAt: now, lastAccessedAt: now }],
+    {},
+    [lab.repository]
+  );
+  (stub.workspace as { workspaceFolders: unknown[] }).workspaceFolders = [{ uri: vscode.Uri.file(lab.repository.rootPath), name: 'lab', index: 0 }];
+  const { NativeUiTabSurfaceService } = await import('../../../src/core/harness/kit/NativeUiTabSurfaceService');
+  const { ClaudeHarness } = await import('../../../src/harnesses/claude/ClaudeHarness');
+  const { WorkspacesTreeProvider } = await import('../../../src/core/providers/WorkspacesTreeProvider');
+  // The NotificationService the extension made, reached through its Test sound command.
+  let service: { options: { unboundFront?: (chat: ChatSession) => boolean } } | undefined;
+  const testSound = NotificationService.prototype.testSound;
+  NotificationService.prototype.testSound = async function (this: NotificationService) {
+    service = this as never;
+  };
+  // A Claude tab opened a second ago is in front, bound to nothing; the live record says the panel runs s-new.
+  const openedAt = NativeUiTabSurfaceService.prototype.activeUnboundTabOpenedAt;
+  NativeUiTabSurfaceService.prototype.activeUnboundTabOpenedAt = () => now - 1_000;
+  const isPanelSession = ClaudeHarness.prototype.isPanelSession;
+  ClaudeHarness.prototype.isPanelSession = (sessionId: string) => sessionId === 's-new';
+  // What the Workspaces view knows of the chat's surfaces (a terminal here, a tab in another window).
+  let openAnywhere = false;
+  const isOpenAnywhere = WorkspacesTreeProvider.prototype.isOpenAnywhere;
+  WorkspacesTreeProvider.prototype.isOpenAnywhere = () => openAnywhere;
+  t.after(() => {
+    NotificationService.prototype.testSound = testSound;
+    NativeUiTabSurfaceService.prototype.activeUnboundTabOpenedAt = openedAt;
+    ClaudeHarness.prototype.isPanelSession = isPanelSession;
+    WorkspacesTreeProvider.prototype.isOpenAnywhere = isOpenAnywhere;
+  });
+  await f.start();
+  await vscode.commands.executeCommand('pitwall.testSound');
+  const unboundFront = service?.options.unboundFront;
+  assert.ok(unboundFront, 'the extension wires the unbound-tab check');
+  const chat = () => f.storedChats().find((entry) => entry.harnessSessionId === 's-new')!;
+  await waitFor(() => unboundFront(chat()), 'the one new panel chat with no surface stands behind the tab');
+  openAnywhere = true;
+  assert.equal(unboundFront(chat()), false, 'open anywhere: it has its own surface, so the tab is not it');
+  openAnywhere = false;
+  ClaudeHarness.prototype.isPanelSession = () => false;
+  assert.equal(unboundFront(chat()), false, 'run in a terminal: never in a panel tab');
+});
+
+test("discovery adding repos imports again the live sessions it may have placed, and drops one that ended (R7: onAdded → onReposAdded)", async (t) => {
+  const lab = labFolder(t);
+  const f = await seededActivation(t, [], {}, [lab.repository]);
+  const { SessionAttentionService } = await import('../../../src/core/services/SessionAttentionService');
+  // The session's own import finds it in a folder no listed repo holds, every time.
+  const imports: string[][] = [];
+  const importLive = SessionImportService.prototype.importLive;
+  SessionImportService.prototype.importLive = async function (sessionIds: readonly string[]) {
+    imports.push([...sessionIds]);
+    return { retry: [], unplaced: [...sessionIds], unsupported: [] };
+  };
+  // The attention service's view of the session: live, no row.
+  let stillLive = true;
+  const isUnlistedLive = SessionAttentionService.prototype.isUnlistedLive;
+  SessionAttentionService.prototype.isUnlistedLive = () => stillLive;
+  // The two services the extension made, as they start.
+  let attention: { options: { onUnlistedLive?: (ids: string[]) => unknown } } | undefined;
+  const attentionStart = SessionAttentionService.prototype.start;
+  SessionAttentionService.prototype.start = function (this: InstanceType<typeof SessionAttentionService>) {
+    attention = this as never;
+    return attentionStart.call(this);
+  };
+  const scans = watchFirstScans(t);
+  let discovery: { onAdded: (roots: string[]) => void } | undefined;
+  const discoveryStart = RepoDiscoveryService.prototype.start;
+  RepoDiscoveryService.prototype.start = function (this: RepoDiscoveryService, gate: PromiseLike<unknown>) {
+    discovery = this as never;
+    return discoveryStart.call(this, gate);
+  };
+  t.after(() => {
+    SessionImportService.prototype.importLive = importLive;
+    SessionAttentionService.prototype.isUnlistedLive = isUnlistedLive;
+    SessionAttentionService.prototype.start = attentionStart;
+    RepoDiscoveryService.prototype.start = discoveryStart;
+  });
+  await f.start();
+  await scans.advance(HIDDEN_LIST_START_MS);
+  await scans.runUntil(() => scans.order.length === 2, 'the first scans, view hidden');
+  assert.ok(attention?.options.onUnlistedLive && discovery, 'both services started');
+
+  // The attention tick asks about a live session no row holds: its import places it in no listed repo.
+  await attention.options.onUnlistedLive(['s-new-repo']);
+  assert.deepEqual(imports, [['s-new-repo']]);
+  // Discovery adds its repo: the extension's onAdded imports it again.
+  discovery.onAdded([lab.repository.rootPath]);
+  await scans.drain();
+  assert.deepEqual(imports, [['s-new-repo'], ['s-new-repo']], 'imported again when discovery adds repos');
+  // It ended before discovery's next addition: dropped, never read again.
+  stillLive = false;
+  discovery.onAdded([lab.repository.rootPath]);
+  await scans.drain();
+  assert.equal(imports.length, 2, 'an ended session is not imported again');
+  await scans.stop(f.context);
+});
+
 test('a live session asked about before the first scans start, in a hidden window a handoff started, is listed once they do and pops up', async (t) => {
   // The view stays hidden, and a handoff's open hangs, so the first scans
   // wait out CLAIM_FIRST_MAX_MS after the hidden fallback (about 6 s in).

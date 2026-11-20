@@ -17,6 +17,7 @@ import { writeDump } from '../../../src/core/windows/dumpState';
 import { HarnessAdapter, HarnessLiveState } from '../../../src/core/harness/types';
 import { ChatSession } from '../../../src/core/types';
 import * as chatVisibility from '../../../src/core/services/chatVisibility';
+import { chatNativeSessionIds } from '../../../src/core/harness/sessionUtils';
 import { ClaudeAgentsService } from '../../../src/harnesses/claude/ClaudeAgentsService';
 import { ClaudeHarness } from '../../../src/harnesses/claude/ClaudeHarness';
 import { claudeUiSurfaces } from '../../../src/harnesses/claude/claudeUi';
@@ -1173,8 +1174,10 @@ interface PopupFlowOptions extends RowFlowOptions {
   frontAnywhere?: (sessionId: string) => boolean;
   /** Live sessions whose turn is under way (busy or waiting); without it the adapter cannot tell. */
   underWay?: () => Set<string>;
-  /** Runs after each discovery request is recorded (a test's import). */
-  onUnlisted?: (sessionIds: string[]) => void;
+  /** Whether this window's active tab is an unbound tab that may be the chat's (a brand-new chat being watched). */
+  unboundFront?: (chat: ChatSession) => boolean;
+  /** Runs after each discovery request is recorded (a test's import); returns the sessions still worth asking about again. */
+  onUnlisted?: (sessionIds: string[]) => void | readonly string[] | Promise<void | readonly string[]>;
 }
 
 /** rowFlow with the whole Phase 5 pop-up path: lock, front anywhere, listed check, log lines. */
@@ -1203,6 +1206,7 @@ function popupFlow(storage: ReturnType<typeof makeStorage>, options: PopupFlowOp
     },
     frontAnywhere: (sessionId) => options.frontAnywhere?.(sessionId) ?? false,
     isListed: (chatId) => storage.getChats().some((chat) => chat.id === chatId),
+    unboundFront: options.unboundFront,
     log: (line) => logs.push(line),
   });
   const service = new SessionAttentionService(
@@ -1217,7 +1221,7 @@ function popupFlow(storage: ReturnType<typeof makeStorage>, options: PopupFlowOp
       log: (line) => logs.push(line),
       onUnlistedLive: (sessionIds) => {
         unlisted.push([...sessionIds]);
-        options.onUnlisted?.(sessionIds);
+        return options.onUnlisted?.(sessionIds);
       },
     }
   );
@@ -1703,6 +1707,22 @@ test('a live session in an unlisted folder asks discovery to refresh once per se
   assert.equal(flow.unlisted.length, 2);
 });
 
+test('isUnlistedLive: a live session no row holds counts while it is tracked, and stops once it ends or is listed', async () => {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const live = new Set(['s-ends', 's-listed']);
+  const flow = popupFlow(storage, { live: () => live, states: () => ({ 's-ends': busy(), 's-listed': busy() }), onUnlisted: () => [] });
+  await flow.service.poll(true);
+  await flow.service.poll();
+  assert.deepEqual(flow.unlisted, [['s-ends', 's-listed']]);
+  assert.deepEqual(['s-ends', 's-listed', 's-never'].map((id) => flow.service.isUnlistedLive(id)), [true, true, false], 'asked about and settled, still live');
+  live.delete('s-ends');
+  storage.createChat('wt-1', 'claude', 'Listed by a full scan', { harnessSessionId: 's-listed' });
+  await flow.service.poll();
+  assert.deepEqual(['s-ends', 's-listed'].map((id) => flow.service.isUnlistedLive(id)), [false, false], 'ended; listed');
+  flow.service.dispose();
+});
+
 test('a live session not yet listed triggers one discovery refresh when its first turn starts, and is listed within one poll', async () => {
   windowState().state = { focused: true };
   const storage = makeStorage();
@@ -1768,6 +1788,366 @@ test('the discovery refresh is rate-limited to once per unknown session per wind
   await flow.service.poll();
   await flow.service.poll();
   assert.deepEqual(flow.unlisted, [['s-a'], ['s-b']], 'and asks once when its turn starts');
+});
+
+/** Let the retry timer's poll, and the promise jobs it starts, run. */
+const settleTimers = async (t: TestContext, ms: number) => {
+  t.mock.timers.tick(ms);
+  for (let i = 0; i < 20; i++) await flush();
+};
+
+test('a new chat whose transcript has nothing to import at the first ask is asked again, listed within 5 s, and its 15 s first turn pops up once (12f645db)', async (t) => {
+  const T0 = 1_800_000_000_000;
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: T0 });
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const live = new Set<string>();
+  const underWay = new Set<string>();
+  const states: Record<string, HarnessLiveState> = {};
+  let transcriptReady = false;
+  let promptAt = 0;
+  const flow = popupFlow(storage, {
+    live: () => live,
+    underWay: () => underWay,
+    states: () => states,
+    // The importer: nothing to import until the first prompt's line is in the transcript.
+    onUnlisted: async (sessionIds) => {
+      if (!transcriptReady) return sessionIds;
+      storage.createChat('wt-a', 'claude', 'Night ferry story', { id: 'chat-new', harnessSessionId: 's-new', autoImported: true, seenAt: promptAt - 1 });
+      return [];
+    },
+  });
+  await flow.service.poll(true);
+
+  // Open in New Tab, then the prompt: the live record is busy before Claude writes the transcript.
+  const turnStart = Date.now();
+  promptAt = turnStart;
+  live.add('s-new');
+  underWay.add('s-new');
+  states['s-new'] = busy(turnStart);
+  await flow.service.poll();
+  for (let i = 0; i < 20; i++) await flush();
+  assert.deepEqual(flow.unlisted, [['s-new']], 'asked as the turn starts');
+  assert.equal(storage.getChat('chat-new'), undefined, 'too early: nothing to import');
+
+  // The transcript lands half a second later; the service asks again on its own.
+  await settleTimers(t, 500);
+  transcriptReady = true;
+  for (let waited = 500; !storage.getChat('chat-new'); waited += 100) {
+    assert.ok(waited <= 5_000, 'listed within 5 s of the turn start');
+    await settleTimers(t, 100);
+  }
+  assert.ok(flow.unlisted.length >= 2, 'asked again after the first answer said "not yet"');
+
+  // Tracked from the next poll: the first turn is a transition.
+  await flow.service.poll();
+  assert.equal(flow.service.statusOf('chat-new').status, 'working');
+
+  // The 15 s turn ends with the chat closed and nobody looking.
+  await settleTimers(t, turnStart + 15_000 - Date.now());
+  states['s-new'] = idleAfter(Date.now());
+  underWay.delete('s-new');
+  for (let tick = 0; tick < 4; tick++) {
+    await flow.service.poll();
+  }
+  assert.deepEqual(
+    flow.statusLines().map((line) => line.replace(/ lag=\d+$/, '')),
+    ['[Pitwall] status s-new idle→working', '[Pitwall] status s-new working→finished']
+  );
+  assert.equal(finishedToasts().length, 1, 'exactly one finished pop-up');
+  assert.equal(flow.shownLines().length, 1);
+  const asks = flow.unlisted.length;
+  await settleTimers(t, 60_000);
+  await flow.service.poll();
+  assert.equal(flow.unlisted.length, asks, 'listed: never asked about again');
+  flow.service.dispose();
+});
+
+/** A 2.6 s first turn (dac4f591), over by the time the import lists it (seen as of its prompt); `unboundFront` says whether its unbound tab is in front. */
+async function shortFirstTurn(focused: boolean, unboundTabInFront: boolean) {
+  windowState().state = { focused };
+  const storage = makeStorage();
+  const live = new Set(['s-short']);
+  const promptAt = Date.now() - 3_000;
+  const states: Record<string, HarnessLiveState> = { 's-short': busy(promptAt) };
+  const flow = popupFlow(storage, {
+    live: () => live,
+    states: () => states,
+    unboundFront: (chat) => unboundTabInFront && chat.harnessSessionId === 's-short',
+  });
+  await flow.service.poll(true);
+  states['s-short'] = idleAfter(promptAt + 2_600);
+  storage.createChat('wt-b', 'claude', 'Short first turn', { harnessSessionId: 's-short', autoImported: true, seenAt: promptAt - 1 });
+  for (let tick = 0; tick < 3; tick++) {
+    await flow.service.poll();
+  }
+  assert.deepEqual(flow.statusLines().map((line) => line.replace(/ lag=\d+$/, '')), ['[Pitwall] status s-short idle→finished']);
+  return flow;
+}
+
+test('a first turn that ended unwatched before its new chat was listed pops up once (another app in front)', async () => {
+  // Notepad is in front: the window is not focused, though its active tab is the chat's unbound tab.
+  const flow = await shortFirstTurn(false, true);
+  assert.equal(finishedToasts().length, 1, 'one finished pop-up');
+  assert.equal(flow.shownLines().length, 1);
+});
+
+test('a fast first turn watched in its own tab, not bound yet, never pops up (QA on #73)', async () => {
+  // The window is focused and its active tab is the new chat's tab, which Pitwall has not bound yet.
+  const flow = await shortFirstTurn(true, true);
+  assert.equal(finishedToasts().length, 0, 'no pop-up while you watch it');
+  assert.equal(flow.skipped('front').length, 1, 'judged once, as in front');
+});
+
+// ---------------------------------------------------------------------------
+// QA round 2 on #73: the unbound-tab front check, wired as the extension
+// wires it, silences only the one new chat the tab can be, never another
+// chat's needs-input or finished pop-up.
+// ---------------------------------------------------------------------------
+
+/** One chat beside the unbound tab: when its session started, and its own surface. */
+interface ChatBesideTab {
+  sessionId: string;
+  /** Started an hour before the tab opened. */
+  older?: boolean;
+  /** In a Pitwall terminal (its own surface). */
+  inTerminal?: boolean;
+  /** Has its own Claude tab, bound, while the unbound tab is in front again (R4). */
+  boundTab?: boolean;
+  /** Where the live record says its process started (default the Claude panel); `unknown`: the record doesn't say. */
+  entrypoint?: 'claude-vscode' | 'cli' | 'unknown';
+}
+
+/**
+ * The focused window's active tab is a Claude tab bound to no session: one
+ * the user just opened ("Claude Code"), or with `restoredTab` one that was
+ * there before the tracker started. Each chat's turn then ends at `kind`.
+ */
+async function popBesideUnboundTab(t: TestContext, kind: 'needs' | 'finished', chats: ChatBesideTab[], restoredTab = false) {
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const tabOf = (label: string) => ({ label, input: new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel'), isActive: false });
+  const group = { isActive: true, viewColumn: 1, activeTab: undefined as unknown, tabs: (restoredTab ? [tabOf('Claude Code')] : []) as unknown[] };
+  group.activeTab = group.tabs[0];
+  let fire: (event: vscode.TabChangeEvent) => void = () => undefined;
+  const surfaces = claudeUiSurfaces({
+    getTabGroups: () => [group] as never,
+    onDidChangeTabs: (listener) => ((fire = listener), { dispose: () => undefined }),
+    onDidChangeTabGroups: () => ({ dispose: () => undefined }),
+    log: () => undefined,
+  });
+  t.after(() => surfaces.dispose());
+  const openTab = (label: string) => {
+    const tab = tabOf(label);
+    group.tabs.push(tab);
+    group.activeTab = tab;
+    fire({ opened: [tab], closed: [], changed: [] } as never);
+    return tab;
+  };
+  const open = new Set<string>();
+  const live = new Set<string>();
+  const states: Record<string, HarnessLiveState> = {};
+  const entrypoints = new Map(chats.map((entry) => [entry.sessionId, entry.entrypoint ?? 'claude-vscode']));
+  const list = (entry: ChatBesideTab) => {
+    const startedAt = entry.older ? Date.now() - 60 * 60_000 : Date.now();
+    const chat = storage.createChat('wt-a', 'claude', entry.sessionId, { harnessSessionId: entry.sessionId, createdAt: startedAt, lastAccessedAt: startedAt });
+    if (entry.inTerminal) {
+      open.add(chat.id);
+    }
+    live.add(entry.sessionId);
+    states[entry.sessionId] = busy(Date.now());
+  };
+  chats.filter((entry) => entry.older).forEach(list);
+  const unboundTab = restoredTab ? group.activeTab : openTab('Claude Code');
+  chats.filter((entry) => !entry.older).forEach(list);
+  for (const entry of chats.filter((candidate) => candidate.boundTab)) {
+    surfaces.expect(entry.sessionId, `${entry.sessionId} tab`);
+    openTab(`${entry.sessionId} tab`);
+    assert.equal(surfaces.isOpen(entry.sessionId), true, 'its own tab is bound');
+  }
+  group.activeTab = unboundTab;
+  fire({ opened: [], closed: [], changed: [unboundTab] } as never);
+  assert.equal(surfaces.activeSessionId(), undefined, 'the unbound tab is in front');
+
+  const flow = popupFlow(storage, {
+    open,
+    live: () => live,
+    states: () => states,
+    // As extension.ts wires it.
+    unboundFront: (chat) =>
+      chatVisibility.unboundTabMayBeChat(chat, {
+        adapters: () => [
+          {
+            id: 'claude',
+            nativeUi: { surfaces },
+            // As ClaudeHarness answers from the tick's live record.
+            isPanelSession: (id: string) => (entrypoints.get(id) === 'unknown' ? undefined : entrypoints.get(id) === 'claude-vscode'),
+          } as never,
+        ],
+        chats: () => storage.getChats(),
+        worktreePathOf: (entry) => `/repo/${entry.worktreeId}`,
+        folders: () => ['/repo/wt-a'],
+        isOpenAnywhere: (entry) => open.has(entry.id) || chatNativeSessionIds(entry).some((id) => surfaces.isOpen(id)),
+      }),
+  });
+  await flow.service.poll(true);
+  const stamp = Date.now() + 1;
+  for (const id of live) {
+    states[id] = kind === 'needs' ? waitingAt(stamp) : idleAfter(stamp);
+  }
+  while (Date.now() <= stamp) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  await flow.service.poll();
+  await flow.service.poll();
+  const pops = kind === 'needs' ? toasts().length : finishedToasts().length;
+  return { flow, pops };
+}
+
+for (const kind of ['needs', 'finished'] as const) {
+  test(`a new empty tab never silences an hour-old Pitwall-terminal chat's ${kind} pop-up (QA round 2 on #73)`, async (t) => {
+    const { flow, pops } = await popBesideUnboundTab(t, kind, [{ sessionId: 's-old', older: true, inTerminal: true }]);
+    assert.equal(pops, 1);
+    assert.deepEqual(flow.skipped('front'), []);
+  });
+
+  test(`a new empty tab never silences the ${kind} pop-up of an hour-old chat with no surface (an outside terminal)`, async (t) => {
+    const { flow, pops } = await popBesideUnboundTab(t, kind, [{ sessionId: 's-old', older: true }]);
+    assert.equal(pops, 1, 'it started before the tab opened');
+    assert.deepEqual(flow.skipped('front'), []);
+  });
+
+  test(`a restored unbound tab (no open time) never silences a new chat's ${kind} pop-up`, async (t) => {
+    const { flow, pops } = await popBesideUnboundTab(t, kind, [{ sessionId: 's-new' }], true);
+    assert.equal(pops, 1);
+    assert.deepEqual(flow.skipped('front'), []);
+  });
+
+  test(`two new chats beside one unbound tab: neither ${kind} pop-up is silenced`, async (t) => {
+    const { flow, pops } = await popBesideUnboundTab(t, kind, [{ sessionId: 's-one' }, { sessionId: 's-two' }]);
+    assert.equal(pops, 2);
+    assert.deepEqual(flow.skipped('front'), []);
+  });
+
+  test(`a chat with its own bound tab pops ${kind} normally while another unbound tab is in front (R4)`, async (t) => {
+    const { flow, pops } = await popBesideUnboundTab(t, kind, [{ sessionId: 's-bound', boundTab: true }]);
+    assert.equal(pops, 1);
+    assert.deepEqual(flow.skipped('front'), []);
+  });
+
+  test(`the one new chat that started after the unbound tab opened, with no surface, gives no ${kind} pop-up while you watch`, async (t) => {
+    const { flow, pops } = await popBesideUnboundTab(t, kind, [{ sessionId: 's-new' }, { sessionId: 's-old', older: true, inTerminal: true }]);
+    assert.equal(pops, 1, "only the older terminal chat's");
+    assert.equal(flow.skipped('front').length, 1, 'the new chat, judged in front');
+  });
+
+  test(`a new empty tab never silences the ${kind} pop-up of a \`claude\` started after it in an outside terminal (QA #73 round 3, G1)`, async (t) => {
+    const { flow, pops } = await popBesideUnboundTab(t, kind, [{ sessionId: 's-cli', entrypoint: 'cli' }]);
+    assert.equal(pops, 1, 'a terminal process is never in a panel tab');
+    assert.deepEqual(flow.skipped('front'), []);
+  });
+
+  test(`a new chat the live record says nothing of pops ${kind} beside an unbound tab (unknown never fits)`, async (t) => {
+    const { flow, pops } = await popBesideUnboundTab(t, kind, [{ sessionId: 's-new', entrypoint: 'unknown' }]);
+    assert.equal(pops, 1);
+    assert.deepEqual(flow.skipped('front'), []);
+  });
+
+  test(`a new panel chat beside an outside-terminal chat started after the tab: only the terminal chat pops ${kind}`, async (t) => {
+    const { flow, pops } = await popBesideUnboundTab(t, kind, [{ sessionId: 's-new' }, { sessionId: 's-cli', entrypoint: 'cli' }]);
+    assert.equal(pops, 1, "the terminal chat's");
+    assert.equal(flow.skipped('front').length, 1, 'the panel chat, judged in front');
+  });
+}
+
+test('asks about a session that stays unimportable are bounded: at most 6 a minute however often it polls, then none until its next turn', async (t) => {
+  const T0 = 1_800_000_000_000;
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: T0 });
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const live = new Set(['s-stuck']);
+  const underWay = new Set(['s-stuck']);
+  const flow = popupFlow(storage, {
+    live: () => live,
+    underWay: () => underWay,
+    states: () => ({ 's-stuck': busy(T0) }),
+    onUnlisted: (sessionIds) => sessionIds, // never importable
+  });
+  await flow.service.poll(true);
+  // A minute of polls every 500 ms (a sessions folder that never stops changing).
+  for (let at = 0; at < 60_000; at += 500) {
+    await flow.service.poll();
+    await settleTimers(t, 500);
+  }
+  const asked = flow.unlisted.length;
+  assert.ok(asked >= 3 && asked <= 6, `asked ${asked} times in a minute (between 3 and 6)`);
+  for (let at = 0; at < 120_000; at += 4_000) {
+    await flow.service.poll();
+    await settleTimers(t, 4_000);
+  }
+  assert.equal(flow.unlisted.length, asked, 'spent until its next turn starts');
+
+  underWay.delete('s-stuck');
+  await flow.service.poll();
+  underWay.add('s-stuck');
+  await flow.service.poll();
+  assert.equal(flow.unlisted.length, asked + 1, 'a new turn asks again at once');
+  flow.service.dispose();
+});
+
+test('a new turn that starts while an ask is in flight starts the tries over once the answer comes (QA on #73)', async (t) => {
+  const T0 = 1_800_000_000_000;
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: T0 });
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const live = new Set(['s-x']);
+  const underWay = new Set(['s-x']);
+  let answer: (retry: readonly string[]) => void = () => undefined;
+  const flow = popupFlow(storage, {
+    live: () => live,
+    underWay: () => underWay,
+    states: () => ({ 's-x': busy(T0) }),
+    onUnlisted: () => new Promise<readonly string[]>((resolve) => (answer = resolve)),
+  });
+  await flow.service.poll(true);
+  await flow.service.poll();
+  assert.equal(flow.unlisted.length, 1, 'asked; the answer is slow');
+  // Its turn ends and the next one starts while the answer is still out.
+  underWay.delete('s-x');
+  await flow.service.poll();
+  underWay.add('s-x');
+  await flow.service.poll();
+  assert.equal(flow.unlisted.length, 1, 'one ask at a time');
+  answer(['s-x']);
+  for (let i = 0; i < 20; i++) await flush();
+  assert.equal(flow.unlisted.length, 2, 'the new turn asks at once when the answer arrives, without waiting out a backoff');
+  flow.service.dispose();
+});
+
+test('dispose stops the retry timers: no ask and no poll after it', async (t) => {
+  const T0 = 1_800_000_000_000;
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: T0 });
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  let liveReads = 0;
+  const flow = popupFlow(storage, {
+    live: () => {
+      liveReads++;
+      return new Set(['s-stuck']);
+    },
+    underWay: () => new Set(['s-stuck']),
+    states: () => ({ 's-stuck': busy(T0) }),
+    onUnlisted: (sessionIds) => sessionIds,
+  });
+  await flow.service.poll(true);
+  await flow.service.poll();
+  for (let i = 0; i < 20; i++) await flush();
+  assert.equal(flow.unlisted.length, 1);
+  flow.service.dispose();
+  const reads = liveReads;
+  await settleTimers(t, 120_000);
+  assert.equal(flow.unlisted.length, 1, 'no ask after dispose');
+  assert.equal(liveReads, reads, 'and no poll');
 });
 
 test('a chat first seen after activation at needs pops once across windows (not pre-existing)', async (t) => {

@@ -9,6 +9,7 @@ import { GitService } from './core/services/GitService';
 import { TerminalManager } from './core/services/TerminalManager';
 import { HarnessWatcherRegistry } from './core/harness/HarnessWatcherRegistry';
 import { SessionImportService } from './core/services/SessionImportService';
+import { createUnlistedLiveHandler } from './core/services/unlistedLive';
 import { RepoDiscoveryService } from './core/services/RepoDiscoveryService';
 import { NotificationService, openFromPopup } from './core/services/NotificationService';
 import { POPUPS_DIR, PopupLedger } from './core/notify/PopupLedger';
@@ -591,6 +592,17 @@ export async function activate(context: vscode.ExtensionContext) {
   let scansStarted = false;
   /** A live session no row holds was asked about before the first passes started; they run it once they do. */
   let unlistedBeforeScans = false;
+  // The answer to "a live session no row holds", once its turn has started (Q31, new-chat pickup):
+  // see createUnlistedLiveHandler. The attention service is made below; it is only called later.
+  const unlistedLive = createUnlistedLiveHandler({
+    scansStarted: () => scansStarted,
+    deferUntilScans: () => (unlistedBeforeScans = true),
+    importLive: (sessionIds) => sessionImporter.importLive(sessionIds),
+    wakeDiscovery: () => repoDiscovery.wake(),
+    fullRefresh: () => sessionImporter.refresh(),
+    pollAttention: () => void attentionService.poll(),
+    stillUnlisted: (sessionId) => attentionService.isUnlistedLive(sessionId),
+  });
 
   // Repos found from the agents' sessions (ADR 0019), after the list first
   // renders; activation never waits for a pass.
@@ -601,6 +613,8 @@ export async function activate(context: vscode.ExtensionContext) {
       worktreeCatalog.invalidate();
       refreshTree();
       sessionImporter.wake();
+      // A live session in a folder no repo held lists now, list hidden or not.
+      void unlistedLive.onReposAdded().catch((error) => console.error('[Pitwall] Could not list live sessions of new repos:', error));
     },
   });
   context.subscriptions.push(repoDiscovery);
@@ -661,6 +675,16 @@ export async function activate(context: vscode.ExtensionContext) {
       ledger: popupLedger,
       frontAnywhere: (sessionId) => (windowServices?.registry ?? earlyRegistry)?.frontAnywhere(sessionId) ?? false,
       isListed: (chatId) => storageService.getChat(chatId) !== undefined,
+      // A brand-new chat's tab, in front before it binds, is in front: only the one new chat with no
+      // open surface that started after the tab opened (PR #73, QA round 2).
+      unboundFront: (chat) =>
+        chatVisibility.unboundTabMayBeChat(chat, {
+          adapters: () => harnessRegistry.all(),
+          chats: () => storageService.getChats(),
+          worktreePathOf: (entry) => workspacesProvider.getWorktreeById(entry.worktreeId)?.path,
+          folders: () => (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath),
+          isOpenAnywhere: (entry) => workspacesProvider.isOpenAnywhere(entry),
+        }),
       log: logOperation,
       toast: windowsToast,
       sound: (kind) => soundSwitches.get(kind),
@@ -711,18 +735,9 @@ export async function activate(context: vscode.ExtensionContext) {
     isChatVisible,
     {
       log: logOperation,
-      // A live session no row holds yet, once its first turn has started: one discovery pass (a new
-      // repo) and one full import scan (a new session in a listed repo), Q31. Before their own first
-      // passes start (after the first render and the first claim, E16/I3) the ask is kept, and they
-      // run it once when they start.
-      onUnlistedLive: () => {
-        if (scansStarted) {
-          repoDiscovery.wake();
-          sessionImporter.refresh();
-        } else {
-          unlistedBeforeScans = true;
-        }
-      },
+      // A live session no row holds yet, once its turn has started (Q31): imported from its own
+      // transcript, list hidden or not (new-chat pickup, 12f645db); see createUnlistedLiveHandler.
+      onUnlistedLive: (sessionIds) => unlistedLive.ask(sessionIds),
     }
   );
   markChatSeen = (chatId) => attentionService.markSeen(chatId);

@@ -71,6 +71,23 @@ test("a session the user renamed in Claude is named by its custom title, the tab
   assert.deepEqual([listed.summary, listed.userTitled], ['Main', true], 'the listing the importer and tab adoption read carries it');
 });
 
+test('getSession reads one session from its own transcript: null until a line places it, then the listing shape (new-chat pickup)', async (t) => {
+  const profile = claudeProfile(t);
+  const repo = profile.dir('repo');
+  const harness = new ClaudeHarness();
+  assert.equal(await harness.getSession(SESSION_ID), null, 'no transcript yet');
+  // A line with no cwd (Claude's file-history snapshot comes first) does not place it.
+  const file = profile.write(SESSION_ID, repo, []);
+  fs.writeFileSync(file, `${JSON.stringify({ type: 'file-history-snapshot', sessionId: SESSION_ID })}\n`);
+  assert.equal(await harness.getSession(SESSION_ID), null, 'nothing places it yet');
+  profile.write(SESSION_ID, repo, [entry.user('Write a short story about a night ferry', '2026-11-19T22:31:29.000Z')]);
+  const session = await harness.getSession(SESSION_ID);
+  assert.equal(session?.cwd, repo);
+  assert.equal(session?.summary, 'Write a short story about a night ferry');
+  assert.equal(session?.lastActivity, Date.parse('2026-11-19T22:31:29.000Z'));
+  assert.deepEqual(session, (await harness.listSessionsForWorktree(repo))[0], 'the same session a full listing gives');
+});
+
 test('names and previews come only from prompts the user typed', async (t) => {
   const profile = claudeProfile(t);
   const repo = profile.dir('repo');
@@ -430,6 +447,25 @@ test('liveSessionIds lists the live sessions in the sessions file, and the tick 
   await harness.liveSessionIds();
   await Promise.all([harness.getLiveStates([SESSION_ID]), harness.getLiveStates([SESSION_ID])]);
   assert.equal(reads.filter((file) => file.endsWith('.json')).length, 2, 'one folder read (two files) per tick');
+});
+
+test("isPanelSession reads the tick's last record: panel, terminal, or unknown when it doesn't say (QA #73 round 3)", async (t) => {
+  const { harness, sessionsDir } = liveHarness(t, { transcriptWrittenAt: 0 });
+  writeSessionFile(sessionsDir, { pid: 4242, sessionId: 'panel', status: 'busy', statusUpdatedAt: 1, entrypoint: 'claude-vscode' });
+  writeSessionFile(sessionsDir, { pid: 4343, sessionId: 'terminal', status: 'busy', statusUpdatedAt: 1, entrypoint: 'cli' });
+  writeSessionFile(sessionsDir, { pid: 4444, sessionId: 'unsaid', status: 'busy', statusUpdatedAt: 1 });
+  writeSessionFile(sessionsDir, { pid: 4545, sessionId: 'odd-status', status: 'compacting', statusUpdatedAt: 1, entrypoint: 'claude-vscode' });
+  assert.equal(harness.isPanelSession('panel'), undefined, 'nothing read yet');
+  await harness.liveSessionIds();
+  assert.equal(harness.isPanelSession('panel'), true);
+  assert.equal(harness.isPanelSession('terminal'), false);
+  assert.equal(harness.isPanelSession('unsaid'), undefined, 'the record does not say where it started');
+  assert.equal(harness.isPanelSession('odd-status'), undefined, 'a status Pitwall does not know: not in the read');
+  assert.equal(harness.isPanelSession('not-live'), undefined);
+
+  fs.rmSync(path.join(sessionsDir, '4242.json'));
+  await harness.liveSessionIds();
+  assert.equal(harness.isPanelSession('panel'), undefined, 'a complete read without it: no longer known');
 });
 
 test('liveSessionsUnderWay lists the busy, waiting and unknown-status sessions from the same read, never an idle one', async (t) => {
