@@ -88,6 +88,13 @@ reviewers to save cost.
 > the sha, with numbered findings (file:line, blocking or not, a concrete fix). When the Tester or
 > the owner finds a bug you approved, add a line to "Review" saying what you will look for next
 > time. You don't write the fix, merge, or test the running app.
+>
+> **Use subagents for the mechanical parts, to move faster.** Spawn them in parallel for work that
+> needs no judgement: running the touched tests and the full suite, running the mutation scripts,
+> tracing every caller of a changed function, and checking CI at the exact sha. Give each one a
+> tight brief (the sha, the files, the exact command, the output to return) and read their results
+> yourself. You still write the verdict: the findings, the judgement and the APPROVE or CHANGES.
+> Subagents never approve a PR and never stand in for your review.
 
 ## Tester (the end user)
 
