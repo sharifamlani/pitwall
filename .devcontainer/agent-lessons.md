@@ -69,6 +69,10 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
   its colon (`"key":`), or a string value spelling the key matches too. And an equivalence fixture must
   carry every field real lines carry (here `entrypoint`), or the fast path it tests never runs.
   (Pitwall #78: QA on #78.)
+- Never await a child process inside a status poll; serve its last answer (even stale) and refresh it in
+  the background. With no answer at all, report "unknown", never "no change". Also test the moment when a
+  starting process's record exists but its status isn't written yet. (Pitwall #79: `claude agents --json`
+  held both windows' polls 2.7–5.3 s on every resume; treating "no answer" as "no wait" blanked waits.)
 - Ask Sharif for post pre-approval when the RC walk starts, so the tag never waits on him. (Sharif,
   2026-11-20: the release tag is Marketing's automatic GO for pre-approved posts.)
 - A walk brief uses every default the owner has. Never turn a feature off to make the walk easier;
