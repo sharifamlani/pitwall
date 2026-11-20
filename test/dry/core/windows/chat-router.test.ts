@@ -1408,6 +1408,8 @@ test("a claimed session whose live panel is this window's child opens normally",
     claims: w.main,
     windowsAt: [w.other],
     outsideTerminal: (id) => (id === ID.b ? { pid: 39032, panel: true, cwd: w.other } : undefined),
+    // The claim below runs after the route returns; FAST's 150 ms warning raced it on Windows CI (run 44800300662).
+    timing: { ...FAST, warnMs: 60_000, coldWarnMs: 60_000, expireMs: 120_000 },
   });
   const asked: string[] = [];
   // The real owner: its panel is a child of its own extension host, so its guard finds no outsider.
