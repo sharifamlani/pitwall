@@ -85,6 +85,13 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - A test that sleeps a fixed time for background work started by an event is a guess about machine
   speed. Wait on the observable result, bounded, with the elapsed time in the failure message.
   (Pitwall #84: the poll-stall test went 13/30 → 30/30 under load.)
+- A host-lag clock must record how late each tick itself fired, not only how old the last tick is.
+  A stall inside a timer callback makes the event loop fire the overdue tick before the queued
+  input, so the tick reads 0 ms old at the moment that matters. (Pitwall #82: QA's host-lag blind
+  spot.)
+- When a PR is stacked on another that gets dropped, rebuild it on main by re-homing each hook it
+  borrowed, not by carrying the base along, then grep for the dropped PR's names. (Pitwall #82,
+  rebuilt on main without #80.)
 - Instrument before you attribute. A route line with no trigger source can't settle what caused an
   open; add the trigger to the log first, then name the cause. (Pitwall 2026-11-20: the 11-19 "spurious
   opens" were blamed on the owner's dictation without evidence.)
