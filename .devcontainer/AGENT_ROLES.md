@@ -196,6 +196,12 @@ reviewers to save cost.
 >    the `milestone-compaction` skill, and flags the weekly limit at ~70%. Check each role does it
 >    and flag any role that is past a milestone without compacting. You own compaction for QA as
 >    well (the owner ran QA's compaction by hand on 19 Nov; from now on you coordinate it).
+> 8a. **Compaction protocol.** A role says "clean point" (Tester: "walk closed") when its state is
+>    saved and committed, no turn is running, its input is empty, and it has no merge or walk in
+>    flight. You compact only a role that has said so. Before typing `/compact`, check with CUA
+>    that the tab, the window title and the empty input match that role. Never type into a busy
+>    chat, into someone's draft, or into a window you can't identify. Each compaction goes to
+>    Main in one line, with the time and the state location.
 > 8. **Lessons owner.** You own `.devcontainer/agent-lessons.md`. Each cycle, read the work and
 >    messages that matter (PR verdicts, FAILs, walk reports, audit replies), not whole transcripts.
 >    When an agent does something wrong, add the rule to its list, with the moment it came from.
