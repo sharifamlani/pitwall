@@ -386,6 +386,10 @@ Walk hygiene (QA N6): lock files are per profile, but the AUMID and Action Cente
 | E17 | The package ships only what it should | Windows CI archive check: 51 entries, or 52 with `out/uninstall.js` (Q46 = A), or the PR states why; privacy job green | CI run | run id |
 | E18 | End to end: the Phase 5 flows work in real Cursor | Walk W1–W10 all PASS on the release sha (lab repos; real `~/.claude` read-only for W1 timing only) | testing agent walk | `captures/phase5-walk-evidence/` |
 
+**Real-use speed criteria (Sharif, 2026-11-20).** The real-use walks added two release bars on top of E3: steady pop-ups ≤ 1.5 s, and settled status polls < 500 ms. Sharif ruled that both are judged on **Pitwall's own share** of the time:
+- Pop-ups: ≤ 1.5 s wherever Claude writes its status promptly, and Pitwall's share (the `lag split … pitwall=` value) ≤ 0.5 s on every pop-up. On big chats Claude itself writes `idle` 2–2.5 s after the reply, and Pitwall can't change that.
+- Soak: a poll ≥ 500 ms fails only when Pitwall's own steps took ≥ 500 ms (the per-step timing from #81). Polls where the host or machine was blocked (paging, CPU starvation, another extension) are listed with their cause, but they don't block the release.
+
 ## 6. Implementation tasks
 
 Waves (parallel within a wave, one PR per task):
