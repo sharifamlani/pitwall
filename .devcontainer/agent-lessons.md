@@ -69,6 +69,13 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
   its colon (`"key":`), or a string value spelling the key matches too. And an equivalence fixture must
   carry every field real lines carry (here `entrypoint`), or the fast path it tests never runs.
   (Pitwall #78: QA on #78.)
+- Never await a child process inside a status poll; serve its last answer (even stale) and refresh it in
+  the background. With no answer at all, report "unknown", never "no change". Also test the moment when a
+  starting process's record exists but its status isn't written yet. (Pitwall #79: `claude agents --json`
+  held both windows' polls 2.7–5.3 s on every resume; treating "no answer" as "no wait" blanked waits.)
+- Instrument before you attribute. A route line with no trigger source can't settle what caused an
+  open; add the trigger to the log first, then name the cause. (Pitwall 2026-11-20: the 11-19 "spurious
+  opens" were blamed on the owner's dictation without evidence.)
 - Ask Sharif for post pre-approval when the RC walk starts, so the tag never waits on him. (Sharif,
   2026-11-20: the release tag is Marketing's automatic GO for pre-approved posts.)
 - A walk brief uses every default the owner has. Never turn a feature off to make the walk easier;
@@ -107,6 +114,14 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
   (Pitwall 0.6.0 real-profile check.)
 - Try every way to open the same thing, on running and stopped items, and count processes before
   and after. (Pitwall #71.)
+- Before every walk, stop your own stray cua-driver overlay processes and keep exactly one driver
+  session. Six overlays were running when three chats opened that no deliberate action explains.
+  (Pitwall 2026-11-20: the PR #79 gate's "unrequested opens".)
+- Take a fresh screenshot right before every click, and never click from a frame more than a few
+  seconds old; pixel clicks take the scale of the latest screenshot. (Pitwall 2026-11-20: text typed
+  into a scratch editor; a click missed by scale.)
+- Log each deliberate click's UTC wall-clock time in the walk notes (time, window, target), so every
+  Pitwall route line can be matched to a deliberate action or flagged. (Pitwall 2026-11-20.)
 - Include one real end-to-end action through the operating system (a real notification click),
   not only a simulated one. (Pitwall 0.6.0 real click.)
 
