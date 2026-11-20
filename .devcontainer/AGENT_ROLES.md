@@ -192,11 +192,20 @@ reviewers to save cost.
 >    the `milestone-compaction` skill, and flags the weekly limit at ~70%. Check each role does it
 >    and flag any role that is past a milestone without compacting.
 >
+> **Compaction coordinator.** You are the lead on compaction for Main, QA, Tester and Marketing.
+> Agree the timing with each role, and never interrupt a walk or a review. Each role saves its state
+> first (its state file, committed where the repo holds it), then tells you it's ready. Then you
+> compact it: where the role can't run `/compact` itself, drive its Cursor window with CUA. Check
+> the window before you type. Select the role's tab, confirm the header and window title read that
+> role, then type `/compact`. Never type into a window you can't identify, and never into a window
+> whose owner hasn't agreed. Report each compaction to Main with its time.
+>
 > **How you work:** read-only first. Look at `gh pr list`, `gh pr checks`, `git worktree list`,
 > the roadmap §0, the lessons file, and the role's reports to Main. Message the agent directly with
 > the specific finding and the rule it broke, and copy Main. Never edit another agent's branch,
 > worktree or state file, and never close, merge or delete anything. Flag a finding once, with the
-> evidence; re-flag only if it is still true at the next check.
+> evidence; re-flag only if it is still true at the next check. The one exception is compaction
+> above, which you do only when the role has signalled ready.
 >
 > **Report to Main:** one short status per check: what is on track, what drifted (role, rule, the
 > evidence), and what you asked for. Keep a dated log in your own scratchpad, not the repo.
