@@ -648,6 +648,10 @@ export async function activate(context: vscode.ExtensionContext) {
   const realRun = context.extensionMode === vscode.ExtensionMode.Production || context.extensionMode === vscode.ExtensionMode.Development;
   const windowsToast =
     process.platform === 'win32' && realRun ? new WindowsToast(undefined, process.platform, { log: logOperation }) : undefined;
+  if (windowsToast) {
+    // The warm pop-up host ends with the window.
+    context.subscriptions.push({ dispose: () => windowsToast.dispose() });
+  }
   // The pop-up sender's registration (set after the first render); the notifications check waits for it (Q42).
   let registration: Promise<'ok' | 'failed'> = Promise.resolve('failed');
   // First-run check: Windows only, once per profile (Q42). Read-only; "Pitwall: Check Windows Notifications" re-runs it.

@@ -68,7 +68,11 @@ export interface NotificationOptions {
    * pop-up, that replaces the in-window message; when it fails, the in-window
    * message shows instead, once (Q35).
    */
-  toast?: { show(p: ToastPayload): Promise<'shown' | 'failed'> };
+  toast?: {
+    show(p: ToastPayload): Promise<'shown' | 'failed'>;
+    /** Get the host ready now, so the next pop-up doesn't wait for it to start. */
+    warm?(): void;
+  };
   /** Whether a kind's pop-up plays a sound (the sound switches, Q41). Default: silent. */
   sound?: (kind: 'needs' | 'finished') => boolean;
   /** The platform the macOS banner checks. Default: this one. (Tests.) */
@@ -179,6 +183,15 @@ export class NotificationService {
     }
     this.showInWindow(kind, target, at, windowFocused, config);
     return 'shown';
+  }
+
+  /**
+   * A pop-up may follow soon (a chat is at work): get the Windows pop-up host
+   * ready, so the pop-up doesn't wait 0.6–1.3 s for PowerShell to start (PR
+   * #76 live gate). Judges nothing and shows nothing.
+   */
+  prepare(): void {
+    this.options.toast?.warm?.();
   }
 
   /** Resolves once every Windows pop-up handed to the host so far has shown or fallen back. */

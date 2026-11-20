@@ -10,7 +10,7 @@ import {
   StatusTransition,
   shouldNotifyNeedsInput,
 } from '../../../src/core/services/SessionAttentionService';
-import { escapeAppleScript, NotificationService, openFromPopup } from '../../../src/core/services/NotificationService';
+import { escapeAppleScript, NotificationOptions, NotificationService, openFromPopup } from '../../../src/core/services/NotificationService';
 import { PopupKey, PopupLedger } from '../../../src/core/notify/PopupLedger';
 import { ClaudeSessionsFile } from '../../../src/harnesses/claude/ClaudeSessionsFile';
 import { writeDump } from '../../../src/core/windows/dumpState';
@@ -1178,6 +1178,8 @@ interface PopupFlowOptions extends RowFlowOptions {
   unboundFront?: (chat: ChatSession) => boolean;
   /** Runs after each discovery request is recorded (a test's import); returns the sessions still worth asking about again. */
   onUnlisted?: (sessionIds: string[]) => void | readonly string[] | Promise<void | readonly string[]>;
+  /** The Windows pop-up host; without one every pop-up is the in-window message. */
+  toast?: NotificationOptions['toast'];
 }
 
 /** rowFlow with the whole Phase 5 pop-up path: lock, front anywhere, listed check, log lines. */
@@ -1208,6 +1210,7 @@ function popupFlow(storage: ReturnType<typeof makeStorage>, options: PopupFlowOp
     isListed: (chatId) => storage.getChats().some((chat) => chat.id === chatId),
     unboundFront: options.unboundFront,
     log: (line) => logs.push(line),
+    toast: options.toast,
   });
   const service = new SessionAttentionService(
     storage,
@@ -1575,6 +1578,65 @@ test('every transition logs status <id8> from→to lag=', async () => {
     { chatId: chat.id, sessionId: sid, from: 'working', to: 'needs', at: stamp, waitingFor: 'permission prompt' }
   );
   assert.equal(typeof first.observedAt, 'number');
+});
+
+test('a transition 1 s late or more logs its lag split: the agent\'s share and Pitwall\'s', async () => {
+  const storage = makeStorage();
+  const sid = 'abcdef12-3456-4789-8abc-def012345678';
+  let live: HarnessLiveState = busy(Date.now());
+  const flow = popupFlow(storage, { live: () => new Set([sid]), states: () => ({ [sid]: live }) });
+  storage.createChat('wt-1', 'claude', 'Split', { harnessSessionId: sid, seenAt: Date.now() - 60_000 });
+  await flow.service.poll(true);
+
+  // The reply landed 2.7 s ago; Claude wrote idle 2.5 s after it (the owner's real chats: 2.2–3.2 s).
+  const replyAt = Date.now() - 2_700;
+  live = { turnState: 'done', turnEndedAt: replyAt, liveStatus: 'idle', statusUpdatedAt: replyAt + 2_500 };
+  await flow.service.poll();
+  const splits = () => flow.logs.filter((line) => line.startsWith('[Pitwall] lag split '));
+  assert.equal(splits().length, 1, flow.logs.join('\n'));
+  const [, agent, pitwall] = /agent=(\d+) pitwall=(\d+)$/.exec(splits()[0]) ?? [];
+  assert.match(splits()[0], /^\[Pitwall\] lag split abcdef12 working→finished agent=\d+ pitwall=\d+$/);
+  assert.equal(Number(agent), 2_500, "the agent's share: idle written 2.5 s after the reply");
+  assert.ok(Number(pitwall) >= 200 && Number(pitwall) < 1_000, `Pitwall's share: ${pitwall} ms`);
+  assert.ok(splits()[0].length < 80 && !splits()[0].includes('Split'), 'no title, no path');
+  assert.equal(flow.statusLines().length, 1, 'the status line itself is unchanged');
+  assert.match(flow.statusLines()[0], / lag=\d+$/);
+
+  // A prompt transition is not split.
+  live = busy(Date.now());
+  await flow.service.poll();
+  assert.equal(splits().length, 1, 'no split under 1 s');
+});
+
+test('the tick warms the pop-up host while a chat works or a pop-up is pending, and not while all are idle', async () => {
+  const storage = makeStorage();
+  const sid = 'abcdef12-3456-4789-8abc-def012345678';
+  let warmed = 0;
+  const shown: string[] = [];
+  let live: HarnessLiveState = idleAfter(Date.now() - 60_000);
+  const flow = popupFlow(storage, {
+    live: () => new Set([sid]),
+    states: () => ({ [sid]: live }),
+    toast: { show: async (p) => (shown.push(p.tag), 'shown'), warm: () => warmed++ },
+  });
+  storage.createChat('wt-1', 'claude', 'Warm', { harnessSessionId: sid });
+  await flow.service.poll(true);
+  await flow.service.poll();
+  assert.equal(warmed, 0, 'an idle chat warms nothing');
+
+  live = busy(Date.now());
+  await flow.service.poll();
+  assert.equal(warmed, 1, 'a working chat warms the host before its pop-up');
+  await flow.service.poll();
+  assert.equal(warmed, 2, 'each tick while it works keeps it warm (restarts the idle clock)');
+
+  live = idleAfter(Date.now() + 5);
+  await flow.service.poll();
+  assert.ok(warmed >= 3, 'the finished turn still pending a pop-up warms it on that tick');
+  assert.deepEqual(shown, ['abcdef12-finished'], 'and the pop-up goes to the host');
+  const after = warmed;
+  await flow.service.poll();
+  assert.equal(warmed, after, 'nothing left to pop: no more warming');
 });
 
 test('a re-poll with the same statusUpdatedAt makes no second transition', async () => {

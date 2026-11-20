@@ -1,9 +1,10 @@
 /**
- * The Windows pop-up host (row 5.2, Q46 = A, QA B2/N7): one short-lived
- * `powershell.exe -NoProfile -NonInteractive -Command -` per pop-up, fed a
- * constant script whose only variable part is one base64 literal. Pop-up text
- * never reaches argv or PowerShell code. Every test but the last injects the
- * spawner; the last runs the real Windows PowerShell (windows CI only).
+ * The Windows pop-up host (row 5.2, Q46 = A, QA B2/N7): one warm
+ * `powershell.exe -NoProfile -NonInteractive -Command -` per window, fed a
+ * constant script and then one base64 line per pop-up. Pop-up text never
+ * reaches argv or PowerShell code. Registration and the read-only checks stay
+ * one-shot hosts. Every test but the last injects the spawner; the last runs
+ * the real Windows PowerShell (windows CI only).
  */
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,8 +15,8 @@ import { toastXml, ToastPayload } from '../../../../src/core/notify/toastXml';
 import {
   AUMID,
   AUMID_KEY,
-  HOST_SCRIPT_PREFIX,
-  HOST_SCRIPT_SUFFIX,
+  HOST_IDLE_MS,
+  HOST_LOOP_SCRIPT,
   POWERSHELL,
   POWERSHELL_ARGS,
   SpawnFn,
@@ -31,15 +32,45 @@ const ICON = 'C:\\Users\\uj-tester\\.cursor\\extensions\\sharifamlani.pitwall-0.
 
 beforeEach(() => stub.__reset());
 
-/** A host process that does nothing until the test finishes it. */
+/**
+ * A host process. A one-shot host gets its script with `end(script)` and does
+ * nothing until the test finishes it. The warm pop-up host gets
+ * `HOST_LOOP_SCRIPT` with `write`, says `ready` (unless `silent`), then hands
+ * each written line to `onLine`; closing its stdin ends it.
+ */
 class FakeHost extends EventEmitter {
   stdinText = '';
+  /** The pop-up lines written after the warm host's script. */
+  readonly lines: string[] = [];
   killed = false;
+  stdinEnded = false;
+  silent = false;
+  onLine?: (line: string, host: FakeHost) => void;
   readonly stdout = new EventEmitter();
   readonly stderr = new EventEmitter();
   readonly stdin = {
+    write: (data: string) => {
+      this.stdinText += data;
+      if (data === HOST_LOOP_SCRIPT) {
+        if (!this.silent) {
+          setImmediate(() => this.say('ready'));
+        }
+        return true;
+      }
+      for (const line of data.split('\n').filter(Boolean)) {
+        this.lines.push(line);
+        this.onLine?.(line, this);
+      }
+      return true;
+    },
     end: (data?: string | Buffer) => {
-      this.stdinText += data === undefined ? '' : String(data);
+      if (data === undefined) {
+        // The warm host reads end of input and exits.
+        this.stdinEnded = true;
+        setImmediate(() => this.emit('close', 0));
+        return;
+      }
+      this.stdinText += String(data);
     },
     on: () => this.stdin,
   };
@@ -47,6 +78,9 @@ class FakeHost extends EventEmitter {
     this.killed = true;
     setImmediate(() => this.emit('close', null));
     return true;
+  }
+  say(line: string): void {
+    this.stdout.emit('data', Buffer.from(`${line}\r\n`));
   }
   finish(out: string, code = 0): void {
     this.stdout.emit('data', Buffer.from(out));
@@ -61,15 +95,30 @@ interface SpawnCall {
   host: FakeHost;
 }
 
-/** A spawner that records every call; `answer` finishes each host (or leaves it running). */
-function spy(answer: ((call: SpawnCall) => void) | 'hang' = (call) => setImmediate(() => call.host.finish('shown\r\n'))) {
+/**
+ * A spawner that records every call. A warm host answers each line with
+ * `warmAnswer` (default `shown`); a one-shot host is finished by `answer`
+ * (default `shown`), or left running with 'hang'.
+ */
+function spy(
+  answer: ((call: SpawnCall) => void) | 'hang' = (call) => setImmediate(() => call.host.finish('shown\r\n')),
+  warmAnswer: ((line: string, host: FakeHost) => void) | 'hang' = (_line, host) => setImmediate(() => host.say('shown'))
+) {
   const calls: SpawnCall[] = [];
   const spawn = ((command: string, args: readonly string[], options: { windowsHide?: boolean }) => {
     const call = { command, args, options, host: new FakeHost() };
     calls.push(call);
-    if (answer !== 'hang') {
-      answer(call);
+    if (warmAnswer !== 'hang') {
+      call.host.onLine = warmAnswer;
     }
+    // A one-shot host gets its whole script at once, through end().
+    const end = call.host.stdin.end;
+    call.host.stdin.end = (data?: string | Buffer) => {
+      end(data);
+      if (data !== undefined && answer !== 'hang') {
+        answer(call);
+      }
+    };
     return call.host;
   }) as unknown as SpawnFn;
   return { spawn, calls };
@@ -88,11 +137,18 @@ function payload(overrides: Partial<ToastPayload> = {}): ToastPayload {
   };
 }
 
-/** The base64 literal between the constant prefix and suffix, or a failure naming what differs. */
-function literalOf(stdin: string): string {
-  assert.ok(stdin.startsWith(HOST_SCRIPT_PREFIX + "'"), 'stdin starts with the constant prefix, byte for byte');
-  assert.ok(stdin.endsWith("'" + HOST_SCRIPT_SUFFIX), 'stdin ends with the constant suffix, byte for byte');
-  return stdin.slice(HOST_SCRIPT_PREFIX.length + 1, stdin.length - HOST_SCRIPT_SUFFIX.length - 1);
+/** A warm host's pop-up lines, after checking its stdin is the constant script followed by those lines only. */
+function linesOf(host: FakeHost): string[] {
+  assert.ok(host.stdinText.startsWith(HOST_LOOP_SCRIPT), 'stdin starts with the constant script, byte for byte');
+  assert.equal(host.stdinText, HOST_LOOP_SCRIPT + host.lines.map((line) => `${line}\n`).join(''), 'then pop-up lines, nothing else');
+  for (const line of host.lines) {
+    assert.match(line, /^[A-Za-z0-9+/=]+$/, 'each pop-up line is one base64 literal');
+  }
+  return host.lines;
+}
+
+function decode(line: string): Record<string, unknown> {
+  return JSON.parse(Buffer.from(line, 'base64').toString('utf8')) as Record<string, unknown>;
 }
 
 test('show spawns powershell with a constant script and the payload on stdin only', async () => {
@@ -109,20 +165,23 @@ test('show spawns powershell with a constant script and the payload on stdin onl
   assert.deepEqual([...POWERSHELL_ARGS], [...call.args]);
   assert.equal(call.options.windowsHide, true, 'windowsHide hides the console; no -WindowStyle Hidden');
   const argv = [call.command, ...call.args].join(' ');
-  for (const banned of ['-ExecutionPolicy', '-WindowStyle', 'Bypass', 'Hidden', 'uj-lab-b', 'Fix map', 'permission', 'cursor://', SESSION]) {
+  for (const banned of ['-ExecutionPolicy', '-WindowStyle', 'Bypass', 'Hidden', '-EncodedCommand', 'uj-lab-b', 'Fix map', 'permission', 'cursor://', SESSION]) {
     assert.ok(!argv.includes(banned), `argv carries no ${banned}`);
   }
 
-  const literal = literalOf(call.host.stdinText);
-  assert.match(literal, /^[A-Za-z0-9+/=]*$/);
-  const decoded = JSON.parse(Buffer.from(literal, 'base64').toString('utf8')) as Record<string, unknown>;
+  const lines = linesOf(call.host);
+  assert.equal(lines.length, 1);
+  const decoded = decode(lines[0]);
   assert.deepEqual(Object.keys(decoded).sort(), ['aumid', 'tag', 'xml']);
   assert.deepEqual(decoded, { aumid: AUMID, xml: toastXml(p), tag: '5f0c3d4e-needs' });
   // The constant script names no pop-up text and builds nothing from it.
   for (const text of ['uj-lab-b', 'Fix map', 'permission prompt']) {
-    assert.ok(!HOST_SCRIPT_PREFIX.includes(text) && !HOST_SCRIPT_SUFFIX.includes(text));
+    assert.ok(!HOST_LOOP_SCRIPT.includes(text));
   }
-  assert.ok(!/Invoke-Expression|\biex\b|ScriptBlock|Add-Type/i.test(HOST_SCRIPT_PREFIX + HOST_SCRIPT_SUFFIX), 'the script evaluates no text');
+  assert.ok(!/Invoke-Expression|\biex\b|ScriptBlock|Add-Type|\$ExecutionContext|\.Invoke\(/i.test(HOST_LOOP_SCRIPT), 'the script evaluates no text');
+  assert.ok(HOST_LOOP_SCRIPT.includes('$p = [Console]::In.ReadLine()'), 'each pop-up line is read as data');
+  assert.ok(HOST_LOOP_SCRIPT.endsWith('\n\n'), 'the script ends with the blank line that runs it');
+  toast.dispose();
 });
 
 test("hostile titles ('@, ', $(calc), newline, backtick) cannot change the script", async () => {
@@ -132,20 +191,21 @@ test("hostile titles ('@, ', $(calc), newline, backtick) cannot change the scrip
   for (const title of hostile) {
     assert.equal(await toast.show(payload({ title, body: title, attribution: title })), 'shown');
   }
-  assert.equal(calls.length, hostile.length);
-  calls.forEach((call, i) => {
-    const literal = literalOf(call.host.stdinText);
-    assert.match(literal, /^[A-Za-z0-9+/=]*$/, `payload ${i} is one base64 literal`);
-    const argv = [call.command, ...call.args].join(' ');
-    assert.ok(!argv.includes(hostile[i]) && !argv.includes('calc'), `argv ${i} has no title`);
-    const decoded = JSON.parse(Buffer.from(literal, 'base64').toString('utf8')) as { xml: string };
+  assert.equal(calls.length, 1, 'one warm host for every pop-up');
+  const lines = linesOf(calls[0].host);
+  assert.equal(lines.length, hostile.length, 'one line per pop-up: a newline in a title never splits it');
+  const argv = [calls[0].command, ...calls[0].args].join(' ');
+  lines.forEach((line, i) => {
+    assert.ok(!argv.includes(hostile[i]) && !argv.includes('calc'), `argv has no title ${i}`);
+    const decoded = decode(line) as { xml: string };
     assert.equal(decoded.xml, toastXml(payload({ title: hostile[i], body: hostile[i], attribution: hostile[i] })), 'the text arrives as data, unchanged');
   });
+  toast.dispose();
 });
 
-test('a host that runs past 10 s is killed and reports failed', async (t) => {
+test('a host that runs past 10 s is killed and reports failed; the next pop-up starts a fresh one', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { spawn, calls } = spy('hang');
+  const { spawn, calls } = spy('hang', 'hang');
   const log: string[] = [];
   const toast = new WindowsToast(spawn, 'win32', { log: (line) => log.push(line) });
   assert.equal(TOAST_TIMEOUT_MS, 10_000);
@@ -159,25 +219,122 @@ test('a host that runs past 10 s is killed and reports failed', async (t) => {
   t.mock.timers.reset();
   assert.equal(await result, 'failed');
   assert.deepEqual(log, ['[Pitwall] toast failed timeout']);
+
+  // A host that said ready but never answers is just as stuck.
+  const second = toast.show(payload());
+  await flush();
+  assert.equal(calls.length, 2, 'the stuck host is never reused');
+  toast.dispose();
+  await second;
 });
 
-test('at most one host in flight; a second show queues', async () => {
-  const { spawn, calls } = spy('hang');
+test('at most one pop-up in flight; a second show waits for the first answer, in order', async () => {
+  const { spawn, calls } = spy('hang', 'hang');
   const toast = new WindowsToast(spawn, 'win32');
   const first = toast.show(payload({ tag: 'aaaaaaaa-needs' }));
   const second = toast.show(payload({ tag: 'bbbbbbbb-finished' }));
   await flush();
   await flush();
-  assert.equal(calls.length, 1, 'the second waits for the first');
-  calls[0].host.finish('shown\r\n');
+  assert.equal(calls.length, 1, 'one host');
+  const host = calls[0].host;
+  assert.equal(host.lines.length, 1, 'the second waits for the first answer');
+  host.say('shown');
   assert.equal(await first, 'shown');
   await flush();
   await flush();
-  assert.equal(calls.length, 2, 'then the second spawns');
-  calls[1].host.finish('failed DisabledForUser\r\n', 2);
+  assert.equal(host.lines.length, 2, 'then the second is written to the same host');
+  host.say('failed DisabledForUser');
   assert.equal(await second, 'failed');
-  const tags = calls.map((call) => (JSON.parse(Buffer.from(literalOf(call.host.stdinText), 'base64').toString('utf8')) as { tag: string }).tag);
-  assert.deepEqual(tags, ['aaaaaaaa-needs', 'bbbbbbbb-finished'], 'in order');
+  assert.deepEqual(
+    linesOf(host).map((line) => (decode(line) as { tag: string }).tag),
+    ['aaaaaaaa-needs', 'bbbbbbbb-finished'],
+    'in order'
+  );
+  assert.equal(calls.length, 1, 'a failed answer keeps the host');
+  toast.dispose();
+});
+
+test('a pop-up line is written only once the host says ready', async () => {
+  const { spawn, calls } = spy('hang');
+  const silentSpawn = ((...args: Parameters<SpawnFn>) => {
+    const host = (spawn as unknown as (...a: Parameters<SpawnFn>) => FakeHost)(...args);
+    host.silent = true;
+    return host;
+  }) as unknown as SpawnFn;
+  const quiet = new WindowsToast(silentSpawn, 'win32');
+  const shown = quiet.show(payload());
+  await flush();
+  await flush();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].host.stdinText, HOST_LOOP_SCRIPT, 'nothing after the script before ready');
+  calls[0].host.say('ready');
+  await flush();
+  assert.equal(calls[0].host.lines.length, 1, 'written on ready');
+  assert.equal(await shown, 'shown');
+  quiet.dispose();
+});
+
+test('warm starts the host before any pop-up; it idles out after HOST_IDLE_MS and the next pop-up starts another', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { spawn, calls } = spy();
+  const toast = new WindowsToast(spawn, 'win32');
+  toast.warm();
+  assert.equal(calls.length, 1, 'warm spawns the host at once');
+  assert.equal(calls[0].host.stdinText, HOST_LOOP_SCRIPT, 'with only the constant script');
+  toast.warm();
+  assert.equal(calls.length, 1, 'a second warm reuses it');
+  t.mock.timers.reset();
+  await flush();
+  assert.equal(await toast.show(payload()), 'shown');
+  assert.equal(calls.length, 1, 'the pop-up uses the warm host');
+  assert.equal(calls[0].host.lines.length, 1);
+
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  toast.warm(); // restarts the idle clock under the mocked timers
+  t.mock.timers.tick(HOST_IDLE_MS - 1);
+  assert.equal(calls[0].host.stdinEnded, false, 'not before HOST_IDLE_MS');
+  t.mock.timers.tick(1);
+  assert.equal(calls[0].host.stdinEnded, true, 'its stdin closes, so PowerShell exits');
+  assert.equal(calls[0].host.killed, false, 'closed, not killed');
+  t.mock.timers.reset();
+  await flush();
+  assert.equal(await toast.show(payload()), 'shown');
+  assert.equal(calls.length, 2, 'the next pop-up starts a fresh host');
+  toast.dispose();
+  assert.equal(calls[1].host.stdinEnded, true, 'dispose closes it');
+  toast.warm();
+  assert.equal(calls.length, 2, 'nothing starts after dispose');
+  assert.equal(await toast.show(payload()), 'failed');
+});
+
+test('a host that exits mid-pop-up fails that pop-up only; the next starts a fresh host', async () => {
+  let answered = 0;
+  const { spawn, calls } = spy('hang', (_line, host) => setImmediate(() => (answered++ === 0 ? host.emit('close', 1) : host.say('shown'))));
+  const log: string[] = [];
+  const toast = new WindowsToast(spawn, 'win32', { log: (line) => log.push(line) });
+  assert.equal(await toast.show(payload()), 'failed');
+  assert.deepEqual(log, ['[Pitwall] toast failed exit1']);
+  assert.equal(await toast.show(payload()), 'shown');
+  assert.equal(calls.length, 2, 'a fresh host');
+  toast.dispose();
+});
+
+test('the warm host spawns nothing off Windows, and unregister closes it', async () => {
+  const off = spy();
+  const linux = new WindowsToast(off.spawn, 'linux');
+  linux.warm();
+  assert.equal(off.calls.length, 0);
+
+  const { spawn, calls } = spy((call) => setImmediate(() => call.host.finish('removed\r\n')));
+  const toast = new WindowsToast(spawn, 'win32');
+  toast.warm();
+  assert.equal(calls.length, 1);
+  await toast.unregisterAumid();
+  assert.equal(calls[0].host.stdinEnded, true, 'the warm host is closed');
+  toast.warm();
+  assert.equal(calls.length, 2, 'only the removal script ran after it');
+  assert.equal(await toast.show(payload()), 'failed');
+  assert.equal(calls.length, 2, 'no pop-up host after removal');
 });
 
 /** A notification service whose pop-up host answers `result`; every in-window message is recorded. */
@@ -289,7 +446,7 @@ test('register writes DisplayName Pitwall under HKCU and unregister removes it',
   assert.equal(calls.length, 3);
 
   // The first pop-up of an activation waits for registration.
-  const slow = spy('hang');
+  const slow = spy('hang', 'hang');
   const fresh = new WindowsToast(slow.spawn, 'win32');
   const registering = fresh.registerAumid(ICON);
   const shown = fresh.show(payload());
@@ -300,9 +457,10 @@ test('register writes DisplayName Pitwall under HKCU and unregister removes it',
   await flush();
   await flush();
   assert.equal(slow.calls.length, 2);
-  assert.ok(slow.calls[1].host.stdinText.startsWith(HOST_SCRIPT_PREFIX));
-  slow.calls[1].host.finish('shown\r\n');
+  assert.equal(linesOf(slow.calls[1].host).length, 1, 'then the warm host gets the pop-up');
+  slow.calls[1].host.say('shown');
   assert.equal(await shown, 'shown');
+  fresh.dispose();
 
   // The extension registers after the first render, never on the activation path, and never from a test host.
   const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'src', 'extension.ts'), 'utf8');
@@ -327,16 +485,19 @@ test("unregister removes the AppUserModelId key and Windows' Notifications\\Sett
 });
 
 test('the host script guards on the AUMID key, and a host answering failed unregistered falls back in-window', async () => {
-  // The constant suffix tests for the one key, then answers `failed unregistered`, before it makes a notifier.
-  const guard = `Test-Path -LiteralPath '${AUMID_KEY}'`;
-  const at = HOST_SCRIPT_SUFFIX.indexOf(guard);
-  assert.ok(at >= 0, 'HOST_SCRIPT_SUFFIX tests for the AUMID key');
-  assert.ok(at < HOST_SCRIPT_SUFFIX.indexOf('CreateToastNotifier'), 'before CreateToastNotifier');
-  const after = HOST_SCRIPT_SUFFIX.slice(at, HOST_SCRIPT_SUFFIX.indexOf('\n', at));
-  assert.ok(after.includes("'failed unregistered'") && after.includes('exit 2'), 'the guard leads to failed unregistered');
+  // Per pop-up, the constant script tests for the one key, then answers `failed unregistered`, before it makes the notifier that shows.
+  const perPopup = HOST_LOOP_SCRIPT.slice(HOST_LOOP_SCRIPT.indexOf('[Console]::In.ReadLine()'));
+  const guard = `if (-not $j.dry) { if (-not (Test-Path -LiteralPath '${AUMID_KEY}')) { 'failed unregistered'; continue } }`;
+  const at = perPopup.indexOf(guard);
+  assert.ok(at >= 0, 'each pop-up tests for the AUMID key and answers failed unregistered');
+  assert.ok(at < perPopup.indexOf('CreateToastNotifier([string]$j.aumid)'), 'before the notifier that shows');
+  assert.ok(perPopup.indexOf('$n.Show($t)') > at, 'and before Show');
+  // The warm-up before `ready` uses constants only and shows nothing.
+  const warmUp = HOST_LOOP_SCRIPT.slice(0, HOST_LOOP_SCRIPT.indexOf("'ready'"));
+  assert.ok(!warmUp.includes('.Show(') && !warmUp.includes('$j') && !warmUp.includes('$p'), 'the warm-up reads no input and shows nothing');
 
   // Spawn spy only: a host that says the key is gone makes show() fail, and the in-window message takes over once.
-  const { spawn, calls } = spy((call) => setImmediate(() => call.host.finish('failed unregistered\r\n', 2)));
+  const { spawn, calls } = spy('hang', (_line, host) => setImmediate(() => host.say('failed unregistered')));
   const log: string[] = [];
   const toast = new WindowsToast(spawn, 'win32', { log: (line) => log.push(line) });
   assert.equal(await toast.show(payload()), 'failed');
@@ -357,6 +518,22 @@ test('the host script guards on the AUMID key, and a host answering failed unreg
   await flush();
   assert.equal(shownMessages().length, 1, 'exactly one in-window message');
   assert.ok(log.some((line) => /popup needs 5f0c3d4e shown lag=\d+ sound=off via=in-window/.test(line)));
+  toast.dispose();
+});
+
+test('prepare warms the pop-up host and judges nothing', async () => {
+  let warmed = 0;
+  const shows: ToastPayload[] = [];
+  const service = new NotificationService(() => undefined, () => false, {
+    toast: { show: async (p) => (shows.push(p), 'shown'), warm: () => warmed++ },
+  });
+  service.prepare();
+  assert.equal(warmed, 1);
+  assert.equal(shows.length, 0, 'nothing shown');
+  assert.deepEqual(shownMessages(), []);
+  // A host without warm (another platform's) is fine.
+  new NotificationService(() => undefined, () => false, { toast: { show: async () => 'shown' } }).prepare();
+  new NotificationService(() => undefined, () => false).prepare();
 });
 
 test('the uninstall script removes the key', async () => {
@@ -412,10 +589,19 @@ test(
   async () => {
     const log: string[] = [];
     const toast = new WindowsToast(undefined, 'win32', { log: (line) => log.push(line) });
-    const hostile = `uj-lab-b <needs> & "you" 'now' $(calc) \`n '@`;
-    // A dry run builds the toast from the XML and stops before Show: nothing pops on CI or a dev machine.
-    assert.equal(await toast.show(payload({ title: hostile, sound: true }), { dryRun: true }), 'shown', log.join('\n'));
-    assert.equal(await toast.show(payload({ sound: false }), { dryRun: true }), 'shown', log.join('\n'));
-    assert.deepEqual(log, []);
+    try {
+      const hostile = `uj-lab-b <needs> & "you" 'now' $(calc) \`n '@`;
+      // A dry run builds the toast from the XML and stops before Show: nothing pops on CI or a dev machine.
+      assert.equal(await toast.show(payload({ title: hostile, sound: true }), { dryRun: true }), 'shown', log.join('\n'));
+      assert.equal(await toast.show(payload({ sound: false }), { dryRun: true }), 'shown', log.join('\n'));
+      // Warm, a pop-up skips PowerShell's start: this machine took 0.6–0.9 s cold and 13–58 ms warm.
+      const started = Date.now();
+      assert.equal(await toast.show(payload({ title: 'warm' }), { dryRun: true }), 'shown', log.join('\n'));
+      const warmMs = Date.now() - started;
+      assert.ok(warmMs < 400, `a warm pop-up took ${warmMs} ms`);
+      assert.deepEqual(log, []);
+    } finally {
+      toast.dispose();
+    }
   }
 );
