@@ -26,6 +26,11 @@ export class StatCache<T> {
       : undefined;
   }
 
+  /** The last value derived for a file, whatever its stats now: a stand-in while a fresh one cannot be had. */
+  last(filePath: string): { value: T } | undefined {
+    return this.entries.get(filePath);
+  }
+
   set(filePath: string, stats: fs.Stats, value: T): void {
     this.entries.set(filePath, {
       mtimeMs: stats.mtimeMs,

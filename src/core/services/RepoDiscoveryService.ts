@@ -6,6 +6,7 @@ import { BoundedCache } from '../utils/boundedCache';
 import { canonicalRoot, samePath } from '../utils/paths';
 import { GitService } from './GitService';
 import { StorageService } from './StorageService';
+import { StepTimer } from '../utils/stepTimer';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** A pass runs this often, besides the first render and window focus. */
@@ -168,6 +169,7 @@ export class RepoDiscoveryService implements vscode.Disposable {
       // pass logs its start and end; a later one (every minute) logs its end
       // only when it adds a repo or is slow, so the log stays readable.
       started = Date.now();
+      const timer = new StepTimer();
       const first = !this.firstLogged;
       this.firstLogged = true;
       if (first) {
@@ -176,6 +178,7 @@ export class RepoDiscoveryService implements vscode.Disposable {
       const counts: DiscoveryCounts = { skipped: 0, sessions: 0 };
       const sinceMs = this.now() - this.retentionDays() * DAY_MS;
       const folders = await this.discoverFolders(sinceMs, counts);
+      timer.step('folders');
 
       // Each folder's root; the newest session start per root (P2).
       const found: { root: string; startedAt: number }[] = [];
@@ -193,6 +196,7 @@ export class RepoDiscoveryService implements vscode.Disposable {
         }
       }
 
+      timer.step('roots');
       for (const { root, startedAt } of found) {
         if (this.disposed) {
           break;
@@ -217,7 +221,8 @@ export class RepoDiscoveryService implements vscode.Disposable {
       if (first || result.added.length > 0 || tookMs >= SLOW_PASS_MS) {
         this.log(
           `[Pitwall] discovery finished: ${found.length} repos (${result.added.length} new), ` +
-            `${counts.sessions ?? 0} sessions, ${result.skipped} skipped, ${tookMs} ms`
+            `${counts.sessions ?? 0} sessions, ${result.skipped} skipped, ${tookMs} ms ` +
+            `(${timer.describe()}; host CPU ${timer.cpuMs()} ms)`
         );
       }
       if (result.added.length > 0) {

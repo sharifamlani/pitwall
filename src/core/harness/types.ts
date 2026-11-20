@@ -509,6 +509,13 @@ export interface HarnessAdapter {
   liveSessionIds?(): Promise<Set<string> | undefined>;
 
   /**
+   * What the adapter's session reads have done so far, as cumulative counters
+   * (`…Bytes` in bytes, `…Ms` in ms). The import scan logs what changed over
+   * a pass, so a slow scan names its reads (per-step timing, #79 gate).
+   */
+  readCounters?(): Readonly<Record<string, number>>;
+
+  /**
    * The live sessions whose turn is under way (busy or waiting, or a status
    * Pitwall does not know), from the same record as `liveSessionIds`. A
    * session that has never been prompted has no transcript yet, so discovery

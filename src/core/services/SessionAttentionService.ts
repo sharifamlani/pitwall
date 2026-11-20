@@ -1,3 +1,4 @@
+import { IntervalHistogram, monitorEventLoopDelay } from 'perf_hooks';
 import * as vscode from 'vscode';
 import { ChatSession, Worktree } from '../types';
 import {
@@ -11,6 +12,7 @@ import { chatNativeSessionIds } from '../harness/sessionUtils';
 import { SessionStatus, lastTurnEnd, sessionStatus } from '../providers/sessionStatus';
 import { NotificationService, NotifyResult, USES_UP } from './NotificationService';
 import { StorageService } from './StorageService';
+import { StepTimer } from '../utils/stepTimer';
 
 /** A row's status and when it entered it (P6: the in-group sort key). */
 export interface ChatStatus {
@@ -207,6 +209,13 @@ export class SessionAttentionService {
   private ticking = false;
   /** A poll asked for while one was running runs right after it. */
   private pollQueued = false;
+  /**
+   * How long the extension host's event loop was held at once during each
+   * poll, for the slow-poll line: a poll whose steps all waited while the
+   * loop was held was kept by something else on the host, not its reads.
+   * Enabled only while a poll runs.
+   */
+  private loopDelay: IntervalHistogram | undefined;
 
   /** Latest known state per chat, for its row; kept when a chat closes. */
   private readonly rowState = new Map<string, RowState>();
@@ -328,6 +337,7 @@ export class SessionAttentionService {
 
   dispose(): void {
     this.disposed = true;
+    this.loopDelay?.disable();
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
@@ -665,17 +675,30 @@ export class SessionAttentionService {
       return;
     }
     this.ticking = true;
-    const started = Date.now();
+    const timer = new StepTimer();
+    // Sampled only while a poll runs: its 20 ms timer would otherwise tick for
+    // the host's whole life in every window, and the slow-poll line reads only
+    // its max over the poll.
+    this.loopDelay ??= monitorEventLoopDelay({ resolution: 20 });
+    this.loopDelay.reset();
+    this.loopDelay.enable();
     try {
-      await this.checkTurns(prime);
+      await this.checkTurns(prime, timer);
     } catch (error) {
       console.error('[Pitwall] Attention check failed:', error);
     } finally {
+      this.loopDelay.disable();
       this.ticking = false;
     }
-    const tookMs = Date.now() - started;
+    const tookMs = timer.elapsed();
     if (tookMs >= SLOW_POLL_MS) {
-      this.options.log?.(`[Pitwall] status poll took ${tookMs} ms (${this.polledChats.size} chats read)`);
+      // Each step's time, and whether the host itself was held meanwhile, so
+      // a slow poll names its cause (#79 gate: 0.75–2.6 s polls).
+      const held = Math.round((this.loopDelay?.max ?? 0) / 1e6);
+      this.options.log?.(
+        `[Pitwall] status poll took ${tookMs} ms (${this.polledChats.size} chats read; ${timer.describe()}; ` +
+          `loop held ${held} ms, host CPU ${timer.cpuMs()} ms)`
+      );
     }
     if (this.pollQueued) {
       this.pollQueued = false;
@@ -704,7 +727,7 @@ export class SessionAttentionService {
     return [...adapters.values()];
   }
 
-  private async checkTurns(prime: boolean): Promise<void> {
+  private async checkTurns(prime: boolean, timer: StepTimer): Promise<void> {
     const allChats = this.storage.getChats();
     const chats = allChats.filter((chat) => this.isChatOpen(chat));
     const activeIds = new Set(chats.map((chat) => chat.id));
@@ -728,10 +751,12 @@ export class SessionAttentionService {
     // Closed chats whose session the harness's live record lists are polled
     // too, for their rows and pop-ups; every other closed chat waits for the scan.
     const liveIds = await this.liveSessionIds(allChats);
+    timer.step('live ids');
     // Discovery's own first pass covers whatever runs at activation.
     if (!prime) {
       await this.askAboutUnlisted(liveIds, allChats);
     }
+    timer.step('unlisted');
     const closedLive = allChats.filter(
       (chat) => !activeIds.has(chat.id) && chat.harnessSessionId && liveIds.get(chat.harness)?.has(chat.harnessSessionId)
     );
@@ -746,6 +771,7 @@ export class SessionAttentionService {
       }))
     );
 
+    timer.step('states');
     // The calls take time; look again before judging what they report.
     this.noteFront();
 
@@ -818,6 +844,7 @@ export class SessionAttentionService {
     if (turnStatesChanged || this.rowMarkKey() !== rowMarksBefore) {
       this.onTurnStateChanged();
     }
+    timer.step('judge');
   }
 
   /**
