@@ -82,6 +82,9 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - A test on mocked timers that also waits on real I/O must hold the mocked clock while that I/O is in
   flight; moving the clock at a fixed rate charges machine load to the code's timers. (Pitwall #83:
   first-scan tests went 1/30 → 30/30 under load.)
+- A test that sleeps a fixed time for background work started by an event is a guess about machine
+  speed. Wait on the observable result, bounded, with the elapsed time in the failure message.
+  (Pitwall #84: the poll-stall test went 13/30 → 30/30 under load.)
 - Instrument before you attribute. A route line with no trigger source can't settle what caused an
   open; add the trigger to the log first, then name the cause. (Pitwall 2026-11-20: the 11-19 "spurious
   opens" were blamed on the owner's dictation without evidence.)
