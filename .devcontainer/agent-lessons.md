@@ -47,6 +47,13 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
   wait for an entry the writer may not write. (Pitwall #76: current Claude writes no `turn_duration`, so
   the tail reader read 1.7 GB of live transcripts whole; a 48 MB fixture showed 0.5 s, the owner's sizes
   showed 15–24 s.)
+- "A tab exists" isn't "the process is alive": check the process itself (the harness's record or the
+  terminal's own process tree) before treating a terminal as the running chat, and never stop a process
+  through a terminal whose process already exited (its old pid may be someone else's). (Pitwall #75: a
+  pop-up landed on a dead shell; quitting killed an outside chat on the same session.)
+- A shell whose agent exited is the user's: forget it, never close it (they may run anything in it after
+  /exit), and decide "exited" by the process, not the session id (/clear keeps the same pid under a new
+  id). (Pitwall #75 QA: the release closed live shells and read /clear as exited.)
 - A walk brief uses every default the owner has. Never turn a feature off to make the walk easier;
   if one must be off, walk with it on as well. (Pitwall 0.6.0: the walk ran with discovery off and
   hid 5–8 s pop-up lag; with it on, lag was 6.5–8.4 s against a ~5 s bar.)
