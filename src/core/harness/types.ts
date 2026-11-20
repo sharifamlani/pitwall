@@ -540,6 +540,16 @@ export interface HarnessAdapter {
   isPanelSession?(sessionId: string): boolean | undefined;
 
   /**
+   * Whether the harness's own record proves no process runs this session any
+   * more: an earlier read saw it live, and a complete read now lists no live
+   * process for it. False whenever that can't be proven (never seen live, a
+   * torn read, an unknown status), so a caller acting on true (releasing a
+   * Pitwall terminal whose agent exited, f3 P2 K4) never mistakes a running
+   * agent for a stopped one. Undefined when the harness has no such record.
+   */
+  sessionEnded?(sessionId: string): Promise<boolean>;
+
+  /**
    * The folder a session's window is (Q2): the one its agent's UI resumes it
    * from, among `roots` (its repo's main folder and worktrees). Undefined when
    * the harness can't tell; the caller then uses the chat's worktree.

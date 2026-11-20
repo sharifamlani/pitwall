@@ -218,6 +218,8 @@ export async function activate(context: vscode.ExtensionContext) {
     rootsOf: (worktree) => workspacesProvider.rootsOf(worktree),
     repoName: (folder) => workspacesProvider.repoContaining(folder)?.name ?? path.basename(folder),
     isOpenHere: isChatOpen,
+    // A Pitwall terminal whose agent exited (a shell left after /exit) is not the chat (f3 P2 K4).
+    releaseExited: (chat) => terminalManager.releaseExitedAgent(chat.id),
     // Asked only for a session with no tab or terminal Pitwall knows of.
     outsideTerminal: liveProcess,
     // This window's own panel with a tab Pitwall never bound (v0.6.0): the agent UI reveals the tab

@@ -199,6 +199,11 @@ export class ClaudeHarness implements HarnessAdapter {
       : undefined;
   }
 
+  /** Whether the sessions folder proves this session's process is gone (seen live before, absent from a complete read now). */
+  sessionEnded(sessionId: string): Promise<boolean> {
+    return this.sessionsFile.ended(sessionId);
+  }
+
   /**
    * The sessions the folder lists as running, for the attention tick's poll
    * set (row status for closed chats). The read is shared with the

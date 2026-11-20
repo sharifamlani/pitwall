@@ -52,6 +52,19 @@ export const RESTORED_SHELL_TIMEOUT_MS = 10000;
  */
 export const REVIVED_SHELL_READY_CAP_MS = 60_000;
 
+/**
+ * How long after Pitwall starts an agent in a terminal the harness's record
+ * may still lack it. Until then a session missing from the record may only be
+ * starting (a slow PowerShell, a resume, MCP servers), so its terminal is never
+ * released as exited: a second process would fork the session (f3 P2 K4).
+ */
+export const AGENT_START_GRACE_MS = 30_000;
+
+export interface TerminalManagerOptions {
+  /** Defaults to {@link AGENT_START_GRACE_MS}. */
+  agentStartGraceMs?: number;
+}
+
 /** QA #72, new copy: restored tabs left as plain shells because their chats went on running elsewhere. One message per restore. */
 export const runningElsewhereMessage = (names: string[]): string =>
   `${names.map((name) => `"${name}"`).join(', ')} ${names.length === 1 ? 'is' : 'are'} already running elsewhere, so ${
@@ -203,11 +216,23 @@ export class TerminalManager {
   private readonly stateEmitter = new vscode.EventEmitter<{ chatId: string; state: 'opened' | 'closed' }>();
   readonly onTerminalStateChange = this.stateEmitter.event;
 
+  /** When Pitwall sent each chat's launch line into its terminal, for the start grace. */
+  private readonly launchedAt = new Map<string, number>();
+  /**
+   * Shells released because their agent exited (`releaseExitedAgent`). They
+   * are the user's now, whatever runs in them, so Remove's orphan close never
+   * picks one by its old title.
+   */
+  private readonly releasedShells = new WeakSet<vscode.Terminal>();
+  private readonly agentStartGraceMs: number;
+
   constructor(
     private readonly storageService: StorageService,
     private readonly harnessRegistry: HarnessRegistry,
-    private readonly harnessWatcherRegistry: HarnessWatcherRegistry
+    private readonly harnessWatcherRegistry: HarnessWatcherRegistry,
+    options: TerminalManagerOptions = {}
   ) {
+    this.agentStartGraceMs = options.agentStartGraceMs ?? AGENT_START_GRACE_MS;
     this.disposables = [
       vscode.window.onDidCloseTerminal((terminal) => {
         const chatId = this.terminalToChatId.get(terminal);
@@ -282,10 +307,9 @@ export class TerminalManager {
         return existingTerminal;
       }
       // The process exited or VS Code dropped the terminal; its tab may
-      // linger. Forget it and launch a fresh one below.
-      this.terminals.delete(chat.id);
-      this.terminalToChatId.delete(existingTerminal);
-      existingTerminal.dispose();
+      // linger. Forget it, never stop it (see `forgetExited`), and launch a
+      // fresh one below.
+      this.forgetExited(chat.id, existingTerminal);
     }
 
     // A hidden duplicate of this session merged into this row (two windows
@@ -397,6 +421,7 @@ export class TerminalManager {
 
     this.terminals.set(chat.id, terminal);
     this.terminalToChatId.set(terminal, chat.id);
+    this.launchedAt.set(chat.id, Date.now());
     // Keys the user typed into the new terminal first would prefix the line
     // (`xyclaude --resume …`, T3 live): clear the shell's line first (Q27).
     // The clear goes alone and the command on the next turn, in a send of
@@ -438,6 +463,9 @@ export class TerminalManager {
     this.lateStarts.add(watch.cancel);
     this.terminals.set(chat.id, terminal);
     this.terminalToChatId.set(terminal, chat.id);
+    // The start grace covers the shell's readiness wait too, and restarts when
+    // the resume line goes in below (QA on #75).
+    this.launchedAt.set(chat.id, Date.now());
     this.markOpened(chat);
 
     const sent = watch.ready.then((readiness) => {
@@ -465,6 +493,7 @@ export class TerminalManager {
       // is harmless in PowerShell, cmd.exe and bash (and keeps the line out
       // of bash history under ignorespace), so a dropped keystroke is the space.
       terminal.sendText(` ${command}`);
+      this.launchedAt.set(chat.id, Date.now());
       return { readiness, started, lateStart };
     });
 
@@ -1032,7 +1061,11 @@ export class TerminalManager {
   closeChat(chatId: string): void {
     const terminal = this.terminals.get(chatId);
     if (terminal) {
-      terminal.dispose();
+      if (isLiveTerminal(terminal)) {
+        terminal.dispose();
+      } else {
+        this.forgetExited(chatId, terminal);
+      }
       return;
     }
     const shortId = chatId.substring(0, 6);
@@ -1043,7 +1076,11 @@ export class TerminalManager {
       return;
     }
     const orphans = vscode.window.terminals.filter(
-      (orphan) => isLiveTerminal(orphan) && !this.terminalToChatId.has(orphan) && titleShortId(orphan.name) === shortId
+      (orphan) =>
+        isLiveTerminal(orphan) &&
+        !this.terminalToChatId.has(orphan) &&
+        !this.releasedShells.has(orphan) &&
+        titleShortId(orphan.name) === shortId
     );
     if (orphans.length === 1) {
       orphans[0].dispose();
@@ -1106,12 +1143,66 @@ export class TerminalManager {
       return true;
     }
     // Clean up a stale reference; the close event never reached us or the
-    // process exited while its tab stayed listed. Dispose it so a dead tab
-    // cannot stand in for the chat.
+    // process exited while its tab stayed listed. Forgetting it is enough for
+    // a dead tab never to stand in for the chat.
+    this.forgetExited(chatId, terminal);
+    return false;
+  }
+
+  /**
+   * Forget a mapped terminal whose process has exited, without disposing it.
+   * Pitwall stops only a process it started, inside its own terminal: an
+   * exited terminal holds none, and closing it can only reach whatever the OS
+   * gave its old pid next (on Windows the pty's stop kills the console
+   * processes of the shell's pid, or that pid itself). f3 FAIL C: quitting
+   * with an exited Pitwall terminal mapped to Lab Notes killed the same
+   * session's outside console. The tab stays until the user closes it.
+   */
+  private forgetExited(chatId: string, terminal: vscode.Terminal): void {
     this.terminals.delete(chatId);
     this.terminalToChatId.delete(terminal);
-    terminal.dispose();
-    return false;
+    this.launchedAt.delete(chatId);
+  }
+
+  /**
+   * A Pitwall terminal whose agent exited is a shell, not the chat (f3 P2
+   * K4): after /exit the tab stays with a prompt, so "a tab exists" is not
+   * "the process is alive". Released only when the harness's own record
+   * proves the session's process is gone (`sessionEnded`) and the start grace
+   * since Pitwall launched it has passed; any doubt (no record, a torn or
+   * failed read, a chat with no session yet) keeps it. Released means
+   * forgotten, never closed: the shell still runs, and after /exit the user
+   * may have started anything in it (a dev server, a build, a fresh agent),
+   * so the tab stays as a plain shell, exactly as `forgetExited` leaves one.
+   * The chat reads closed, and the caller then opens it the normal way, with
+   * exactly one new process. True when it released one.
+   */
+  async releaseExitedAgent(chatId: string): Promise<boolean> {
+    const terminal = this.terminals.get(chatId);
+    if (!terminal || !isLiveTerminal(terminal)) {
+      return false;
+    }
+    const chat = this.storageService.getChat(chatId);
+    const sessionId = chat?.harnessSessionId;
+    if (!chat || !sessionId || !this.harnessRegistry.has(chat.harness)) {
+      return false;
+    }
+    const launched = this.launchedAt.get(chatId);
+    if (launched !== undefined && Date.now() - launched < this.agentStartGraceMs) {
+      return false;
+    }
+    const adapter = this.harnessRegistry.get(chat.harness);
+    const ended = await Promise.resolve(adapter.sessionEnded?.(sessionId)).catch(() => false);
+    // The map may have changed while the record was read.
+    if (ended !== true || this.terminals.get(chatId) !== terminal || !isLiveTerminal(terminal)) {
+      return false;
+    }
+    this.releasedShells.add(terminal);
+    this.handleTerminalClosed(chatId, terminal);
+    // Its pty is alive, so the recorded PID would let a reload adopt it back
+    // as the chat, and a quit's revive type a resume line into it (QA H1).
+    await this.storageService.forgetTerminalPid(chatId).catch(() => undefined);
+    return true;
   }
 
   getTerminal(chatId: string): vscode.Terminal | undefined {
@@ -1143,6 +1234,7 @@ export class TerminalManager {
   private handleTerminalClosed(chatId: string, terminal: vscode.Terminal): void {
     this.terminals.delete(chatId);
     this.terminalToChatId.delete(terminal);
+    this.launchedAt.delete(chatId);
 
     const chat = this.storageService.getChat(chatId);
 
@@ -1195,10 +1287,15 @@ export class TerminalManager {
   dispose(): void {
     this.isDisposed = true;
     this.disposables.forEach((disposable) => disposable.dispose());
+    // Only a terminal whose process still runs holds something Pitwall
+    // started; an exited one is left alone (see `forgetExited`, f3 FAIL C).
     for (const terminal of this.terminals.values()) {
-      terminal.dispose();
+      if (isLiveTerminal(terminal)) {
+        terminal.dispose();
+      }
     }
     this.terminals.clear();
+    this.launchedAt.clear();
     this.terminalToChatId.clear();
     this.restoringChats.clear();
     for (const cancel of [...this.lateStarts]) {

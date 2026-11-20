@@ -141,6 +141,86 @@ test('a malformed file is skipped, the rest still read', async (t) => {
   assert.equal(snapshot.partial, true, 'an unreadable file makes the snapshot partial');
 });
 
+test('a session has ended only when an earlier read saw it live and a complete read no longer does (P2 K4)', async (t) => {
+  const dir = path.join(tempDir(t), 'sessions');
+  const alive = new Set([4242, 4343]);
+  const file = writeSession(dir, { pid: 4242, sessionId: 'lab-notes', status: 'idle', statusUpdatedAt: 1 });
+  writeSession(dir, { pid: 4343, sessionId: 'other', status: 'busy', statusUpdatedAt: 1 });
+  const sessions = sessionsFile(dir, alive);
+
+  assert.equal(await sessions.ended('lab-notes'), false, 'live');
+  assert.equal(await sessions.ended('no-record'), false, 'never seen live (an agent that writes no record) is never called ended');
+
+  // /exit: the process is gone; its file may linger a moment, then goes.
+  alive.delete(4242);
+  assert.equal(await sessions.ended('lab-notes'), true, 'the dead pid no longer counts');
+  fs.rmSync(file);
+  assert.equal(await sessions.ended('lab-notes'), true);
+
+  // A torn file proves nothing: the session could be in it.
+  const torn = path.join(dir, '5000.json');
+  fs.writeFileSync(torn, '{"pid": 5000, "sessionId": "lab-no');
+  assert.equal(await sessions.ended('lab-notes'), false, 'a partial read never proves a session ended');
+  fs.rmSync(torn);
+
+  // Resumed again: live once more.
+  alive.add(4242);
+  writeSession(dir, { pid: 4242, sessionId: 'lab-notes', status: 'busy', statusUpdatedAt: 2 });
+  assert.equal(await sessions.ended('lab-notes'), false);
+});
+
+test('after /clear the same process runs on under a new session id: the old id never reads as ended while that pid lives (QA on #75)', async (t) => {
+  const dir = path.join(tempDir(t), 'sessions');
+  const alive = new Set([4242]);
+  writeSession(dir, { pid: 4242, sessionId: 'lab-notes', status: 'idle', statusUpdatedAt: 1 });
+  const sessions = sessionsFile(dir, alive);
+  assert.equal(await sessions.ended('lab-notes'), false, 'live');
+
+  // /clear: Claude rewrites its own <pid>.json with the new session id.
+  writeSession(dir, { pid: 4242, sessionId: 'after-clear', status: 'idle', statusUpdatedAt: 2 });
+  assert.equal(await sessions.ended('lab-notes'), false, 'pid 4242 still runs: a click must never treat its terminal as a dead shell');
+  // Under a status this build doesn't know, still the same live process.
+  writeSession(dir, { pid: 4242, sessionId: 'after-clear', status: 'compacting', statusUpdatedAt: 3 });
+  assert.equal(await sessions.ended('lab-notes'), false);
+
+  // That process exits: now the session it ran is provably gone.
+  alive.delete(4242);
+  assert.equal(await sessions.ended('lab-notes'), true);
+
+  // Its pid is reused by another live record: "not ended", the safe direction.
+  alive.add(4242);
+  writeSession(dir, { pid: 4242, sessionId: 'someone-else', status: 'busy', statusUpdatedAt: 4 });
+  assert.equal(await sessions.ended('lab-notes'), false);
+});
+
+test('a session seen live only under an unknown status reads as ended once its process is gone (QA R4 on #75)', async (t) => {
+  const dir = path.join(tempDir(t), 'sessions');
+  const alive = new Set([62]);
+  writeSession(dir, { pid: 62, sessionId: 'odd-only', status: 'compacting', statusUpdatedAt: 1 });
+  const sessions = sessionsFile(dir, alive);
+  assert.equal(await sessions.ended('odd-only'), false, 'live, status unknown to this build');
+  alive.delete(62);
+  assert.equal(await sessions.ended('odd-only'), true, 'its pid is gone from a complete read');
+});
+
+test('an unknown status or an unreadable pid domain never reads as ended', async (t) => {
+  const dir = path.join(tempDir(t), 'sessions');
+  writeSession(dir, { pid: 61, sessionId: 'odd', status: 'idle', statusUpdatedAt: 1 });
+  const sessions = sessionsFile(dir);
+  assert.equal(await sessions.ended('odd'), false);
+  // Still running, under a status this build doesn't know.
+  writeSession(dir, { pid: 61, sessionId: 'odd', status: 'compacting', statusUpdatedAt: 2 });
+  assert.equal(await sessions.ended('odd'), false, 'live with an unknown status');
+
+  // This machine's pid domain can't be read: no pid can be checked, so it never sees a
+  // session live, and never calls one ended.
+  const blind = new ClaudeSessionsFile({ dir: () => dir, isAlive: () => true, pidDomain: async () => undefined });
+  writeSession(dir, { pid: 61, sessionId: 'odd', status: 'idle', statusUpdatedAt: 3 });
+  assert.equal(await blind.ended('odd'), false);
+  fs.rmSync(path.join(dir, '61.json'));
+  assert.equal(await blind.ended('odd'), false);
+});
+
 test('a file from another pidDomain is ignored', async (t) => {
   const dir = path.join(tempDir(t), 'sessions');
   writeSession(dir, { pid: 1, sessionId: 'pid-one', status: 'busy', statusUpdatedAt: 1 }, '1.json');

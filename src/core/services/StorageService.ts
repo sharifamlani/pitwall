@@ -1187,6 +1187,22 @@ export class StorageService {
     await this.set(STORAGE_KEYS.TERMINAL_PIDS, this.getTerminalPidRecords());
   }
 
+  /**
+   * Forget the PID this workspace recorded for a chat's terminal, when that
+   * terminal stops being the chat's (a shell released because its agent
+   * exited). Neither a reload's adoption nor a quit's revive then treats the
+   * tab as the chat's (QA H1 on #75).
+   */
+  async forgetTerminalPid(chatId: string): Promise<void> {
+    // Read first: this also moves a legacy workspace-scoped record over.
+    if (this.getTerminalPids()[chatId] === undefined) {
+      return;
+    }
+    // Kept as a removal, so a stale copy cannot bring the record back.
+    this.pidOverlay.note(pidId(this.workspaceKey(), chatId), null);
+    await this.set(STORAGE_KEYS.TERMINAL_PIDS, this.getTerminalPidRecords());
+  }
+
   /** Drop terminal identity for deleted chats, in every workspace. */
   private forgetTerminalPids(chatIds: Set<string>): void {
     const records = this.getTerminalPidRecords();
