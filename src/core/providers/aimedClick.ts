@@ -278,8 +278,9 @@ export class AimedClicks<T extends { id?: string }> {
    * A row's command ran. Returns the click it completes, which the caller
    * redirects to `aimed`: a held selection of this row made at most
    * `CLICK_PAIR_MS` ago, or the second click of a double-click on a row
-   * just redirected. Undefined otherwise (Enter or an action on a row already
-   * selected, or a selection made too long before, like an arrow key).
+   * just redirected with no row chosen since. Undefined otherwise (Enter or
+   * an action on a row already selected, a selection made too long before,
+   * like an arrow key, or a command handled after the host was held).
    */
   claim(rowId: string): AimedClick<T> | undefined {
     if (this.stalled()) {

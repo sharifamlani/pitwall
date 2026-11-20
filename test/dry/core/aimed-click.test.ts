@@ -220,6 +220,20 @@ test('a stale heartbeat stops a redirect at the selection and at the command; a 
   again.clicks.dispose();
 });
 
+test('the aim window closes at AIM_WINDOW_MS, even while the heartbeat is still fresh', () => {
+  const time = fakeTime();
+  const { clicks, apply } = moved(time, ['r', 'a', 'b'], ['r', 'b', 'a']);
+  time.advance(AIM_WINDOW_MS - HEARTBEAT_MS);
+  clicks.select([{ id: 'b' }], ['r', 'b', 'a'], apply);
+  assert.equal(clicks.claim('b')?.aimed, 'a', 'inside the window: aimed');
+  clicks.select([{ id: 'r' }], ['r', 'b', 'a'], apply);
+  // Just past the window the heartbeat has just ticked, so the host is not held: only the window check stops the redirect.
+  time.advance(HEARTBEAT_MS + 1);
+  clicks.select([{ id: 'b' }], ['r', 'b', 'a'], apply);
+  assert.equal(clicks.claim('b'), undefined, 'past the window: the clicked row');
+  clicks.dispose();
+});
+
 test('the heartbeat runs only while an aim or double-click window is open, and stops on dispose', () => {
   const time = fakeTime();
   const clicks = new AimedClicks<Row>(time.clock, time.heartbeat);
