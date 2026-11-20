@@ -218,6 +218,12 @@ export class TerminalManager {
 
   /** When Pitwall sent each chat's launch line into its terminal, for the start grace. */
   private readonly launchedAt = new Map<string, number>();
+  /**
+   * Shells released because their agent exited (`releaseExitedAgent`). They
+   * are the user's now, whatever runs in them, so Remove's orphan close never
+   * picks one by its old title.
+   */
+  private readonly releasedShells = new WeakSet<vscode.Terminal>();
   private readonly agentStartGraceMs: number;
 
   constructor(
@@ -457,6 +463,9 @@ export class TerminalManager {
     this.lateStarts.add(watch.cancel);
     this.terminals.set(chat.id, terminal);
     this.terminalToChatId.set(terminal, chat.id);
+    // The start grace covers the shell's readiness wait too, and restarts when
+    // the resume line goes in below (QA on #75).
+    this.launchedAt.set(chat.id, Date.now());
     this.markOpened(chat);
 
     const sent = watch.ready.then((readiness) => {
@@ -484,6 +493,7 @@ export class TerminalManager {
       // is harmless in PowerShell, cmd.exe and bash (and keeps the line out
       // of bash history under ignorespace), so a dropped keystroke is the space.
       terminal.sendText(` ${command}`);
+      this.launchedAt.set(chat.id, Date.now());
       return { readiness, started, lateStart };
     });
 
@@ -1066,7 +1076,11 @@ export class TerminalManager {
       return;
     }
     const orphans = vscode.window.terminals.filter(
-      (orphan) => isLiveTerminal(orphan) && !this.terminalToChatId.has(orphan) && titleShortId(orphan.name) === shortId
+      (orphan) =>
+        isLiveTerminal(orphan) &&
+        !this.terminalToChatId.has(orphan) &&
+        !this.releasedShells.has(orphan) &&
+        titleShortId(orphan.name) === shortId
     );
     if (orphans.length === 1) {
       orphans[0].dispose();
@@ -1156,10 +1170,12 @@ export class TerminalManager {
    * "the process is alive". Released only when the harness's own record
    * proves the session's process is gone (`sessionEnded`) and the start grace
    * since Pitwall launched it has passed; any doubt (no record, a torn or
-   * failed read, a chat with no session yet) keeps it. The shell is Pitwall's
-   * own and still running, so its tab is closed; the chat reads closed, and
-   * the caller then opens it the normal way, with exactly one new process.
-   * True when it released one.
+   * failed read, a chat with no session yet) keeps it. Released means
+   * forgotten, never closed: the shell still runs, and after /exit the user
+   * may have started anything in it (a dev server, a build, a fresh agent),
+   * so the tab stays as a plain shell, exactly as `forgetExited` leaves one.
+   * The chat reads closed, and the caller then opens it the normal way, with
+   * exactly one new process. True when it released one.
    */
   async releaseExitedAgent(chatId: string): Promise<boolean> {
     const terminal = this.terminals.get(chatId);
@@ -1181,8 +1197,8 @@ export class TerminalManager {
     if (ended !== true || this.terminals.get(chatId) !== terminal || !isLiveTerminal(terminal)) {
       return false;
     }
+    this.releasedShells.add(terminal);
     this.handleTerminalClosed(chatId, terminal);
-    terminal.dispose();
     return true;
   }
 

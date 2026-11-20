@@ -36,6 +36,8 @@ export interface ClaudeSessionsSnapshot {
   unknownStatus: Set<string>;
   /** A `.json` file could not be read or parsed (for example, caught mid-write). */
   partial: boolean;
+  /** Every live pid on this machine the read found a record for, under any session id or status. */
+  livePids?: Set<number>;
 }
 
 export interface ClaudeSessionsFileOptions {
@@ -143,8 +145,12 @@ export class ClaudeSessionsFile {
   private readonly rewatchMs: number;
   private localDomain: Promise<string | undefined> | undefined;
   private inFlight: Promise<ClaudeSessionsSnapshot> | undefined;
-  /** Sessions some read listed as live (a known or unknown status), so a later absence means they stopped. */
-  private readonly seenLive = new Set<string>();
+  /**
+   * The pids the latest read that listed each session live (a known or
+   * unknown status) found it under, so a later read can tell whether that
+   * process is gone or only moved to another session id (/clear).
+   */
+  private readonly seenLive = new Map<string, Set<number>>();
 
   constructor(options: ClaudeSessionsFileOptions = {}) {
     this.dir = options.dir ?? (() => path.join(claudeConfigDir(), 'sessions'));
@@ -232,15 +238,21 @@ export class ClaudeSessionsFile {
 
   /**
    * Whether this session's process is gone, as far as the folder can prove
-   * it: an earlier read listed it live, and a fresh, complete read (listed,
-   * no torn file) lists no live process for it, under a known status or not.
-   * A session never seen live (an agent that writes no record, a pid domain
-   * this machine can't check) is never called ended (f3 P2 K4).
+   * it: an earlier read listed it live under some pid, and a fresh, complete
+   * read (listed, no torn file) lists neither the session nor that pid live,
+   * under any session id or status. Keyed on the pid: after /clear the same
+   * process runs on under a new session id, so the old id vanishing proves
+   * nothing (QA on #75). A reused pid also reads "not ended", the safe
+   * direction. A session never seen live (an agent that writes no record, a
+   * pid domain this machine can't check) is never called ended (f3 P2 K4).
    */
   async ended(sessionId: string): Promise<boolean> {
-    const seen = this.seenLive.has(sessionId);
     const file = await this.snapshot();
-    return seen && file.listed && !file.partial && !file.states.has(sessionId) && !file.unknownStatus.has(sessionId);
+    const pids = this.seenLive.get(sessionId);
+    if (!pids || !file.listed || file.partial || file.states.has(sessionId) || file.unknownStatus.has(sessionId)) {
+      return false;
+    }
+    return ![...pids].some((pid) => file.livePids?.has(pid));
   }
 
   /** Reads the folder fresh. Concurrent callers (one per worktree group in a tick) share one read. */
@@ -262,6 +274,7 @@ export class ClaudeSessionsFile {
       states: new Map(),
       unknownStatus: new Set(),
       partial: false,
+      livePids: new Set(),
     };
 
     const dir = this.dir();
@@ -293,6 +306,7 @@ export class ClaudeSessionsFile {
     );
 
     const unknown = new Set<string>();
+    const pidsBySession = new Map<string, Set<number>>();
     for (const entry of parsed) {
       if (entry.kind === 'malformed') {
         snapshot.partial = true;
@@ -305,6 +319,9 @@ export class ClaudeSessionsFile {
       if (!this.isAlive(entry.pid)) {
         continue;
       }
+      snapshot.livePids!.add(entry.pid);
+      const sessionPids = pidsBySession.get(entry.sessionId) ?? new Set<number>();
+      pidsBySession.set(entry.sessionId, sessionPids.add(entry.pid));
       if (!entry.status || !LIVE_STATUSES.has(entry.status)) {
         unknown.add(entry.sessionId);
         continue;
@@ -329,8 +346,9 @@ export class ClaudeSessionsFile {
         snapshot.unknownStatus.add(sessionId);
       }
     }
-    for (const sessionId of [...snapshot.states.keys(), ...snapshot.unknownStatus]) {
-      this.seenLive.add(sessionId);
+    // A session listed live now is tied to the pids it is listed under now.
+    for (const [sessionId, sessionPids] of pidsBySession) {
+      this.seenLive.set(sessionId, sessionPids);
     }
     snapshot.available = snapshot.states.size > 0;
     return snapshot;

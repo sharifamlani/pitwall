@@ -169,6 +169,30 @@ test('a session has ended only when an earlier read saw it live and a complete r
   assert.equal(await sessions.ended('lab-notes'), false);
 });
 
+test('after /clear the same process runs on under a new session id: the old id never reads as ended while that pid lives (QA on #75)', async (t) => {
+  const dir = path.join(tempDir(t), 'sessions');
+  const alive = new Set([4242]);
+  writeSession(dir, { pid: 4242, sessionId: 'lab-notes', status: 'idle', statusUpdatedAt: 1 });
+  const sessions = sessionsFile(dir, alive);
+  assert.equal(await sessions.ended('lab-notes'), false, 'live');
+
+  // /clear: Claude rewrites its own <pid>.json with the new session id.
+  writeSession(dir, { pid: 4242, sessionId: 'after-clear', status: 'idle', statusUpdatedAt: 2 });
+  assert.equal(await sessions.ended('lab-notes'), false, 'pid 4242 still runs: a click must never treat its terminal as a dead shell');
+  // Under a status this build doesn't know, still the same live process.
+  writeSession(dir, { pid: 4242, sessionId: 'after-clear', status: 'compacting', statusUpdatedAt: 3 });
+  assert.equal(await sessions.ended('lab-notes'), false);
+
+  // That process exits: now the session it ran is provably gone.
+  alive.delete(4242);
+  assert.equal(await sessions.ended('lab-notes'), true);
+
+  // Its pid is reused by another live record: "not ended", the safe direction.
+  alive.add(4242);
+  writeSession(dir, { pid: 4242, sessionId: 'someone-else', status: 'busy', statusUpdatedAt: 4 });
+  assert.equal(await sessions.ended('lab-notes'), false);
+});
+
 test('an unknown status or an unreadable pid domain never reads as ended', async (t) => {
   const dir = path.join(tempDir(t), 'sessions');
   writeSession(dir, { pid: 61, sessionId: 'odd', status: 'idle', statusUpdatedAt: 1 });
