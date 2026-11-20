@@ -99,6 +99,22 @@ export class ClaudeSessionService {
   );
   /** The parse running for each transcript path, so a second caller waits for it instead of starting over. */
   private readonly parsing = new Map<string, Promise<ClaudeSession | null>>();
+  /**
+   * What the reads have done so far (`readCounters`): transcripts a listing
+   * looked at and its wait for a parse slot; parses by any caller, first
+   * (skimmed) or resumed, with the bytes each had to read and its time; reads
+   * that failed.
+   */
+  private readonly counters = {
+    files: 0,
+    slotWaitMs: 0,
+    firstParses: 0,
+    firstParseBytes: 0,
+    resumes: 0,
+    resumeBytes: 0,
+    parseMs: 0,
+    failedReads: 0,
+  };
   /** Listing parses running now, and the ones waiting for a slot. */
   private scanParses = 0;
   private readonly scanWaiting: Array<() => void> = [];
@@ -126,6 +142,11 @@ export class ClaudeSessionService {
     this.claudeDir = claudeConfigDir();
     this.projectsDir = path.join(this.claudeDir, 'projects');
     this.projectDirOverride = claudeProjectDirOverride();
+  }
+
+  /** A copy of the read counters, cumulative since the service started. */
+  readCounters(): Readonly<Record<string, number>> {
+    return { ...this.counters };
   }
 
   /** Whether a Claude profile directory exists. */
@@ -226,8 +247,13 @@ export class ClaudeSessionService {
       const filePath = path.join(projectDir, file);
       const sessionId = file.replace('.jsonl', '');
 
+      this.counters.files += 1;
+      const asked = Date.now();
       try {
-        const session = await this.inScanSlot(() => this.parseSessionFileCached(filePath, sessionId));
+        const session = await this.inScanSlot(() => {
+          this.counters.slotWaitMs += Date.now() - asked;
+          return this.parseSessionFileCached(filePath, sessionId);
+        });
         if (session) {
           sessions.push(session);
         }
@@ -357,21 +383,33 @@ export class ClaudeSessionService {
       this.parseProgress.delete(filePath);
       return null;
     }
-    const handle = await fs.promises.open(filePath, 'r');
+    const started = Date.now();
+    let handle: fs.promises.FileHandle;
+    try {
+      handle = await fs.promises.open(filePath, 'r');
+    } catch (error) {
+      this.counters.failedReads += 1;
+      throw error;
+    }
     let progress: ParseProgress | undefined;
     try {
       if (previous && (await this.continues(handle, previous, stats.size))) {
         progress = previous;
+        this.counters.resumes += 1;
+        this.counters.resumeBytes += stats.size - previous.offset;
       } else {
         // A rewritten file: the old resume point no longer holds.
         this.parseProgress.delete(filePath);
         progress = { parser: new TranscriptParser(sessionId, filePath), offset: 0, check: Buffer.alloc(0), checkAt: 0 };
+        this.counters.firstParses += 1;
+        this.counters.firstParseBytes += stats.size;
         await this.skimFirstParse(handle, progress, stats.size);
       }
       await this.parseFrom(handle, progress, stats.size);
       this.parseProgress.set(filePath, progress);
       return progress.parser.finish(stats.mtime);
     } catch (error) {
+      this.counters.failedReads += 1;
       // The lines fed so far are a prefix of the file (a skim passes over only
       // lines that cannot matter; what follows is decoded in full later), so a
       // resume point whose check names bytes the file holds is kept.
@@ -380,6 +418,7 @@ export class ClaudeSessionService {
       }
       throw error;
     } finally {
+      this.counters.parseMs += Date.now() - started;
       await handle.close().catch(() => undefined);
     }
   }

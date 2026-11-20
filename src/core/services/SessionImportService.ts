@@ -13,6 +13,7 @@ import { deepestContainingRoot, samePath } from '../utils/paths';
 import { truncateName } from '../utils/text';
 import { Scope, WorktreeCatalog } from './WorktreeCatalog';
 import { StorageService, importedChatId } from './StorageService';
+import { StepTimer, describeCounters } from '../utils/stepTimer';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** A new UI placeholder links quickly; after this it moves to the slow scan. */
@@ -490,6 +491,7 @@ export class SessionImportService implements vscode.Disposable {
     try {
       const settings = this.readSettings();
       const now = Date.now();
+      const timer = new StepTimer();
       const full = this.fullQueued;
       this.fullQueued = false;
       const hot = !full && this.hasHotExpectation(now);
@@ -502,7 +504,9 @@ export class SessionImportService implements vscode.Disposable {
       if (adapters.length === 0) {
         return;
       }
+      timer.step('adapters');
       const scopes = await this.catalog.scopesAsync();
+      timer.step('worktrees');
       const chats = this.storageService.getChats();
       this.restorePendingUiExpectations(scopes, chats);
 
@@ -518,13 +522,27 @@ export class SessionImportService implements vscode.Disposable {
 
       const retentionMs = settings.retentionDays * DAY_MS;
       const starred = this.storageService.getStarredChatIds();
-      const listings = await this.listRepositorySessions(scopes, adapters);
+      const counters = new Map(adapters.map((adapter) => [adapter.id, adapter.readCounters?.()] as const));
+      const listingStarted = Date.now();
+      const adapterMs = new Map<string, number>();
+      const listings = await this.listRepositorySessions(scopes, adapters, (adapter) =>
+        adapterMs.set(adapter.id, Math.max(adapterMs.get(adapter.id) ?? 0, Date.now() - listingStarted))
+      );
+      timer.step('listing');
       const listedMs = Date.now() - now;
       if (!this.firstScanLogged || listedMs >= SLOW_SCAN_MS) {
         this.firstScanLogged = true;
+        // Per step and per adapter, with what each adapter read meanwhile, so
+        // a slow scan names its cause (#79 gate: 15–27 s scans).
+        const perAdapter = adapters.map((adapter) => {
+          const before = counters.get(adapter.id);
+          const reads = before && adapter.readCounters ? describeCounters(before, adapter.readCounters()) : '';
+          return `${adapter.id} ${adapterMs.get(adapter.id) ?? 0} ms${reads ? ` [${reads}]` : ''}`;
+        });
         this.log(
           `[Pitwall] import scan: ${scopes.length} repos, ` +
-            `${listings.reduce((sum, listing) => sum + listing.sessions.length, 0)} sessions, ${listedMs} ms`
+            `${listings.reduce((sum, listing) => sum + listing.sessions.length, 0)} sessions, ${listedMs} ms ` +
+            `(${timer.describe()}; ${perAdapter.join(', ')}; host CPU ${timer.cpuMs()} ms)`
         );
       }
       this.onSessionsListed(listings.flatMap((listing) => listing.sessions));
@@ -598,7 +616,9 @@ export class SessionImportService implements vscode.Disposable {
    */
   private async listRepositorySessions(
     scopes: Scope[],
-    adapters: HarnessAdapter[]
+    adapters: HarnessAdapter[],
+    /** Called as each listing ends, for the scan's per-adapter time. */
+    onListed: (adapter: HarnessAdapter) => void = () => undefined
   ): Promise<Array<{ scope: Scope; adapter: HarnessAdapter; sessions: HarnessSession[] }>> {
     const listings = await Promise.all(
       scopes.flatMap((scope) =>
@@ -615,6 +635,8 @@ export class SessionImportService implements vscode.Disposable {
               error
             );
             return [];
+          } finally {
+            onListed(adapter);
           }
         })
       )

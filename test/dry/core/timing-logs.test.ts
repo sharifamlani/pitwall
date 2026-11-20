@@ -41,7 +41,7 @@ function attention(readMs: number) {
   return { chat, service, log };
 }
 
-test('a status poll of 500 ms or more is logged with its time and the chats it read; a quick one is not', async (t) => {
+test('a status poll of 500 ms or more is logged with its time, the chats it read and each step\'s time; a quick one is not', async (t) => {
   const quick = attention(0);
   t.after(() => quick.service.dispose());
   await quick.service.poll();
@@ -51,10 +51,12 @@ test('a status poll of 500 ms or more is logged with its time and the chats it r
   t.after(() => slow.service.dispose());
   await slow.service.poll();
   assert.equal(slow.log.length, 1);
-  assert.match(slow.log[0], /^\[Pitwall\] status poll took \d{3,} ms \(1 chats read\)$/);
+  const line = slow.log[0].match(/^\[Pitwall\] status poll took \d{3,} ms \(1 chats read; live ids \d+ ms, unlisted \d+ ms, states (\d+) ms, judge \d+ ms; loop held \d+ ms, host CPU \d+ ms\)$/);
+  assert.ok(line, slow.log[0]);
+  assert.ok(Number(line[1]) >= 500, 'the slow step is named: the live-state reads');
 });
 
-test('the first full import scan logs its repos, sessions and time; a later quick one does not', async (t) => {
+test('the first full import scan logs its repos, sessions, time and each step\'s time; a later quick one does not', async (t) => {
   const storage = makeStorage();
   const repo = storage.addRepository('demo', '/work/demo');
   const worktree = worktreeRecord({ id: 'wt-main', repoId: repo.id, path: '/work/demo' });
@@ -76,7 +78,7 @@ test('the first full import scan logs its repos, sessions and time; a later quic
   t.after(() => service.dispose());
   service.start();
   await waitFor(() => log.length > 0, 'the first full scan');
-  assert.match(log[0], /^\[Pitwall\] import scan: 1 repos, 2 sessions, \d+ ms$/);
+  assert.match(log[0], /^\[Pitwall\] import scan: 1 repos, 2 sessions, \d+ ms \(adapters \d+ ms, worktrees \d+ ms, listing \d+ ms; claude \d+ ms; host CPU \d+ ms\)$/);
 
   let listed = 0;
   registry.get('claude').listSessionsForRepository = async () => {
@@ -94,7 +96,43 @@ test('the first full import scan logs its repos, sessions and time; a later quic
   };
   service.wake();
   await waitFor(() => log.length > 1, 'the slow scan logged', 5_000);
-  assert.match(log[1], /^\[Pitwall\] import scan: 1 repos, 2 sessions, \d{3,} ms$/);
+  const slow = log[1].match(/^\[Pitwall\] import scan: 1 repos, 2 sessions, \d{3,} ms \(adapters \d+ ms, worktrees \d+ ms, listing (\d+) ms; claude (\d+) ms; host CPU \d+ ms\)$/);
+  assert.ok(slow, log[1]);
+  assert.ok(Number(slow[1]) >= 500 && Number(slow[2]) >= 500, 'the slow step is named: the listing, by claude');
+});
+
+test('an import scan names what each adapter read meanwhile, from its counters', async (t) => {
+  const storage = makeStorage();
+  const repo = storage.addRepository('demo', '/work/demo');
+  const worktree = worktreeRecord({ id: 'wt-main', repoId: repo.id, path: '/work/demo' });
+  const git = {
+    listRepositoryWorktrees: () => ({ isGit: true, worktrees: [worktree] }),
+    listRepositoryWorktreesAsync: async () => ({ isGit: true, worktrees: [worktree] }),
+  };
+  const sessions = [sessionRecord('claude', 's1', { cwd: worktree.path })];
+  const counters = { files: 10, firstParses: 0, firstParseBytes: 0, parseMs: 0 };
+  const registry = new HarnessRegistry([
+    fakeAdapter('claude', {
+      listSessionsForRepository: async () => {
+        counters.files += 3;
+        counters.firstParses += 1;
+        counters.firstParseBytes += 2 * 1048576;
+        counters.parseMs += 40;
+        return sessions;
+      },
+      readCounters: () => ({ ...counters }),
+    }),
+  ]);
+  const log: string[] = [];
+  const service = new SessionImportService(storage, new WorktreeCatalog(storage, git as never), registry, {
+    scanIntervalMs: 60_000,
+    readSettings: () => ({ enabled: true, retentionDays: 7 }),
+    log: (line) => log.push(line),
+  });
+  t.after(() => service.dispose());
+  service.start();
+  await waitFor(() => log.length > 0, 'the first full scan');
+  assert.match(log[0], /; claude \d+ ms \[files 3, firstParses 1, firstParse 2\.0 MB, parse 40 ms\]; host CPU \d+ ms\)$/);
 });
 
 test('discovery logs its first pass, then only a pass that adds a repo or takes 500 ms or more', async (t) => {
@@ -125,7 +163,7 @@ test('discovery logs its first pass, then only a pass that adds a repo or takes 
   await service.scan();
   assert.equal(log.length, 2, 'the first pass logs its start and finish');
   assert.equal(log[0], '[Pitwall] discovery started');
-  assert.match(log[1], /^\[Pitwall\] discovery finished: 1 repos \(1 new\), 1 sessions, 0 skipped, \d+ ms$/);
+  assert.match(log[1], /^\[Pitwall\] discovery finished: 1 repos \(1 new\), 1 sessions, 0 skipped, \d+ ms \(folders \d+ ms, roots \d+ ms; host CPU \d+ ms\)$/);
 
   await service.scan();
   assert.equal(log.length, 2, 'a quick pass that adds nothing is not logged');
@@ -133,10 +171,12 @@ test('discovery logs its first pass, then only a pass that adds a repo or takes 
   folders.push({ cwd: repos[1], firstEntryAt: Date.now(), lastActivity: Date.now() });
   await service.scan();
   assert.equal(log.length, 3, 'a pass that adds a repo logs its finish only');
-  assert.match(log[2], /^\[Pitwall\] discovery finished: 2 repos \(1 new\), 2 sessions, 0 skipped, \d+ ms$/);
+  assert.match(log[2], /^\[Pitwall\] discovery finished: 2 repos \(1 new\), 2 sessions, 0 skipped, \d+ ms \(folders \d+ ms, roots \d+ ms; host CPU \d+ ms\)$/);
 
   delayMs = 550;
   await service.scan();
   assert.equal(log.length, 4, 'a slow pass is logged');
-  assert.match(log[3], /^\[Pitwall\] discovery finished: 2 repos \(0 new\), 2 sessions, 0 skipped, \d{3,} ms$/);
+  const slow = log[3].match(/^\[Pitwall\] discovery finished: 2 repos \(0 new\), 2 sessions, 0 skipped, \d{3,} ms \(folders (\d+) ms, roots \d+ ms; host CPU \d+ ms\)$/);
+  assert.ok(slow, log[3]);
+  assert.ok(Number(slow[1]) >= 500, 'the slow step is named: the folders the adapters found');
 });

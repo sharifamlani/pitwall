@@ -149,6 +149,11 @@ export class ClaudeHarness implements HarnessAdapter {
     return sessions.map(toHarnessSession);
   }
 
+  /** The transcript reads the session service has done (files listed, parses, bytes, time). */
+  readCounters(): Readonly<Record<string, number>> {
+    return this.sessionService.readCounters();
+  }
+
   async listSessionsForRepository(
     repoRootPath: string,
     worktreePaths: string[]

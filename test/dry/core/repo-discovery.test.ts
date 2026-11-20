@@ -403,7 +403,7 @@ test('with the list hidden, each discovery pass writes a timestamped start and a
   const stamp = /^\[(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\] /;
   assert.match(started ?? '', stamp, 'the start is timestamped');
   assert.match(finished()!, stamp, 'the finish is timestamped');
-  assert.match(finished()!, /\] \[Pitwall\] discovery finished: 2 repos \(2 new\), 3 sessions, 0 skipped, \d+ ms$/);
+  assert.match(finished()!, /\] \[Pitwall\] discovery finished: 2 repos \(2 new\), 3 sessions, 0 skipped, \d+ ms \(folders \d+ ms, roots \d+ ms; host CPU \d+ ms\)$/);
   assert.ok(operations().indexOf(started!) < operations().indexOf(finished()!), 'start before finish');
   assert.ok(!operations().some((line) => line.includes(profile.root)), 'no paths in the log');
 });
