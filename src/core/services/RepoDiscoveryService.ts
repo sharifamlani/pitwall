@@ -14,6 +14,8 @@ const DEFAULT_INTERVAL_MS = 60_000;
 const ROOT_TTL_MS = 10 * 60_000;
 /** P3: discovery and import share one window. */
 const DEFAULT_RETENTION_DAYS = 14;
+/** A pass after the first is logged only when it adds a repo or takes at least this long. */
+export const SLOW_PASS_MS = 500;
 
 export interface RepoDiscoveryOptions {
   /** `pitwall.discovery.enabled`. */
@@ -65,6 +67,8 @@ export class RepoDiscoveryService implements vscode.Disposable {
   private readonly roots = new BoundedCache<string, { root: string | null; at: number }>(2_000);
   private inFlight: Promise<RepoDiscoveryResult> | undefined;
   private started = false;
+  /** The first pass that ran has been logged; later ones log only when they matter. */
+  private firstLogged = false;
   private timer: NodeJS.Timeout | undefined;
   private readonly disposables: vscode.Disposable[] = [];
   private disposed = false;
@@ -160,9 +164,15 @@ export class RepoDiscoveryService implements vscode.Disposable {
         return result;
       }
       // Timestamped in the Operations log (the view may be hidden), so a
-      // pass can be timed and matched to the extension host's CPU.
+      // pass can be timed and matched to the extension host's CPU. The first
+      // pass logs its start and end; a later one (every minute) logs its end
+      // only when it adds a repo or is slow, so the log stays readable.
       started = Date.now();
-      this.log('[Pitwall] discovery started');
+      const first = !this.firstLogged;
+      this.firstLogged = true;
+      if (first) {
+        this.log('[Pitwall] discovery started');
+      }
       const counts: DiscoveryCounts = { skipped: 0, sessions: 0 };
       const sinceMs = this.now() - this.retentionDays() * DAY_MS;
       const folders = await this.discoverFolders(sinceMs, counts);
@@ -203,10 +213,13 @@ export class RepoDiscoveryService implements vscode.Disposable {
       }
       result.skipped = counts.skipped;
       // Counts only: paths are the user's folders, not log material.
-      this.log(
-        `[Pitwall] discovery finished: ${found.length} repos (${result.added.length} new), ` +
-          `${counts.sessions ?? 0} sessions, ${result.skipped} skipped, ${Date.now() - started} ms`
-      );
+      const tookMs = Date.now() - started;
+      if (first || result.added.length > 0 || tookMs >= SLOW_PASS_MS) {
+        this.log(
+          `[Pitwall] discovery finished: ${found.length} repos (${result.added.length} new), ` +
+            `${counts.sessions ?? 0} sessions, ${result.skipped} skipped, ${tookMs} ms`
+        );
+      }
       if (result.added.length > 0) {
         this.onAdded(result.added);
       }

@@ -260,4 +260,6 @@ test(`a wait that begins during the first import of ${REPOS} discovered repos st
   assert.ok(result.needsLag !== undefined && result.needsLag <= LAG_LIMIT_MS, `working→needs lag ${result.needsLag} ms > ${LAG_LIMIT_MS} ms`);
   assert.ok(result.finishedLag !== undefined && result.finishedLag <= LAG_LIMIT_MS, `working→finished lag ${result.finishedLag} ms > ${LAG_LIMIT_MS} ms`);
   assert.ok(result.needsPopup, 'the needs-you pop-up was judged');
+  // The import reads in chunks with a yield between each; whole-file parses held the host 0.6–1 s.
+  assert.ok(maxBlockMs < 200, `the first import held the event loop for ${maxBlockMs} ms`);
 });

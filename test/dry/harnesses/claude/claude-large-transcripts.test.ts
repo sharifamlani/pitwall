@@ -131,3 +131,43 @@ test('a line still being written is read once it is complete, and a rewritten tr
   fs.utimesSync(file, new Date(), new Date(Date.now() + 5_000));
   assert.deepEqual((await parse()).recentUserPrompts.map((prompt) => prompt.text), ['Again']);
 });
+
+/** Transcript lines for `values`, as Claude appends them. */
+const lines = (repo: string, values: object[]) =>
+  values.map((value) => `${JSON.stringify({ cwd: repo, sessionId: SESSION_ID, ...value })}\n`).join('');
+
+test('two parses of a grown transcript at once each read like a fresh parse (neither feeds the other its lines)', async (t) => {
+  const profile = claudeProfile(t);
+  const repo = profile.dir('repo');
+  const file = profile.write(SESSION_ID, repo, [entry.user('First ask')]);
+  fs.appendFileSync(file, bulk(repo, 2));
+  const service = new ClaudeSessionService();
+  await service.findSessionsForWorktree(repo);
+
+  // Several read chunks of growth, so the two parses are under way at the same time.
+  fs.appendFileSync(file, bulk(repo, 4) + lines(repo, [entry.user('Second ask'), entry.assistant('ok'), entry.user('Third ask')]));
+  const [left, right] = await Promise.all([service.getSessionById(SESSION_ID), service.getSessionById(SESSION_ID)]);
+  const [fresh] = await new ClaudeSessionService().findSessionsForWorktree(repo);
+  assert.deepEqual(left, fresh, 'the first concurrent parse');
+  assert.deepEqual(right, fresh, 'the second concurrent parse');
+  assert.deepEqual(fresh.recentUserPrompts.map((prompt) => prompt.text), ['step', 'Second ask', 'Third ask']);
+
+  // The progress they leave behind still resumes correctly.
+  fs.appendFileSync(file, lines(repo, [entry.user('Fourth ask')]));
+  const [next] = await service.findSessionsForWorktree(repo);
+  assert.deepEqual(next, (await new ClaudeSessionService().findSessionsForWorktree(repo))[0]);
+});
+
+test('a session from an earlier parse keeps its prompts after the parse resumes', async (t) => {
+  const profile = claudeProfile(t);
+  const repo = profile.dir('repo');
+  const file = profile.write(SESSION_ID, repo, [entry.user('First ask'), entry.assistant('done')]);
+  const service = new ClaudeSessionService();
+  const [before] = await service.findSessionsForWorktree(repo);
+  assert.deepEqual(before.recentUserPrompts.map((prompt) => prompt.text), ['First ask']);
+
+  fs.appendFileSync(file, lines(repo, [entry.user('Second ask'), entry.user('Third ask'), entry.user('Fourth ask')]));
+  const [after] = await service.findSessionsForWorktree(repo);
+  assert.deepEqual(after.recentUserPrompts.map((prompt) => prompt.text), ['Second ask', 'Third ask', 'Fourth ask']);
+  assert.deepEqual(before.recentUserPrompts.map((prompt) => prompt.text), ['First ask'], 'the earlier session is unchanged');
+});
