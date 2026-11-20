@@ -82,6 +82,13 @@ export interface ChatRouterDeps {
   repoName: (folder: string) => string;
   /** Whether the chat's terminal or agent-UI tab is open in this window (a click then reveals it here). */
   isOpenHere: (chat: ChatSession) => boolean;
+  /**
+   * Forget this window's Pitwall terminal for the chat when its agent has
+   * exited and only the shell is left (f3 P2 K4), so `isOpenHere` never counts
+   * a dead shell as the chat. Asked before every `isOpenHere` that decides an
+   * open; true when it released one.
+   */
+  releaseExited?: (chat: ChatSession) => Promise<boolean>;
   /** This window's row for a native session, if it has one. */
   chatForSession: (sessionId: string) => ChatSession | undefined;
   /**
@@ -225,6 +232,28 @@ export class ChatRouter implements vscode.Disposable {
   }
 
   /**
+   * Whether an open of this chat belongs to another window: it has a native
+   * session to hand over and its launch folder (D35) is not this window's, or
+   * is gone (the route then says so). An explicit Open in <agent> UI asks this
+   * and, when true, routes like a row click instead of opening a panel here
+   * for another folder (f3 FAIL A).
+   */
+  async opensElsewhere(chat: ChatSession, worktree?: Worktree): Promise<boolean> {
+    if (!this.canHandOff(chat)) {
+      return false;
+    }
+    const folder = await this.launchFolder(chat, worktree);
+    return Boolean(folder && !this.isThisWindow(folder));
+  }
+
+  /** Release a dead Pitwall shell for the chat before deciding whether it is open here (f3 P2 K4). */
+  private async releaseExited(chat: ChatSession): Promise<void> {
+    if (await this.deps.releaseExited?.(chat).catch(() => false)) {
+      this.log(`[Pitwall] released ${(chat.harnessSessionId ?? chat.id).slice(0, 8)} (its terminal agent exited)`);
+    }
+  }
+
+  /**
    * The one-process guard for an explicit open that starts a process here
    * (Open in Terminal, Open in <agent> UI, and a UI refusal's terminal
    * fallback), for a chat with no tab or terminal Pitwall knows of in this
@@ -360,7 +389,9 @@ export class ChatRouter implements vscode.Disposable {
       // One agent process per session. Where the session is live decides
       // first: Claude files a transcript under the session's current folder,
       // which moves with EnterWorktree, so the launch folder alone would start
-      // a second process beside the live one.
+      // a second process beside the live one. A Pitwall terminal whose agent
+      // exited is a shell, not the chat: released first (f3 P2 K4).
+      await this.releaseExited(chat);
       if (this.deps.isOpenHere(chat)) {
         this.logRoute(id, 'here', 'open-here');
         local.push({ chat, worktree: { ...worktree, path: this.deps.windowFolder() ?? worktree.path } });
@@ -521,6 +552,24 @@ export class ChatRouter implements vscode.Disposable {
       // panel with an unbound tab is brought forward without a process; any
       // other live process is not this window's and is never opened a second
       // time (Q28).
+      //
+      // A Pitwall terminal here whose agent exited was the only reason the
+      // sender sent it here (this window's heartbeat listed it): released, the
+      // chat is opened as a click would open it, in its own folder's window
+      // (f3 P2 K4), never brought forward on the dead shell.
+      if (chat && (await this.deps.releaseExited?.(chat).catch(() => false))) {
+        this.log(`[Pitwall] released ${sessionId.slice(0, 8)} (its terminal agent exited)`);
+        const where = await this.routeNow({ kind: 'open', chats: [chat] }, { keepListFocus: false });
+        if (where === 'outside') {
+          outside++;
+          return false;
+        }
+        if (where === 'gone') {
+          failed.push(sessionId.slice(0, 8));
+          return false;
+        }
+        return true;
+      }
       const live = chat && this.deps.isOpenHere(chat) ? undefined : await this.deps.outsideTerminal?.(sessionId).catch(() => undefined);
       if (live?.here) {
         if (await this.revealLive(chat, sessionId)) {

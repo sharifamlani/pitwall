@@ -74,7 +74,7 @@ export interface ChatCommandDeps {
   removeChats: (chatIds: string[], options?: { rememberSession?: boolean }) => string[];
   refreshTree: () => void;
   /** The chat router (T3), once built: a row open lands in its folder's window. */
-  router?: () => (Pick<ChatRouter, 'route'> & Partial<Pick<ChatRouter, 'launchFolder' | 'guardLive'>>) | undefined;
+  router?: () => (Pick<ChatRouter, 'route'> & Partial<Pick<ChatRouter, 'launchFolder' | 'guardLive' | 'opensElsewhere'>>) | undefined;
   /** Every listed chat with this row status and when it entered it, oldest first (the jump list, Q38). */
   statusList?: (status: 'needs' | 'working' | 'finished') => Array<{ chatId: string; since: number }>;
   /** Why a waiting chat waits ("permission prompt"), for the jump list's meta. */
@@ -554,6 +554,21 @@ export function registerChatCommands(
   const heldByLiveProcess = async (chat: ChatSession): Promise<boolean> =>
     (await deps.router?.()?.guardLive?.(chat)) !== undefined;
 
+  /** A chat's short id for the Operations log. */
+  const id8 = (chat: ChatSession): string => (chat.harnessSessionId ?? chat.id).slice(0, 8);
+
+  /**
+   * A Pitwall terminal whose agent exited is a shell, not the chat (f3 P2
+   * K4): forget it before any open decides by `isActive`, so no path focuses
+   * the dead shell or offers to close it. Every open in this window asks it
+   * first (the router asks it on its own paths).
+   */
+  const releaseExited = async (chat: ChatSession): Promise<void> => {
+    if (await terminalManager.releaseExitedAgent(chat.id).catch(() => false)) {
+      deps.log?.(`[Pitwall] released ${id8(chat)} (its terminal agent exited)`);
+    }
+  };
+
   /**
    * Hand an existing session to its harness's native UI. Shared by the
    * explicit Open in ... commands and the row click (which reveals an open
@@ -569,6 +584,7 @@ export function registerChatCommands(
     options: { explicit?: boolean } = {}
   ): Promise<boolean> => {
     pitwallOpens += 1;
+    await releaseExited(chat);
     const adapter = harnessRegistry.get(chat.harness);
     const surfaces = nativeUi.surfaces;
     if (!nativeUi.isInstalled()) {
@@ -598,12 +614,22 @@ export function registerChatCommands(
       vscode.window.showInformationMessage('This session is still starting. Try again in a moment.');
       return false;
     }
-    // An explicit Open in <agent> UI skips the router, so it asks the router's
-    // guard here, before the UI's resume (a new panel process) or a refusal's
-    // terminal fallback. A row click reaches this through the router, which
-    // already asked. Pitwall's own terminal is the user's to move (below).
-    if (!open && options.explicit && !terminalManager.isActive(chat.id) && (await heldByLiveProcess(chat))) {
-      return false;
+    // An explicit Open in <agent> UI skips the router, so it asks the router
+    // here, before the UI's resume (a new panel process) or a refusal's
+    // terminal fallback: a chat whose folder is another (or no) window's goes
+    // there exactly as a row click does (f3 FAIL A: the menu did nothing for
+    // a stopped chat whose window was closed), and one live elsewhere is held
+    // by the router's guard. A row click reaches this through the router,
+    // which already asked. Pitwall's own terminal is the user's to move (below).
+    if (!open && options.explicit && !terminalManager.isActive(chat.id)) {
+      const router = deps.router?.();
+      if (router?.opensElsewhere && (await router.opensElsewhere(chat, worktree))) {
+        deps.log?.(`[Pitwall] open ${id8(chat)} → its window (explicit ui)`);
+        return (await router.route({ kind: 'open', chats: [chat] })) === 'here';
+      }
+      if (await heldByLiveProcess(chat)) {
+        return false;
+      }
     }
     if (!open) {
       // A session the UI can't resume opens a blank tab there (Q23): say why
@@ -742,6 +768,7 @@ export function registerChatCommands(
   ): Promise<'here' | 'terminal' | 'failed'> => {
     const nativeUi = harnessRegistry.get(chat.harness).nativeUi;
     const sessionId = chatPrimarySessionId(chat);
+    await releaseExited(chat);
     const terminalOpen = terminalManager.isActive(chat.id);
     // The panels follow the chat's own worktree, never the launch folder it opened in.
     const listed = workspacesProvider.getWorktreeById(chat.worktreeId) ?? worktree;
@@ -982,6 +1009,7 @@ export function registerChatCommands(
       return;
     }
 
+    await releaseExited(chat);
     if (!terminalManager.isActive(chat.id)) {
       if (chat.pendingUiLaunch) {
         const confirm = await vscode.window.showWarningMessage(
@@ -1020,6 +1048,7 @@ export function registerChatCommands(
       }
     }
 
+    deps.log?.(`[Pitwall] open ${id8(chat)} → terminal (explicit)`);
     await openInTerminal(chat, worktree);
   });
 
@@ -1265,7 +1294,6 @@ export function registerChatCommands(
   // Row 5.4: the bottom-bar counts, the jump list behind them, Ctrl+Alt+0 and Next ▸.
   const NOBODY_WAITING = 'Nobody is waiting on you right now.';
   const NOTHING_LEFT = 'Nothing left in this list.';
-  const id8 = (chat: ChatSession): string => (chat.harnessSessionId ?? chat.id).slice(0, 8);
 
   /**
    * Open a listed chat through the router (a routed open lands in its

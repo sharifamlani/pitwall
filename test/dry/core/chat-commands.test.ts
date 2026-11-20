@@ -57,7 +57,7 @@ function disposeAll(subscriptions: { dispose(): unknown }[]): void {
 function setup(
   t: { after(fn: () => void): void },
   /** `surface` is the defaultSessionSurface setting; null leaves it unset (the shipped default). */
-  options: { notInstalled?: HarnessId[]; surface?: 'terminal' | 'ui' | null; extra?: Partial<ChatCommandDeps> } = {}
+  options: { notInstalled?: HarnessId[]; surface?: 'terminal' | 'ui' | null; extra?: Partial<ChatCommandDeps>; agentStartGraceMs?: number } = {}
 ) {
   const surface = options.surface === undefined ? 'terminal' : options.surface;
   if (surface) {
@@ -134,7 +134,12 @@ function setup(
   const activated: string[] = [];
   const registrations: string[] = [];
   const watchers = { registerPendingChat: (_h: HarnessId, chatId: string) => registrations.push(chatId) };
-  const terminals = new TerminalManager(storage, registry, watchers as never);
+  const terminals = new TerminalManager(
+    storage,
+    registry,
+    watchers as never,
+    options.agentStartGraceMs === undefined ? {} : { agentStartGraceMs: options.agentStartGraceMs }
+  );
   const catalog = new WorktreeCatalog(storage, git as never);
   const importer = new SessionImportService(storage, catalog, registry, {
     scanIntervalMs: 10,
@@ -151,7 +156,7 @@ function setup(
   const context = { subscriptions, extensionUri: vscode.Uri.file('/extension') } as never;
   // A pending list-focus hold (its timer) ends with the test, as it does with the extension.
   t.after(() => disposeAll(subscriptions));
-  registerChatCommands(context, {
+  const commands = registerChatCommands(context, {
     storageService: storage,
     gitService: git as never,
     terminalManager: terminals,
@@ -182,7 +187,7 @@ function setup(
   vscode.commands.registerCommand('pitwall.refreshWorkspaces', () => undefined);
 
   return {
-    storage, main, feature, folder, folderRepo, worktrees, missing, sessions, adapters, terminals, subscriptions,
+    storage, main, feature, folder, folderRepo, worktrees, missing, sessions, adapters, terminals, subscriptions, commands,
     claudeUi, codexUi, shown, activated, registrations, needingYou, selectedRows, active,
     /** A chat in a worktree (main by default), linked when `sessionId` is given. */
     chat(harness: HarnessId, name: string, sessionId: string | null = null, worktree = main): ChatSession {
@@ -2017,4 +2022,174 @@ test("Open in Claude UI on a live chat the panel can't resume never falls back t
 
   await runCommand('pitwall.openClaudeUi', f.row(f.chat('claude', 'SDK, idle', 'claude-sdk-idle')));
   assert.deepEqual(stub.window.terminals.map((terminal) => terminal.sent[0]), ['claude --resume claude-sdk-idle'], 'live nowhere: the refusal still resumes it in a terminal');
+});
+
+// ---- 0.6.0 RC real-use walk (f3): stopped chats never no-op and never land on a dead terminal ----
+
+const LAB_ID = '23c80023-0000-4000-8000-000000000001';
+const OTHER_LAB_ID = '23c80023-0000-4000-8000-000000000002';
+
+/**
+ * The session commands wired to a real router whose opens here are the
+ * commands' own (`openChatHere`), whose "open here" is the real one (a mapped
+ * Pitwall terminal or a bound panel tab) and which releases a Pitwall terminal
+ * whose agent exited, as the extension wires it. The harness's record says
+ * which sessions ended (`ended`); handoffs are recorded, not written.
+ */
+function wired(t: TestContext, options: { surface?: 'terminal' | 'ui'; agentStartGraceMs?: number } = {}) {
+  let router: ChatRouter | undefined;
+  const logs: string[] = [];
+  const f = setup(t, {
+    surface: options.surface,
+    agentStartGraceMs: options.agentStartGraceMs ?? 0,
+    extra: { router: () => router, log: (line) => logs.push(line) },
+  });
+  const ended = new Set<string>();
+  f.adapters.claude.sessionEnded = async (id) => ended.has(id);
+  const sent: { folder: string; kind: string; sessionIds: string[] }[] = [];
+  const raised: string[] = [];
+  vscode.commands.registerCommand('vscode.openFolder', (uri: vscode.Uri) => void raised.push(uri.fsPath));
+  const inbox = {
+    pending: async () => undefined,
+    send: async (folder: string, req: { kind: string; sessionIds: string[] }) => (sent.push({ folder, ...req }), `nonce-${sent.length}`),
+    outcome: async () => ({ ok: true }),
+    expire: async () => true,
+    complete: async () => undefined,
+  };
+  router = new ChatRouter({
+    services: () => ({ inbox: inbox as never, registry: { windowsFor: async () => [], windows: async () => [] } }),
+    windowFolder: () => f.main.path,
+    harnessRegistry: { has: () => true, get: () => ({}) as never, all: () => [] },
+    worktreeOf: async (chat) => [...f.worktrees, f.folder].find((worktree) => worktree.id === chat.worktreeId),
+    rootsOf: (worktree) => [worktree.path],
+    repoName: () => 'uj-lab-c',
+    isOpenHere: (chat) =>
+      f.terminals.isActive(chat.id) || Boolean(chat.harnessSessionId && f.claudeUi.nativeUi.surfaces?.isOpen(chat.harnessSessionId)),
+    releaseExited: (chat) => f.terminals.releaseExitedAgent(chat.id),
+    chatForSession: (sessionId) => f.storage.getChats().find((chat) => chat.harnessSessionId === sessionId),
+    openHere: async (chat, worktree, { keepListFocus }) => {
+      const opened = await f.commands.openChatHere(chat, worktree, keepListFocus);
+      return opened === 'failed' ? false : opened === 'terminal' ? 'terminal' : true;
+    },
+    startNew: async () => false,
+    outsideTerminal: async () => undefined,
+    log: (line) => logs.push(line),
+    timing: { pollMs: 5 },
+  });
+  t.after(() => router?.dispose());
+  /** A repo folder on disk that no window shows (uj-lab-c with its window closed). */
+  const windowless = (): Worktree => {
+    const lab = worktreeRecord({ id: 'wt-lab', repoId: f.folderRepo.id, name: 'uj-lab-c', path: tempDir(t, 'uj-lab-c-') });
+    f.worktrees.push(lab);
+    return lab;
+  };
+  const liveTerminals = () => (stub.window.terminals as FakeTerminal[]).filter((terminal) => !terminal.disposed);
+  return { ...f, router: () => router!, logs, ended, sent, raised, windowless, liveTerminals };
+}
+
+test("Open in Claude UI on a stopped chat whose folder has no open window hands it to that folder's window, like the row click (f3 FAIL A)", async (t) => {
+  const f = wired(t, { surface: 'ui' });
+  const lab = f.windowless();
+  const clicked = f.chat('claude', 'Lab Notes (row click)', OTHER_LAB_ID, lab);
+  const menu = f.chat('claude', 'Lab Notes', LAB_ID, lab);
+
+  // The row click, which the walk saw work: a cold handoff to uj-lab-c.
+  await runCommand('pitwall.openChat', f.row(clicked));
+  // The explicit menu on the same kind of chat must route the same way.
+  await runCommand('pitwall.openClaudeUi', f.row(menu));
+
+  assert.deepEqual(
+    f.sent,
+    [
+      { folder: lab.path, kind: 'open', sessionIds: [OTHER_LAB_ID] },
+      { folder: lab.path, kind: 'open', sessionIds: [LAB_ID] },
+    ],
+    "each is handed to its folder's window"
+  );
+  assert.deepEqual(f.raised, [lab.path, lab.path], 'that window is raised, or opened cold');
+  assert.deepEqual(f.claudeUi.opened, [], "no panel for another folder's chat in this window");
+  assert.equal(stub.window.terminals.length, 0, 'no terminal either: never a second process');
+  assert.ok(f.logs.includes(`[Pitwall] open ${LAB_ID.slice(0, 8)} → its window (explicit ui)`), 'the menu path logs what it did');
+  assert.ok(f.logs.includes(`[Pitwall] route ${LAB_ID.slice(0, 8)} → ${lab.path} (handoff)`));
+});
+
+test('Open in Claude UI on a stopped chat whose folder is gone says so; it never does nothing', async (t) => {
+  const f = wired(t, { surface: 'ui' });
+  const gone = worktreeRecord({ id: 'wt-gone', repoId: f.folderRepo.id, name: 'gone', path: `${tempDir(t, 'gone-')}-deleted` });
+  f.worktrees.push(gone);
+  await runCommand('pitwall.openClaudeUi', f.row(f.chat('claude', 'Gone', LAB_ID, gone)));
+  assert.ok(shown(`That chat's folder is gone: ${gone.path}`));
+  assert.deepEqual([f.sent, f.claudeUi.opened, stub.window.terminals.length], [[], [], 0]);
+});
+
+test('a click on a chat whose Pitwall terminal is a dead shell opens it with one new process; a live one is only focused (f3 FAIL B)', async (t) => {
+  const f = wired(t, { surface: 'ui' });
+  const chat = f.chat('claude', 'Lab Notes', 'lab-notes');
+  // P5: Open Session in Terminal.
+  await runCommand('pitwall.openChatInTerminal', f.row(chat));
+  const shell = f.lastTerminal();
+  assert.deepEqual(shell.sent, ['claude --resume lab-notes']);
+  assert.ok(f.logs.includes('[Pitwall] open lab-note → terminal (explicit)'), 'the menu path logs its open');
+
+  // Live: a row click, Ctrl+Alt+0 and a pop-up click (the router's route) focus it, nothing new.
+  f.needingYou.push(chat.id);
+  const shownBefore = shell.shown;
+  await runCommand('pitwall.openChat', f.row(chat));
+  await runCommand('pitwall.openNextSessionNeedingYou');
+  await f.router().route({ kind: 'open', chats: [f.storage.getChat(chat.id)!] });
+  assert.equal(shell.shown, shownBefore + 3, 'its live terminal, focused each time');
+  assert.deepEqual([f.claudeUi.opened, f.liveTerminals().length], [[], 1]);
+
+  // /exit: the tab stays with a shell prompt; the agent is gone. A pop-up click:
+  f.ended.add('lab-notes');
+  const before = f.logs.length;
+  await f.router().route({ kind: 'open', chats: [f.storage.getChat(chat.id)!] });
+  const after = f.logs.slice(before);
+  assert.ok(shell.disposed, 'the dead shell no longer stands in for the chat');
+  assert.deepEqual(f.claudeUi.opened, [{ sessionId: 'lab-notes', cwd: f.main.path }], 'the panel default for a stopped chat: one new process');
+  assert.equal(f.liveTerminals().length, 0, 'and no terminal beside it');
+  assert.deepEqual(after, ['[Pitwall] released lab-note (its terminal agent exited)', '[Pitwall] route lab-note → here (no-transcript)'], 'never "terminal-open" or "open-here" for a dead shell');
+});
+
+test('with the terminal default, a dead Pitwall shell is replaced by one resumed terminal, from a row click or Ctrl+Alt+0 (f3 FAIL B)', async (t) => {
+  const f = wired(t, { surface: 'terminal' });
+  const chat = f.chat('claude', 'Lab Notes', 'lab-notes');
+  f.needingYou.push(chat.id);
+  await runCommand('pitwall.openChat', f.row(chat));
+  const first = f.lastTerminal();
+  f.ended.add('lab-notes');
+  await runCommand('pitwall.openNextSessionNeedingYou');
+  const second = f.lastTerminal();
+  assert.notEqual(second, first);
+  assert.ok(first.disposed);
+  assert.deepEqual(f.liveTerminals().map((terminal) => terminal.sent), [['claude --resume lab-notes']], 'exactly one agent process');
+
+  // The new one is live (and still starting): a click focuses it.
+  f.ended.delete('lab-notes');
+  await runCommand('pitwall.openChat', f.row(chat));
+  assert.equal(f.liveTerminals().length, 1);
+});
+
+test('Open Session in Terminal and Open in Claude UI on a dead Pitwall shell resume the chat, never the shell (f3 FAIL B)', async (t) => {
+  const f = wired(t, { surface: 'ui' });
+  const chat = f.chat('claude', 'Lab Notes', 'lab-notes');
+  await runCommand('pitwall.openChatInTerminal', f.row(chat));
+  const first = f.lastTerminal();
+  f.ended.add('lab-notes');
+  // Open in Claude UI: no "Close the terminal?" for a shell with no agent.
+  await runCommand('pitwall.openClaudeUi', f.row(chat));
+  assert.ok(!shown('Close the terminal for "Lab Notes"?'));
+  assert.ok(first.disposed);
+  assert.deepEqual(f.claudeUi.opened, [{ sessionId: 'lab-notes', cwd: f.main.path }]);
+
+  const other = f.chat('claude', 'Other', 'other-notes');
+  await runCommand('pitwall.openChatInTerminal', f.row(other));
+  const shell = f.lastTerminal();
+  f.ended.add('other-notes');
+  await runCommand('pitwall.openChatInTerminal', f.row(other));
+  assert.ok(shell.disposed);
+  assert.deepEqual(
+    f.liveTerminals().map((terminal) => terminal.sent),
+    [['claude --resume other-notes']]
+  );
 });

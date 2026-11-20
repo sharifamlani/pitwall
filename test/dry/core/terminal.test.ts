@@ -25,7 +25,7 @@ const WORKTREE = worktreeRecord({ path: '/work/repo with space' });
 
 function setup(
   t: { after(fn: () => void): void },
-  options: { chats?: Partial<ChatSession>[]; adapter?: Partial<HarnessAdapter> } = {}
+  options: { chats?: Partial<ChatSession>[]; adapter?: Partial<HarnessAdapter>; agentStartGraceMs?: number } = {}
 ) {
   const globalState = memento();
   void globalState.update(
@@ -38,7 +38,7 @@ function setup(
   const manager = new TerminalManager(storage, new HarnessRegistry([adapter]), {
     registerPendingChat: (_harness: string, chatId: string, worktreePath: string) =>
       registrations.push(`${chatId}@${worktreePath}`),
-  } as never);
+  } as never, options.agentStartGraceMs === undefined ? {} : { agentStartGraceMs: options.agentStartGraceMs });
   t.after(() => manager.dispose());
 
   vscode.commands.registerCommand('pitwall.refreshWorkspaces', () => undefined);
@@ -117,7 +117,100 @@ test('an open chat is focused, not relaunched; an exited process is replaced', a
   assert.equal(f.manager.isActive('chat'), false, 'a tab whose process exited is not open');
   const second = (await f.open('chat'))!;
   assert.notEqual(second, first);
-  assert.ok(first.disposed);
+  assert.equal(f.manager.getChatIdForTerminal(first as never), undefined, 'the exited one is forgotten');
+  assert.equal(first.disposed, false, 'never stopped: an exited terminal holds nothing Pitwall started (f3 FAIL C)');
+});
+
+test('quitting stops only processes inside Pitwall’s own live terminals, never an outside one on the same session, and never an exited terminal (f3 FAIL C)', async (t) => {
+  const f = setup(t, {
+    chats: [
+      { id: 'lab-notes', harnessSessionId: '23c80023' },
+      { id: 'bulk-3', harnessSessionId: '7a2293b8' },
+    ],
+  });
+  // Lab Notes: a Pitwall terminal whose process exited, its tab still listed.
+  const exited = (await f.open('lab-notes'))!;
+  exited.exitStatus = { code: 0 };
+  // The same session now runs in an outside console Pitwall never started.
+  const outside = stub.window.createTerminal({ name: 'uj-LabNotes', __pid: 88360 }) as FakeTerminal;
+  outside.sendText('claude --resume 23c80023');
+  // Another chat runs in Pitwall's own live terminal.
+  const own = (await f.open('bulk-3'))!;
+
+  f.manager.dispose();
+
+  assert.equal(outside.disposed, false, 'the outside process is never touched');
+  assert.equal(exited.disposed, false, 'an exited terminal is not stopped: its old pid may be someone else’s now');
+  assert.equal(own.disposed, true, 'a live agent in its own terminal is handled as before');
+});
+
+test('Remove on a chat whose Pitwall terminal exited forgets it and stops nothing (f3 FAIL C)', async (t) => {
+  const f = setup(t, { chats: [{ id: 'lab-notes', harnessSessionId: '23c80023' }] });
+  const exited = (await f.open('lab-notes'))!;
+  exited.exitStatus = { code: 0 };
+  f.manager.closeChat('lab-notes');
+  assert.equal(exited.disposed, false);
+  assert.equal(f.manager.getTerminal('lab-notes'), undefined);
+});
+
+test("a Pitwall terminal whose agent exited is released, its shell tab closed; a live one, one still starting, or an unreadable record is kept (P2 K4)", async (t) => {
+  /** The harness's own record: sessions it can prove no process runs any more, and reads that fail. */
+  const ended = new Set<string>();
+  let readFails = false;
+  const f = setup(t, {
+    chats: [{ id: 'chat', harnessSessionId: 'lab-notes' }, { id: 'new' }],
+    agentStartGraceMs: 0,
+    adapter: {
+      sessionEnded: async (id) => {
+        if (readFails) {
+          throw new Error('torn read');
+        }
+        return ended.has(id);
+      },
+    },
+  });
+  const states: string[] = [];
+  const watch = f.manager.onTerminalStateChange((event) => states.push(`${event.chatId}:${event.state}`));
+  t.after(() => watch.dispose());
+  const terminal = (await f.open('chat'))!;
+
+  // Its agent still runs: the terminal is the chat.
+  assert.equal(await f.manager.releaseExitedAgent('chat'), false);
+  assert.equal(f.manager.isActive('chat'), true);
+
+  // A read that fails proves nothing: never release on it.
+  ended.add('lab-notes');
+  readFails = true;
+  assert.equal(await f.manager.releaseExitedAgent('chat'), false);
+  assert.equal(f.manager.isActive('chat'), true);
+  readFails = false;
+
+  // /exit: the shell stays (exitStatus undefined) but the agent is gone.
+  assert.equal(terminal.exitStatus, undefined, 'the shell itself is still running');
+  assert.equal(await f.manager.releaseExitedAgent('chat'), true);
+  assert.equal(f.manager.isActive('chat'), false, 'a shell whose agent exited is not the chat');
+  assert.ok(terminal.disposed, 'the dead shell tab is closed, so it cannot stand in for the chat');
+  assert.equal(f.chat('chat').status, 'closed');
+  assert.ok(states.includes('chat:closed'), 'the tree and window registry hear it closed');
+  assert.equal(await f.manager.releaseExitedAgent('chat'), false, 'nothing left to release');
+
+  // A chat with no native session yet can't be checked: kept.
+  await f.open('new');
+  assert.equal(await f.manager.releaseExitedAgent('new'), false);
+  assert.equal(f.manager.isActive('new'), true);
+});
+
+test('a terminal Pitwall just started is never released while its agent may still be starting (grace)', async (t) => {
+  const f = setup(t, {
+    chats: [{ id: 'fresh', harnessSessionId: 'fresh-one' }],
+    agentStartGraceMs: 60_000,
+    // A resumed session seen live before, not yet in the record again: it is starting.
+    adapter: { sessionEnded: async () => true },
+  });
+  const terminal = (await f.open('fresh'))!;
+  assert.equal(await f.manager.releaseExitedAgent('fresh'), false, 'within the start grace: a second process would fork it');
+  assert.equal(f.manager.isActive('fresh'), true);
+  assert.equal(terminal.disposed, false);
 });
 
 test('a session stored twice whose hidden copy has a live Pitwall terminal: a row click focuses that terminal, no second process', async (t) => {

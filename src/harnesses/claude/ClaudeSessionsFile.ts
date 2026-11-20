@@ -143,6 +143,8 @@ export class ClaudeSessionsFile {
   private readonly rewatchMs: number;
   private localDomain: Promise<string | undefined> | undefined;
   private inFlight: Promise<ClaudeSessionsSnapshot> | undefined;
+  /** Sessions some read listed as live (a known or unknown status), so a later absence means they stopped. */
+  private readonly seenLive = new Set<string>();
 
   constructor(options: ClaudeSessionsFileOptions = {}) {
     this.dir = options.dir ?? (() => path.join(claudeConfigDir(), 'sessions'));
@@ -226,6 +228,19 @@ export class ClaudeSessionsFile {
         watcher = undefined;
       },
     };
+  }
+
+  /**
+   * Whether this session's process is gone, as far as the folder can prove
+   * it: an earlier read listed it live, and a fresh, complete read (listed,
+   * no torn file) lists no live process for it, under a known status or not.
+   * A session never seen live (an agent that writes no record, a pid domain
+   * this machine can't check) is never called ended (f3 P2 K4).
+   */
+  async ended(sessionId: string): Promise<boolean> {
+    const seen = this.seenLive.has(sessionId);
+    const file = await this.snapshot();
+    return seen && file.listed && !file.partial && !file.states.has(sessionId) && !file.unknownStatus.has(sessionId);
   }
 
   /** Reads the folder fresh. Concurrent callers (one per worktree group in a tick) share one read. */
@@ -313,6 +328,9 @@ export class ClaudeSessionsFile {
       if (!snapshot.states.has(sessionId)) {
         snapshot.unknownStatus.add(sessionId);
       }
+    }
+    for (const sessionId of [...snapshot.states.keys(), ...snapshot.unknownStatus]) {
+      this.seenLive.add(sessionId);
     }
     snapshot.available = snapshot.states.size > 0;
     return snapshot;

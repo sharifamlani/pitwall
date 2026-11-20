@@ -16,6 +16,10 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - A guard on one entry point protects none of the others: put it in one shared function and call
   it from every command, menu item and fallback that can start a process, with a test for each.
   (Pitwall QA on #71: Open in Terminal / Open in Claude UI bypassed the router's guard and forked.)
+- "A tab exists" isn't "the process is alive": check the process itself (the harness's record or
+  the terminal's own process tree) before treating a terminal as the running chat, and never stop
+  a process through a terminal whose process already exited (its old pid may be someone else's).
+  (Pitwall f3: a pop-up landed on a dead shell; quitting killed an outside chat on the same session.)
 - Remove each builder worktree as soon as its PR merges, and watch the package cache (`npm ci` in
   many worktrees grew npm's cache to ~16 GB and filled the disk mid-walk). (Pitwall 2026-11-19.)
 - Never install a build into the owner's own app while agent chats run in it, even at their request;

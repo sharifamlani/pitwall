@@ -107,6 +107,8 @@ function windowOn(
     openHere?: (chat: ChatSession, worktree: Worktree) => Promise<boolean | 'terminal'>;
     /** Whether a chat's tab or terminal is open in this window; never, by default. */
     isOpenHere?: (chat: ChatSession) => boolean;
+    /** Forget a Pitwall terminal here whose agent exited (P2 K4); true when one was released. */
+    releaseExited?: (chat: ChatSession) => Promise<boolean>;
     /** Other windows' open sessions, as the registry's heartbeats list them. */
     openIn?: { folder: string; sessionIds: string[]; pid?: number }[];
     /** The pid of a live process outside Pitwall running a session (a terminal the user started), if any. */
@@ -145,6 +147,7 @@ function windowOn(
     rootsOf: (worktree) => w.worktrees.filter((candidate) => candidate.repoId === worktree.repoId).map((candidate) => candidate.path),
     repoName: (target) => (target.startsWith(w.other) ? 'other' : 'demo'),
     isOpenHere: (chat) => options.isOpenHere?.(chat) ?? false,
+    releaseExited: options.releaseExited,
     log: (line) => routeLog.push(line),
     chatForSession: (sessionId) => w.storage.getChats().find((chat) => chat.harnessSessionId === sessionId),
     openHere: async (chat, worktree) => {
@@ -1701,4 +1704,80 @@ test('guardLive: a chat open in another Pitwall window, or live in a panel there
     `[Pitwall] route ${ID.b.slice(0, 8)} → ${w.other} (open-there)`,
     `[Pitwall] route ${ID.c.slice(0, 8)} → ${w.other} (open-there-unbound)`,
   ].sort());
+});
+
+// ---- 0.6.0 RC walk f3 FAIL B: a Pitwall terminal whose agent exited is not "open here" ----
+
+/** This window's Pitwall terminal for one session: mapped until released, its agent alive or exited. */
+function pitwallTerminal(sessionId: string) {
+  const state = { mapped: true, agentAlive: true, released: [] as string[] };
+  return {
+    state,
+    isOpenHere: (chat: ChatSession) => state.mapped && chat.harnessSessionId === sessionId,
+    releaseExited: async (chat: ChatSession) => {
+      if (!state.mapped || state.agentAlive || chat.harnessSessionId !== sessionId) {
+        return false;
+      }
+      state.mapped = false;
+      state.released.push(sessionId);
+      return true;
+    },
+  };
+}
+
+test("a click on a chat whose Pitwall terminal here exited routes it as a stopped chat, to its folder's window (P2 K4)", async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.other, ID.b, [w.turn(ID.b, w.other)]);
+  // Lab Notes (folder `other`, no window) was opened with Open Session in Terminal from window `main`, then /exit.
+  const terminal = pitwallTerminal(ID.b);
+  terminal.state.agentAlive = false;
+  const here = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main, isOpenHere: terminal.isOpenHere, releaseExited: terminal.releaseExited });
+
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Lab Notes', ID.b, w.otherWt)] }), 'routed');
+
+  assert.deepEqual(terminal.state.released, [ID.b]);
+  assert.deepEqual(here.opened, [], 'never brought forward on the dead shell');
+  assert.deepEqual(requestsFor(here.inbox, dir, w.other).map((req) => [req.kind, req.sessionIds]), [['open', [ID.b]]]);
+  assert.deepEqual(calls, [{ path: w.other, forceNewWindow: true }]);
+  assert.deepEqual(here.routeLog, [
+    `[Pitwall] released ${ID.b.slice(0, 8)} (its terminal agent exited)`,
+    `[Pitwall] route ${ID.b.slice(0, 8)} → ${w.other} (handoff)`,
+  ]);
+});
+
+test('a click on a chat whose Pitwall terminal here is live still brings that terminal forward (open-here)', async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  const calls = openFolderCalls();
+  w.transcript(w.other, ID.b, [w.turn(ID.b, w.other)]);
+  const terminal = pitwallTerminal(ID.b);
+  const here = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main, isOpenHere: terminal.isOpenHere, releaseExited: terminal.releaseExited });
+
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Lab Notes', ID.b, w.otherWt)] }), 'here');
+  assert.deepEqual(terminal.state.released, []);
+  assert.deepEqual(here.opened.map((entry) => entry.chat), ['Lab Notes'], 'its terminal, focused');
+  assert.deepEqual([calls, here.routeLog], [[], [`[Pitwall] route ${ID.b.slice(0, 8)} → here (open-here)`]]);
+});
+
+test("a claimed chat whose only tie to the claimer was a dead Pitwall terminal is routed as a click would, never opened on the shell (P2 K4)", async (t) => {
+  const w = world(t);
+  const dir = tempDir(t);
+  openFolderCalls();
+  w.transcript(w.other, ID.b, [w.turn(ID.b, w.other)]);
+  // Window `wt` sees in the registry that window `main` has Lab Notes open: its Pitwall terminal, now a dead shell.
+  const sender = windowOn(t, w, dir, () => w.wt, { pid: 1001, claims: w.wt, openIn: [{ folder: w.main, sessionIds: [ID.b] }] });
+  const terminal = pitwallTerminal(ID.b);
+  terminal.state.agentAlive = false;
+  const claimer = windowOn(t, w, dir, () => w.main, { pid: 1002, claims: w.main, isOpenHere: terminal.isOpenHere, releaseExited: terminal.releaseExited });
+
+  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('Lab Notes', ID.b, w.otherWt)] }), 'routed');
+  const [request] = await claimer.inbox.claimAll();
+  await claimer.router.runClaimed([request]);
+
+  assert.deepEqual(terminal.state.released, [ID.b]);
+  assert.deepEqual(claimer.opened, [], 'not opened in the claimer, whose folder is not its own');
+  assert.deepEqual(requestsFor(claimer.inbox, dir, w.other).map((req) => [req.kind, req.sessionIds]), [['open', [ID.b]]], "handed on to its folder's window");
+  assert.deepEqual(await sender.inbox.outcome(w.main, request.nonce), { ok: true });
 });
