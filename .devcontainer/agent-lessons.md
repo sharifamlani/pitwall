@@ -35,6 +35,14 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - Code that waits for the editor to ask for rows again must handle the rows it never asks for (a
   collapsed parent): clear the wait on the collapse event and cap it with a timeout. (Pitwall #74: a
   repo collapsed after expanding held every reveal until it was expanded again.)
+- Never spend a one-shot trigger ("ask once", "scan once") before the data it looks for can exist:
+  retry with backoff until it succeeds, bounded per cycle, and test the "too early" first try.
+  (Pitwall #73: the one ask came before the transcript existed, so a hidden window never listed the chat.)
+- A guess that "this unnamed surface is that chat" must pick exactly one chat: one that can be in that
+  kind of surface (a terminal process is never in a panel tab; unknown counts as no), with no other
+  surface, started after the surface appeared, the only one that fits, and only for a bounded time.
+  Test it against a chat started outside the product. (Pitwall #73 rounds 2–3: an unbound tab silenced
+  same-folder chats, then an outside-terminal `claude`.)
 - A walk brief uses every default the owner has. Never turn a feature off to make the walk easier;
   if one must be off, walk with it on as well. (Pitwall 0.6.0: the walk ran with discovery off and
   hid 5–8 s pop-up lag; with it on, lag was 6.5–8.4 s against a ~5 s bar.)
@@ -50,6 +58,14 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - For any cache keyed by an OS id (pid, handle, port, window id), write what happens when the OS reuses that id for a different object; block if a stale entry can lead to opening or starting something. (Pitwall #72.)
 - Cite the Review items you checked in every verdict, and read this list at the start of each review.
   (Pitwall 2026-11-19: earlier verdicts ran against the role prompt, not this list.)
+- For a fast path that does part of an existing pass (e.g. one-session import vs full scan), list every
+  step and callback the full pass runs and check each is either run or skipped on purpose with a test;
+  any rule that compares candidates must see the same candidate list. (Pitwall #73.)
+- For anything that can pop up, trace the front check for a surface not yet bound to its chat (a
+  brand-new tab or terminal) while the user is looking at it. (Pitwall #73.)
+- For any "treat X as in front / seen" heuristic, write the case where X belongs to a different chat,
+  for both needs-input and finished pop-ups, and include a surface that never binds; block if an
+  unrelated chat's pop-up can be silenced without a time limit. (Pitwall #73.)
 - Keep: say APPROVE only with CI quoted at the exact sha, and say what you re-checked on a re-review.
   (Pitwall 2026-11-19: #70–#72 approvals quoted green CI at their shas.)
 
