@@ -532,11 +532,15 @@ export async function activate(context: vscode.ExtensionContext) {
       // otherwise queue one reveal each.
       const ticket = ++latestReveal;
       const reveal = () =>
-        workspacesProvider.revealWhenSettled(() =>
-          ticket === latestReveal
-            ? workspacesTreeView.reveal(workspacesProvider.getChatTreeItem(chat), { select: true, focus: false, expand: true })
-            : Promise.resolve()
-        );
+        workspacesProvider.revealWhenSettled(() => {
+          if (ticket !== latestReveal) {
+            return Promise.resolve();
+          }
+          const row = workspacesProvider.getChatTreeItem(chat);
+          // This selection follows the tab, not a click: never redirected (D21).
+          workspacesProvider.expectSelection(row.id);
+          return workspacesTreeView.reveal(row, { select: true, focus: false, expand: true });
+        });
       deferredReveal?.dispose();
       deferredReveal = undefined;
       if (workspacesTreeView.visible) {
@@ -960,7 +964,9 @@ export async function activate(context: vscode.ExtensionContext) {
         sessionImporter.wake();
       }
     }),
-    workspacesTreeView.onDidChangeSelection(({ selection: [selected, ...others] }) => {
+    // Through the aimed-row rule (D21): a click that lands on a row which has
+    // just moved is applied to the row it was aimed at instead.
+    workspacesProvider.bindSelection(workspacesTreeView, ({ selection: [selected, ...others] }) => {
       // Selecting several rows prepares a bulk action; it is not a visit.
       if (!selected || others.length > 0) {
         return;
@@ -1005,13 +1011,11 @@ export async function activate(context: vscode.ExtensionContext) {
     showWorktree(startWorktree);
     const reveal = () =>
       setTimeout(() => {
-        void workspacesProvider.revealWhenSettled(() =>
-          workspacesTreeView.reveal(workspacesProvider.getTreeItemForWorktree(startWorktree), {
-            select: true,
-            focus: false,
-            expand: true,
-          })
-        );
+        void workspacesProvider.revealWhenSettled(() => {
+          const row = workspacesProvider.getTreeItemForWorktree(startWorktree);
+          workspacesProvider.expectSelection(row.id);
+          return workspacesTreeView.reveal(row, { select: true, focus: false, expand: true });
+        });
       }, 100);
     if (workspacesTreeView.visible) {
       reveal();

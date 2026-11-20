@@ -15,6 +15,7 @@ import { logOperation } from '../services/OperationLog';
 import { ChatTooltipHeader, chatTooltip } from './chatTooltip';
 import { STATUS_WORDS, SessionStatus, statusIconState } from './sessionStatus';
 import { orderRows, rankRepo, rankSession, repoStatus } from './inboxOrder';
+import { AimedClicks } from './aimedClick';
 
 const REFRESH_DEBOUNCE_MS = 300;
 /**
@@ -224,6 +225,10 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   private childrenAwaitTimer: NodeJS.Timeout | undefined;
   /** Row click commands, by command id (see `rowCommandId`). */
   private readonly rowCommands = new Map<string, vscode.Disposable>();
+  /** The on-screen order before the latest move, for a click aimed at it (D21, see `aimedClick.ts`). */
+  private readonly clicks = new AimedClicks<WorkspaceTreeItem>();
+  /** Selects a row in the tree view; set by `bindSelection`. */
+  private selectRow: ((row: WorkspaceTreeItem) => void) | undefined;
 
   /** Each repository's latest worktree listing this session, by repository id. */
   private readonly worktreeCache = new Map<string, RepositoryWorktrees>();
@@ -329,6 +334,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     clearTimeout(this.childrenAwaitTimer);
     this.childrenAwaitTimer = undefined;
     this.onGitChange.cancel();
+    this.clicks.dispose();
     this.statusSubscription?.dispose();
     for (const disposable of [...this.disposables, ...this.repoWatchers, ...this.rowCommands.values()]) {
       disposable.dispose();
@@ -357,6 +363,67 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     this.view = view;
     view.description = LIST_DESCRIPTION;
     this.updateBadge();
+  }
+
+  /**
+   * The tree view's selection, through the aimed-row rule (D21): a mouse
+   * click that lands on a row which has just moved opens the row that sat in
+   * that slot before the move, and that row is the one selected. Every other
+   * selection reaches `apply` as the view reported it (a possible click is
+   * held for at most `CLICK_PAIR_MS` first).
+   */
+  bindSelection(
+    view: Pick<vscode.TreeView<WorkspaceTreeItem>, 'reveal' | 'onDidChangeSelection'>,
+    apply: (event: { selection: readonly WorkspaceTreeItem[] }) => void
+  ): vscode.Disposable {
+    this.selectRow = (row) => {
+      this.clicks.expectSelection(row.id!);
+      void this.revealWhenSettled(() => view.reveal(row, { select: true, focus: false }));
+    };
+    return view.onDidChangeSelection(({ selection }) => this.clicks.select(selection, this.screenLayout(), apply));
+  }
+
+  /** Pitwall is about to select this row itself (a reveal): its selection is never taken for a click. */
+  expectSelection(rowId: string | undefined): void {
+    if (rowId) {
+      this.clicks.expectSelection(rowId);
+    }
+  }
+
+  /** A keyboard move is about to select and open a row: never taken for a click. */
+  expectKeyboardSelection(): void {
+    this.clicks.expectKeyboardSelection();
+  }
+
+  /**
+   * The rows the screen shows, top to bottom: each repo row, then the session
+   * rows of each expanded one (a collapsed repo's take no slot). Undefined
+   * while a redraw is on its way to the editor, when the screen may show
+   * rows the provider no longer holds.
+   */
+  private screenLayout(): string[] | undefined {
+    if (!this.renderedRoots || this.fullRefreshOutstanding || this.childrenAwaited.size > 0) {
+      return undefined;
+    }
+    const ids: string[] = [];
+    for (const root of this.renderedRoots) {
+      ids.push(root.item.id!);
+      for (const child of this.renderedChildren.get(root.item.id!) ?? []) {
+        ids.push(child.item.id!);
+      }
+    }
+    return ids;
+  }
+
+  /** The row object the editor holds for an id. */
+  private heldRow(rowId: string): WorkspaceTreeItem | undefined {
+    for (const rows of [this.renderedRoots ?? [], ...this.renderedChildren.values()]) {
+      const found = rows.find((row) => row.item.id === rowId);
+      if (found) {
+        return found.item;
+      }
+    }
+    return undefined;
   }
 
   /** Live turn state for the legacy marks, used only without a status source. */
@@ -446,6 +513,8 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       this.heldFull = true;
       return;
     }
+    // What the screen shows until the editor has the new rows, and which rows it will ask for.
+    this.clicks.willRedraw(this.screenLayout(), true, new Set([...this.renderedChildren.keys(), ...this.childrenAwaited]));
     this.fullRefreshOutstanding = true;
     this.fullRefreshEpoch += 1;
     this.renderedRoots = undefined;
@@ -574,6 +643,8 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     }
 
     const changed: WorkspaceTreeItem[] = [];
+    // What the screen shows before this pass, for a click aimed at it.
+    const layout = this.screenLayout();
     roots.forEach((row, index) => {
       const held = rendered[index];
       const key = rowKey(row);
@@ -582,7 +653,9 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
         held.key = key;
         changed.push(held.item);
         // A repo row's refresh redraws its session rows too.
-        if (this.renderedChildren.delete(row.id!)) {
+        if (this.renderedChildren.has(row.id!)) {
+          this.clicks.willRedraw(layout, false, [row.id!]);
+          this.renderedChildren.delete(row.id!);
           this.childrenAwaited.add(row.id!);
         }
       }
@@ -596,6 +669,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       if (rows.length !== held.length || rows.some((row, index) => row.id !== held[index].item.id)) {
         // Rows added, removed or moved under this repo: refresh the repo row.
         changed.push(repoRow.item);
+        this.clicks.willRedraw(layout, false, [rowId]);
         this.renderedChildren.delete(rowId);
         this.childrenAwaited.add(rowId);
         continue;
@@ -633,6 +707,8 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
         return;
       }
       this.childrenAwaited.clear();
+      // Rows the editor never asked for: what the screen shows is unsure.
+      this.clicks.forget();
       if (this.isQuiet()) {
         this.settle();
       }
@@ -650,6 +726,8 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       return;
     }
     this.renderedChildren.delete(item.id);
+    // The user changed what the list shows: a click now aims at the rows as they are.
+    this.clicks.forget();
     if (this.stopAwaiting(item.id) && this.renderPending && this.isQuiet()) {
       this.settle();
     }
@@ -716,6 +794,29 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       this.rowCommands.set(command, vscode.commands.registerCommand(command, run));
     }
     return { command, title };
+  }
+
+  /**
+   * A row's click or Enter. A mouse click that newly selected a row which has
+   * just moved opens the row that sat in its slot before the move (D21); that
+   * row is selected and applied instead. Anything else runs the row's own action.
+   */
+  private clickRow(rowId: string, open: () => Thenable<unknown> | undefined): Thenable<unknown> | undefined {
+    const held = this.clicks.claim(rowId);
+    if (!held) {
+      return open();
+    }
+    const aimed = this.heldRow(held.aimed);
+    if (!aimed) {
+      held.apply({ selection: held.selection });
+      return open();
+    }
+    logOperation(`[Pitwall] click landed on ${rowId} just after a re-sort; opening ${held.aimed}, the row it was aimed at`);
+    held.apply({ selection: [aimed] });
+    this.selectRow?.(aimed);
+    return aimed.itemType === 'chat'
+      ? this.openChatRow((aimed.data as ChatSession).id)
+      : this.openRepoRow((aimed.data as Repository).id);
   }
 
   /** A chat row's click: open the chat as stored now; a chat removed since does nothing. */
@@ -825,6 +926,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       this.renderedRoots = rows.map((item) => ({ item, key: rowKey(item) }));
       this.renderedChildren.clear();
       this.fullRefreshOutstanding = false;
+      this.clicks.fetched(undefined, false, () => this.screenLayout());
       this.settle();
       if (!this.firstRenderLogged) {
         this.firstRenderLogged = true;
@@ -840,7 +942,10 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
         // An answer a full refresh overtook is one the editor drops.
         if (element.id && epoch === this.fullRefreshEpoch) {
           this.renderedChildren.set(element.id, rows.map((item) => ({ item, key: rowKey(item) })));
-          if (this.stopAwaiting(element.id) && this.isQuiet()) {
+          const redrawn = this.childrenAwaited.has(element.id);
+          const settled = this.stopAwaiting(element.id);
+          this.clicks.fetched(element.id, redrawn, () => this.screenLayout());
+          if (settled && this.isQuiet()) {
             this.settle();
           }
         }
@@ -1038,7 +1143,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     item.tooltip = repoTooltip(repo.name, position);
     // A click or Enter opens the repo's chats as tabs (rows 4.3, 4.4); the twistie only expands.
     // Through the row's own argument-free command, so a refresh cannot drop the click.
-    item.command = this.rowCommand(item.id!, 'Open Chats', () => this.openRepoRow(repo.id));
+    item.command = this.rowCommand(item.id!, 'Open Chats', () => this.clickRow(item.id!, () => this.openRepoRow(repo.id)));
     return item;
   }
 
@@ -1204,7 +1309,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
         item.tooltip = chatTooltip(chat, adapter.displayName, meta, item.tooltipHeader);
       }
       // Through the row's own argument-free command, so a refresh cannot drop the click.
-      item.command = this.rowCommand(item.id!, 'Open Chat', () => this.openChatRow(chat.id));
+      item.command = this.rowCommand(item.id!, 'Open Chat', () => this.clickRow(item.id!, () => this.openChatRow(chat.id)));
       return item;
     });
   }

@@ -816,6 +816,20 @@ module.exports = {
           }
           return module.exports.commands.executeCommand(dto.id, ...(dto.arguments ?? []));
         },
+        /**
+         * The user clicks a row with the mouse: the workbench selects the row
+         * it holds for that id (no selection event when it is already the one
+         * selected), then runs its command, as one pointer event does.
+         */
+        __mouseClick: async (item) => {
+          const row = view.__rowOf(item.id) ?? item;
+          if (!(view.selection.length === 1 && view.selection[0]?.id === item.id)) {
+            view.__select([row]);
+          }
+          return view.__click(item);
+        },
+        /** Whether a reveal with `select: true` selects its row (as the workbench does) once it lands. */
+        __revealSelects: false,
         reveal: async (item, revealOptions) => {
           view.reveals.push({ item, options: revealOptions });
           if (!provider?.getParent) {
@@ -840,6 +854,9 @@ module.exports = {
             // A provider that cannot answer is not what this models.
           } finally {
             view.revealsDone += 1;
+            if (view.__revealSelects && revealOptions?.select && !(view.selection.length === 1 && view.selection[0]?.id === item.id)) {
+              view.__select([view.__rowOf(item.id) ?? item]);
+            }
           }
         },
         onDidChangeVisibility: visibility.event,

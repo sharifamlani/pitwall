@@ -5,7 +5,10 @@ import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../providers/Workspac
 import { commandRegistrar } from './common';
 
 export interface NavigationDeps {
-  workspacesProvider: Pick<WorkspacesTreeProvider, 'repoRowAt' | 'chatRowsOf' | 'getWorktreeById' | 'repositoryFor'>;
+  workspacesProvider: Pick<
+    WorkspacesTreeProvider,
+    'repoRowAt' | 'chatRowsOf' | 'getWorktreeById' | 'repositoryFor' | 'expectSelection' | 'expectKeyboardSelection'
+  >;
   workspacesTreeView: Pick<vscode.TreeView<WorkspaceTreeItem>, 'selection' | 'reveal' | 'onDidChangeSelection'>;
   filesTreeView: Pick<vscode.TreeView<FileTreeItem>, 'visible'>;
 }
@@ -79,6 +82,8 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
     }
     const [selected] = workspacesTreeView.selection;
     if (repoOfRow(selected)?.id !== repo.id) {
+      // A hotkey's selection is never taken for a click aimed before a re-sort (D21).
+      workspacesProvider.expectSelection(row.id);
       await workspacesTreeView.reveal(row, REVEAL_ROW);
       return;
     }
@@ -142,6 +147,8 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
       timer = setTimeout(() => resolve(undefined), LANDING_TIMEOUT_MS);
     });
     try {
+      // The select fires the row's command like a click; it is never redirected (D21).
+      workspacesProvider.expectKeyboardSelection();
       await run(move);
       // Before the select: the row command it fires reads the marker.
       keepListFocusOnce();
@@ -156,6 +163,7 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
         consumeKeepListFocus();
       }
       if (row?.itemType === 'repository') {
+        workspacesProvider.expectSelection(row.id);
         await workspacesTreeView.reveal(row, REVEAL_ROW);
       }
     } finally {
