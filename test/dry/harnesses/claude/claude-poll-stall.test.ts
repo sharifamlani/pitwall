@@ -229,7 +229,14 @@ test('the claude agents answer still reaches the row, re-polled the moment it la
 const PROBE_SESSION = 'aaaaaaaa-0000-4000-8000-0000000000aa';
 
 /** One open chat whose sessions file has a status Pitwall doesn't know; `claude agents` says it waits on a prompt. */
-function unknownStatusLoad(t: Parameters<typeof claudeProfile>[0]) {
+function unknownStatusLoad(t: Parameters<typeof claudeProfile>[0], opts: { held?: boolean } = {}) {
+  // `held`: the stand-in answers only after release(), so "before the first answer" cannot be overtaken by a
+  // fast background call (windows CI, main 8553eb3: the 50 ms answer landed before the first read).
+  let release!: () => void;
+  const gate = opts.held ? new Promise<void>((resolve) => (release = resolve)) : undefined;
+  if (!gate) {
+    release = () => undefined;
+  }
   const profile = claudeProfile(t);
   const sessionsDir = path.join(profile.root, 'sessions');
   fs.mkdirSync(sessionsDir, { recursive: true });
@@ -255,7 +262,7 @@ function unknownStatusLoad(t: Parameters<typeof claudeProfile>[0]) {
     now: () => Date.now() + offset,
     exec: async () => {
       calls++;
-      await sleep(50);
+      await (gate ?? sleep(50));
       return JSON.stringify([{ sessionId: PROBE_SESSION, status: 'waiting', waitingFor: 'permission prompt' }]);
     },
   });
@@ -287,6 +294,8 @@ function unknownStatusLoad(t: Parameters<typeof claudeProfile>[0]) {
     agents,
     pops,
     calls: () => calls,
+    /** Lets a held stand-in answer (no-op when not held). */
+    release: () => release(),
     /** Ages the agents cache past its 10 s TTL. */
     expire: () => {
       offset += 20_000;
@@ -317,10 +326,12 @@ test('a wait from before activation that only claude agents knows is judged pre-
 });
 
 test('before the first claude agents answer, a session only it can place reads as unknown, never as "no wait" (QA F1)', async (t) => {
-  const load = unknownStatusLoad(t);
+  const load = unknownStatusLoad(t, { held: true });
   const first = (await load.harness.getLiveStates([PROBE_SESSION])).get(PROBE_SESSION)!;
   assert.equal(first.liveUnknown, true);
   assert.equal(first.waitingFor, undefined);
+  assert.equal(load.calls(), 1, 'the first poll started the claude agents call, still unanswered');
+  load.release();
   await load.agents.getSnapshot();
   const answered = (await load.harness.getLiveStates([PROBE_SESSION])).get(PROBE_SESSION)!;
   assert.equal(answered.liveUnknown, undefined, 'an answered session is known');
