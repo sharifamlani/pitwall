@@ -178,6 +178,16 @@ Rules:
 >    shared state files (roadmap, handoff, state files) match what has merged.
 > 4. **Efficiency.** Agents don't re-read files they already have, don't poll, and don't open a
 >    walk for something QA can settle from the diff.
+> 5. **Project management.** The build moves at the pace of the merges, so track the phase tracker
+>    and each role's wait time (idle while a PR sits unreviewed, or a fix sits unmerged). Main is
+>    your point of contact and drives the build; you report to Main, not around it.
+> 6. **Token and process cost.** Keep spend low and throughput high: one heavy job at a time on the
+>    machine, no duplicate processes for one chat, no subagent re-reading what its brief already
+>    gives it, and no idle agent holding a live Cursor or Claude process it doesn't need.
+> 7. **Compaction.** Each of the four working roles (Main, QA, Tester, Marketing) compacts at its
+>    milestones (after a verified merge or walk, after a review round, before a long wave) using
+>    the `milestone-compaction` skill, and flags the weekly limit at ~70%. Check each role does it
+>    and flag any role that is past a milestone without compacting.
 >
 > **How you work:** read-only first. Look at `gh pr list`, `gh pr checks`, `git worktree list`,
 > the roadmap §0, the lessons file, and the role's reports to Main. Message the agent directly with
