@@ -480,6 +480,15 @@ test("the repos' git watchers are made only after the first render, in an empty 
 // pops up: the first scans start after the first render or after
 // HIDDEN_LIST_START_MS while the list stays hidden, never after deactivation.
 
+/** Libuv requests that end on their own: file system calls and child processes. Watchers and streams stay open, so they don't count. */
+const IO_IN_FLIGHT = new Set(['FSReqCallback', 'FSReqPromise', 'ProcessWrap', 'GetAddrInfoReqWrap']);
+/** How many such requests are in flight in this process now. */
+const ioInFlight = () => process.getActiveResourcesInfo().filter((name) => IO_IN_FLIGHT.has(name)).length;
+/** The longest one mocked-clock step waits for I/O to end before moving on regardless. */
+const SETTLE_CAP_MS = 10_000;
+/** The real-time bound of one runUntil (the test runner's own timeout is 60 s). */
+const RUN_UNTIL_REAL_MS = 45_000;
+
 /**
  * Watches the first scans on mocked setTimeout/setInterval: the moment the
  * session importer's and repo discovery's start gates open, the list's first
@@ -514,18 +523,41 @@ function watchFirstScans(t: TestContext) {
   const drain = async () => {
     for (let i = 0; i < 20; i++) await flush();
   };
-  /** Move the mocked clock on by `ms` and let what came due run. */
+  /**
+   * Hold the mocked clock until the file reads and child processes (git) in
+   * flight have ended and what they started has run. Real I/O takes real
+   * time, and more of it on a loaded machine; moving the clock on while it is
+   * in flight charged that time to the code's own timers, so a loaded run
+   * hit the clock budgets below (CI on main: 44779067548). Capped, so a
+   * request that never ends cannot hold a test forever.
+   */
+  const settle = async () => {
+    const cap = performance.now() + SETTLE_CAP_MS;
+    do {
+      await drain();
+    } while (ioInFlight() > 0 && performance.now() < cap);
+  };
+  /** Move the mocked clock on by `ms` and let what came due run, with the I/O it started. */
   const advance = async (ms: number) => {
     t.mock.timers.tick(ms);
-    await drain();
+    await settle();
   };
-  /** Run the clock in 50 ms steps (real I/O completing between them) until `condition` holds. */
+  /**
+   * Run the clock in 50 ms steps, each once the I/O the last one started has
+   * ended, until `condition` holds: within `maxMs` on the mocked clock (the
+   * behaviour's own bound) and RUN_UNTIL_REAL_MS of real time (a hung test).
+   */
   const runUntil = async (condition: () => boolean, what: string, maxMs = 30_000) => {
-    const deadline = performance.now() + 15_000;
+    const started = performance.now();
     for (let at = 0; !condition(); at += 50) {
-      if (at > maxMs || performance.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
+      const real = performance.now() - started;
+      if (at > maxMs || real > RUN_UNTIL_REAL_MS) {
+        throw new Error(
+          `Timed out waiting for ${what}: ${at} ms on the mocked clock (bound ${maxMs}), ${Math.round(real)} ms real (bound ${RUN_UNTIL_REAL_MS}), ` +
+            `I/O in flight: [${process.getActiveResourcesInfo().filter((name) => IO_IN_FLIGHT.has(name)).join(', ')}]`
+        );
+      }
       await advance(50);
-      await new Promise((resolve) => setImmediate(resolve));
     }
   };
   /** Mark the list's first render in `order` once the workbench has the rows. */
