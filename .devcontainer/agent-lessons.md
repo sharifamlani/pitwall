@@ -66,9 +66,10 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
   heredoc dropped a backslash and launched a stray profile.)
 - Say "clean point" only once the walk is closed. (Pitwall 2026-11-19: the Tester offered a clean
   point while still walking.)
-- Drive the app with computer use, on the real screen: click, type, read the screen. Don't drive it
-  through DevTools or Playwright, and don't read Pitwall's source to explain a FAIL; report the FAIL
-  and let a builder root-cause it. (Pitwall 0.6.0 walk: most actions went through DevTools, and the
+- Do every user action with computer use, on the real screen: row clicks, menus, tab switches,
+  keyboard shortcuts and pop-up clicks. DevTools or Playwright is for reading logs, counts and dumps
+  only. Don't read Pitwall's source to explain a FAIL; report steps, observations and evidence, and
+  let a builder root-cause it. (Pitwall 0.6.0 walk: most actions went through DevTools, and the
   walk made about 130 log and file reads against about 90 UI steps.)
 - Close the test windows' untitled scratch tabs before quitting, and don't leave a test window
   focused while others use the machine; dictation and clicks land in it. (Pitwall 0.6.0 walk: foreign
