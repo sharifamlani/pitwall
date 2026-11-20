@@ -1580,6 +1580,34 @@ test('every transition logs status <id8> from→to lag=', async () => {
   assert.equal(typeof first.observedAt, 'number');
 });
 
+test('a transition 1 s late or more logs its lag split: the agent\'s share and Pitwall\'s', async () => {
+  const storage = makeStorage();
+  const sid = 'abcdef12-3456-4789-8abc-def012345678';
+  let live: HarnessLiveState = busy(Date.now());
+  const flow = popupFlow(storage, { live: () => new Set([sid]), states: () => ({ [sid]: live }) });
+  storage.createChat('wt-1', 'claude', 'Split', { harnessSessionId: sid, seenAt: Date.now() - 60_000 });
+  await flow.service.poll(true);
+
+  // The reply landed 2.7 s ago; Claude wrote idle 2.5 s after it (the owner's real chats: 2.2–3.2 s).
+  const replyAt = Date.now() - 2_700;
+  live = { turnState: 'done', turnEndedAt: replyAt, liveStatus: 'idle', statusUpdatedAt: replyAt + 2_500 };
+  await flow.service.poll();
+  const splits = () => flow.logs.filter((line) => line.startsWith('[Pitwall] lag split '));
+  assert.equal(splits().length, 1, flow.logs.join('\n'));
+  const [, agent, pitwall] = /agent=(\d+) pitwall=(\d+)$/.exec(splits()[0]) ?? [];
+  assert.match(splits()[0], /^\[Pitwall\] lag split abcdef12 working→finished agent=\d+ pitwall=\d+$/);
+  assert.equal(Number(agent), 2_500, "the agent's share: idle written 2.5 s after the reply");
+  assert.ok(Number(pitwall) >= 200 && Number(pitwall) < 1_000, `Pitwall's share: ${pitwall} ms`);
+  assert.ok(splits()[0].length < 80 && !splits()[0].includes('Split'), 'no title, no path');
+  assert.equal(flow.statusLines().length, 1, 'the status line itself is unchanged');
+  assert.match(flow.statusLines()[0], / lag=\d+$/);
+
+  // A prompt transition is not split.
+  live = busy(Date.now());
+  await flow.service.poll();
+  assert.equal(splits().length, 1, 'no split under 1 s');
+});
+
 test('the tick warms the pop-up host while a chat works or a pop-up is pending, and not while all are idle', async () => {
   const storage = makeStorage();
   const sid = 'abcdef12-3456-4789-8abc-def012345678';

@@ -132,6 +132,14 @@ function statusSince(status: SessionStatus, state: RowState | undefined, chat: C
 const TICK_MS = 4_000;
 /** A poll at least this long is logged with its time, so a CPU spike can be matched to it. */
 const SLOW_POLL_MS = 500;
+/**
+ * A transition at least this late also logs its lag split: how much of it
+ * the agent took to write its status after the stamp (`agent=`), and how
+ * much Pitwall took to see that write (`pitwall=`). On the owner's real
+ * chats Claude wrote `idle` 2.2–3.2 s after a turn's last reply (PR #76 live
+ * gate, 2026-11-20), all of it counted as status lag.
+ */
+const SLOW_STATUS_MS = 1_000;
 export const NEEDS_INPUT_COOLDOWN_MS = 60_000;
 
 /**
@@ -528,9 +536,16 @@ export class SessionAttentionService {
       this.statusEmitter.fire(changed);
     }
     for (const transition of transitions) {
-      this.options.log?.(
-        `[Pitwall] status ${transition.sessionId.slice(0, 8)} ${transition.from}→${transition.to} lag=${Math.max(0, now - transition.at)}`
-      );
+      const lag = Math.max(0, now - transition.at);
+      this.options.log?.(`[Pitwall] status ${transition.sessionId.slice(0, 8)} ${transition.from}→${transition.to} lag=${lag}`);
+      // Only when the agent's own status write is known: its time splits the lag.
+      const wroteAt = this.rowState.get(transition.chatId)?.statusUpdatedAt;
+      if (lag >= SLOW_STATUS_MS && wroteAt !== undefined && wroteAt > 0) {
+        this.options.log?.(
+          `[Pitwall] lag split ${transition.sessionId.slice(0, 8)} ${transition.from}→${transition.to} ` +
+            `agent=${Math.max(0, wroteAt - transition.at)} pitwall=${Math.max(0, now - Math.max(wroteAt, transition.at))}`
+        );
+      }
       this.transitionEmitter.fire(transition);
     }
   }
