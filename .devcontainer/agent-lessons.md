@@ -73,6 +73,12 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
   the background. With no answer at all, report "unknown", never "no change". Also test the moment when a
   starting process's record exists but its status isn't written yet. (Pitwall #79: `claude agents --json`
   held both windows' polls 2.7–5.3 s on every resume; treating "no answer" as "no wait" blanked waits.)
+- A resume point is safe only if its check covers the bytes right before where it resumes. A check
+  allowed to lag even one chunk leaves bytes no one verifies. Keep "check ends at offset" as the
+  invariant, and drop the resume point when it doesn't hold. (Pitwall #81.)
+- Before building a fix for "X waits behind Y", A/B the suspected mechanism at real scale. A poll-
+  priority gate for file threads changed nothing (72–82 vs 67–80 ms), so the PR ships per-step timing
+  instead. (Pitwall #81, round 1.)
 - Instrument before you attribute. A route line with no trigger source can't settle what caused an
   open; add the trigger to the log first, then name the cause. (Pitwall 2026-11-20: the 11-19 "spurious
   opens" were blamed on the owner's dictation without evidence.)
