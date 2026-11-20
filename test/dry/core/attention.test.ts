@@ -1173,6 +1173,8 @@ interface PopupFlowOptions extends RowFlowOptions {
   frontAnywhere?: (sessionId: string) => boolean;
   /** Live sessions whose turn is under way (busy or waiting); without it the adapter cannot tell. */
   underWay?: () => Set<string>;
+  /** Whether this window's active tab is an unbound tab that may be the chat's (a brand-new chat being watched). */
+  unboundFront?: (chat: ChatSession) => boolean;
   /** Runs after each discovery request is recorded (a test's import); returns the sessions still worth asking about again. */
   onUnlisted?: (sessionIds: string[]) => void | readonly string[] | Promise<void | readonly string[]>;
 }
@@ -1203,6 +1205,7 @@ function popupFlow(storage: ReturnType<typeof makeStorage>, options: PopupFlowOp
     },
     frontAnywhere: (sessionId) => options.frontAnywhere?.(sessionId) ?? false,
     isListed: (chatId) => storage.getChats().some((chat) => chat.id === chatId),
+    unboundFront: options.unboundFront,
     log: (line) => logs.push(line),
   });
   const service = new SessionAttentionService(
@@ -1843,22 +1846,40 @@ test('a new chat whose transcript has nothing to import at the first ask is aske
   flow.service.dispose();
 });
 
-test('a first turn that ended before its new chat was listed pops up once', async () => {
-  windowState().state = { focused: true };
+/** A 2.6 s first turn (dac4f591), over by the time the import lists it (seen as of its prompt); `unboundFront` says whether its unbound tab is in front. */
+async function shortFirstTurn(focused: boolean, unboundTabInFront: boolean) {
+  windowState().state = { focused };
   const storage = makeStorage();
   const live = new Set(['s-short']);
   const promptAt = Date.now() - 3_000;
   const states: Record<string, HarnessLiveState> = { 's-short': busy(promptAt) };
-  const flow = popupFlow(storage, { live: () => live, states: () => states });
+  const flow = popupFlow(storage, {
+    live: () => live,
+    states: () => states,
+    unboundFront: (chat) => unboundTabInFront && chat.harnessSessionId === 's-short',
+  });
   await flow.service.poll(true);
-  // A 2.6 s turn (dac4f591): over by the time the import lists it, seen as of its prompt.
   states['s-short'] = idleAfter(promptAt + 2_600);
   storage.createChat('wt-b', 'claude', 'Short first turn', { harnessSessionId: 's-short', autoImported: true, seenAt: promptAt - 1 });
   for (let tick = 0; tick < 3; tick++) {
     await flow.service.poll();
   }
-  assert.equal(finishedToasts().length, 1, 'one finished pop-up');
   assert.deepEqual(flow.statusLines().map((line) => line.replace(/ lag=\d+$/, '')), ['[Pitwall] status s-short idle→finished']);
+  return flow;
+}
+
+test('a first turn that ended unwatched before its new chat was listed pops up once (another app in front)', async () => {
+  // Notepad is in front: the window is not focused, though its active tab is the chat's unbound tab.
+  const flow = await shortFirstTurn(false, true);
+  assert.equal(finishedToasts().length, 1, 'one finished pop-up');
+  assert.equal(flow.shownLines().length, 1);
+});
+
+test('a fast first turn watched in its own tab, not bound yet, never pops up (QA on #73)', async () => {
+  // The window is focused and its active tab is the new chat's tab, which Pitwall has not bound yet.
+  const flow = await shortFirstTurn(true, true);
+  assert.equal(finishedToasts().length, 0, 'no pop-up while you watch it');
+  assert.equal(flow.skipped('front').length, 1, 'judged once, as in front');
 });
 
 test('asks about a session that stays unimportable are bounded: at most 6 a minute however often it polls, then none until its next turn', async (t) => {
@@ -1894,6 +1915,61 @@ test('asks about a session that stays unimportable are bounded: at most 6 a minu
   await flow.service.poll();
   assert.equal(flow.unlisted.length, asked + 1, 'a new turn asks again at once');
   flow.service.dispose();
+});
+
+test('a new turn that starts while an ask is in flight starts the tries over once the answer comes (QA on #73)', async (t) => {
+  const T0 = 1_800_000_000_000;
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: T0 });
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  const live = new Set(['s-x']);
+  const underWay = new Set(['s-x']);
+  let answer: (retry: readonly string[]) => void = () => undefined;
+  const flow = popupFlow(storage, {
+    live: () => live,
+    underWay: () => underWay,
+    states: () => ({ 's-x': busy(T0) }),
+    onUnlisted: () => new Promise<readonly string[]>((resolve) => (answer = resolve)),
+  });
+  await flow.service.poll(true);
+  await flow.service.poll();
+  assert.equal(flow.unlisted.length, 1, 'asked; the answer is slow');
+  // Its turn ends and the next one starts while the answer is still out.
+  underWay.delete('s-x');
+  await flow.service.poll();
+  underWay.add('s-x');
+  await flow.service.poll();
+  assert.equal(flow.unlisted.length, 1, 'one ask at a time');
+  answer(['s-x']);
+  for (let i = 0; i < 20; i++) await flush();
+  assert.equal(flow.unlisted.length, 2, 'the new turn asks at once when the answer arrives, without waiting out a backoff');
+  flow.service.dispose();
+});
+
+test('dispose stops the retry timers: no ask and no poll after it', async (t) => {
+  const T0 = 1_800_000_000_000;
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: T0 });
+  windowState().state = { focused: true };
+  const storage = makeStorage();
+  let liveReads = 0;
+  const flow = popupFlow(storage, {
+    live: () => {
+      liveReads++;
+      return new Set(['s-stuck']);
+    },
+    underWay: () => new Set(['s-stuck']),
+    states: () => ({ 's-stuck': busy(T0) }),
+    onUnlisted: (sessionIds) => sessionIds,
+  });
+  await flow.service.poll(true);
+  await flow.service.poll();
+  for (let i = 0; i < 20; i++) await flush();
+  assert.equal(flow.unlisted.length, 1);
+  flow.service.dispose();
+  const reads = liveReads;
+  await settleTimers(t, 120_000);
+  assert.equal(flow.unlisted.length, 1, 'no ask after dispose');
+  assert.equal(liveReads, reads, 'and no poll');
 });
 
 test('a chat first seen after activation at needs pops once across windows (not pre-existing)', async (t) => {

@@ -52,6 +52,13 @@ export interface NotificationOptions {
   ledger?: { claim(key: PopupKey): Promise<boolean> };
   /** True when any window has this session in front and focused (the registry, Q33). */
   frontAnywhere?: (sessionId: string) => boolean;
+  /**
+   * True when this window's active tab may be this chat's own and simply not
+   * bound yet: a native-UI tab of its harness with no session, in its
+   * folder, while the chat has no bound tab (a brand-new chat being watched,
+   * PR #73). Counts as in front while the window is focused.
+   */
+  unboundFront?: (chat: ChatSession) => boolean;
   /** True when the chat is on the sidebar list (Q31). Default: always. */
   isListed?: (chatId: string) => boolean;
   /** The Operations log. Lines carry an id8 and a reason, never a title or a path. */
@@ -149,7 +156,11 @@ export class NotificationService {
     }
     const windowFocused = vscode.window.state.focused;
     // Never interrupt someone who is already looking at this session, here or in another window (Q33).
-    if (target.inFront || (windowFocused && this.isChatVisible(target.chat.id)) || this.options.frontAnywhere?.(target.sessionId)) {
+    if (
+      target.inFront ||
+      (windowFocused && (this.isChatVisible(target.chat.id) || this.options.unboundFront?.(target.chat))) ||
+      this.options.frontAnywhere?.(target.sessionId)
+    ) {
       return this.skip(popKind, target, 'front');
     }
     if (this.options.ledger && !(await this.options.ledger.claim({ sessionId: target.sessionId, kind: popKind, at }))) {

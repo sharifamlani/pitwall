@@ -76,6 +76,8 @@ interface UnlistedAsk {
   settled: boolean;
   /** Its turn was under way at the last look; a new turn re-arms the asks. */
   underWay: boolean;
+  /** A new turn started while an ask was in flight: its answer re-arms the asks. */
+  resetPending?: boolean;
   /** The backoff before the next ask. */
   timer?: NodeJS.Timeout;
 }
@@ -832,12 +834,17 @@ export class SessionAttentionService {
           }
           ask = { asks: 0, due: true, inFlight: false, settled: false, underWay: true };
           this.unlistedAsks.set(key, ask);
-        } else if (turnUnderWay && !ask.underWay && !ask.inFlight) {
-          // A new turn of a session still unlisted: its tries start over.
-          clearTimeout(ask.timer);
-          ask.timer = undefined;
-          ask.asks = 0;
-          ask.due = true;
+        } else if (turnUnderWay && !ask.underWay) {
+          // A new turn of a session still unlisted: its tries start over
+          // (once the ask in flight is answered, if one is).
+          if (ask.inFlight) {
+            ask.resetPending = true;
+          } else {
+            clearTimeout(ask.timer);
+            ask.timer = undefined;
+            ask.asks = 0;
+            ask.due = true;
+          }
         }
         ask.underWay = turnUnderWay;
         if (ask.due && !ask.inFlight && ask.asks < UNLISTED_MAX_ASKS) {
@@ -890,6 +897,16 @@ export class SessionAttentionService {
       }
       if (!retry.has(id)) {
         ask.settled = true;
+        continue;
+      }
+      if (ask.resetPending) {
+        // A new turn started while this ask was out: start its tries over now.
+        ask.resetPending = false;
+        clearTimeout(ask.timer);
+        ask.timer = undefined;
+        ask.asks = 0;
+        ask.due = true;
+        void this.poll();
         continue;
       }
       if (ask.asks >= UNLISTED_MAX_ASKS) {

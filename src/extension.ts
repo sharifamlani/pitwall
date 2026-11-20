@@ -9,6 +9,7 @@ import { GitService } from './core/services/GitService';
 import { TerminalManager } from './core/services/TerminalManager';
 import { HarnessWatcherRegistry } from './core/harness/HarnessWatcherRegistry';
 import { SessionImportService } from './core/services/SessionImportService';
+import { createUnlistedLiveHandler } from './core/services/unlistedLive';
 import { RepoDiscoveryService } from './core/services/RepoDiscoveryService';
 import { NotificationService, openFromPopup } from './core/services/NotificationService';
 import { POPUPS_DIR, PopupLedger } from './core/notify/PopupLedger';
@@ -591,8 +592,16 @@ export async function activate(context: vscode.ExtensionContext) {
   let scansStarted = false;
   /** A live session no row holds was asked about before the first passes started; they run it once they do. */
   let unlistedBeforeScans = false;
-  /** Live sessions in folders no listed repo holds that already woke discovery: once each per window (Q31, N5). */
-  const discoveryAsked = new Set<string>();
+  // The answer to "a live session no row holds", once its turn has started (Q31, new-chat pickup):
+  // see createUnlistedLiveHandler. The attention service is made below; it is only called later.
+  const unlistedLive = createUnlistedLiveHandler({
+    scansStarted: () => scansStarted,
+    deferUntilScans: () => (unlistedBeforeScans = true),
+    importLive: (sessionIds) => sessionImporter.importLive(sessionIds),
+    wakeDiscovery: () => repoDiscovery.wake(),
+    fullRefresh: () => sessionImporter.refresh(),
+    pollAttention: () => void attentionService.poll(),
+  });
 
   // Repos found from the agents' sessions (ADR 0019), after the list first
   // renders; activation never waits for a pass.
@@ -603,6 +612,8 @@ export async function activate(context: vscode.ExtensionContext) {
       worktreeCatalog.invalidate();
       refreshTree();
       sessionImporter.wake();
+      // A live session in a folder no repo held lists now, list hidden or not.
+      void unlistedLive.onReposAdded().catch((error) => console.error('[Pitwall] Could not list live sessions of new repos:', error));
     },
   });
   context.subscriptions.push(repoDiscovery);
@@ -663,6 +674,13 @@ export async function activate(context: vscode.ExtensionContext) {
       ledger: popupLedger,
       frontAnywhere: (sessionId) => (windowServices?.registry ?? earlyRegistry)?.frontAnywhere(sessionId) ?? false,
       isListed: (chatId) => storageService.getChat(chatId) !== undefined,
+      // A brand-new chat's tab, in front before it binds, is in front (PR #73).
+      unboundFront: (chat) =>
+        chatVisibility.unboundTabMayBeChat(chat, {
+          adapters: () => harnessRegistry.all(),
+          worktreePathOf: (entry) => workspacesProvider.getWorktreeById(entry.worktreeId)?.path,
+          folders: () => (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath),
+        }),
       log: logOperation,
       toast: windowsToast,
       sound: (kind) => soundSwitches.get(kind),
@@ -713,33 +731,9 @@ export async function activate(context: vscode.ExtensionContext) {
     isChatVisible,
     {
       log: logOperation,
-      // A live session no row holds yet, once its turn has started (Q31): its own transcript is read
-      // and imported by itself, list hidden or not (new-chat pickup, 12f645db). One with nothing to
-      // import yet is asked about again with backoff; one in a folder no listed repo holds wakes
-      // discovery once (a new repo) and is asked again so it lists once discovery adds the repo; an
-      // adapter that can't read one session gets the full import scan as before. Before the first
-      // passes start (after the first render and the first claim, E16/I3) the ask is kept, they run
-      // it once when they start, and the attention service asks again.
-      onUnlistedLive: async (sessionIds) => {
-        if (!scansStarted) {
-          unlistedBeforeScans = true;
-          return sessionIds;
-        }
-        const result = await sessionImporter.importLive(sessionIds);
-        const newRepos = result.unplaced.filter((id) => !discoveryAsked.has(id));
-        newRepos.forEach((id) => discoveryAsked.add(id));
-        if (result.unsupported.length > 0 || newRepos.length > 0) {
-          repoDiscovery.wake();
-        }
-        if (result.unsupported.length > 0) {
-          sessionImporter.refresh();
-        }
-        if (result.retry.length < sessionIds.length - result.unplaced.length - result.unsupported.length) {
-          // Something was listed: track its turn now, not on the next tick.
-          void attentionService.poll();
-        }
-        return [...result.retry, ...result.unplaced];
-      },
+      // A live session no row holds yet, once its turn has started (Q31): imported from its own
+      // transcript, list hidden or not (new-chat pickup, 12f645db); see createUnlistedLiveHandler.
+      onUnlistedLive: (sessionIds) => unlistedLive.ask(sessionIds),
     }
   );
   markChatSeen = (chatId) => attentionService.markSeen(chatId);

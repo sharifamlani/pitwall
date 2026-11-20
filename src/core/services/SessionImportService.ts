@@ -302,11 +302,15 @@ export class SessionImportService implements vscode.Disposable {
    * List live sessions no row holds, each read by itself (new-chat pickup):
    * the attention service asks as a session's turn starts, list hidden or
    * not, and a full scan would re-read every transcript of every repository
-   * to find one. Each session goes through the same per-worktree steps as a
-   * full scan's (a waiting UI launch claims it first, then the import with
-   * its tombstone, reservation, retention and setting checks); renames,
-   * relocation and retention pruning need the full listing and stay with
-   * the scans. It runs between scans, never alongside one.
+   * to find one. What it read goes to `onSessionsListed`, as a scan's
+   * listing does (tab adoption titles, closed rows' turn state). Each session
+   * goes through the same per-worktree steps as a full scan's (a waiting UI
+   * launch claims it first, then the import with its tombstone, reservation,
+   * retention and setting checks); where a launch or CLI chat is waiting,
+   * those compare the worktree's whole listing, as the hot pass does.
+   * Renames, relocation and retention pruning need every repository's
+   * listing and stay with the scans. It runs between scans, never alongside
+   * one.
    *
    * A live import is seen as of just before its latest prompt: its turn is
    * news (Q30), so a first turn that ended before it was listed still pops.
@@ -334,25 +338,49 @@ export class SessionImportService implements vscode.Disposable {
       this.restorePendingUiExpectations(scopes, chats);
       const index = this.buildIndex(chats);
       const allWorktrees = scopes.flatMap((scope) => scope.worktrees);
+      const read: Array<{ adapter: HarnessAdapter; session: HarnessSession }> = [];
       for (const sessionId of sessionIds) {
         const found = await this.readLiveSession(adapters, sessionId);
-        if (!found) {
+        if (found) {
+          read.push(found);
+        } else {
           result.retry.push(sessionId);
-          continue;
         }
-        const { adapter, session } = found;
+      }
+      // As a scan does: tab adoption learns the titles (so a new chat's tab
+      // binds), and closed rows their turn state.
+      if (read.length > 0) {
+        this.onSessionsListed(read.map((entry) => entry.session));
+      }
+      const groups = new Map<string, { adapter: HarnessAdapter; worktree: Worktree; sessions: HarnessSession[] }>();
+      for (const { adapter, session } of read) {
         if (index.linked.get(adapter.id)?.has(session.sessionId)) {
           continue;
         }
         const worktree = deepestContainingRoot(allWorktrees, session.cwd);
         if (!worktree) {
-          result.unplaced.push(sessionId);
+          result.unplaced.push(session.sessionId);
           continue;
         }
-        this.linkPendingUiLaunches(adapter, worktree, [session], index, event);
-        if (settings.enabled && !index.linked.get(adapter.id)?.has(session.sessionId)) {
-          const seenAt = (session.lastActivity ?? session.lastUpdated?.getTime() ?? now) - 1;
-          this.importRecentSessions(adapter, worktree, [session], index, event, now, settings.retentionDays * DAY_MS, seenAt);
+        const key = `${adapter.id}\u0000${worktree.id}`;
+        const group = groups.get(key) ?? { adapter, worktree, sessions: [] };
+        group.sessions.push(session);
+        groups.set(key, group);
+      }
+      for (const { adapter, worktree, sessions } of groups.values()) {
+        // A launch waiting in this worktree compares candidates by creation
+        // time: it must see the same list a scan would, the worktree's whole
+        // listing, or it could claim the wrong session (QA on #73).
+        const candidates = this.hasWaitingLaunch(adapter.id, worktree, index)
+          ? await this.withWorktreeListing(adapter, worktree, sessions)
+          : sessions;
+        this.linkPendingUiLaunches(adapter, worktree, candidates, index, event);
+        if (settings.enabled) {
+          const asked = new Set(sessions.map((session) => session.sessionId));
+          this.importRecentSessions(adapter, worktree, candidates, index, event, now, settings.retentionDays * DAY_MS, {
+            only: asked,
+            seenAt: (session) => (session.lastActivity ?? session.lastUpdated?.getTime() ?? now) - 1,
+          });
         }
       }
     } catch (error) {
@@ -365,6 +393,37 @@ export class SessionImportService implements vscode.Disposable {
       this.endScan();
     }
     return result;
+  }
+
+  /** Whether a UI launch or a CLI chat in this worktree is still waiting for its session. */
+  private hasWaitingLaunch(harness: HarnessId, worktree: Worktree, index: ChatIndex): boolean {
+    for (const [chatId, expectation] of this.expectations) {
+      if (expectation.harness === harness && samePath(expectation.worktreePath, worktree.path) && !index.byId.get(chatId)?.harnessSessionId) {
+        return true;
+      }
+    }
+    const now = Date.now();
+    return [...index.byId.values()].some(
+      (chat) =>
+        chat.harness === harness &&
+        chat.worktreeId === worktree.id &&
+        !chat.harnessSessionId &&
+        !chat.pendingUiLaunch &&
+        !chat.pendingHarnessSessionId &&
+        now - chat.createdAt <= PENDING_LINK_WINDOW_MS
+    );
+  }
+
+  /** The worktree's own sessions, as the hot pass lists them, with the ones just read (fresher) in place. */
+  private async withWorktreeListing(adapter: HarnessAdapter, worktree: Worktree, sessions: HarnessSession[]): Promise<HarnessSession[]> {
+    let listed: HarnessSession[] = [];
+    try {
+      listed = this.catalog.ownedSessions(worktree.path, await adapter.listSessionsForWorktree(worktree.path, true));
+    } catch (error) {
+      console.error(`[SessionImportService] Could not list ${adapter.displayName} sessions for ${worktree.path}:`, error);
+    }
+    const asked = new Set(sessions.map((session) => session.sessionId));
+    return [...listed.filter((session) => !asked.has(session.sessionId)), ...sessions];
   }
 
   /** The first adapter that reads this session by itself, with the session. */
@@ -817,8 +876,12 @@ export class SessionImportService implements vscode.Disposable {
     event: SessionImportEvent,
     now: number,
     retentionMs: number,
-    /** A live import's seen baseline (`importLive`); a scan's import is seen now. */
-    seenAt?: number
+    /**
+     * A live import (`importLive`): only these sessions are imported (the
+     * rest are candidates for the reservation only), each seen as `seenAt`
+     * gives; a scan's import imports every candidate, seen now.
+     */
+    live?: { only: ReadonlySet<string>; seenAt: (session: HarnessSession) => number }
   ): void {
     if (event.imported >= MAX_IMPORTS_PER_SCAN) {
       return;
@@ -846,6 +909,9 @@ export class SessionImportService implements vscode.Disposable {
     for (const session of candidates) {
       if (event.imported >= MAX_IMPORTS_PER_SCAN) {
         return;
+      }
+      if (live && !live.only.has(session.sessionId)) {
+        continue;
       }
       if (linked.has(session.sessionId)) {
         continue;
@@ -886,7 +952,7 @@ export class SessionImportService implements vscode.Disposable {
           createdAt,
           lastAccessedAt: lastActive,
           autoImported: true,
-          ...(seenAt !== undefined ? { seenAt } : {}),
+          ...(live ? { seenAt: live.seenAt(session) } : {}),
         }
       );
       index.byId.set(chat.id, chat);

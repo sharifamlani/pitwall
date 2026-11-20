@@ -455,6 +455,99 @@ test('importLive links a UI launch waiting in that worktree instead of importing
   assert.equal(f.storage.getChats().filter((entry) => entry.harnessSessionId === 's-ui').length, 1, 'one row');
 });
 
+test('importLive: a waiting UI launch claims the same session a scan would (the earliest new one), whatever order they are asked in (QA probe, #73)', async (t) => {
+  const f = setup(t);
+  const transcripts = new Map<string, HarnessSession>();
+  const { service } = liveImporter(t, f, transcripts);
+  const placeholder = f.chat('New Session', null, { pendingUiLaunch: true });
+  await service.expectChat(placeholder.id, f.worktree.path, { bindSurface: false });
+  const now = Date.now();
+  // s-ui: the panel launch's own session (created first). s-other: a terminal `claude` in the same folder 2 s later.
+  transcripts.set('s-ui', sessionRecord('claude', 's-ui', { cwd: f.worktree.path, summary: 'From the panel', lastUpdated: new Date(now + 1_000) }));
+  transcripts.set('s-other', sessionRecord('claude', 's-other', { cwd: f.worktree.path, summary: 'From a terminal', lastUpdated: new Date(now + 3_000) }));
+  // Both are live, unlisted and busy; the live record lists s-other first.
+  await service.importLive(['s-other', 's-ui']);
+  assert.equal(f.storage.getChat(placeholder.id)?.harnessSessionId, 's-ui', 'the placeholder claims its own (earliest) session, as findClaimableSession over the worktree would');
+  assert.equal(f.linkedTo('s-other')?.autoImported, true, 'the other is imported as its own row');
+});
+
+test("importLive compares a waiting launch against the worktree's whole listing, not just the sessions asked about", async (t) => {
+  const f = setup(t);
+  f.service.dispose();
+  const now = Date.now();
+  const transcripts = new Map<string, HarnessSession>();
+  // The panel launch's own session is not live any more (its first turn ended and the tab closed),
+  // so it is in the worktree's listing but not asked about.
+  const own = sessionRecord('claude', 's-ui', { cwd: f.worktree.path, summary: 'From the panel', lastUpdated: new Date(now + 1_000) });
+  let worktreeScans = 0;
+  let launched = false;
+  const service = new SessionImportService(
+    f.storage,
+    new WorktreeCatalog(f.storage, {
+      listRepositoryWorktrees: () => ({ isGit: true, worktrees: [f.worktree] }),
+      listRepositoryWorktreesAsync: async () => ({ isGit: true, worktrees: [f.worktree] }),
+    } as never),
+    new HarnessRegistry([
+      fakeAdapter('claude', {
+        listSessionsForWorktree: async () => {
+          worktreeScans++;
+          return [...(launched ? [own] : []), ...transcripts.values()];
+        },
+        getSession: async (sessionId: string) => transcripts.get(sessionId) ?? null,
+      }),
+    ]),
+    { scanIntervalMs: 60_000, hotScanIntervalMs: 60_000, isVisible: () => false, readSettings: () => f.settings }
+  );
+  t.after(() => service.dispose());
+  const placeholder = f.chat('New Session', null, { pendingUiLaunch: true });
+  await service.expectChat(placeholder.id, f.worktree.path, { bindSurface: false });
+  launched = true;
+  transcripts.set('s-other', sessionRecord('claude', 's-other', { cwd: f.worktree.path, summary: 'From a terminal', lastUpdated: new Date(now + 3_000) }));
+  worktreeScans = 0;
+  await service.importLive(['s-other']);
+  assert.equal(f.storage.getChat(placeholder.id)?.harnessSessionId, 's-ui', 'the launch claims its own session, as the hot pass would');
+  assert.equal(f.linkedTo('s-other')?.autoImported, true);
+  assert.equal(worktreeScans, 1, "the waiting launch's worktree was listed once");
+
+  // A CLI chat started in Pitwall without a chosen id waits for its watcher: its session is reserved, not imported.
+  const awaiting = f.chat('CLI chat', null);
+  f.storage.updateChat(awaiting.id, { createdAt: now + 4_000 });
+  transcripts.set('s-cli', sessionRecord('claude', 's-cli', { cwd: f.worktree.path, lastUpdated: new Date(now + 5_000) }));
+  assert.deepEqual(await service.importLive(['s-cli']), { retry: [], unplaced: [], unsupported: [] }, 'settled: its watcher links it');
+  assert.equal(f.linkedTo('s-cli'), undefined, 'no second row for a session a CLI chat is about to claim');
+});
+
+test('importLive reports what it read to onSessionsListed, like a scan (tab adoption titles, closed-row turn state) (QA probe, #73)', async (t) => {
+  const f = setup(t);
+  f.service.dispose();
+  const listed: string[] = [];
+  const transcripts = new Map<string, HarnessSession>();
+  const service = new SessionImportService(
+    f.storage,
+    new WorktreeCatalog(f.storage, {
+      listRepositoryWorktrees: () => ({ isGit: true, worktrees: [f.worktree] }),
+      listRepositoryWorktreesAsync: async () => ({ isGit: true, worktrees: [f.worktree] }),
+    } as never),
+    new HarnessRegistry([fakeAdapter('claude', { getSession: async (id: string) => transcripts.get(id) ?? null })]),
+    { scanIntervalMs: 60_000, hotScanIntervalMs: 60_000, isVisible: () => false, readSettings: () => f.settings, onSessionsListed: (s) => listed.push(...s.map((x) => x.sessionId)) }
+  );
+  t.after(() => service.dispose());
+  transcripts.set('s-new', sessionRecord('claude', 's-new', { cwd: f.worktree.path, summary: 'Night ferry story', lastActivity: Date.now() - 1000 }));
+  await service.importLive(['s-new']);
+  assert.ok(f.linkedTo('s-new'));
+  assert.deepEqual(listed, ['s-new']);
+});
+
+test('importLive imports nothing while auto-import is off, and does not ask to be retried', async (t) => {
+  const f = setup(t);
+  const transcripts = new Map<string, HarnessSession>();
+  const { service } = liveImporter(t, f, transcripts);
+  f.settings.enabled = false;
+  transcripts.set('s-new', sessionRecord('claude', 's-new', { cwd: f.worktree.path, summary: 'Off' }));
+  assert.deepEqual(await service.importLive(['s-new']), { retry: [], unplaced: [], unsupported: [] });
+  assert.equal(f.linkedTo('s-new'), undefined, 'the setting holds for the live import too');
+});
+
 test('importLive names sessions no adapter can read by themselves, so the caller falls back to a full refresh', async (t) => {
   const f = setup(t);
   assert.deepEqual(await f.service.importLive(['s-x']), { retry: [], unplaced: [], unsupported: ['s-x'] });

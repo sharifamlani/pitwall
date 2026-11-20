@@ -13,6 +13,11 @@ import type { ChatSession } from '../../../../src/core/types';
 import type { HarnessSession } from '../../../../src/core/harness/types';
 import { ClaudeHarness } from '../../../../src/harnesses/claude/ClaudeHarness';
 import { claudeProfile, entry } from '../../harnesses/claude/claudeFixture';
+import { HarnessRegistry } from '../../../../src/core/harness/HarnessRegistry';
+import { SessionImportService } from '../../../../src/core/services/SessionImportService';
+import { WorktreeCatalog } from '../../../../src/core/services/WorktreeCatalog';
+import { unboundTabMayBeChat } from '../../../../src/core/services/chatVisibility';
+import { fakeAdapter, makeStorage, sessionRecord, worktreeRecord } from '../../support';
 
 const LAB_C = 'C:\\lab\\uj-lab-c';
 const LAB_C_WT = 'C:\\lab\\uj-lab-c-wt';
@@ -131,4 +136,54 @@ test('an empty window adopts nothing and lists nothing', () => {
   }).dispose();
   assert.equal(listed, 0);
   surfaces.dispose();
+});
+
+test("a brand-new chat's tab binds once importLive reads its session, and until then counts as in front as an unbound tab (QA on #73)", async (t) => {
+  const { surfaces, bound } = restoredWindow(['Night ferry story']);
+  const storage = makeStorage();
+  const repo = storage.addRepository('uj-lab-c', LAB_C);
+  const worktree = worktreeRecord({ id: 'wt-c', repoId: repo.id, path: LAB_C });
+  const listed = new vscode.EventEmitter<HarnessSession[]>();
+  const transcript = sessionRecord('claude', '12f645db', { cwd: LAB_C, summary: 'Night ferry story', lastActivity: Date.now() - 1_000 });
+  const adapter = fakeAdapter('claude', {
+    nativeUi: { surfaces } as never,
+    getSession: async (sessionId: string) => (sessionId === '12f645db' ? transcript : null),
+  });
+  const importer = new SessionImportService(
+    storage,
+    new WorktreeCatalog(storage, {
+      listRepositoryWorktrees: () => ({ isGit: true, worktrees: [worktree] }),
+      listRepositoryWorktreesAsync: async () => ({ isGit: true, worktrees: [worktree] }),
+    } as never),
+    new HarnessRegistry([adapter]),
+    { isVisible: () => false, onSessionsListed: (sessions) => listed.fire(sessions), readSettings: () => ({ enabled: true, retentionDays: 7 }) }
+  );
+  t.after(() => importer.dispose());
+  const adoption = startTabAdoption({
+    folder: LAB_C,
+    adapters: [{ id: 'claude', nativeUi: { surfaces } as never, listSessionsForWorktree: async () => [] }],
+    chats: () => storage.getChats(),
+    worktreePathOf: (chat) => (chat.worktreeId === worktree.id ? LAB_C : undefined),
+    onSessionsListed: listed.event,
+  });
+  await surfaces.adoptBeforeOpen(1_000);
+  assert.equal(surfaces.activeTabUnbound(), true, 'the new tab is in front, bound to nothing');
+
+  await importer.importLive(['12f645db']);
+  const chat = storage.getChats().find((entry) => entry.harnessSessionId === '12f645db')!;
+  assert.ok(chat, 'listed');
+  assert.deepEqual(bound(), ['12f645db'], 'the tab binds to it at once');
+  assert.equal(surfaces.activeTabUnbound(), false);
+  assert.equal(unboundTabMayBeChat(chat, { adapters: () => [adapter], worktreePathOf: () => LAB_C, folders: () => [LAB_C] }), false, 'bound: the ordinary front check takes over');
+
+  // Before a tab binds, a chat of this folder without a bound tab counts as possibly in front; one of another folder or harness never does.
+  const fresh = restoredWindow(['Claude Code']);
+  const freshAdapter = { ...adapter, nativeUi: { surfaces: fresh.surfaces } as never };
+  const unbound = { adapters: () => [freshAdapter], worktreePathOf: () => LAB_C, folders: () => [LAB_C] };
+  assert.equal(unboundTabMayBeChat(chat, unbound), true);
+  assert.equal(unboundTabMayBeChat(chat, { ...unbound, worktreePathOf: () => LAB_C_WT }), false, "another folder's chat");
+  assert.equal(unboundTabMayBeChat({ ...chat, harness: 'codex' } as ChatSession, unbound), false, "another harness's chat");
+  adoption.dispose();
+  surfaces.dispose();
+  fresh.surfaces.dispose();
 });

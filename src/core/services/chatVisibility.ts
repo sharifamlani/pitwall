@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ChatSession } from '../types';
 import { HarnessAdapter } from '../harness/types';
 import { chatNativeSessionIds } from '../harness/sessionUtils';
+import { samePath } from '../utils/paths';
 
 /** What deciding "which chat is in front" reads from the rest of the extension. */
 export interface ChatVisibilitySources {
@@ -73,6 +74,27 @@ function chatIdOfActiveTab(sources: ChatVisibilitySources): string | undefined {
     return chatId && sources.isPitwallActivation?.(chatId) ? undefined : chatId;
   }
   return activeNativeUiChatId(sources);
+}
+
+/**
+ * Whether this window's active tab may be this chat's own, not bound yet
+ * (PR #73): a native-UI tab of the chat's harness that no session is bound
+ * to, while the chat has no bound tab and its worktree is one of this
+ * window's folders. A brand-new chat's tab binds only once its title names
+ * the chat, so a user watching its first turn would otherwise get a pop-up.
+ * Focus is the caller's check.
+ */
+export function unboundTabMayBeChat(
+  chat: ChatSession,
+  deps: { adapters(): readonly HarnessAdapter[]; worktreePathOf(chat: ChatSession): string | undefined; folders(): readonly string[] }
+): boolean {
+  const sessionId = chat.harnessSessionId;
+  const surfaces = deps.adapters().find((adapter) => adapter.id === chat.harness)?.nativeUi?.surfaces;
+  if (!sessionId || !surfaces?.activeTabUnbound?.() || surfaces.isOpen(sessionId)) {
+    return false;
+  }
+  const worktreePath = deps.worktreePathOf(chat);
+  return Boolean(worktreePath && deps.folders().some((folder) => samePath(folder, worktreePath)));
 }
 
 /** Whether this chat is the one in front of the user right now. */
