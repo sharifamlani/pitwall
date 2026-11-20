@@ -22,6 +22,7 @@ import { samePath } from '../utils/paths';
 import { commandInDirectory } from '../services/terminalEvents';
 import { consumeKeepListFocus } from './navigation';
 import type { ChatRouter } from '../windows/ChatRouter';
+import { OpenSource, sourceArg, viaTail } from '../windows/openSource';
 import type { JumpWalk } from '../windows/JumpWalk';
 import {
   commandRegistrar,
@@ -91,7 +92,7 @@ export interface ChatCommandDeps {
 
 /** What the session commands give back: this window's open, for the router's local path. */
 export interface ChatCommands {
-  openChatHere(chat: ChatSession, worktree: Worktree, keepListFocus: boolean): Promise<'here' | 'terminal' | 'failed'>;
+  openChatHere(chat: ChatSession, worktree: Worktree, keepListFocus: boolean, source: OpenSource): Promise<'here' | 'terminal' | 'failed'>;
 }
 
 /**
@@ -551,8 +552,8 @@ export function registerChatCommands(
    * elsewhere and was brought forward, handed to its window, or warned about,
    * so the caller starts nothing.
    */
-  const heldByLiveProcess = async (chat: ChatSession): Promise<boolean> =>
-    (await deps.router?.()?.guardLive?.(chat)) !== undefined;
+  const heldByLiveProcess = async (chat: ChatSession, source: OpenSource): Promise<boolean> =>
+    (await deps.router?.()?.guardLive?.(chat, source)) !== undefined;
 
   /** A chat's short id for the Operations log. */
   const id8 = (chat: ChatSession): string => (chat.harnessSessionId ?? chat.id).slice(0, 8);
@@ -581,7 +582,7 @@ export function registerChatCommands(
     chat: ChatSession,
     worktree: Worktree,
     nativeUi: NativeUiCapability,
-    options: { explicit?: boolean } = {}
+    options: { explicit?: boolean; source: OpenSource }
   ): Promise<boolean> => {
     pitwallOpens += 1;
     await releaseExited(chat);
@@ -624,10 +625,10 @@ export function registerChatCommands(
     if (!open && options.explicit && !terminalManager.isActive(chat.id)) {
       const router = deps.router?.();
       if (router?.opensElsewhere && (await router.opensElsewhere(chat, worktree))) {
-        deps.log?.(`[Pitwall] open ${id8(chat)} → its window (explicit ui)`);
-        return (await router.route({ kind: 'open', chats: [chat] })) === 'here';
+        deps.log?.(`[Pitwall] open ${id8(chat)} → its window (explicit ui)${viaTail(options.source)}`);
+        return (await router.route({ kind: 'open', chats: [chat] }, { source: options.source })) === 'here';
       }
-      if (await heldByLiveProcess(chat)) {
+      if (await heldByLiveProcess(chat, options.source)) {
         return false;
       }
     }
@@ -743,14 +744,14 @@ export function registerChatCommands(
    * here through `openChatHere`. A Ctrl+↓/↑ that fired this open left a
    * one-shot marker, read now, before anything is awaited.
    */
-  const openChatPrimary = async (chat: ChatSession, worktree: Worktree): Promise<PrimaryOpen> => {
+  const openChatPrimary = async (chat: ChatSession, worktree: Worktree, source: OpenSource): Promise<PrimaryOpen> => {
     const keepListFocus = consumeKeepListFocus();
     const router = deps.router?.();
     if (router) {
-      const where = await router.route({ kind: 'open', chats: [chat] }, { keepListFocus });
+      const where = await router.route({ kind: 'open', chats: [chat] }, { keepListFocus, source });
       return where === 'routed' ? 'routed' : 'here';
     }
-    const result = await openChatHere(chat, worktree, keepListFocus);
+    const result = await openChatHere(chat, worktree, keepListFocus, source);
     return result === 'terminal' ? 'terminal' : 'here';
   };
 
@@ -764,7 +765,8 @@ export function registerChatCommands(
   const openChatHere = async (
     chat: ChatSession,
     worktree: Worktree,
-    keepListFocus: boolean
+    keepListFocus: boolean,
+    source: OpenSource
   ): Promise<'here' | 'terminal' | 'failed'> => {
     const nativeUi = harnessRegistry.get(chat.harness).nativeUi;
     const sessionId = chatPrimarySessionId(chat);
@@ -774,7 +776,7 @@ export function registerChatCommands(
     const listed = workspacesProvider.getWorktreeById(chat.worktreeId) ?? worktree;
 
     const inUi = async (ui: NativeUiCapability): Promise<'here' | 'failed'> => {
-      const opened = await openChatInNativeUi(chat, worktree, ui);
+      const opened = await openChatInNativeUi(chat, worktree, ui, { source });
       if (listed.path !== worktree.path) {
         showWorktree(listed);
       }
@@ -806,7 +808,7 @@ export function registerChatCommands(
       return inUi(nativeUi);
     }
 
-    deps.log?.(`[Pitwall] open ${(sessionId ?? chat.id).slice(0, 8)} → terminal (${skip})`);
+    deps.log?.(`[Pitwall] open ${(sessionId ?? chat.id).slice(0, 8)} → terminal (${skip})${viaTail(source)}`);
     const opened = await openInTerminal(chat, worktree, keepListFocus);
     if (listed.path !== worktree.path) {
       showWorktree(listed);
@@ -832,7 +834,7 @@ export function registerChatCommands(
     }
     const worktree = await chatWorktree(chat);
     if (worktree) {
-      await openChatInNativeUi(chat, worktree, nativeUi, { explicit: true });
+      await openChatInNativeUi(chat, worktree, nativeUi, { explicit: true, source: { via: 'explicit-ui' } });
     }
   };
 
@@ -985,24 +987,27 @@ export function registerChatCommands(
     }
   });
 
-  register('pitwall.openChat', async (item?: WorkspaceTreeItem) => {
+  // Every caller in Pitwall passes what asked for the open (`OpenSource`);
+  // a menu item or the palette passes none.
+  register('pitwall.openChat', async (item?: WorkspaceTreeItem, given?: OpenSource) => {
     const chat = rowChat(item);
     const worktree = chat && (await chatWorktree(chat));
     if (chat && worktree) {
-      await openChatPrimary(chat, worktree);
+      await openChatPrimary(chat, worktree, sourceArg(given, { via: item ? 'menu' : 'palette' }));
     }
   });
 
   // The bell on a needs-you row: the same as clicking the row. Its own
   // command only because a command has one icon.
   register('pitwall.openNeedsYouChat', (item?: WorkspaceTreeItem) =>
-    vscode.commands.executeCommand('pitwall.openChat', item)
+    vscode.commands.executeCommand('pitwall.openChat', item, { via: 'bell' } satisfies OpenSource)
   );
 
   // Explicitly open a session in its terminal. If it is open in its agent's
   // UI, close that tab first so two agent processes cannot run; if it is live
   // anywhere else, never start one (the router's guard).
   register('pitwall.openChatInTerminal', async (item?: WorkspaceTreeItem) => {
+    const explicitTerminal: OpenSource = { via: 'explicit-terminal' };
     const chat = resolveChat(item);
     const worktree = chat && (await chatWorktree(chat));
     if (!chat || !worktree) {
@@ -1039,7 +1044,7 @@ export function registerChatCommands(
           );
           return;
         }
-      } else if (!terminalManager.isResuming(chat.id) && (await heldByLiveProcess(chat))) {
+      } else if (!terminalManager.isResuming(chat.id) && (await heldByLiveProcess(chat, explicitTerminal))) {
         // Live where Pitwall can't close it (this window's panel with a tab it
         // never bound, a terminal it doesn't own, another window): a
         // `--resume` here would fork the session, so it is brought forward,
@@ -1048,7 +1053,7 @@ export function registerChatCommands(
       }
     }
 
-    deps.log?.(`[Pitwall] open ${id8(chat)} → terminal (explicit)`);
+    deps.log?.(`[Pitwall] open ${id8(chat)} → terminal (explicit)${viaTail(explicitTerminal)}`);
     await openInTerminal(chat, worktree);
   });
 
@@ -1307,7 +1312,7 @@ export function registerChatCommands(
       return false;
     }
     deps.log?.(`[Pitwall] jump ${id8(chat)} ${position}/${total}`);
-    const where = await openChatPrimary(chat, worktree);
+    const where = await openChatPrimary(chat, worktree, { via: 'jump' });
     if (where !== 'routed') {
       activateChat(chat);
     }
@@ -1445,7 +1450,7 @@ export function registerChatCommands(
     }
     const worktree = await chatWorktree(chat);
     if (worktree) {
-      await openChatPrimary(chat, worktree);
+      await openChatPrimary(chat, worktree, { via: 'starred' });
     }
   });
 

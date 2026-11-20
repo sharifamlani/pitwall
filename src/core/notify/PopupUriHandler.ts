@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ChatSession } from '../types';
 import type { RouteResult } from '../windows/ChatRouter';
+import type { OpenSource } from '../windows/openSource';
 
 /** The extension ID the editor routes `<scheme>://sharifamlani.pitwall/...` links to. */
 export const URI_AUTHORITY = 'sharifamlani.pitwall';
@@ -64,7 +65,7 @@ export interface PopupUriDeps {
   /** The listed chat holding this native session, if Pitwall lists one (Q31, Q37). */
   chatForSession: (sessionId: string) => ChatSession | undefined;
   /** Phase 4's router. */
-  route: (request: { kind: 'open'; chats: ChatSession[] }) => Promise<RouteResult>;
+  route: (request: { kind: 'open'; chats: ChatSession[] }, options: { source: OpenSource }) => Promise<RouteResult>;
   /** Mark the chat seen and select its row here (D18). */
   activateLocal: (chat: ChatSession) => void;
   /** The Operations log. Lines carry an id8 or a reason, never a title, a path or a query value. */
@@ -103,7 +104,7 @@ export class PopupUriHandler implements vscode.UriHandler {
       return;
     }
     const id8 = parsed.sessionId.slice(0, 8);
-    const where = await this.deps.route({ kind: 'open', chats: [chat] });
+    const where = await this.deps.route({ kind: 'open', chats: [chat] }, { source: { via: 'popup-click' } });
     this.deps.log(where === 'outside' ? `[Pitwall] popup click ${id8} outside` : `[Pitwall] popup click ${id8}`);
     if (where !== 'routed') {
       this.deps.activateLocal(chat);

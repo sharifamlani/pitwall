@@ -285,3 +285,106 @@ test('no code path calls tabGroups.close or moveEditor outside side by side and 
   assert.equal((tracker.match(/tabGroups\s*\.\s*close/g) ?? []).length, 1, 'the tracker closes a tab only in closeSurface');
   assert.ok(!/moveEditor/.test(tracker));
 });
+
+/**
+ * Each call of `name(` in `source` (a member call `.name(` when `member`), with
+ * its top-level arguments as written. Strings, template literals and nested
+ * brackets are skipped over; comment lines are not calls.
+ */
+function callsOf(source: string, name: string, member: boolean): { line: number; args: string[] }[] {
+  const calls: { line: number; args: string[] }[] = [];
+  // `name(` or an optional call `name?.(`.
+  const pattern = new RegExp(`${member ? '\\.' : '(?<![\\w.])'}${name}\\s*(?:\\?\\.)?\\s*\\(`, 'g');
+  for (const match of source.matchAll(pattern)) {
+    const lineStart = source.lastIndexOf('\n', match.index) + 1;
+    const lineText = source.slice(lineStart, source.indexOf('\n', match.index));
+    if (/^\s*(\*|\/\/|\/\*\*)/.test(lineText)) {
+      continue;
+    }
+    const args: string[] = [];
+    let depth = 1;
+    let quote: string | undefined;
+    let current = '';
+    let i = match.index + match[0].length;
+    for (; i < source.length && depth > 0; i++) {
+      const c = source[i];
+      if (quote) {
+        current += c;
+        if (c === '\\') {
+          current += source[++i];
+        } else if (c === quote) {
+          quote = undefined;
+        }
+        continue;
+      }
+      if (c === "'" || c === '"' || c === '`') {
+        quote = c;
+      } else if ('([{'.includes(c)) {
+        depth++;
+      } else if (')]}'.includes(c)) {
+        depth--;
+        if (depth === 0) {
+          break;
+        }
+      } else if (c === ',' && depth === 1) {
+        args.push(current.trim());
+        current = '';
+        continue;
+      }
+      current += c;
+    }
+    if (current.trim()) {
+      args.push(current.trim());
+    }
+    calls.push({ line: source.slice(0, match.index).split('\n').length, args });
+  }
+  return calls;
+}
+
+/** Every open in src, where it is and what it passes, by the rule it breaks (empty when none). */
+function opensWithoutVia(): string[] {
+  const offenders: string[] = [];
+  for (const file of tsFiles(SRC)) {
+    const source = fs.readFileSync(file, 'utf8');
+    const where = (line: number) => `${path.relative(ROOT, file).split(path.sep).join('/')}:${line}`;
+    // router.route(request, { source }) and deps.route(...): the options name the
+    // source, or are a dependency's own `options` passed straight on (its type
+    // requires the source, so the caller of that dependency is checked instead).
+    for (const call of callsOf(source, 'route', true)) {
+      const options = call.args[1] ?? '';
+      if (!/\bsource\b/.test(options) && options !== 'options') {
+        offenders.push(`${where(call.line)} route(${call.args.join(', ')})`);
+      }
+    }
+    // guardLive(chat, source) and openChatPrimary(chat, worktree, source).
+    for (const [name, at] of [['guardLive', 1], ['openChatPrimary', 2]] as const) {
+      for (const call of [...callsOf(source, name, true), ...callsOf(source, name, false)]) {
+        if (call.args.length > 0 && !/\b(source|via|explicit\w*)\b/i.test(call.args[at] ?? '')) {
+          offenders.push(`${where(call.line)} ${name}(${call.args.join(', ')})`);
+        }
+      }
+    }
+    // executeCommand / run of the open commands: the argument after the row names the trigger.
+    for (const runner of ['executeCommand', 'run']) {
+      for (const call of callsOf(source, runner, runner === 'executeCommand')) {
+        if (!/^['"]pitwall\.(openChat|openRepoChats|openNeedsYouChat)['"]$/.test(call.args[0] ?? '')) {
+          continue;
+        }
+        if (!/\b(via|source)\b/.test(call.args[2] ?? '')) {
+          offenders.push(`${where(call.line)} ${runner}(${call.args.join(', ')})`);
+        }
+      }
+    }
+  }
+  return offenders;
+}
+
+test('every open in src says what asked for it: route, guardLive, openChatPrimary and the open commands pass a via (0.6.0 gate)', () => {
+  // A route line without a via can't be told from an unrequested open (the
+  // 0.6.0 gate's three routes). A new caller that forgets one fails here,
+  // including one that casts the type checker away.
+  assert.deepEqual(opensWithoutVia(), []);
+  // The scan sees the callers it guards (a broken scanner would pass empty).
+  const routeCalls = tsFiles(SRC).flatMap((file) => callsOf(fs.readFileSync(file, 'utf8'), 'route', true));
+  assert.ok(routeCalls.length >= 10, `the scan found ${routeCalls.length} route calls`);
+});

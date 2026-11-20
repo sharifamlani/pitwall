@@ -15,8 +15,22 @@ import { logOperation } from '../services/OperationLog';
 import { ChatTooltipHeader, chatTooltip } from './chatTooltip';
 import { STATUS_WORDS, SessionStatus, statusIconState } from './sessionStatus';
 import { orderRows, rankRepo, rankSession, repoStatus } from './inboxOrder';
+import { OpenSource, OpenTrigger } from '../windows/openSource';
 
 const REFRESH_DEBOUNCE_MS = 300;
+/**
+ * A row command this soon after its row was newly selected logs
+ * `selected=new+<ms>ms`, the pointer-click shape (the 0.6.0 gate's opens came
+ * 11 ms after their selection); later, or with no fresh selection, it logs
+ * `selected=already`, Enter's shape. The ms are logged so a slow host's
+ * click still reads as one.
+ */
+export const NEW_SELECTION_MS = 1_000;
+/**
+ * From the start of a Ctrl+↓/↑ move, a row command this soon after is the
+ * move's own (`via=keyboard-move`), not a click.
+ */
+const KEYBOARD_MOVE_MS = 1_000;
 /**
  * Every redraw request inside this window joins one pass, which then fires
  * at most one tree change. The window opens with the first request and is
@@ -224,6 +238,11 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   private childrenAwaitTimer: NodeJS.Timeout | undefined;
   /** Row click commands, by command id (see `rowCommandId`). */
   private readonly rowCommands = new Map<string, vscode.Disposable>();
+  /** The rows selected now, and the latest selection that newly selected one row (an open's `selected=` word). */
+  private selectedIds: readonly string[] = [];
+  private newSelection: { rowId: string; at: number } | undefined;
+  /** Until when a row command is a Ctrl+↓/↑ move's (`via=keyboard-move`), not a click. */
+  private keyboardMoveUntil = 0;
 
   /** Each repository's latest worktree listing this session, by repository id. */
   private readonly worktreeCache = new Map<string, RepositoryWorktrees>();
@@ -357,6 +376,47 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     this.view = view;
     view.description = LIST_DESCRIPTION;
     this.updateBadge();
+  }
+
+  /** A Ctrl+↓/↑ move is about to select and open a row: its row command logs `via=keyboard-move`. */
+  startKeyboardMove(): void {
+    this.keyboardMoveUntil = Date.now() + KEYBOARD_MOVE_MS;
+  }
+
+  /**
+   * Remember a selection change for the next row command's log line. The
+   * view's selection handler calls this first, before anything else it does.
+   */
+  noteSelection(selection: readonly WorkspaceTreeItem[]): void {
+    const ids = selection.map((row) => row.id ?? '');
+    const previous = this.selectedIds;
+    this.selectedIds = ids;
+    if (ids.length === 1 && !(previous.length === 1 && previous[0] === ids[0])) {
+      this.newSelection = { rowId: ids[0], at: Date.now() };
+    } else if (ids.length !== 1) {
+      this.newSelection = undefined;
+    }
+  }
+
+  /**
+   * What a row command's open logs (`via=`, see `openSource.ts`): a row
+   * click, a repo click or a Ctrl+↓/↑ move, and whether its row was newly
+   * selected just before (`selected=new+<ms>ms`: a pointer click selects the
+   * row, then runs its command at once) or already (`selected=already`: Enter
+   * on a selected row, or a command with no selection change).
+   */
+  private rowSource(rowId: string, click: OpenTrigger): OpenSource {
+    const via: OpenTrigger = Date.now() <= this.keyboardMoveUntil ? 'keyboard-move' : click;
+    // One key press runs one row command: a click right after it is a click.
+    this.keyboardMoveUntil = 0;
+    const fresh = this.newSelection;
+    const age = fresh && fresh.rowId === rowId ? Date.now() - fresh.at : undefined;
+    if (age !== undefined) {
+      // One selection pairs with one command: an Enter after the click reads as already selected.
+      this.newSelection = undefined;
+    }
+    const selected = age !== undefined && age <= NEW_SELECTION_MS ? `selected=new+${age}ms` : 'selected=already';
+    return { via, detail: selected };
   }
 
   /** Live turn state for the legacy marks, used only without a status source. */
@@ -719,23 +779,24 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   }
 
   /** A chat row's click: open the chat as stored now; a chat removed since does nothing. */
-  private openChatRow(chatId: string): Thenable<unknown> | undefined {
+  private openChatRow(chatId: string, source: OpenSource): Thenable<unknown> | undefined {
     const chat = this.storageService.getChat(chatId);
     if (!chat || !this.harnessRegistry.has(chat.harness)) {
       return undefined;
     }
-    return vscode.commands.executeCommand('pitwall.openChat', this.getChatTreeItem(chat));
+    return vscode.commands.executeCommand('pitwall.openChat', this.getChatTreeItem(chat), source);
   }
 
   /** A repo row's click: open its chats as stored now; a repo removed since does nothing. */
-  private openRepoRow(repoId: string): Thenable<unknown> | undefined {
+  private openRepoRow(repoId: string, source: OpenSource): Thenable<unknown> | undefined {
     const repo = this.storageService.getRepository(repoId);
     if (!repo) {
       return undefined;
     }
     return vscode.commands.executeCommand(
       'pitwall.openRepoChats',
-      this.repositoryItem(repo, vscode.TreeItemCollapsibleState.Collapsed)
+      this.repositoryItem(repo, vscode.TreeItemCollapsibleState.Collapsed),
+      source
     );
   }
 
@@ -1038,7 +1099,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     item.tooltip = repoTooltip(repo.name, position);
     // A click or Enter opens the repo's chats as tabs (rows 4.3, 4.4); the twistie only expands.
     // Through the row's own argument-free command, so a refresh cannot drop the click.
-    item.command = this.rowCommand(item.id!, 'Open Chats', () => this.openRepoRow(repo.id));
+    item.command = this.rowCommand(item.id!, 'Open Chats', () => this.openRepoRow(repo.id, this.rowSource(item.id!, 'repo-click')));
     return item;
   }
 
@@ -1204,7 +1265,7 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
         item.tooltip = chatTooltip(chat, adapter.displayName, meta, item.tooltipHeader);
       }
       // Through the row's own argument-free command, so a refresh cannot drop the click.
-      item.command = this.rowCommand(item.id!, 'Open Chat', () => this.openChatRow(chat.id));
+      item.command = this.rowCommand(item.id!, 'Open Chat', () => this.openChatRow(chat.id, this.rowSource(item.id!, 'row-click')));
       return item;
     });
   }

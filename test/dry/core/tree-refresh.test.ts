@@ -10,9 +10,11 @@ import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { CHILDREN_AWAIT_TIMEOUT_MS, WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/providers/WorkspacesTreeProvider';
+import { registerNavigationCommands } from '../../../src/core/commands/navigation';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { SessionStatus } from '../../../src/core/providers/sessionStatus';
 import { ChatSession, Repository } from '../../../src/core/types';
+import type { OpenSource } from '../../../src/core/windows/openSource';
 import { FakeTreeView, fakeAdapter, fakeWorktreeListing, makeStorage, stub, waitFor, worktreeRecord } from '../support';
 
 beforeEach(() => stub.__reset());
@@ -88,12 +90,16 @@ async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo 
 
   const opened: string[] = [];
   const openedRepos: string[] = [];
+  /** What each open said asked for it (the `via=` of its route line), in order. */
+  const sources: (OpenSource | undefined)[] = [];
   const registrations = [
-    vscode.commands.registerCommand('pitwall.openChat', (item?: WorkspaceTreeItem) => {
+    vscode.commands.registerCommand('pitwall.openChat', (item?: WorkspaceTreeItem, source?: OpenSource) => {
       opened.push((item?.data as ChatSession | undefined)?.id ?? 'none');
+      sources.push(source);
     }),
-    vscode.commands.registerCommand('pitwall.openRepoChats', (item?: WorkspaceTreeItem) => {
+    vscode.commands.registerCommand('pitwall.openRepoChats', (item?: WorkspaceTreeItem, source?: OpenSource) => {
       openedRepos.push((item?.data as Repository | undefined)?.id ?? 'none');
+      sources.push(source);
     }),
   ];
   t.after(() => registrations.forEach((registration) => registration.dispose()));
@@ -120,7 +126,7 @@ async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo 
   view.fullRefreshes = 0;
   view.elementRefreshes = 0;
   view.ignoredRefreshes = 0;
-  return { tree, view, storage, chats, repos: repoList, setStatus, opened, openedRepos, fires, replies, metadataGate };
+  return { tree, view, storage, chats, repos: repoList, setStatus, opened, openedRepos, sources, fires, replies, metadataGate };
 }
 
 interface Deferred {
@@ -450,4 +456,71 @@ test("a removed chat's click command is disposed once the editor's rows no longe
   await waitFor(async () => !(await vscode.commands.getCommands()).includes(command), 'the command disposed');
   assert.ok((await vscode.commands.getCommands()).includes(`_pitwall.row.chat-${kept.id}`), 'other rows keep theirs');
   assert.ok(!view.__childIds(repoRow).includes(`chat-${removed.id}`), 'the editor no longer shows the removed row');
+});
+
+// ---- 0.6.0 gate (unrequested opens): every row open says what asked for it ----
+
+const chatRow = (chat: ChatSession) => `chat-${chat.id}`;
+const repoRowId = (repo: Repository) => `repository-${repo.id}`;
+
+/** Chat r.c of the fixture: repo0..repo2, each expanded with chat r.0..r.5 (newest first). */
+const at = (chats: ChatSession[], r: number, c: number) => chats.find((chat) => chat.name === `chat ${r}.${c}`)!;
+
+/** Wire the selection as extension.ts does: its selection handler notes the selection first. */
+function wireSelection(t: { after(fn: () => void): void }, tree: WorkspacesTreeProvider, view: FakeTreeView): void {
+  view.__revealSelects = true;
+  const subscription = (view as unknown as vscode.TreeView<WorkspaceTreeItem>).onDidChangeSelection(({ selection }) =>
+    tree.noteSelection(selection)
+  );
+  t.after(() => subscription.dispose());
+}
+
+/**
+ * The navigation commands as extension.ts registers them. `list.select`
+ * acts like the workbench's: it selects the row the list focus is on
+ * (`landOn`) and runs that row's command.
+ */
+function wireKeys(t: { after(fn: () => void): void }, tree: WorkspacesTreeProvider, view: FakeTreeView) {
+  const context = { subscriptions: [] as { dispose(): void }[] };
+  registerNavigationCommands(context as never, {
+    workspacesProvider: tree,
+    workspacesTreeView: view as never,
+    filesTreeView: { visible: false } as never,
+  });
+  const keys = { landOn: '' };
+  context.subscriptions.push(
+    vscode.commands.registerCommand('list.focusDown', () => undefined),
+    vscode.commands.registerCommand('list.select', () => {
+      view.__select([view.__rowOf(keys.landOn)]);
+      void view.__click({ id: keys.landOn });
+    })
+  );
+  t.after(() => context.subscriptions.forEach((entry) => entry.dispose()));
+  return keys;
+}
+
+/** `selected=new+<ms>ms` with the ms read out, or the detail as it is. */
+const shape = (source: OpenSource | undefined) =>
+  source && { via: source.via, detail: source.detail?.replace(/selected=new\+\d+ms/, 'selected=new+Nms') };
+
+test('a row open carries its via: a click selected=new, Enter selected=already, a repo click, a Ctrl+Down move (0.6.0 gate)', async (t) => {
+  const { tree, view, chats, repos, sources } = await ownerList(t);
+  wireSelection(t, tree, view);
+  const keys = wireKeys(t, tree, view);
+  // A pointer click: the workbench selects the row, then runs its command at once.
+  await view.__mouseClick({ id: chatRow(at(chats, 1, 2)) });
+  // Enter on the row already selected: the command alone.
+  await view.__click({ id: chatRow(at(chats, 1, 2)) });
+  // A click on a repo row.
+  await view.__mouseClick({ id: repoRowId(repos[2]) });
+  // Ctrl+Down: list.select selects the row the focus landed on and runs its command.
+  keys.landOn = chatRow(at(chats, 2, 3));
+  await vscode.commands.executeCommand('pitwall.list.moveDownAndOpen');
+  await waitFor(() => sources.length === 4, 'the four opens');
+  assert.deepEqual(sources.map(shape), [
+    { via: 'row-click', detail: 'selected=new+Nms' },
+    { via: 'row-click', detail: 'selected=already' },
+    { via: 'repo-click', detail: 'selected=new+Nms' },
+    { via: 'keyboard-move', detail: 'selected=new+Nms' },
+  ]);
 });

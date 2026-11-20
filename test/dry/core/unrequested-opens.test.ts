@@ -11,8 +11,10 @@
  * key event, never for a refresh or a programmatic select) may open a chat.
  *
  * The second test is the diagnostic gap the incident exposed: a route line
- * cannot say what asked for it, so a row click, a hotkey, a search pick and a
- * claimed handoff all log the same `route <id> → here (<reason>)`.
+ * could not say what asked for it, so a row click, a hotkey, a search pick and
+ * a claimed handoff all logged the same `route <id> → here (<reason>)`. Now
+ * each ends with ` via=<trigger>`, and a row click says whether its row was
+ * newly selected just before (a pointer click) or already (Enter).
  */
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -227,12 +229,14 @@ test('every route line says what asked for it, so a click and a programmatic ope
   const view = w.view();
   await expandFolder(view, w.repository);
 
+  const routes = () => operations().filter((line) => line.includes('[Pitwall] route '));
+  // A pointer click: the row is selected, then its command runs at once.
   await click(view, 'chat-chat-0');
-  const routes = await waitFor(() => {
-    const lines = operations().filter((line) => line.includes('[Pitwall] route '));
-    return lines.length > 0 ? lines : undefined;
-  }, 'the click’s route');
-  for (const line of routes) {
-    assert.match(line, / via=row-click\b/, `the route line names its trigger: ${line.replace(/^\[[^\]]+\] /, '')}`);
-  }
+  await waitFor(() => routes().length >= 1, 'the click’s route');
+  // Enter on the row now selected: its command alone.
+  await view.__click(view.__rowOf('chat-chat-0') as { id?: string });
+  await waitFor(() => routes().length >= 2, 'the Enter’s route');
+  const [clicked, entered] = routes().map((line) => line.replace(/^\[[^\]]+\] /, ''));
+  assert.match(clicked, / via=row-click selected=new\+\d+ms$/, `the click's route line names its trigger: ${clicked}`);
+  assert.match(entered, / via=row-click selected=already$/, `the Enter's route line names its trigger: ${entered}`);
 });

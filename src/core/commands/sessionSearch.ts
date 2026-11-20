@@ -7,6 +7,7 @@ import { SessionSearchNode, displayPath } from '../providers/SessionSearchTreePr
 import { WorkspacesTreeProvider } from '../providers/WorkspacesTreeProvider';
 import { SessionSearchService } from '../services/SessionSearchService';
 import { StorageService } from '../services/StorageService';
+import { OpenSource } from '../windows/openSource';
 import { WorktreeCatalog } from '../services/WorktreeCatalog';
 import { ChatSession, SessionSearchEngine, SessionSearchMatch } from '../types';
 import { errorMessage } from '../utils/text';
@@ -281,7 +282,9 @@ export function registerSessionSearchCommands(context: vscode.ExtensionContext, 
     }
     const chat = chatFor(match);
     if (chat) {
-      await vscode.commands.executeCommand('pitwall.openChat', workspacesProvider.getChatTreeItem(chat));
+      await vscode.commands.executeCommand('pitwall.openChat', workspacesProvider.getChatTreeItem(chat), {
+        via: 'find-session',
+      } satisfies OpenSource);
       return;
     }
     // No workspace root owns the folder: resume where the session ran.

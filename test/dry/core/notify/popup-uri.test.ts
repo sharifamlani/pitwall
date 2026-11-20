@@ -134,12 +134,12 @@ test("a click on a chat live in a terminal Pitwall doesn't own shows the Q28 war
     outsideTerminal: async (sessionId) => (sessionId === SESSION ? { pid: 4321 } : undefined),
     log: (line) => routeLog.push(line),
   });
-  const h = handler('here', { route: (request) => router.route(request) });
+  const h = handler('here', { route: (request, options) => router.route(request, options) });
   await h.handler.handleUri(uri(`session=${SESSION}`));
   router.dispose();
 
   assert.deepEqual(shownMessages(), ['That chat is already running in another terminal (pid 4321). Switch to it there.'], 'the Q28 warning, unchanged');
-  assert.deepEqual(routeLog, ['[Pitwall] route 5f0c3d4e → elsewhere (outside-terminal)']);
+  assert.deepEqual(routeLog, ['[Pitwall] route 5f0c3d4e → elsewhere (outside-terminal) via=popup-click']);
   assert.deepEqual(opened, [], 'no second process');
   assert.deepEqual(h.log, ['[Pitwall] uri probe keys=session', '[Pitwall] popup click 5f0c3d4e outside']);
   assert.deepEqual(h.seen, ['chat-a'], 'marked seen, so finished → idle still happens (Q48)');
