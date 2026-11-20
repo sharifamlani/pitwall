@@ -19,7 +19,11 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - "A tab exists" isn't "the process is alive": check the process itself (the harness's record or
   the terminal's own process tree) before treating a terminal as the running chat, and never stop
   a process through a terminal whose process already exited (its old pid may be someone else's).
-  (Pitwall f3: a pop-up landed on a dead shell; quitting killed an outside chat on the same session.)
+  (Pitwall f3: a pop-up landed on a dead shell; quitting killed an outside chat on the same session,
+  which may have come through an exited Pitwall terminal's reused pid: unproven until the Tester's re-run.)
+- A shell whose agent exited is the user's: forget it, never close it (they may run anything in it
+  after /exit), and decide "exited" by the process, not the session id (/clear keeps the same pid
+  under a new id). (Pitwall QA on #75: the release closed live shells and read /clear as exited.)
 - Remove each builder worktree as soon as its PR merges, and watch the package cache (`npm ci` in
   many worktrees grew npm's cache to ~16 GB and filled the disk mid-walk). (Pitwall 2026-11-19.)
 - Never install a build into the owner's own app while agent chats run in it, even at their request;
