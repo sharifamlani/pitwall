@@ -286,6 +286,20 @@ test('no code path calls tabGroups.close or moveEditor outside side by side and 
   assert.ok(!/moveEditor/.test(tracker));
 });
 
+test('every reveal of a list row goes through WorkspacesTreeProvider.revealRow (selected=reveal, QA #82)', () => {
+  // A selecting reveal makes Pitwall's own selection: revealRow marks it, so
+  // the row command after it logs selected=reveal, never a pointer click's
+  // selected=new. A tree view reveal anywhere else skips the mark.
+  const calls = tsFiles(SRC).flatMap((file) =>
+    fs
+      .readFileSync(file, 'utf8')
+      .split('\n')
+      .filter((line) => /\.reveal\s*\(/.test(line) && !/^\s*(\*|\/\/|\/\*\*)/.test(line) && !/\bdeps\.reveal\s*\(/.test(line))
+      .map((line) => `${path.relative(ROOT, file).split(path.sep).join('/')}: ${line.trim()}`)
+  );
+  assert.deepEqual(calls, ['src/core/providers/WorkspacesTreeProvider.ts: return view.reveal(row, options);']);
+});
+
 /**
  * Each call of `name(` in `source` (a member call `.name(` when `member`), with
  * its top-level arguments as written. Strings, template literals and nested

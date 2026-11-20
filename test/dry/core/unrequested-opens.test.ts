@@ -237,6 +237,6 @@ test('every route line says what asked for it, so a click and a programmatic ope
   await view.__click(view.__rowOf('chat-chat-0') as { id?: string });
   await waitFor(() => routes().length >= 2, 'the Enter’s route');
   const [clicked, entered] = routes().map((line) => line.replace(/^\[[^\]]+\] /, ''));
-  assert.match(clicked, / via=row-click selected=new\+\d+ms$/, `the click's route line names its trigger: ${clicked}`);
-  assert.match(entered, / via=row-click selected=already$/, `the Enter's route line names its trigger: ${entered}`);
+  assert.match(clicked, / via=row-click selected=new\+\d+ms lag=\d+ms$/, `the click's route line names its trigger: ${clicked}`);
+  assert.match(entered, / via=row-click selected=already lag=\d+ms$/, `the Enter's route line names its trigger: ${entered}`);
 });

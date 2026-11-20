@@ -9,7 +9,14 @@
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { CHILDREN_AWAIT_TIMEOUT_MS, WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/providers/WorkspacesTreeProvider';
+import {
+  CHILDREN_AWAIT_TIMEOUT_MS,
+  KEYBOARD_MOVE_LATE_MS,
+  NEW_SELECTION_MS,
+  WorkspaceTreeItem,
+  WorkspacesTreeProvider,
+} from '../../../src/core/providers/WorkspacesTreeProvider';
+import { HOST_TICK_MS, HostLag } from '../../../src/core/providers/hostLag';
 import { registerNavigationCommands } from '../../../src/core/commands/navigation';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { SessionStatus } from '../../../src/core/providers/sessionStatus';
@@ -27,9 +34,10 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * The owner's kind of list: `repos` repos with `perRepo` chats each, every
  * chat idle since hours ago (so no row text moves with the clock), drawn in
  * a visible tree view with every repo expanded, and the row commands
- * recorded instead of opening anything.
+ * recorded instead of opening anything. `hostLag` replaces the provider's
+ * real host clock (a test drives its ticks).
  */
-async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo = 6) {
+async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo = 6, hostLag?: HostLag) {
   stub.__setTreeViewsVisible(true);
   const storage = makeStorage();
   const statuses = new Map<string, [SessionStatus, number]>();
@@ -73,7 +81,8 @@ async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo 
         },
       }),
     ]),
-    vscode.Uri.file('/extension')
+    vscode.Uri.file('/extension'),
+    hostLag
   );
   t.after(() => tree.dispose());
   tree.setStatusSource({
@@ -487,21 +496,30 @@ function wireKeys(t: { after(fn: () => void): void }, tree: WorkspacesTreeProvid
     workspacesTreeView: view as never,
     filesTreeView: { visible: false } as never,
   });
-  const keys = { landOn: '' };
+  /** `runCommand: false`: the select changes the selection but the workbench runs no row command. */
+  const keys = { landOn: '', runCommand: true };
   context.subscriptions.push(
     vscode.commands.registerCommand('list.focusDown', () => undefined),
     vscode.commands.registerCommand('list.select', () => {
       view.__select([view.__rowOf(keys.landOn)]);
-      void view.__click({ id: keys.landOn });
+      if (keys.runCommand) {
+        void view.__click({ id: keys.landOn });
+      }
     })
   );
   t.after(() => context.subscriptions.forEach((entry) => entry.dispose()));
   return keys;
 }
 
-/** `selected=new+<ms>ms` with the ms read out, or the detail as it is. */
+/** The detail with the ms of `selected=new+<ms>ms` and `lag=<ms>ms` read out. */
 const shape = (source: OpenSource | undefined) =>
-  source && { via: source.via, detail: source.detail?.replace(/selected=new\+\d+ms/, 'selected=new+Nms') };
+  source && {
+    via: source.via,
+    detail: source.detail?.replace(/selected=new\+\d+ms/, 'selected=new+Nms').replace(/lag=\d+ms/, 'lag=Nms'),
+  };
+
+/** The ms of an open's `lag=<ms>ms` word. */
+const lagOf = (source: OpenSource | undefined) => Number(/(?:^| )lag=(\d+)ms(?: |$)/.exec(source?.detail ?? '')?.[1] ?? NaN);
 
 test('a row open carries its via: a click selected=new, Enter selected=already, a repo click, a Ctrl+Down move (0.6.0 gate)', async (t) => {
   const { tree, view, chats, repos, sources } = await ownerList(t);
@@ -518,9 +536,97 @@ test('a row open carries its via: a click selected=new, Enter selected=already, 
   await vscode.commands.executeCommand('pitwall.list.moveDownAndOpen');
   await waitFor(() => sources.length === 4, 'the four opens');
   assert.deepEqual(sources.map(shape), [
-    { via: 'row-click', detail: 'selected=new+Nms' },
-    { via: 'row-click', detail: 'selected=already' },
-    { via: 'repo-click', detail: 'selected=new+Nms' },
-    { via: 'keyboard-move', detail: 'selected=new+Nms' },
+    { via: 'row-click', detail: 'selected=new+Nms lag=Nms' },
+    { via: 'row-click', detail: 'selected=already lag=Nms' },
+    { via: 'repo-click', detail: 'selected=new+Nms lag=Nms' },
+    { via: 'keyboard-move', detail: 'selected=new+Nms lag=Nms' },
   ]);
+});
+
+// ---- QA #82 follow-ups ----
+
+test('a command more than NEW_SELECTION_MS after its selection logs selected=already (QA #82 X3)', async (t) => {
+  const { tree, view, chats, sources } = await ownerList(t);
+  wireSelection(t, tree, view);
+  const row = chatRow(at(chats, 1, 2));
+  view.__select([view.__rowOf(row)]);
+  await sleep(NEW_SELECTION_MS + 150);
+  await view.__click({ id: row });
+  assert.deepEqual(sources.map(shape), [{ via: 'row-click', detail: 'selected=already lag=Nms' }]);
+});
+
+test("a click after a Ctrl+Down's own row command reads via=row-click (QA #82 X7)", async (t) => {
+  const { tree, view, chats, sources } = await ownerList(t);
+  wireSelection(t, tree, view);
+  const keys = wireKeys(t, tree, view);
+  keys.landOn = chatRow(at(chats, 2, 3));
+  await vscode.commands.executeCommand('pitwall.list.moveDownAndOpen');
+  await waitFor(() => sources.length === 1, "the move's open");
+  // At once, well inside the window startKeyboardMove opened: a click on another row.
+  await view.__mouseClick({ id: chatRow(at(chats, 1, 2)) });
+  await waitFor(() => sources.length === 2, "the click's open");
+  assert.deepEqual(sources.map((source) => source?.via), ['keyboard-move', 'row-click']);
+});
+
+test('a Ctrl+Down that ran no row command does not label the next click keyboard-move (QA #82 X7)', async (t) => {
+  const { tree, view, chats, sources } = await ownerList(t);
+  wireSelection(t, tree, view);
+  const keys = wireKeys(t, tree, view);
+  keys.landOn = chatRow(at(chats, 2, 3));
+  keys.runCommand = false;
+  await vscode.commands.executeCommand('pitwall.list.moveDownAndOpen');
+  assert.equal(sources.length, 0, 'the move opened nothing');
+  // Past the grace for the move's own late command, still inside the window startKeyboardMove opened.
+  await sleep(KEYBOARD_MOVE_LATE_MS + 50);
+  await view.__mouseClick({ id: chatRow(at(chats, 1, 2)) });
+  await waitFor(() => sources.length === 1, "the click's open");
+  assert.deepEqual(sources.map(shape), [{ via: 'row-click', detail: 'selected=new+Nms lag=Nms' }]);
+});
+
+test("Enter right after Pitwall's own reveal selected the row logs selected=reveal, never a click's shape (QA #82)", async (t) => {
+  const { tree, view, chats, sources } = await ownerList(t);
+  wireSelection(t, tree, view);
+  // Tab-follow or a hotkey reveals and selects a row, through revealRow.
+  const row = chatRow(at(chats, 1, 2));
+  await tree.revealRow(view as never, view.__rowOf(row) as WorkspaceTreeItem, { select: true, focus: false });
+  await waitFor(() => (view.selection[0] as WorkspaceTreeItem | undefined)?.id === row, 'the reveal selected the row');
+  // Enter on it at once.
+  await view.__click({ id: row });
+  // A reveal that does not select, then a click on that row: a click.
+  const other = chatRow(at(chats, 2, 1));
+  await tree.revealRow(view as never, view.__rowOf(other) as WorkspaceTreeItem, { select: false, focus: false });
+  await view.__mouseClick({ id: other });
+  await waitFor(() => sources.length === 2, 'the two opens');
+  assert.deepEqual(sources.map(shape), [
+    { via: 'row-click', detail: 'selected=reveal lag=Nms' },
+    { via: 'row-click', detail: 'selected=new+Nms lag=Nms' },
+  ]);
+});
+
+test('a row command handled right after a long host stall logs how late it was (lag=), a prompt one lag=0ms (QA #82)', async (t) => {
+  // The host clock on a fake timer and clock: no real time passes.
+  let now = 1_000_000;
+  let beat: (() => void) | undefined;
+  const hostLag = new HostLag(
+    () => now,
+    (tick) => {
+      beat = tick;
+      return () => (beat = undefined);
+    }
+  );
+  const { tree, view, chats, sources } = await ownerList(t, 3, 6, hostLag);
+  wireSelection(t, tree, view);
+  // A prompt host: the clock ticks on time, and a click lands just after a tick.
+  now += HOST_TICK_MS;
+  beat!();
+  await view.__mouseClick({ id: chatRow(at(chats, 1, 2)) });
+  // A 26 s stall inside a timer callback: the overdue tick fires first, then the queued click.
+  now += 26_000;
+  beat!();
+  await view.__mouseClick({ id: chatRow(at(chats, 2, 1)) });
+  await waitFor(() => sources.length === 2, 'the two opens');
+  assert.equal(lagOf(sources[0]), 0, `the prompt click reads lag=0ms: ${sources[0]?.detail}`);
+  assert.equal(lagOf(sources[1]), 26_000 - HOST_TICK_MS, `the late click shows the stall: ${sources[1]?.detail}`);
+  tree.dispose();
+  assert.equal(beat, undefined, "the provider's dispose stops the host clock");
 });
