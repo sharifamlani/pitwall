@@ -762,6 +762,21 @@ export class SessionAttentionService {
           continue;
         }
         polled.add(chat.id);
+        if (live.liveUnknown) {
+          // The harness can't tell this session's live status yet (QA F1 on
+          // #79): the row keeps what it showed, and no wait starts or ends,
+          // so a wait from before activation is still judged pre-existing
+          // when the answer comes. A row with nothing to keep shows the
+          // transcript's turn meanwhile.
+          if (!this.rowState.has(chat.id)) {
+            this.rowState.set(chat.id, { turnState: live.turnState, turnEndedAt: live.turnEndedAt });
+            if (activeIds.has(chat.id) && this.turnStates.get(chat.id) !== live.turnState) {
+              this.turnStates.set(chat.id, live.turnState);
+              turnStatesChanged = true;
+            }
+          }
+          continue;
+        }
         // A process that died mid-turn leaves a transcript that looks mid-turn: idle, never working or finished (Q30).
         const state: RowState = live.running === false ? { ...settled(live), ...(live.observedAt ? { observedAt: live.observedAt } : {}) } : live;
         this.rowState.set(chat.id, state);

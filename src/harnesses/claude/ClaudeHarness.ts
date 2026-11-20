@@ -3,7 +3,7 @@ import {
   ClaudeSessionService,
   toHarnessSession,
 } from './ClaudeSessionService';
-import { ClaudeAgentsService } from './ClaudeAgentsService';
+import { ClaudeAgentsService, ClaudeAgentsSnapshot } from './ClaudeAgentsService';
 import { ClaudeSessionFileState, ClaudeSessionsFile, ClaudeSessionsSnapshot } from './ClaudeSessionsFile';
 import { ClaudeTurnReading } from './ClaudeTurnState';
 import { ClaudeRepoDiscovery } from './ClaudeRepoDiscovery';
@@ -71,6 +71,10 @@ export class ClaudeHarness implements HarnessAdapter {
   private readonly lastFileWaits = new Map<string, ClaudeSessionFileState>();
   /** Sessions whose wait the previous tick carried over a torn read. */
   private readonly carriedWaits = new Set<string>();
+  /** The `watchLive` callers: re-polled when a background `claude agents` answer lands. */
+  private readonly liveListeners = new Set<() => void>();
+  /** The `claude agents` call a poll started and did not wait for, while it runs. */
+  private agentsRefresh: Promise<void> | undefined;
   private readonly repoDiscovery: ClaudeRepoDiscovery;
 
   constructor(options: ClaudeHarnessOptions = {}) {
@@ -242,9 +246,55 @@ export class ClaudeHarness implements HarnessAdapter {
     return new Set([...ids, ...file.unknownStatus]);
   }
 
-  /** Re-poll soon after a `*.json` change in `~/.claude/sessions` (150 ms debounce; `.key` files never count). */
+  /**
+   * Re-poll soon after a `*.json` change in `~/.claude/sessions` (150 ms
+   * debounce; `.key` files never count), and as soon as a `claude agents`
+   * answer a poll did not wait for lands.
+   */
   watchLive(onChange: () => void): vscode.Disposable {
-    return this.sessionsFile.watch(onChange);
+    const watcher = this.sessionsFile.watch(onChange);
+    this.liveListeners.add(onChange);
+    return {
+      dispose: () => {
+        this.liveListeners.delete(onChange);
+        watcher.dispose();
+      },
+    };
+  }
+
+  /**
+   * The `claude agents` answer for a poll, never waiting for the CLI while
+   * the sessions folder is the live source. That child process takes 0.5 s
+   * to its 5 s timeout, and a starting Claude process writes its record with
+   * no status until its chat is loaded (2.8 s for a 300 MB chat), so every
+   * resume made both windows' polls wait for it, and every other chat's
+   * status and pop-up with them (0.6.0 RC gate: 2.7–5.3 s polls). A fresh
+   * cached answer is used as before. Otherwise the call starts in the
+   * background, this poll is served the last answer at any age
+   * (stale-while-revalidate: an expiring cache never blanks a wait, QA F2 on
+   * #79), and the new answer re-polls the moment it lands. With no answer at
+   * all yet, undefined: the sessions that need one read as `liveUnknown`
+   * (QA F1). Only a folder that cannot be listed (an older CLI: the CLI is
+   * the only live source) still waits for it.
+   */
+  private agentsFor(file: ClaudeSessionsSnapshot): ClaudeAgentsSnapshot | Promise<ClaudeAgentsSnapshot> | undefined {
+    if (!file.listed) {
+      return this.agentsService.getSnapshot();
+    }
+    const cached = this.agentsService.cachedSnapshot();
+    if (cached) {
+      return cached;
+    }
+    this.agentsRefresh ??= this.agentsService
+      .getSnapshot()
+      .then(
+        () => this.liveListeners.forEach((listener) => listener()),
+        (error) => console.error('[Pitwall] Could not read `claude agents --json`:', error)
+      )
+      .finally(() => {
+        this.agentsRefresh = undefined;
+      });
+    return this.agentsService.staleSnapshot();
   }
 
   /** The folder read a `liveSessionIds` call just made, or a fresh one. */
@@ -312,9 +362,7 @@ export class ClaudeHarness implements HarnessAdapter {
     // Start the independent transcript reads immediately; the fallback call
     // may have to spawn the CLI and must not delay them.
     const agentsPromise = filePromise.then((file) =>
-      sessionIds.some((sessionId) => needsFallback(file, sessionId))
-        ? this.agentsService.getSnapshot()
-        : undefined
+      sessionIds.some((sessionId) => needsFallback(file, sessionId)) ? this.agentsFor(file) : undefined
     );
     const readings = await Promise.all(
       sessionIds.map(async (sessionId): Promise<
@@ -369,6 +417,8 @@ export class ClaudeHarness implements HarnessAdapter {
             ...(live ? { liveStatus: live.status } : {}),
             ...(live && live.statusUpdatedAt > 0 ? { statusUpdatedAt: live.statusUpdatedAt } : {}),
             ...(notRunning(sessionId) ? { running: false } : {}),
+            // A session only `claude agents` can place, before its first answer: unknown, never "no wait".
+            ...(!agentsSnapshot && needsFallback(file, sessionId) ? { liveUnknown: true } : {}),
           });
           return;
         }
@@ -433,6 +483,7 @@ export class ClaudeHarness implements HarnessAdapter {
   }
 
   dispose(): void {
+    this.liveListeners.clear();
     this.nativeUi.surfaces?.dispose();
     this.agentsService.dispose?.();
   }

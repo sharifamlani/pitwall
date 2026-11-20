@@ -103,6 +103,15 @@ export interface HarnessLiveState {
    * working or finished (Q30). Undefined when the harness can't tell.
    */
   running?: boolean;
+  /**
+   * True when the harness could not tell this session's live status in this
+   * read: its live record needs a slower source that has not answered yet
+   * (Claude: a status the sessions file doesn't give, before the first
+   * `claude agents` answer). The row keeps what it last showed and no wait
+   * starts or ends on this reading, so a missing answer is never taken as
+   * "no wait" (QA F1 on #79).
+   */
+  liveUnknown?: boolean;
 }
 
 /**
