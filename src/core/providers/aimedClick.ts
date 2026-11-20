@@ -17,6 +17,14 @@
  * sure, including after anything that may have scrolled the list (a Pitwall
  * reveal, a collapse, an expansion, a list that got shorter), the clicked row
  * opens, as before.
+ *
+ * A pair is trusted only when the extension host handled both messages
+ * promptly. The gap is measured when the host handles each message, so a
+ * host held busy (an import scan, a long redraw) can hand over an arrow key
+ * and an Enter pressed 150 ms apart back to back. While a window is open, a
+ * heartbeat timer ticks every `HEARTBEAT_MS`; a selection or command handled
+ * when the last beat is older than `HEARTBEAT_STALE_MS` came out of a held
+ * loop, and the clicked row opens. No timer runs while no window is open.
  */
 
 /** How long after moved rows reach the screen a click still counts as aimed at the old order. */
@@ -35,6 +43,19 @@ export const KEYBOARD_SELECTION_MS = 1_000;
 export const REDRAW_SETTLE_MS = 2_500;
 /** After a redirected click, a second click on the same row this soon (a double-click) goes to the same aimed row. */
 export const DOUBLE_CLICK_MS = 500;
+/** How often the heartbeat ticks while an aim or double-click window is open. */
+export const HEARTBEAT_MS = 20;
+/** A selection or command handled when the last beat is older than this came out of a held extension host: never redirected. */
+export const HEARTBEAT_STALE_MS = 75;
+
+/** Starts a timer that calls `beat` every `everyMs`; returns its stop. */
+export type Heartbeat = (beat: () => void, everyMs: number) => () => void;
+
+const intervalHeartbeat: Heartbeat = (beat, everyMs) => {
+  const timer = setInterval(beat, everyMs);
+  timer.unref?.();
+  return () => clearInterval(timer);
+};
 
 /**
  * The row the user aimed at: the one that sat in the clicked row's slot in
@@ -102,14 +123,27 @@ export class AimedClicks<T extends { id?: string }> {
   private readonly expected = new Map<string, number>();
   private keyboardUntil = 0;
   private held: HeldClick<T> | undefined;
-  /** The latest redirected click, for the second click of a double-click. */
+  /**
+   * The latest redirected click, for the second click of a double-click.
+   * Spent by any selection applied as it is, other than Pitwall's own reveal
+   * of the aimed row: the user has chosen a row since.
+   */
   private lastRedirect: { clicked: string; aimed: string; at: number; apply: (event: { selection: readonly T[] }) => void } | undefined;
+  /** Stops the heartbeat; set while it runs. */
+  private stopBeat: (() => void) | undefined;
+  /** When the heartbeat last ticked (or started). */
+  private lastBeat = Number.NEGATIVE_INFINITY;
 
-  constructor(private readonly clock: () => number = Date.now) {}
+  constructor(
+    private readonly clock: () => number = Date.now,
+    private readonly heartbeat: Heartbeat = intervalHeartbeat
+  ) {}
 
   dispose(): void {
     clearTimeout(this.held?.timer);
     this.held = undefined;
+    this.stopBeat?.();
+    this.stopBeat = undefined;
   }
 
   /**
@@ -149,6 +183,7 @@ export class AimedClicks<T extends { id?: string }> {
     if (!pending) {
       if (!redrawn) {
         this.moved = undefined;
+        this.syncHeartbeat();
       }
       return;
     }
@@ -165,6 +200,7 @@ export class AimedClicks<T extends { id?: string }> {
     const after = layout();
     if (!pending.before || !after || this.clock() - pending.startedAt > REDRAW_SETTLE_MS) {
       this.moved = undefined;
+      this.syncHeartbeat();
       return;
     }
     if (pending.before.length === after.length && pending.before.every((id, index) => id === after[index])) {
@@ -172,6 +208,7 @@ export class AimedClicks<T extends { id?: string }> {
       return;
     }
     this.moved = { before: pending.before, shownAt: this.clock() };
+    this.syncHeartbeat();
   }
 
   /**
@@ -182,6 +219,7 @@ export class AimedClicks<T extends { id?: string }> {
   forget(): void {
     this.pending = undefined;
     this.moved = undefined;
+    this.syncHeartbeat();
   }
 
   /**
@@ -220,8 +258,14 @@ export class AimedClicks<T extends { id?: string }> {
     const ids = selection.map((row) => row.id ?? '');
     const previous = this.selected;
     this.selected = ids;
-    const aimed = this.aimFor(ids, previous, layout);
+    // A selection Pitwall asked for (a reveal) is never a click.
+    const own = ids.length === 1 && this.takeExpected(ids[0]);
+    const aimed = own ? undefined : this.aimFor(ids, previous, layout);
     if (aimed === undefined) {
+      if (!(own && ids[0] === this.lastRedirect?.aimed)) {
+        // A row chosen since the redirect: no later command belongs to that double-click.
+        this.spendRedirect();
+      }
       apply({ selection });
       return;
     }
@@ -238,6 +282,11 @@ export class AimedClicks<T extends { id?: string }> {
    * selected, or a selection made too long before, like an arrow key).
    */
   claim(rowId: string): AimedClick<T> | undefined {
+    if (this.stalled()) {
+      // The host was held: this command and a selection before it may have waited together.
+      this.release();
+      return undefined;
+    }
     const held = this.held;
     if (held && held.clicked === rowId) {
       const gapMs = this.clock() - held.selectedAt;
@@ -259,8 +308,10 @@ export class AimedClicks<T extends { id?: string }> {
   /** The caller redirected this click: a quick second click on the same row follows it (a double-click). */
   redirected(click: AimedClick<T>): void {
     this.lastRedirect = { clicked: click.clicked, aimed: click.aimed, at: this.clock(), apply: click.apply };
+    this.syncHeartbeat();
   }
 
+  /** A held selection turned out not to be a click: it is applied as it is, which spends the double-click. */
   private release(): void {
     const held = this.held;
     if (!held) {
@@ -268,7 +319,45 @@ export class AimedClicks<T extends { id?: string }> {
     }
     clearTimeout(held.timer);
     this.held = undefined;
+    this.spendRedirect();
     held.apply({ selection: held.selection });
+  }
+
+  private spendRedirect(): void {
+    if (this.lastRedirect) {
+      this.lastRedirect = undefined;
+      this.syncHeartbeat();
+    }
+  }
+
+  /** Whether Pitwall asked for this row's selection (a reveal) and it came in time; the expectation is used up. */
+  private takeExpected(id: string): boolean {
+    const expectedUntil = this.expected.get(id);
+    this.expected.delete(id);
+    return expectedUntil !== undefined && this.clock() <= expectedUntil;
+  }
+
+  /** Whether the extension host was held: the heartbeat has not ticked for `HEARTBEAT_STALE_MS`. */
+  private stalled(): boolean {
+    return this.clock() - this.lastBeat > HEARTBEAT_STALE_MS;
+  }
+
+  /** Runs the heartbeat exactly while an aim window or a double-click window is open. */
+  private syncHeartbeat(): void {
+    const now = this.clock();
+    const open =
+      (this.moved !== undefined && now - this.moved.shownAt <= AIM_WINDOW_MS) ||
+      (this.lastRedirect !== undefined && now - this.lastRedirect.at <= DOUBLE_CLICK_MS);
+    if (open && !this.stopBeat) {
+      this.lastBeat = now;
+      this.stopBeat = this.heartbeat(() => {
+        this.lastBeat = this.clock();
+        this.syncHeartbeat();
+      }, HEARTBEAT_MS);
+    } else if (!open && this.stopBeat) {
+      this.stopBeat();
+      this.stopBeat = undefined;
+    }
   }
 
   private aimFor(ids: readonly string[], previous: readonly string[], layout: readonly string[] | undefined): string | undefined {
@@ -277,9 +366,8 @@ export class AimedClicks<T extends { id?: string }> {
     }
     const [id] = ids;
     const now = this.clock();
-    const expectedUntil = this.expected.get(id);
-    this.expected.delete(id);
-    if ((expectedUntil !== undefined && now <= expectedUntil) || now <= this.keyboardUntil) {
+    if (now <= this.keyboardUntil || this.stalled()) {
+      // A keyboard move, or a selection handled after the host was held.
       return undefined;
     }
     const last = this.lastRedirect;

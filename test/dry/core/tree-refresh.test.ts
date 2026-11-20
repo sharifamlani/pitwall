@@ -573,6 +573,52 @@ test('an arrow key then Enter on a row that just moved is never redirected (QA #
   assert.deepEqual(applied, [[chatRow(at(chats, 0, 1))]], 'and its selection was applied');
 });
 
+/** Chat 0.1 swaps above 0.0, and a click on slot 1 (now 0.1) is redirected to 0.0, which Pitwall reveals and selects. */
+async function redirectedClick(t: Parameters<typeof ownerList>[0]) {
+  const list = await ownerList(t);
+  const { tree, view, chats, repos, setStatus, opened } = list;
+  const applied = wireClicks(t, tree, view);
+  setStatus(at(chats, 0, 1), 'working');
+  await waitFor(() => view.__childIds(view.__rowOf(repoRowId(repos[0])))[0] === chatRow(at(chats, 0, 1)), 'the swap on screen');
+  await view.__mouseClick({ id: chatRow(at(chats, 0, 1)) });
+  assert.deepEqual(opened, [at(chats, 0, 0).id], 'the first click opened the chat aimed at');
+  await waitFor(() => (view.selection[0] as WorkspaceTreeItem | undefined)?.id === chatRow(at(chats, 0, 0)), 'the aimed row selected');
+  return { ...list, applied };
+}
+
+test("a double-click on a row that just moved opens only the aimed chat, never the landed-on one (QA #80 G3)", async (t) => {
+  const { view, chats, opened } = await redirectedClick(t);
+  // The second click of the double-click lands on chat 0.1 again.
+  await view.__mouseClick({ id: chatRow(at(chats, 0, 1)) });
+  assert.deepEqual(opened, [at(chats, 0, 0).id, at(chats, 0, 0).id], 'both clicks opened the aimed chat');
+});
+
+test('after a redirect, an arrow onto the landed-on row then Enter opens that row (QA #80 G1)', async (t) => {
+  const { view, chats, opened, applied } = await redirectedClick(t);
+  // Up selects chat 0.1 (above 0.0 now); Enter follows 200 ms later.
+  view.__select([view.__rowOf(chatRow(at(chats, 0, 1)))]);
+  await sleep(200);
+  await view.__click({ id: chatRow(at(chats, 0, 1)) });
+  assert.deepEqual(opened, [at(chats, 0, 0).id, at(chats, 0, 1).id], 'Enter opened the row the arrow chose');
+  assert.deepEqual(applied.at(-1), [chatRow(at(chats, 0, 1))], 'and its selection was applied');
+});
+
+test('arrow then Enter handled back to back after the extension host was busy opens the arrowed row (QA #80 G2)', async (t) => {
+  const { tree, view, chats, repos, setStatus, opened } = await ownerList(t);
+  const applied = wireClicks(t, tree, view);
+  setStatus(at(chats, 0, 1), 'working');
+  await waitFor(() => view.__childIds(view.__rowOf(repoRowId(repos[0])))[0] === chatRow(at(chats, 0, 1)), 'the swap on screen');
+  // The host is held for 200 ms (an import scan); an arrow key and Enter pressed meanwhile arrive together.
+  const busyUntil = Date.now() + 200;
+  while (Date.now() < busyUntil) {
+    // busy
+  }
+  view.__select([view.__rowOf(chatRow(at(chats, 0, 1)))]);
+  await view.__click({ id: chatRow(at(chats, 0, 1)) });
+  assert.deepEqual(opened, [at(chats, 0, 1).id], 'the row the arrow selected opened');
+  assert.deepEqual(applied, [[chatRow(at(chats, 0, 1))]], 'and its selection was applied');
+});
+
 test('a whole repo moving up: a click opens the repo row its slot held; the redirect reveal then forgets the old order', async (t) => {
   const { tree, view, chats, repos, setStatus, opened, openedRepos } = await ownerList(t);
   wireClicks(t, tree, view);
