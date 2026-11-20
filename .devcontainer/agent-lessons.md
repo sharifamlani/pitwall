@@ -92,6 +92,9 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 
 ## Audit (the Auditor reads before auditing)
 
+- A "clean point" from a role is not enough. Before typing `/compact`, check the chat is idle: no
+  Bash or Write running and the last result posted. (Pitwall 2026-11-19: QA said clean point, but
+  its chat was running mutation probes when `/compact` was typed in.)
 - Check a claim against git before passing it on. (Pitwall 2026-11-19: "the warning text is new"
   was wrong; it already existed, and the Tester was briefed on the error.)
 - Don't tell a peer a message was forwarded until the send returns success. (Pitwall 2026-11-19:
