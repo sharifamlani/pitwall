@@ -75,6 +75,12 @@ export class ClaudeSessionService {
   private static readonly PARSE_CHUNK_BYTES = 1024 * 1024;
   /** Bytes before a parse's end kept to tell an append from a rewrite. */
   private static readonly PARSE_CHECK_BYTES = 64;
+  /** A first parse of a transcript larger than this decodes only the lines that matter (`skimFirstParse`). */
+  private static readonly SKIM_MIN_BYTES = 1024 * 1024;
+  /** How far into a line a tool result's `"tool_use_id"` is looked for (owner's profile: p99 728 bytes, max 47 KB). */
+  private static readonly TOOL_RESULT_KEY_BYTES = 64 * 1024;
+  /** How many of a listing's parses run at once (`inScanSlot`). */
+  private static readonly SCAN_PARSES = 2;
 
   private readonly claudeDir: string;
   private readonly projectsDir: string;
@@ -91,6 +97,11 @@ export class ClaudeSessionService {
   private readonly parseProgress = new BoundedCache<string, ParseProgress>(
     ClaudeSessionService.CACHE_LIMIT
   );
+  /** The parse running for each transcript path, so a second caller waits for it instead of starting over. */
+  private readonly parsing = new Map<string, Promise<ClaudeSession | null>>();
+  /** Listing parses running now, and the ones waiting for a slot. */
+  private scanParses = 0;
+  private readonly scanWaiting: Array<() => void> = [];
   /** Session ID to transcript path, refreshed when a cached path disappears. */
   private readonly sessionPaths = new RecordPathCatalog(
     ClaudeSessionService.CACHE_LIMIT
@@ -104,7 +115,12 @@ export class ClaudeSessionService {
     ClaudeSessionService.ACTIVITY_CACHE_LIMIT
   );
 
-  constructor() {
+  /** Transcripts larger than this get a skimmed first parse. */
+  private readonly skimMinBytes: number;
+
+  constructor(options: { skimMinBytes?: number } = {}) {
+    // Tests compare a skimmed parse with a whole one: 0 skims every file, Infinity none.
+    this.skimMinBytes = options.skimMinBytes ?? ClaudeSessionService.SKIM_MIN_BYTES;
     // Read at construction time so a test can point the service at a temp
     // profile without changing the process environment mid-run.
     this.claudeDir = claudeConfigDir();
@@ -211,7 +227,7 @@ export class ClaudeSessionService {
       const sessionId = file.replace('.jsonl', '');
 
       try {
-        const session = await this.parseSessionFileCached(filePath, sessionId);
+        const session = await this.inScanSlot(() => this.parseSessionFileCached(filePath, sessionId));
         if (session) {
           sessions.push(session);
         }
@@ -223,11 +239,57 @@ export class ClaudeSessionService {
     return sessions;
   }
 
-  /** A parsed transcript; the tree can re-render without re-reading any. */
+  /**
+   * Run one of a listing's parses when one of SCAN_PARSES slots is free. A
+   * scan lists every repository at once, and each parse reads its transcript
+   * in 1 MB chunks back to back: 21 of them filled libuv's four file threads,
+   * so a status poll's small reads (and discovery's) queued behind them (PR
+   * #76 live gate: polls of 0.5–5 s). A lookup of one session
+   * (`getSessionById`, new-chat pickup, the tree) never waits for a slot.
+   */
+  private async inScanSlot<T>(run: () => Promise<T>): Promise<T> {
+    if (this.scanParses >= ClaudeSessionService.SCAN_PARSES) {
+      await new Promise<void>((resolve) => this.scanWaiting.push(resolve));
+    } else {
+      this.scanParses++;
+    }
+    try {
+      return await run();
+    } finally {
+      // Hand the slot straight to the next waiter, or give it back.
+      const next = this.scanWaiting.shift();
+      if (next) {
+        next();
+      } else {
+        this.scanParses--;
+      }
+    }
+  }
+
+  /**
+   * A parsed transcript; the tree can re-render without re-reading any.
+   *
+   * One parse per file at a time: a caller that arrives while one runs waits
+   * for it, then takes the cached result, or resumes from where it ended when
+   * the file grew meanwhile. Before, the second caller started a parse of
+   * its own from byte 0 (the first had taken the resume point), so the scan,
+   * the tree and a live import asking about one 700 MB transcript at once
+   * each parsed all of it (QA on #76).
+   */
   private async parseSessionFileCached(filePath: string, sessionId: string): Promise<ClaudeSession | null> {
-    return this.sessionFileCache.get(filePath, (stats) =>
-      this.parseSessionFile(filePath, sessionId, stats)
-    );
+    for (let running = this.parsing.get(filePath); running; running = this.parsing.get(filePath)) {
+      await running.catch(() => undefined);
+    }
+    // No await between the check above and this set: no second parse can start in between.
+    const parse = this.sessionFileCache.get(filePath, (stats) => this.parseSessionFile(filePath, sessionId, stats));
+    this.parsing.set(filePath, parse);
+    try {
+      return await parse;
+    } finally {
+      if (this.parsing.get(filePath) === parse) {
+        this.parsing.delete(filePath);
+      }
+    }
   }
 
   /**
@@ -276,8 +338,8 @@ export class ClaudeSessionService {
    * or changed before that point is parsed again from the start.
    */
   private async parseSessionFile(filePath: string, sessionId: string, stats: fs.Stats): Promise<ClaudeSession | null> {
-    // Taken out while it runs: a concurrent parse of the same file starts
-    // its own instead of feeding this one's lines twice.
+    // Taken out while it runs, so a failed parse never leaves a half-fed one
+    // behind (`parseSessionFileCached` keeps a second caller out meanwhile).
     const previous = this.parseProgress.get(filePath);
     this.parseProgress.delete(filePath);
     if (stats.size === 0) {
@@ -290,10 +352,13 @@ export class ClaudeSessionService {
       return null;
     }
     try {
-      const progress: ParseProgress =
-        previous && (await this.continues(handle, previous, stats.size))
-          ? previous
-          : { parser: new TranscriptParser(sessionId, filePath), offset: 0, check: Buffer.alloc(0) };
+      let progress: ParseProgress;
+      if (previous && (await this.continues(handle, previous, stats.size))) {
+        progress = previous;
+      } else {
+        progress = { parser: new TranscriptParser(sessionId, filePath), offset: 0, check: Buffer.alloc(0) };
+        await this.skimFirstParse(handle, progress, stats.size);
+      }
       await this.parseFrom(handle, progress, stats.size);
       this.parseProgress.set(filePath, progress);
       return progress.parser.finish(stats.mtime);
@@ -302,6 +367,143 @@ export class ClaudeSessionService {
     } finally {
       await handle.close().catch(() => undefined);
     }
+  }
+
+  /**
+   * A first parse of a large transcript reads every byte but decodes only the
+   * lines that can still change the result, and leaves `progress` where the
+   * full parse takes over. Every window parsed all of the owner's 3.4 GB at
+   * startup (one transcript is 711 MB), holding the extension host at 1–2.3
+   * cores for 40–85 s while status polls took up to 5 s (PR #76 live gate).
+   *
+   * What a session needs from lines before its tail: its first cwd,
+   * entrypoint and typed prompt, whether it has messages, every title,
+   * summary and relocation, and its last three typed prompts. The rest
+   * (last activity, last reply, turn state) comes from the latest such lines,
+   * which `tailMarks` finds from the end. A line is decoded when it can be
+   * one of those: Claude writes compact JSON, so an entry's `"type":"user"`,
+   * its keys and its title or summary type appear verbatim in its bytes, and
+   * only in an entry's structure (a quote inside a string is escaped). A
+   * line with `"tool_use_id"` is a tool result, never a typed prompt (none of
+   * 5,378 typed prompts in 661,215 lines on the owner's profile, 2026-11-20).
+   * Small files are parsed whole: it costs less than two passes.
+   */
+  private async skimFirstParse(handle: fs.promises.FileHandle, progress: ParseProgress, size: number): Promise<void> {
+    if (size <= this.skimMinBytes) {
+      return;
+    }
+    // A transcript not written as compact JSON would hide the patterns: it is parsed whole.
+    if (!(await this.writtenCompact(handle, size))) {
+      return;
+    }
+    const marks = await this.tailMarks(handle, size);
+    // From here on every line is decoded: it holds the last conversation entry, the last user entry and all after them.
+    const tail = Math.min(marks.conversation, marks.userEntry, size);
+    const parser = progress.parser;
+    await this.parseFrom(handle, progress, tail, (line, start) => {
+      const head = !parser.hasMessages || !parser.hasCwd || !parser.hasEntrypoint;
+      // A tool result (its key comes within the first few hundred bytes): never a typed prompt, a title, a
+      // summary or a relocation, whose flat fields can't hold the key unescaped. Half the owner's bytes are
+      // tool results; this spares them the full search below. Only user and api-request-blob entries held
+      // the key on the owner's profile (117,020 lines, 2026-11-20).
+      if (!head && start < marks.reply && line.subarray(0, ClaudeSessionService.TOOL_RESULT_KEY_BYTES).indexOf(TOOL_USE_ID) >= 0) {
+        return false;
+      }
+      const types = entryTypes(line);
+      return (
+        types.rare ||
+        (types.assistant && start >= marks.reply) ||
+        (types.user && line.indexOf(TOOL_USE_ID) < 0) ||
+        (!parser.hasMessages && (types.user || types.assistant)) ||
+        (!parser.hasCwd && line.indexOf(CWD_KEY) >= 0) ||
+        (!parser.hasEntrypoint && line.indexOf(ENTRYPOINT_KEY) >= 0)
+      );
+    });
+  }
+
+  /** Whether the transcript's first entry carries its type as compact JSON writes it (`"type":"<type>"`). */
+  private async writtenCompact(handle: fs.promises.FileHandle, size: number): Promise<boolean> {
+    const head = Buffer.allocUnsafe(Math.min(size, ClaudeSessionService.PARSE_CHUNK_BYTES));
+    const { bytesRead } = await handle.read(head, 0, head.length, 0);
+    const newline = head.subarray(0, bytesRead).indexOf(10);
+    if (newline < 0) {
+      return false;
+    }
+    const line = head.subarray(0, newline);
+    const entry = parseJsonLine(line.toString('utf8')) as TranscriptEntry | undefined;
+    return Boolean(entry && typeof entry === 'object' && typeof entry.type === 'string' && line.includes(`"type":${JSON.stringify(entry.type)}`));
+  }
+
+  /**
+   * Where the last lines a session's tail fields come from begin, read from
+   * the end: the last main-chain conversation entry (turn state), the last
+   * user entry with a time (last activity), and the last assistant entry with
+   * text (last reply). Infinity for one the file has none of. Only lines that
+   * can be one of those are decoded, so the walk back past a long run of tool
+   * results to the last reply stays cheap.
+   */
+  private async tailMarks(handle: fs.promises.FileHandle, size: number): Promise<{ conversation: number; userEntry: number; reply: number }> {
+    const marks = { conversation: Infinity, userEntry: Infinity, reply: Infinity };
+    const open = () => marks.conversation === Infinity || marks.userEntry === Infinity || marks.reply === Infinity;
+    const visit = (line: Buffer, start: number) => {
+      const { user, assistant } = entryTypes(line);
+      if (!user && !assistant) {
+        return;
+      }
+      if (!(marks.conversation === Infinity || (user && marks.userEntry === Infinity) || (assistant && marks.reply === Infinity))) {
+        return;
+      }
+      const entry = parseJsonLine(line.toString('utf8')) as TranscriptEntry | undefined;
+      if (!entry || typeof entry !== 'object') {
+        return;
+      }
+      const main = (entry.type === 'user' || entry.type === 'assistant') && !entry.isSidechain;
+      if (main && marks.conversation === Infinity) {
+        marks.conversation = start;
+      }
+      if (marks.userEntry === Infinity && promptClockOf(entry) !== null) {
+        marks.userEntry = start;
+      }
+      if (main && entry.type === 'assistant' && marks.reply === Infinity && entry.message && lastTextBlock(entry.message.content)) {
+        marks.reply = start;
+      }
+    };
+    // Back from the end in chunks, yielding between them. `carry` is the head of the line the later chunk began inside.
+    let position = size;
+    let carry: Buffer[] = [];
+    while (position > 0 && open()) {
+      const from = Math.max(0, position - ClaudeSessionService.PARSE_CHUNK_BYTES);
+      // Only the bytes read are used, so no need to zero it first.
+      const buffer = Buffer.allocUnsafe(position - from);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, from);
+      const chunk = buffer.subarray(0, bytesRead);
+      position = from;
+      // Inside one long line: keep the pieces, and join them once its start is found.
+      if (from > 0 && chunk.indexOf(10) < 0) {
+        carry.unshift(chunk);
+        continue;
+      }
+      const data = carry.length > 0 ? Buffer.concat([chunk, ...carry]) : chunk;
+      let end = data.length;
+      // The trailing line with no newline after it (a write in progress) counts only if it is JSON, as in a parse.
+      for (let newline = data.lastIndexOf(10, end - 1); newline >= 0 && open(); newline = data.lastIndexOf(10, end - 1)) {
+        if (newline + 1 < end) {
+          visit(data.subarray(newline + 1, end), from + newline + 1);
+        }
+        end = newline;
+      }
+      if (!open()) {
+        break;
+      }
+      if (from === 0) {
+        if (end > 0) {
+          visit(data.subarray(0, end), 0);
+        }
+        break;
+      }
+      carry = end > 0 ? [data.subarray(0, end)] : [];
+    }
+    return marks;
   }
 
   /** Whether the file still holds what a parse read, so it may resume at its end. */
@@ -320,13 +522,21 @@ export class ClaudeSessionService {
    * chunk. A line is cut at its newline byte, which never occurs inside a
    * UTF-8 sequence. A last line without its newline is read as a whole-file
    * parse reads it; one that is not JSON yet (a write in progress) is left
-   * for the next parse.
+   * for the next parse. With `wanted`, a line it turns down (by its bytes and
+   * where it starts) is passed over undecoded (`skimFirstParse`); `size` is
+   * then a line start, so no line is cut there.
    */
-  private async parseFrom(handle: fs.promises.FileHandle, progress: ParseProgress, size: number): Promise<void> {
+  private async parseFrom(
+    handle: fs.promises.FileHandle,
+    progress: ParseProgress,
+    size: number,
+    wanted?: (line: Buffer, start: number) => boolean
+  ): Promise<void> {
     let position = progress.offset;
     let pending: Buffer[] = [];
     while (position < size) {
-      const buffer = Buffer.alloc(Math.min(ClaudeSessionService.PARSE_CHUNK_BYTES, size - position));
+      // Only the bytes read are used, so no need to zero it first.
+      const buffer = Buffer.allocUnsafe(Math.min(ClaudeSessionService.PARSE_CHUNK_BYTES, size - position));
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
       if (bytesRead === 0) {
         break;
@@ -336,7 +546,10 @@ export class ClaudeSessionService {
       let start = 0;
       for (let newline = chunk.indexOf(10); newline >= 0; newline = chunk.indexOf(10, start)) {
         pending.push(chunk.subarray(start, newline));
-        progress.parser.add(Buffer.concat(pending).toString('utf8'));
+        const line = pending.length === 1 ? pending[0] : Buffer.concat(pending);
+        if (!wanted || wanted(line, progress.offset)) {
+          progress.parser.add(line.toString('utf8'));
+        }
         pending = [];
         start = newline + 1;
         progress.offset = position - chunk.length + start;
@@ -578,6 +791,52 @@ export class ClaudeSessionService {
   }
 }
 
+/**
+ * Byte patterns `skimFirstParse` looks for in a line before decoding it. Claude
+ * writes compact JSON, so each appears verbatim wherever its entry does, and a
+ * quote inside a string is escaped, so `"type":"` starts a real type field.
+ */
+const TYPE_FIELD = Buffer.from('"type":"');
+const TOOL_USE_ID = Buffer.from('"tool_use_id"');
+const CWD_KEY = Buffer.from('"cwd"');
+const ENTRYPOINT_KEY = Buffer.from('"entrypoint"');
+const USER = Buffer.from('user"');
+const ASSISTANT = Buffer.from('assistant"');
+/** The entry types that can sit anywhere and still name or place the session. */
+const RARE_TYPES = ['custom-title"', 'ai-title"', 'summary"', 'relocated"'].map((value) => Buffer.from(value));
+/** The first bytes of every type value above. */
+const TYPE_FIRST_BYTES = new Set([USER, ASSISTANT, ...RARE_TYPES].map((value) => value[0]));
+
+/**
+ * Which type values a line holds, from one pass over its `"type":"` fields
+ * (nested ones too, so it may say more than the entry is, never less). One
+ * search instead of one per pattern: the searches cost more than the decoding
+ * they saved (700 MB: 2.6 s for seven, against 3.2 s to decode).
+ */
+function entryTypes(line: Buffer): { user: boolean; assistant: boolean; rare: boolean } {
+  const types = { user: false, assistant: false, rare: false };
+  for (let at = line.indexOf(TYPE_FIELD); at >= 0; at = line.indexOf(TYPE_FIELD, at + TYPE_FIELD.length)) {
+    const value = at + TYPE_FIELD.length;
+    // Most hits are nested blocks (text, tool_use, image, thinking): one byte rules them out.
+    if (!TYPE_FIRST_BYTES.has(line[value])) {
+      continue;
+    }
+    if (startsWithAt(line, value, USER)) {
+      types.user = true;
+    } else if (startsWithAt(line, value, ASSISTANT)) {
+      types.assistant = true;
+    } else if (RARE_TYPES.some((rare) => startsWithAt(line, value, rare))) {
+      types.rare = true;
+    }
+  }
+  return types;
+}
+
+/** Whether `line` holds `pattern` at `at`. */
+function startsWithAt(line: Buffer, at: number, pattern: Buffer): boolean {
+  return at + pattern.length <= line.length && line.compare(pattern, 0, pattern.length, at, at + pattern.length) === 0;
+}
+
 /** A transcript's parse so far: the parser, the bytes it has read, and the bytes just before that point. */
 interface ParseProgress {
   parser: TranscriptParser;
@@ -622,6 +881,21 @@ class TranscriptParser {
       entrypoint: null,
       userTitled: false,
     };
+  }
+
+  /** A main-chain user or assistant entry has been read. */
+  get hasMessages(): boolean {
+    return this.session.hasMessages;
+  }
+
+  /** A line has placed the session in a folder. */
+  get hasCwd(): boolean {
+    return Boolean(this.session.cwd);
+  }
+
+  /** A line has said where the session started. */
+  get hasEntrypoint(): boolean {
+    return this.session.entrypoint !== null;
   }
 
   /** Read one line; returns its entry, or undefined for a blank or corrupt line. */
