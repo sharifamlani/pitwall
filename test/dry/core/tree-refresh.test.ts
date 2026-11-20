@@ -9,10 +9,19 @@
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { CHILDREN_AWAIT_TIMEOUT_MS, WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/providers/WorkspacesTreeProvider';
+import {
+  CHILDREN_AWAIT_TIMEOUT_MS,
+  KEYBOARD_MOVE_LATE_MS,
+  NEW_SELECTION_MS,
+  WorkspaceTreeItem,
+  WorkspacesTreeProvider,
+} from '../../../src/core/providers/WorkspacesTreeProvider';
+import { HOST_TICK_MS, HostLag } from '../../../src/core/providers/hostLag';
+import { registerNavigationCommands } from '../../../src/core/commands/navigation';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { SessionStatus } from '../../../src/core/providers/sessionStatus';
 import { ChatSession, Repository } from '../../../src/core/types';
+import type { OpenSource } from '../../../src/core/windows/openSource';
 import { FakeTreeView, fakeAdapter, fakeWorktreeListing, makeStorage, stub, waitFor, worktreeRecord } from '../support';
 
 beforeEach(() => stub.__reset());
@@ -25,9 +34,10 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * The owner's kind of list: `repos` repos with `perRepo` chats each, every
  * chat idle since hours ago (so no row text moves with the clock), drawn in
  * a visible tree view with every repo expanded, and the row commands
- * recorded instead of opening anything.
+ * recorded instead of opening anything. `hostLag` replaces the provider's
+ * real host clock (a test drives its ticks).
  */
-async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo = 6) {
+async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo = 6, hostLag?: HostLag) {
   stub.__setTreeViewsVisible(true);
   const storage = makeStorage();
   const statuses = new Map<string, [SessionStatus, number]>();
@@ -71,7 +81,8 @@ async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo 
         },
       }),
     ]),
-    vscode.Uri.file('/extension')
+    vscode.Uri.file('/extension'),
+    hostLag
   );
   t.after(() => tree.dispose());
   tree.setStatusSource({
@@ -88,12 +99,16 @@ async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo 
 
   const opened: string[] = [];
   const openedRepos: string[] = [];
+  /** What each open said asked for it (the `via=` of its route line), in order. */
+  const sources: (OpenSource | undefined)[] = [];
   const registrations = [
-    vscode.commands.registerCommand('pitwall.openChat', (item?: WorkspaceTreeItem) => {
+    vscode.commands.registerCommand('pitwall.openChat', (item?: WorkspaceTreeItem, source?: OpenSource) => {
       opened.push((item?.data as ChatSession | undefined)?.id ?? 'none');
+      sources.push(source);
     }),
-    vscode.commands.registerCommand('pitwall.openRepoChats', (item?: WorkspaceTreeItem) => {
+    vscode.commands.registerCommand('pitwall.openRepoChats', (item?: WorkspaceTreeItem, source?: OpenSource) => {
       openedRepos.push((item?.data as Repository | undefined)?.id ?? 'none');
+      sources.push(source);
     }),
   ];
   t.after(() => registrations.forEach((registration) => registration.dispose()));
@@ -120,7 +135,7 @@ async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo 
   view.fullRefreshes = 0;
   view.elementRefreshes = 0;
   view.ignoredRefreshes = 0;
-  return { tree, view, storage, chats, repos: repoList, setStatus, opened, openedRepos, fires, replies, metadataGate };
+  return { tree, view, storage, chats, repos: repoList, setStatus, opened, openedRepos, sources, fires, replies, metadataGate };
 }
 
 interface Deferred {
@@ -450,4 +465,168 @@ test("a removed chat's click command is disposed once the editor's rows no longe
   await waitFor(async () => !(await vscode.commands.getCommands()).includes(command), 'the command disposed');
   assert.ok((await vscode.commands.getCommands()).includes(`_pitwall.row.chat-${kept.id}`), 'other rows keep theirs');
   assert.ok(!view.__childIds(repoRow).includes(`chat-${removed.id}`), 'the editor no longer shows the removed row');
+});
+
+// ---- 0.6.0 gate (unrequested opens): every row open says what asked for it ----
+
+const chatRow = (chat: ChatSession) => `chat-${chat.id}`;
+const repoRowId = (repo: Repository) => `repository-${repo.id}`;
+
+/** Chat r.c of the fixture: repo0..repo2, each expanded with chat r.0..r.5 (newest first). */
+const at = (chats: ChatSession[], r: number, c: number) => chats.find((chat) => chat.name === `chat ${r}.${c}`)!;
+
+/** Wire the selection as extension.ts does: its selection handler notes the selection first. */
+function wireSelection(t: { after(fn: () => void): void }, tree: WorkspacesTreeProvider, view: FakeTreeView): void {
+  view.__revealSelects = true;
+  const subscription = (view as unknown as vscode.TreeView<WorkspaceTreeItem>).onDidChangeSelection(({ selection }) =>
+    tree.noteSelection(selection)
+  );
+  t.after(() => subscription.dispose());
+}
+
+/**
+ * The navigation commands as extension.ts registers them. `list.select`
+ * acts like the workbench's: it selects the row the list focus is on
+ * (`landOn`) and runs that row's command.
+ */
+function wireKeys(t: { after(fn: () => void): void }, tree: WorkspacesTreeProvider, view: FakeTreeView) {
+  const context = { subscriptions: [] as { dispose(): void }[] };
+  registerNavigationCommands(context as never, {
+    workspacesProvider: tree,
+    workspacesTreeView: view as never,
+    filesTreeView: { visible: false } as never,
+  });
+  /** `runCommand: false`: the select changes the selection but the workbench runs no row command. */
+  const keys = { landOn: '', runCommand: true };
+  context.subscriptions.push(
+    vscode.commands.registerCommand('list.focusDown', () => undefined),
+    vscode.commands.registerCommand('list.select', () => {
+      view.__select([view.__rowOf(keys.landOn)]);
+      if (keys.runCommand) {
+        void view.__click({ id: keys.landOn });
+      }
+    })
+  );
+  t.after(() => context.subscriptions.forEach((entry) => entry.dispose()));
+  return keys;
+}
+
+/** The detail with the ms of `selected=new+<ms>ms` and `lag=<ms>ms` read out. */
+const shape = (source: OpenSource | undefined) =>
+  source && {
+    via: source.via,
+    detail: source.detail?.replace(/selected=new\+\d+ms/, 'selected=new+Nms').replace(/lag=\d+ms/, 'lag=Nms'),
+  };
+
+/** The ms of an open's `lag=<ms>ms` word. */
+const lagOf = (source: OpenSource | undefined) => Number(/(?:^| )lag=(\d+)ms(?: |$)/.exec(source?.detail ?? '')?.[1] ?? NaN);
+
+test('a row open carries its via: a click selected=new, Enter selected=already, a repo click, a Ctrl+Down move (0.6.0 gate)', async (t) => {
+  const { tree, view, chats, repos, sources } = await ownerList(t);
+  wireSelection(t, tree, view);
+  const keys = wireKeys(t, tree, view);
+  // A pointer click: the workbench selects the row, then runs its command at once.
+  await view.__mouseClick({ id: chatRow(at(chats, 1, 2)) });
+  // Enter on the row already selected: the command alone.
+  await view.__click({ id: chatRow(at(chats, 1, 2)) });
+  // A click on a repo row.
+  await view.__mouseClick({ id: repoRowId(repos[2]) });
+  // Ctrl+Down: list.select selects the row the focus landed on and runs its command.
+  keys.landOn = chatRow(at(chats, 2, 3));
+  await vscode.commands.executeCommand('pitwall.list.moveDownAndOpen');
+  await waitFor(() => sources.length === 4, 'the four opens');
+  assert.deepEqual(sources.map(shape), [
+    { via: 'row-click', detail: 'selected=new+Nms lag=Nms' },
+    { via: 'row-click', detail: 'selected=already lag=Nms' },
+    { via: 'repo-click', detail: 'selected=new+Nms lag=Nms' },
+    { via: 'keyboard-move', detail: 'selected=new+Nms lag=Nms' },
+  ]);
+});
+
+// ---- QA #82 follow-ups ----
+
+test('a command more than NEW_SELECTION_MS after its selection logs selected=already (QA #82 X3)', async (t) => {
+  const { tree, view, chats, sources } = await ownerList(t);
+  wireSelection(t, tree, view);
+  const row = chatRow(at(chats, 1, 2));
+  view.__select([view.__rowOf(row)]);
+  await sleep(NEW_SELECTION_MS + 150);
+  await view.__click({ id: row });
+  assert.deepEqual(sources.map(shape), [{ via: 'row-click', detail: 'selected=already lag=Nms' }]);
+});
+
+test("a click after a Ctrl+Down's own row command reads via=row-click (QA #82 X7)", async (t) => {
+  const { tree, view, chats, sources } = await ownerList(t);
+  wireSelection(t, tree, view);
+  const keys = wireKeys(t, tree, view);
+  keys.landOn = chatRow(at(chats, 2, 3));
+  await vscode.commands.executeCommand('pitwall.list.moveDownAndOpen');
+  await waitFor(() => sources.length === 1, "the move's open");
+  // At once, well inside the window startKeyboardMove opened: a click on another row.
+  await view.__mouseClick({ id: chatRow(at(chats, 1, 2)) });
+  await waitFor(() => sources.length === 2, "the click's open");
+  assert.deepEqual(sources.map((source) => source?.via), ['keyboard-move', 'row-click']);
+});
+
+test('a Ctrl+Down that ran no row command does not label the next click keyboard-move (QA #82 X7)', async (t) => {
+  const { tree, view, chats, sources } = await ownerList(t);
+  wireSelection(t, tree, view);
+  const keys = wireKeys(t, tree, view);
+  keys.landOn = chatRow(at(chats, 2, 3));
+  keys.runCommand = false;
+  await vscode.commands.executeCommand('pitwall.list.moveDownAndOpen');
+  assert.equal(sources.length, 0, 'the move opened nothing');
+  // Past the grace for the move's own late command, still inside the window startKeyboardMove opened.
+  await sleep(KEYBOARD_MOVE_LATE_MS + 50);
+  await view.__mouseClick({ id: chatRow(at(chats, 1, 2)) });
+  await waitFor(() => sources.length === 1, "the click's open");
+  assert.deepEqual(sources.map(shape), [{ via: 'row-click', detail: 'selected=new+Nms lag=Nms' }]);
+});
+
+test("Enter right after Pitwall's own reveal selected the row logs selected=reveal, never a click's shape (QA #82)", async (t) => {
+  const { tree, view, chats, sources } = await ownerList(t);
+  wireSelection(t, tree, view);
+  // Tab-follow or a hotkey reveals and selects a row, through revealRow.
+  const row = chatRow(at(chats, 1, 2));
+  await tree.revealRow(view as never, view.__rowOf(row) as WorkspaceTreeItem, { select: true, focus: false });
+  await waitFor(() => (view.selection[0] as WorkspaceTreeItem | undefined)?.id === row, 'the reveal selected the row');
+  // Enter on it at once.
+  await view.__click({ id: row });
+  // A reveal that does not select, then a click on that row: a click.
+  const other = chatRow(at(chats, 2, 1));
+  await tree.revealRow(view as never, view.__rowOf(other) as WorkspaceTreeItem, { select: false, focus: false });
+  await view.__mouseClick({ id: other });
+  await waitFor(() => sources.length === 2, 'the two opens');
+  assert.deepEqual(sources.map(shape), [
+    { via: 'row-click', detail: 'selected=reveal lag=Nms' },
+    { via: 'row-click', detail: 'selected=new+Nms lag=Nms' },
+  ]);
+});
+
+test('a row command handled right after a long host stall logs how late it was (lag=), a prompt one lag=0ms (QA #82)', async (t) => {
+  // The host clock on a fake timer and clock: no real time passes.
+  let now = 1_000_000;
+  let beat: (() => void) | undefined;
+  const hostLag = new HostLag(
+    () => now,
+    (tick) => {
+      beat = tick;
+      return () => (beat = undefined);
+    }
+  );
+  const { tree, view, chats, sources } = await ownerList(t, 3, 6, hostLag);
+  wireSelection(t, tree, view);
+  // A prompt host: the clock ticks on time, and a click lands just after a tick.
+  now += HOST_TICK_MS;
+  beat!();
+  await view.__mouseClick({ id: chatRow(at(chats, 1, 2)) });
+  // A 26 s stall inside a timer callback: the overdue tick fires first, then the queued click.
+  now += 26_000;
+  beat!();
+  await view.__mouseClick({ id: chatRow(at(chats, 2, 1)) });
+  await waitFor(() => sources.length === 2, 'the two opens');
+  assert.equal(lagOf(sources[0]), 0, `the prompt click reads lag=0ms: ${sources[0]?.detail}`);
+  assert.equal(lagOf(sources[1]), 26_000 - HOST_TICK_MS, `the late click shows the stall: ${sources[1]?.detail}`);
+  tree.dispose();
+  assert.equal(beat, undefined, "the provider's dispose stops the host clock");
 });

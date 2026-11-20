@@ -38,6 +38,8 @@ const ID = {
 };
 
 /** Short timings so the 20 s warning and 120 s expiry run in milliseconds. */
+/** What these routes say asked for them (every route line carries a `via=`). */
+const ROW_CLICK = { source: { via: 'row-click' as const } };
 const FAST = { warnMs: 150, coldWarnMs: 150, expireMs: 400, pollMs: 10, servicesWaitMs: 300 };
 const GONE = (folder: string) => `That chat's folder is gone: ${folder}`;
 const UNREACHED = (repo: string) => `Pitwall couldn't reach the ${repo} window. Click the chat again.`;
@@ -226,7 +228,7 @@ test('same-folder chat opens here without writing a request', async (t) => {
   w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
   const here = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main });
 
-  const result = await here.router.route({ kind: 'open', chats: [w.chat('Here', ID.a, w.mainWt)] });
+  const result = await here.router.route({ kind: 'open', chats: [w.chat('Here', ID.a, w.mainWt)] }, ROW_CLICK);
 
   assert.equal(result, 'here');
   assert.deepEqual(here.opened.map((entry) => [entry.chat, entry.path]), [['Here', w.main]]);
@@ -241,7 +243,7 @@ test('other-folder chat writes one request and calls vscode.openFolder with forc
   w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
 
-  const result = await sender.router.route({ kind: 'open', chats: [w.chat('Elsewhere', ID.a, w.mainWt)] });
+  const result = await sender.router.route({ kind: 'open', chats: [w.chat('Elsewhere', ID.a, w.mainWt)] }, ROW_CLICK);
 
   assert.equal(result, 'routed');
   const requests = requestsFor(sender.inbox, dir, w.main);
@@ -278,7 +280,7 @@ test('a chat moved into a worktree by EnterWorktree (early cwd = main, filed und
   const mainWindow = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main });
 
   assert.equal(await mainWindow.router.launchFolder(chat), w.wt);
-  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'routed');
   assert.deepEqual(requestsFor(mainWindow.inbox, dir, w.wt).map((request) => request.sessionIds), [[ID.t18]]);
   assert.deepEqual(calls, [{ path: w.wt, forceNewWindow: true }]);
   assert.deepEqual(mainWindow.opened, [], 'not opened in the main window, where the panel would open it blank');
@@ -294,7 +296,7 @@ test('a plain cd chat (all cwd = main, filed under main) routes to the main wind
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
 
   assert.equal(await sender.router.launchFolder(chat), w.main);
-  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'routed');
   assert.deepEqual(requestsFor(sender.inbox, dir, w.main).map((request) => request.sessionIds), [[ID.t18b]]);
   assert.deepEqual(requestsFor(sender.inbox, dir, w.wt), []);
   assert.deepEqual(calls, [{ path: w.main, forceNewWindow: true }]);
@@ -323,7 +325,7 @@ test('worktree chat routes to the worktree folder', async (t) => {
   w.transcript(w.wt, ID.t17, [w.turn(ID.t17, w.wt)]);
   const mainWindow = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main });
 
-  const result = await mainWindow.router.route({ kind: 'open', chats: [w.chat('In the worktree', ID.t17, w.featWt)] });
+  const result = await mainWindow.router.route({ kind: 'open', chats: [w.chat('In the worktree', ID.t17, w.featWt)] }, ROW_CLICK);
 
   assert.equal(result, 'routed');
   assert.deepEqual(requestsFor(mainWindow.inbox, dir, w.wt).map((request) => request.sessionIds), [[ID.t17]]);
@@ -341,7 +343,7 @@ test('a T18 chat claimed in the worktree window opens there (availability checke
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
   const wtWindow = windowOn(t, w, dir, () => w.wt, { pid: 1002, claims: w.wt });
 
-  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'routed');
   assert.deepEqual(requestsFor(sender.inbox, dir, w.wt).map((request) => request.sessionIds), [[ID.t18]], 'sent to the worktree, where it is filed');
   await wtWindow.router.runClaimed(await wtWindow.inbox.claimAll());
 
@@ -350,7 +352,7 @@ test('a T18 chat claimed in the worktree window opens there (availability checke
   assert.ok(wtWindow.logs.some((line) => /^\[Pitwall\] handoff opened [0-9a-f]{8} after \d+ ms$/.test(line)), wtWindow.logs.join('\n'));
 
   // And clicked in the worktree window itself, it opens there with no handoff.
-  assert.equal(await wtWindow.router.route({ kind: 'open', chats: [chat] }), 'here');
+  assert.equal(await wtWindow.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'here');
   assert.deepEqual(wtWindow.opened.at(-1), { chat: 'Entered a worktree', path: w.wt, worktreeId: 'wt-main' });
 });
 
@@ -360,7 +362,7 @@ test('missing folder shows "That chat\'s folder is gone: {path}" and opens no wi
   const calls = openFolderCalls();
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
 
-  const result = await sender.router.route({ kind: 'open', chats: [w.chat('Deleted worktree', ID.gone, w.goneWt)] });
+  const result = await sender.router.route({ kind: 'open', chats: [w.chat('Deleted worktree', ID.gone, w.goneWt)] }, ROW_CLICK);
 
   assert.equal(result, 'gone');
   assert.deepEqual(warnings(GONE(w.goneWt.path)), [GONE(w.goneWt.path)]);
@@ -376,7 +378,7 @@ test('no done{ok} within 20 s warns once with "Pitwall couldn\'t reach the {repo
   w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
 
-  await sender.router.route({ kind: 'open', chats: [w.chat('Nobody home', ID.a, w.mainWt)] });
+  await sender.router.route({ kind: 'open', chats: [w.chat('Nobody home', ID.a, w.mainWt)] }, ROW_CLICK);
   // (No registry window here: a cold open, whose wait FAST sets equal to the warm one.)
   assert.deepEqual(warnings(UNREACHED('demo')), [], 'no warning before the wait ends');
   await waitFor(() => warnings(UNREACHED('demo')).length > 0, 'the warning');
@@ -396,7 +398,7 @@ test('a claim whose open fails still warns the sender', async (t) => {
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other, timing: slowWarn });
   const mainWindow = windowOn(t, w, dir, () => w.main, { pid: 1002, claims: w.main, openHere: async () => false });
 
-  await sender.router.route({ kind: 'open', chats: [w.chat('Refused', ID.a, w.mainWt)] });
+  await sender.router.route({ kind: 'open', chats: [w.chat('Refused', ID.a, w.mainWt)] }, ROW_CLICK);
   await mainWindow.router.runClaimed(await mainWindow.inbox.claimAll());
 
   assert.ok(mainWindow.logs.some((line) => /^\[Pitwall\] handoff failed [0-9a-f]{8} /.test(line)), mainWindow.logs.join('\n'));
@@ -412,8 +414,8 @@ test('a second route for the same chat while pending writes no second file and c
   const chat = w.chat('Double click', ID.a, w.mainWt);
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
 
-  await sender.router.route({ kind: 'open', chats: [chat] });
-  await sender.router.route({ kind: 'open', chats: [chat] });
+  await sender.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK);
+  await sender.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK);
 
   assert.equal(requestsFor(sender.inbox, dir, w.main).length, 1, 'one request file');
   assert.deepEqual(calls, [
@@ -428,8 +430,8 @@ test('"+" twice on a slow-starting window starts one chat', async (t) => {
   const calls = openFolderCalls();
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
 
-  await sender.router.route({ kind: 'new', chats: [], folder: w.main });
-  await sender.router.route({ kind: 'new', chats: [], folder: w.main });
+  await sender.router.route({ kind: 'new', chats: [], folder: w.main }, ROW_CLICK);
+  await sender.router.route({ kind: 'new', chats: [], folder: w.main }, ROW_CLICK);
   assert.equal(calls.length, 2, 'each click raises the window');
 
   // The window finally starts and claims what is waiting.
@@ -449,8 +451,8 @@ test('two "+" clicks in the same tick send one request', async (t) => {
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
 
   await Promise.all([
-    sender.router.route({ kind: 'new', chats: [], folder: w.main }),
-    sender.router.route({ kind: 'new', chats: [], folder: w.main }),
+    sender.router.route({ kind: 'new', chats: [], folder: w.main }, ROW_CLICK),
+    sender.router.route({ kind: 'new', chats: [], folder: w.main }, ROW_CLICK),
   ]);
 
   assert.equal(requestsFor(sender.inbox, dir, w.main).length, 1, 'one request file');
@@ -485,8 +487,8 @@ test('a multi-chat open and a single open of one of its chats in the same tick s
   };
 
   await Promise.all([
-    sender.router.route({ kind: 'open', chats: [remote, local] }),
-    sender.router.route({ kind: 'open', chats: [remote] }),
+    sender.router.route({ kind: 'open', chats: [remote, local] }, ROW_CLICK),
+    sender.router.route({ kind: 'open', chats: [remote] }, ROW_CLICK),
   ]);
 
   assert.deepEqual(requestsFor(sender.inbox, dir, w.main).map((request) => request.sessionIds), [[ID.a]], 'one request for the remote chat');
@@ -504,8 +506,8 @@ test('two same-tick opens of a chat of this window open it once', async (t) => {
   const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main });
 
   const results = await Promise.all([
-    here.router.route({ kind: 'open', chats: [chat] }),
-    here.router.route({ kind: 'open', chats: [chat] }),
+    here.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK),
+    here.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK),
   ]);
 
   assert.deepEqual(results, ['here', 'here']);
@@ -521,8 +523,8 @@ test('two route calls for the same chat in the same tick send one request', asyn
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
 
   const results = await Promise.all([
-    sender.router.route({ kind: 'open', chats: [chat] }),
-    sender.router.route({ kind: 'open', chats: [chat] }),
+    sender.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK),
+    sender.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK),
   ]);
 
   assert.deepEqual(results, ['routed', 'routed']);
@@ -536,13 +538,13 @@ test('"+" on another repo sends kind new to that repo', async (t) => {
   const calls = openFolderCalls();
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
 
-  assert.equal(await sender.router.route({ kind: 'new', chats: [], folder: w.main }), 'routed');
+  assert.equal(await sender.router.route({ kind: 'new', chats: [], folder: w.main }, ROW_CLICK), 'routed');
   const [request] = requestsFor(sender.inbox, dir, w.main);
   assert.deepEqual([request.kind, request.sessionIds, request.folder], ['new', [], w.main]);
   assert.deepEqual(calls, [{ path: w.main, forceNewWindow: true }]);
 
   // "+" on this window's own repo starts the chat here.
-  assert.equal(await sender.router.route({ kind: 'new', chats: [], folder: w.other }), 'here');
+  assert.equal(await sender.router.route({ kind: 'new', chats: [], folder: w.other }, ROW_CLICK), 'here');
   assert.deepEqual(sender.started, [w.other]);
   assert.deepEqual(requestsFor(sender.inbox, dir, w.other), []);
 });
@@ -555,8 +557,8 @@ test('an empty window routes every chat', async (t) => {
   w.transcript(w.other, ID.other, [w.turn(ID.other, w.other)]);
   const empty = windowOn(t, w, dir, () => undefined, { pid: 1001 });
 
-  assert.equal(await empty.router.route({ kind: 'open', chats: [w.chat('Demo chat', ID.a, w.mainWt)] }), 'routed');
-  assert.equal(await empty.router.route({ kind: 'open', chats: [w.chat('Other chat', ID.other, w.otherWt)] }), 'routed');
+  assert.equal(await empty.router.route({ kind: 'open', chats: [w.chat('Demo chat', ID.a, w.mainWt)] }, ROW_CLICK), 'routed');
+  assert.equal(await empty.router.route({ kind: 'open', chats: [w.chat('Other chat', ID.other, w.otherWt)] }, ROW_CLICK), 'routed');
 
   assert.deepEqual(empty.opened, []);
   assert.equal(requestsFor(empty.inbox, dir, w.main).length, 1);
@@ -575,8 +577,8 @@ test('a multi-root window opens its own first-folder chats locally and routes ot
   w.transcript(w.other, ID.other, [w.turn(ID.other, w.other)]);
   const multi = windowOn(t, w, dir, () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, { pid: 1001, claims: ownsFolder() });
 
-  assert.equal(await multi.router.route({ kind: 'open', chats: [w.chat('First folder', ID.a, w.mainWt)] }), 'here');
-  assert.equal(await multi.router.route({ kind: 'open', chats: [w.chat('Second folder', ID.other, w.otherWt)] }), 'routed');
+  assert.equal(await multi.router.route({ kind: 'open', chats: [w.chat('First folder', ID.a, w.mainWt)] }, ROW_CLICK), 'here');
+  assert.equal(await multi.router.route({ kind: 'open', chats: [w.chat('Second folder', ID.other, w.otherWt)] }, ROW_CLICK), 'routed');
 
   assert.deepEqual(multi.opened.map((entry) => entry.chat), ['First folder']);
   assert.deepEqual(calls.map((call) => call.path), [w.other]);
@@ -611,9 +613,9 @@ test('runClaimed opens chats one at a time in request order and logs handoff ope
     },
   });
 
-  await sender.router.route({ kind: 'open', chats: [w.chat('A', ID.a, w.mainWt)] });
+  await sender.router.route({ kind: 'open', chats: [w.chat('A', ID.a, w.mainWt)] }, ROW_CLICK);
   await new Promise((resolve) => setTimeout(resolve, 5));
-  await sender.router.route({ kind: 'openAll', chats: [w.chat('B', ID.b, w.mainWt), w.chat('C', ID.c, w.mainWt)] });
+  await sender.router.route({ kind: 'openAll', chats: [w.chat('B', ID.b, w.mainWt), w.chat('C', ID.c, w.mainWt)] }, ROW_CLICK);
   const claimed = await mainWindow.inbox.claimAll();
   claimed.sort((x, y) => x.at - y.at);
   await mainWindow.router.runClaimed(claimed);
@@ -638,7 +640,7 @@ test('an sdk-cli chat from another folder routes to its window and opens in a te
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
   const target = windowOn(t, w, dir, () => w.main, { pid: 1002, claims: w.main });
 
-  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('From claude -p', ID.sdk, w.mainWt)] }), 'routed');
+  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('From claude -p', ID.sdk, w.mainWt)] }, ROW_CLICK), 'routed');
   assert.deepEqual(sender.opened, [], 'nothing opens in the sending window');
   assert.deepEqual(calls.map((call) => call.path), [w.main]);
   assert.deepEqual(requestsFor(sender.inbox, dir, w.main).map((request) => request.sessionIds), [[ID.sdk]]);
@@ -661,10 +663,10 @@ test("a chat filed under the worktree's project dir whose stored worktree is mai
   const chat = w.chat('T18 one', ID.t18, w.mainWt);
   const mainWindow = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main, isOpenHere: () => false });
 
-  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'routed');
   assert.deepEqual(calls.map((call) => call.path), [wtDir]);
   assert.deepEqual(mainWindow.opened, []);
-  assert.deepEqual(mainWindow.routeLog, [`[Pitwall] route ${ID.t18.slice(0, 8)} → ${wtDir} (handoff)`]);
+  assert.deepEqual(mainWindow.routeLog, [`[Pitwall] route ${ID.t18.slice(0, 8)} → ${wtDir} (handoff) via=row-click`]);
 });
 
 test('an exited EnterWorktree chat (filed under main, last cwd = the worktree) routes to the main window', async (t) => {
@@ -677,10 +679,10 @@ test('an exited EnterWorktree chat (filed under main, last cwd = the worktree) r
   const chat = w.chat('T18 exited', ID.t18, w.mainWt);
   const mainWindow = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main });
 
-  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }), 'here');
+  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'here');
   assert.deepEqual(mainWindow.opened.map((entry) => entry.path), [w.main]);
   assert.deepEqual(calls, []);
-  assert.deepEqual(mainWindow.routeLog, [`[Pitwall] route ${ID.t18.slice(0, 8)} → here (same-folder)`]);
+  assert.deepEqual(mainWindow.routeLog, [`[Pitwall] route ${ID.t18.slice(0, 8)} → here (same-folder) via=row-click`]);
 });
 
 test('a chat whose tab is open here reveals here even when its transcript is now filed under another folder', async (t) => {
@@ -693,11 +695,11 @@ test('a chat whose tab is open here reveals here even when its transcript is now
   const chat = w.chat('T18 one', ID.t18, w.mainWt);
   const mainWindow = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main, isOpenHere: () => true });
 
-  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }), 'here');
+  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'here');
   assert.deepEqual(mainWindow.opened.map((entry) => entry.path), [w.main], 'revealed in this window, never a second process');
   assert.deepEqual(calls, []);
   assert.deepEqual(filesIn(mainWindow.inbox, dir, wtDir), []);
-  assert.deepEqual(mainWindow.routeLog, [`[Pitwall] route ${ID.t18.slice(0, 8)} → here (open-here)`]);
+  assert.deepEqual(mainWindow.routeLog, [`[Pitwall] route ${ID.t18.slice(0, 8)} → here (open-here) via=row-click`]);
 });
 
 // isOpenHere is true for a live Pitwall terminal as well as a bound UI tab.
@@ -711,7 +713,7 @@ test("a chat whose Pitwall terminal is live here reveals it here even when its t
   const live = new Set([chat.id]);
   const mainWindow = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, isOpenHere: (c) => live.has(c.id) });
 
-  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }), 'here');
+  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'here');
   assert.deepEqual(mainWindow.opened.map((entry) => entry.chat), ['T18 terminal']);
   assert.deepEqual(calls, []);
 });
@@ -724,12 +726,12 @@ test('a chat open in another window routes to that window, not its launch folder
   const chat = w.chat('Open there', ID.a, w.mainWt);
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other, openIn: [{ folder: w.wt, sessionIds: [ID.a] }] });
 
-  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'routed');
   assert.deepEqual(calls.map((call) => call.path), [w.wt]);
   assert.deepEqual(requestsFor(sender.inbox, dir, w.wt).map((request) => request.sessionIds), [[ID.a]]);
   assert.deepEqual(filesIn(sender.inbox, dir, w.main), []);
   assert.deepEqual(sender.opened, []);
-  assert.deepEqual(sender.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → ${w.wt} (open-there)`]);
+  assert.deepEqual(sender.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → ${w.wt} (open-there) via=row-click`]);
 });
 
 test("a chat with no transcript yet opens here, in its row's own window, and logs no-transcript", async (t) => {
@@ -737,8 +739,8 @@ test("a chat with no transcript yet opens here, in its row's own window, and log
   const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main });
   const chat = w.storage.createChat(w.mainWt.id, 'claude', 'Fresh', {});
 
-  await here.router.route({ kind: 'open', chats: [chat] });
-  assert.deepEqual(here.routeLog, [`[Pitwall] route ${chat.id.slice(0, 8)} → here (no-transcript)`]);
+  await here.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${chat.id.slice(0, 8)} → here (no-transcript) via=row-click`]);
 });
 
 test('a bound tab here reveals locally only when this window is the launch folder', async (t) => {
@@ -746,9 +748,9 @@ test('a bound tab here reveals locally only when this window is the launch folde
   w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
   const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, isOpenHere: () => true });
 
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Tab here', ID.a, w.mainWt)] }), 'here');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Tab here', ID.a, w.mainWt)] }, ROW_CLICK), 'here');
   assert.deepEqual(here.opened.map((entry) => entry.path), [w.main]);
-  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (open-here)`]);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (open-here) via=row-click`]);
 });
 
 test('every routing decision logs one route line', async (t) => {
@@ -761,18 +763,18 @@ test('every routing decision logs one route line', async (t) => {
   const id8 = (id: string) => id.slice(0, 8);
 
   const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main });
-  await here.router.route({ kind: 'open', chats: [w.chat('Same', ID.a, w.mainWt)] });
-  await here.router.route({ kind: 'open', chats: [w.chat('Other', ID.b, w.otherWt)] });
-  await here.router.route({ kind: 'open', chats: [w.chat('Gone', ID.gone, w.goneWt)] });
+  await here.router.route({ kind: 'open', chats: [w.chat('Same', ID.a, w.mainWt)] }, ROW_CLICK);
+  await here.router.route({ kind: 'open', chats: [w.chat('Other', ID.b, w.otherWt)] }, ROW_CLICK);
+  await here.router.route({ kind: 'open', chats: [w.chat('Gone', ID.gone, w.goneWt)] }, ROW_CLICK);
   assert.deepEqual(here.routeLog, [
-    `[Pitwall] route ${id8(ID.a)} → here (same-folder)`,
-    `[Pitwall] route ${id8(ID.b)} → ${w.other} (handoff)`,
-    `[Pitwall] route ${id8(ID.gone)} → ${missing} (gone)`,
+    `[Pitwall] route ${id8(ID.a)} → here (same-folder) via=row-click`,
+    `[Pitwall] route ${id8(ID.b)} → ${w.other} (handoff) via=row-click`,
+    `[Pitwall] route ${id8(ID.gone)} → ${missing} (gone) via=row-click`,
   ]);
 
   const early = windowOn(t, w, tempDir(t), () => w.other, { pid: 1002, claims: w.other, servicesUp: () => false, timing: { ...FAST, servicesWaitMs: 20 } });
-  await early.router.route({ kind: 'open', chats: [w.chat('Early', ID.a, w.mainWt)] });
-  assert.deepEqual(early.routeLog, [`[Pitwall] route ${id8(ID.a)} → ${w.main} (no-services)`]);
+  await early.router.route({ kind: 'open', chats: [w.chat('Early', ID.a, w.mainWt)] }, ROW_CLICK);
+  assert.deepEqual(early.routeLog, [`[Pitwall] route ${id8(ID.a)} → ${w.main} (no-services) via=row-click`]);
 });
 
 test('launch folder reads a 1 MB head with no cwd without holding the event loop', async (t) => {
@@ -824,14 +826,14 @@ test('a chat moved into a worktree after its first click routes to the worktree 
   const chat = w.chat('Moves later', ID.a, w.mainWt);
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
 
-  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'routed');
   assert.deepEqual(calls.map((call) => call.path), [w.main]);
 
   // EnterWorktree: Claude moves the transcript into the worktree's project folder.
   fs.rmSync(first);
   w.transcript(w.wt, ID.a, [w.turn(ID.a, w.main), w.turn(ID.a, w.wt)]);
 
-  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'routed');
   assert.deepEqual(calls.map((call) => call.path), [w.main, w.wt], 'the second click goes to the worktree');
   assert.deepEqual(requestsFor(sender.inbox, dir, w.wt).map((request) => request.sessionIds), [[ID.a]]);
 });
@@ -854,14 +856,14 @@ test('a click before window services start waits for them, else warns and opens 
   });
   const timer = setTimeout(() => (up = true), 100);
   t.after(() => clearTimeout(timer));
-  assert.equal(await early.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.equal(await early.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'routed');
   assert.equal(requestsFor(early.inbox, dir, w.main).length, 1, 'the request is written once they are up');
   assert.deepEqual(calls.map((call) => call.path), [w.main]);
 
   // They never come up: warn (§3f) and raise no window, which would come up empty.
   const dir2 = tempDir(t);
   const never = windowOn(t, w, dir2, () => w.other, { pid: 1002, claims: w.other, servicesUp: () => false });
-  await never.router.route({ kind: 'open', chats: [chat] });
+  await never.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK);
   assert.deepEqual(warnings(UNREACHED('demo')), [UNREACHED('demo')]);
   assert.deepEqual(calls.map((call) => call.path), [w.main], 'no second openFolder');
   assert.equal(requestsFor(never.inbox, dir2, w.main).length, 0);
@@ -883,7 +885,7 @@ test("a chat whose transcript moved to the worktree's project dir (stored worktr
 
   assert.ok(!w.worktrees.some((worktree) => worktree.path === sibling), 'the listing does not know the worktree');
   assert.equal(await mainWindow.router.launchFolder(chat), sibling);
-  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.equal(await mainWindow.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'routed');
   assert.deepEqual(calls.map((call) => call.path), [sibling]);
   assert.deepEqual(mainWindow.opened, [], 'not opened in the main window');
 });
@@ -902,7 +904,7 @@ test('a cold open (no window for the folder yet) warns at 60 s, not 20 s', async
     timing: { ...FAST, warnMs: 50, coldWarnMs: 800, expireMs: 5_000 },
   });
 
-  await sender.router.route({ kind: 'open', chats: [w.chat('Cold', ID.a, w.mainWt)] });
+  await sender.router.route({ kind: 'open', chats: [w.chat('Cold', ID.a, w.mainWt)] }, ROW_CLICK);
   await new Promise((resolve) => setTimeout(resolve, 400));
   assert.deepEqual(warnings(UNREACHED('demo')), [], 'no warning at the warm wait');
   await waitFor(() => warnings(UNREACHED('demo')).length > 0, 'the warning at the cold wait', 3_000);
@@ -921,7 +923,7 @@ test('a request to an existing window warns at 20 s', async (t) => {
     timing: { ...FAST, warnMs: 50, coldWarnMs: 60_000, expireMs: 120_000 },
   });
 
-  await sender.router.route({ kind: 'open', chats: [w.chat('Warm', ID.a, w.mainWt)] });
+  await sender.router.route({ kind: 'open', chats: [w.chat('Warm', ID.a, w.mainWt)] }, ROW_CLICK);
   await waitFor(() => warnings(UNREACHED('demo')).length > 0, 'the warning at the warm wait', 3_000);
   assert.equal(warnings(UNREACHED('demo')).length, 1);
 });
@@ -945,7 +947,7 @@ test('I2: no window registers for the folder: the open is retried once, then one
   });
   stub.__warningResponses.push('Open its window');
 
-  await sender.router.route({ kind: 'open', chats: [w.chat('Closed window', ID.a, w.mainWt)] });
+  await sender.router.route({ kind: 'open', chats: [w.chat('Closed window', ID.a, w.mainWt)] }, ROW_CLICK);
   assert.equal(calls.length, 1);
   await waitFor(() => calls.length === 2, 'the retry', 3_000);
   assert.deepEqual(warnings(UNREACHED('demo')), [], 'no toast before the cold wait');
@@ -976,7 +978,7 @@ test('I2: the retried window gets its own start time: a window that registers af
   const outcome = sender.inbox.outcome.bind(sender.inbox);
   sender.inbox.outcome = async (...args: Parameters<HandoffInbox['outcome']>) => (up ? { ok: true } : outcome(...args));
 
-  await sender.router.route({ kind: 'open', chats: [w.chat('Slow window', ID.a, w.mainWt)] });
+  await sender.router.route({ kind: 'open', chats: [w.chat('Slow window', ID.a, w.mainWt)] }, ROW_CLICK);
   await waitFor(() => calls.length === 2, 'the retry', 3_000);
   const retriedAt = Date.now();
   // The retried window starts after the old warn time (coldWarnMs 400 from the request, ~100 ms after the retry), before retriedAt + 300.
@@ -1001,7 +1003,7 @@ test('E6: a window a handoff started opens its claimed chats without waiting on 
     worktreeOf: () => new Promise(() => undefined),
     worktreeFor: (chat, folder) => w.worktrees.find((worktree) => worktree.id === chat.worktreeId && samePath(worktree.path, folder)),
   });
-  await sender.router.route({ kind: 'open', chats: [w.chat('In worktree', ID.a, w.featWt)] });
+  await sender.router.route({ kind: 'open', chats: [w.chat('In worktree', ID.a, w.featWt)] }, ROW_CLICK);
   const claimed = await wtWindow.inbox.claimAll();
   assert.equal(claimed.length, 1);
   const outcome = await Promise.race([
@@ -1020,7 +1022,7 @@ test('E6: the operations log says when a claim fell back to the awaited worktree
   w.transcript(w.wt, ID.a, [w.turn(ID.a, w.wt)]);
   const sender = windowOn(t, w, dir, () => w.other, { pid: 1001, claims: w.other });
   const wtWindow = windowOn(t, w, dir, () => w.wt, { pid: 1002, claims: w.wt, worktreeFor: () => undefined });
-  await sender.router.route({ kind: 'open', chats: [w.chat('In worktree', ID.a, w.featWt)] });
+  await sender.router.route({ kind: 'open', chats: [w.chat('In worktree', ID.a, w.featWt)] }, ROW_CLICK);
   await wtWindow.router.runClaimed(await wtWindow.inbox.claimAll());
   assert.ok(wtWindow.routeLog.includes(`[Pitwall] claim lookup ${ID.a.slice(0, 8)} (awaited)`), wtWindow.routeLog.join(' | '));
 });
@@ -1045,7 +1047,7 @@ test('I2: a window that registers for the folder in time gets no retry', async (
     windowsAt: [w.main],
     timing: { ...FAST, warnMs: 5_000, coldWarnMs: 5_000, retryOpenMs: 100, expireMs: 10_000 } as typeof FAST,
   });
-  await sender.router.route({ kind: 'open', chats: [w.chat('Up', ID.a, w.mainWt)] });
+  await sender.router.route({ kind: 'open', chats: [w.chat('Up', ID.a, w.mainWt)] }, ROW_CLICK);
   await new Promise((resolve) => setTimeout(resolve, 400));
   assert.equal(calls.length, 1, 'raised once only');
 });
@@ -1071,7 +1073,7 @@ test('a disposed router never warns, even with an outcome read in flight', async
     return new Promise((resolve) => (release = () => resolve(undefined)));
   };
 
-  await sender.router.route({ kind: 'open', chats: [w.chat('Closing window', ID.a, w.mainWt)] });
+  await sender.router.route({ kind: 'open', chats: [w.chat('Closing window', ID.a, w.mainWt)] }, ROW_CLICK);
   await waitFor(() => reading, 'the outcome read to start');
   sender.router.dispose();
   release();
@@ -1101,13 +1103,13 @@ test("a chat live in an outside terminal (a live ~/.claude/sessions pid Pitwall 
   w.transcript(w.other, ID.b, [w.turn(ID.b, w.other)]);
   const here = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main, outsideTerminal: (id) => (id === ID.a || id === ID.b ? 4321 : undefined) });
 
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Same folder', ID.a, w.mainWt)] }), 'outside', 'held back by the guard alone: its own result (Q48)');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Same folder', ID.a, w.mainWt)] }, ROW_CLICK), 'outside', 'held back by the guard alone: its own result (Q48)');
   assert.deepEqual(here.opened, [], 'nothing opened here');
   assert.deepEqual(warnings(OUTSIDE(4321)), [OUTSIDE(4321)]);
-  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → elsewhere (outside-terminal)`]);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → elsewhere (outside-terminal) via=row-click`]);
 
   // Another folder's chat is not handed to its window either: that would start a second process.
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Other folder', ID.b, w.otherWt)] }), 'outside');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Other folder', ID.b, w.otherWt)] }, ROW_CLICK), 'outside');
   assert.deepEqual(calls, [], 'no window raised');
   assert.deepEqual(requestsFor(here.inbox, dir, w.other), []);
 });
@@ -1126,11 +1128,11 @@ test('the outside-terminal guard leaves alone a chat Pitwall owns: open here, op
     isOpenHere: (chat) => chat.name === 'Tab here',
     openIn: [{ folder: w.other, sessionIds: [ID.b] }],
   });
-  await here.router.route({ kind: 'open', chats: [w.chat('Tab here', ID.a, w.mainWt)] });
+  await here.router.route({ kind: 'open', chats: [w.chat('Tab here', ID.a, w.mainWt)] }, ROW_CLICK);
   assert.deepEqual(here.opened.map((entry) => entry.chat), ['Tab here'], 'a panel chat of this window has a live pid and still reveals');
-  await here.router.route({ kind: 'open', chats: [w.chat('There', ID.b, w.mainWt)] });
+  await here.router.route({ kind: 'open', chats: [w.chat('There', ID.b, w.mainWt)] }, ROW_CLICK);
   assert.deepEqual(calls.map((call) => call.path), [w.other], 'a panel chat of another Pitwall window routes to it (open-there)');
-  await here.router.route({ kind: 'open', chats: [w.chat('Free', ID.c, w.mainWt)] });
+  await here.router.route({ kind: 'open', chats: [w.chat('Free', ID.c, w.mainWt)] }, ROW_CLICK);
   assert.deepEqual(here.opened.map((entry) => entry.chat), ['Tab here', 'Free']);
   assert.deepEqual(shownMessages().filter((message) => message.includes('another terminal')), []);
 });
@@ -1167,11 +1169,11 @@ test("openAll opens this window's chats through the tab tracker one at a time; a
   const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, serial });
   const chats = [w.chat('A', ID.a, w.mainWt), w.chat('B', ID.b, w.mainWt), w.chat('C', ID.c, w.mainWt)];
 
-  await here.router.route({ kind: 'openAll', chats });
+  await here.router.route({ kind: 'openAll', chats }, ROW_CLICK);
   assert.deepEqual(serial, [{ ids: [ID.a, ID.b, ID.c] }]);
   assert.deepEqual(here.opened.map((entry) => entry.chat), ['A', 'B', 'C']);
 
-  await here.router.route({ kind: 'open', chats: [chats[0]] });
+  await here.router.route({ kind: 'open', chats: [chats[0]] }, ROW_CLICK);
   assert.equal(serial.length, 1, 'a click on one chat keeps the single-open path');
 });
 
@@ -1188,12 +1190,12 @@ test('a claimed openAll opens through the tab tracker, and a claimed sideBySide 
   const mainWindow = windowOn(t, w, dir, () => w.main, { pid: 1002, claims: w.main, serial, splits });
   const chats = [w.chat('A', ID.a, w.mainWt), w.chat('B', ID.b, w.mainWt)];
 
-  await sender.router.route({ kind: 'openAll', chats });
+  await sender.router.route({ kind: 'openAll', chats }, ROW_CLICK);
   await mainWindow.router.runClaimed(await mainWindow.inbox.claimAll());
   assert.deepEqual(serial, [{ ids: [ID.a, ID.b] }]);
   assert.deepEqual(splits, [], 'openAll does not split');
 
-  await sender.router.route({ kind: 'sideBySide', chats });
+  await sender.router.route({ kind: 'sideBySide', chats }, ROW_CLICK);
   await mainWindow.router.runClaimed(await mainWindow.inbox.claimAll());
   assert.deepEqual(splits, [[ID.a, ID.b]], 'the claiming window splits the chats it just revealed, in order');
 });
@@ -1206,7 +1208,7 @@ test('a local sideBySide reveals the chats and splits them in this window', asyn
   const splits: string[][] = [];
   const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, isOpenHere: () => true, splits, serial: [] });
   const chats = [w.chat('A', ID.a, w.mainWt), w.chat('B', ID.b, w.mainWt)];
-  assert.equal(await here.router.route({ kind: 'sideBySide', chats }), 'here');
+  assert.equal(await here.router.route({ kind: 'sideBySide', chats }, ROW_CLICK), 'here');
   assert.deepEqual(splits, [[ID.a, ID.b]]);
 });
 
@@ -1215,13 +1217,13 @@ test('"+" logs one [Pitwall] route line for new-chat routing', async (t) => {
   openFolderCalls();
   const sender = windowOn(t, w, tempDir(t), () => w.other, { pid: 1001, claims: w.other });
 
-  await sender.router.route({ kind: 'new', chats: [], folder: w.main });
-  assert.deepEqual(sender.routeLog, [`[Pitwall] route new → ${w.main} (handoff)`]);
-  await sender.router.route({ kind: 'new', chats: [], folder: w.other });
-  assert.deepEqual(sender.routeLog.slice(1), [`[Pitwall] route new → here (same-folder)`]);
+  await sender.router.route({ kind: 'new', chats: [], folder: w.main }, ROW_CLICK);
+  assert.deepEqual(sender.routeLog, [`[Pitwall] route new → ${w.main} (handoff) via=row-click`]);
+  await sender.router.route({ kind: 'new', chats: [], folder: w.other }, ROW_CLICK);
+  assert.deepEqual(sender.routeLog.slice(1), [`[Pitwall] route new → here (same-folder) via=row-click`]);
   const missing = path.join(w.scratch, 'deleted-worktree');
-  await sender.router.route({ kind: 'new', chats: [], folder: missing });
-  assert.deepEqual(sender.routeLog.slice(2), [`[Pitwall] route new → ${missing} (gone)`]);
+  await sender.router.route({ kind: 'new', chats: [], folder: missing }, ROW_CLICK);
+  assert.deepEqual(sender.routeLog.slice(2), [`[Pitwall] route new → ${missing} (gone) via=row-click`]);
 });
 
 test("open-here opens against this window's folder, even when the row is stored under another folder", async (t) => {
@@ -1229,9 +1231,9 @@ test("open-here opens against this window's folder, even when the row is stored 
   w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
   // The window is on the worktree; the row is stored under the main worktree; its tab is open here.
   const wtWindow = windowOn(t, w, tempDir(t), () => w.wt, { pid: 1001, claims: w.wt, isOpenHere: () => true });
-  assert.equal(await wtWindow.router.route({ kind: 'open', chats: [w.chat('Stored on main', ID.a, w.mainWt)] }), 'here');
+  assert.equal(await wtWindow.router.route({ kind: 'open', chats: [w.chat('Stored on main', ID.a, w.mainWt)] }, ROW_CLICK), 'here');
   assert.deepEqual(wtWindow.opened.map((entry) => entry.path), [w.wt], 'availability is checked against this window, not the stored row');
-  assert.deepEqual(wtWindow.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (open-here)`]);
+  assert.deepEqual(wtWindow.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (open-here) via=row-click`]);
 });
 
 // ---- Round 1 (QA #52): C1, C3 ----
@@ -1240,7 +1242,7 @@ test('a chat in a Claude panel of a window Pitwall cannot see gets the window-or
   const w = world(t);
   w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
   const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, outsideTerminal: () => ({ pid: 777, panel: true }) });
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel elsewhere', ID.a, w.mainWt)] }), 'outside');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel elsewhere', ID.a, w.mainWt)] }, ROW_CLICK), 'outside');
   assert.deepEqual(here.opened, []);
   assert.equal(warnings('That chat is already running in another window or terminal (pid 777). Switch to it there.').length, 1);
   assert.deepEqual(shownMessages().filter((message) => message.includes('another terminal')), []);
@@ -1250,7 +1252,7 @@ test('a chat with no live process (the guard finds none) opens here and warns no
   const w = world(t);
   w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
   const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, outsideTerminal: () => undefined });
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Not live', ID.a, w.mainWt)] }), 'here');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Not live', ID.a, w.mainWt)] }, ROW_CLICK), 'here');
   assert.deepEqual(here.opened.map((entry) => entry.chat), ['Not live']);
   assert.deepEqual(shownMessages(), []);
 });
@@ -1272,14 +1274,14 @@ test('a live panel process with no bound tab routes to its folder\'s window (ope
     outsideTerminal: (id) => (id === ID.b ? { pid: 39032, panel: true, cwd: w.other } : undefined),
   });
 
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Unbound B', ID.b, w.otherWt)] }), 'routed');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Unbound B', ID.b, w.otherWt)] }, ROW_CLICK), 'routed');
   const requests = requestsFor(here.inbox, dir, w.other);
   assert.equal(requests.length, 1, 'handed off once');
   assert.deepEqual([requests[0].kind, requests[0].sessionIds, requests[0].folder], ['open', [ID.b], w.other]);
   assert.deepEqual(calls.map((call) => call.path), [w.other], "its folder's window is raised");
   assert.deepEqual(here.opened, [], 'nothing opens in this window');
   assert.deepEqual(shownMessages(), [], 'no warning');
-  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.b.slice(0, 8)} → ${w.other} (open-there-unbound)`]);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.b.slice(0, 8)} → ${w.other} (open-there-unbound) via=row-click`]);
 });
 
 test("a live panel process in this window's folder that is not this window's child keeps the outside warning (no second process)", async (t) => {
@@ -1296,12 +1298,12 @@ test("a live panel process in this window's folder that is not this window's chi
     outsideTerminal: (id) => (id === ID.b ? { pid: 39032, panel: true, cwd: w.main } : undefined),
   });
 
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel, same folder', ID.b, w.mainWt)] }), 'outside');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel, same folder', ID.b, w.mainWt)] }, ROW_CLICK), 'outside');
   assert.deepEqual(here.opened, [], 'no openHere');
   assert.deepEqual(filesIn(here.inbox, dir, w.main), [], 'no request file');
   assert.deepEqual(calls, [], 'no window raised');
   assert.deepEqual(warnings(PANEL_OUTSIDE(39032)), [PANEL_OUTSIDE(39032)]);
-  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.b.slice(0, 8)} → elsewhere (outside-terminal)`]);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.b.slice(0, 8)} → elsewhere (outside-terminal) via=row-click`]);
 });
 
 test('a live panel process with no cwd in its record routes by the chat\'s launch folder', async (t) => {
@@ -1316,7 +1318,7 @@ test('a live panel process with no cwd in its record routes by the chat\'s launc
     outsideTerminal: (id) => (id === ID.b ? { pid: 39032, panel: true } : undefined),
   });
 
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Unbound B', ID.b, w.otherWt)] }), 'routed');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Unbound B', ID.b, w.otherWt)] }, ROW_CLICK), 'routed');
   assert.deepEqual(requestsFor(here.inbox, dir, w.other).map((request) => request.sessionIds), [[ID.b]]);
   assert.deepEqual(shownMessages(), []);
 });
@@ -1332,12 +1334,12 @@ test('a live panel process whose folder has no window keeps the outside warning'
     outsideTerminal: (id) => (id === ID.b ? { pid: 39032, panel: true, cwd: w.other } : undefined),
   });
 
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel, no window', ID.b, w.otherWt)] }), 'outside');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Panel, no window', ID.b, w.otherWt)] }, ROW_CLICK), 'outside');
   assert.deepEqual(warnings(PANEL_OUTSIDE(39032)), [PANEL_OUTSIDE(39032)]);
   assert.deepEqual(here.opened, []);
   assert.deepEqual(calls, []);
   assert.deepEqual(requestsFor(here.inbox, dir, w.other), []);
-  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.b.slice(0, 8)} → elsewhere (outside-terminal)`]);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.b.slice(0, 8)} → elsewhere (outside-terminal) via=row-click`]);
 });
 
 test('a live CLI process still gets the outside warning', async (t) => {
@@ -1355,8 +1357,8 @@ test('a live CLI process still gets the outside warning', async (t) => {
   });
 
   // Even with a window for its folder (another one, or this one), a terminal's chat is never opened a second time (Q28, Q48).
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('CLI there', ID.b, w.otherWt)] }), 'outside');
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('CLI here', ID.c, w.mainWt)] }), 'outside');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('CLI there', ID.b, w.otherWt)] }, ROW_CLICK), 'outside');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('CLI here', ID.c, w.mainWt)] }, ROW_CLICK), 'outside');
   assert.deepEqual(warnings(OUTSIDE(4321)), [OUTSIDE(4321)]);
   assert.deepEqual(warnings(OUTSIDE(4322)), [OUTSIDE(4322)]);
   assert.deepEqual(here.opened, [], 'no openHere');
@@ -1383,14 +1385,14 @@ test("a claimed open-there-unbound session whose live panel is not this window's
     },
   });
 
-  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('Unbound B', ID.b, w.otherWt)] }), 'routed');
+  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('Unbound B', ID.b, w.otherWt)] }, ROW_CLICK), 'routed');
   const [request] = await claimer.inbox.claimAll();
   await claimer.router.runClaimed([request]);
 
   assert.deepEqual(asked, [ID.b], 'the claimer asks its own guard');
   assert.deepEqual(claimer.opened, [], 'nothing opened: no second process');
   assert.deepEqual(await sender.inbox.outcome(w.other, request.nonce), { ok: false, error: 'outside' });
-  assert.deepEqual(claimer.routeLog, [`[Pitwall] route ${ID.b.slice(0, 8)} → elsewhere (outside-terminal)`]);
+  assert.deepEqual(claimer.routeLog, [`[Pitwall] route ${ID.b.slice(0, 8)} → elsewhere (outside-terminal) via=claimed`]);
   // The sender reads the outcome; the claimer's Q28 copy is the only warning (no "couldn't reach").
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.deepEqual(shownMessages(), [PANEL_OUTSIDE(39032)]);
@@ -1406,6 +1408,8 @@ test("a claimed session whose live panel is this window's child opens normally",
     claims: w.main,
     windowsAt: [w.other],
     outsideTerminal: (id) => (id === ID.b ? { pid: 39032, panel: true, cwd: w.other } : undefined),
+    // The claim below runs after the route returns; FAST's 150 ms warning raced it on Windows CI (run 44800300662).
+    timing: { ...FAST, warnMs: 60_000, coldWarnMs: 60_000, expireMs: 120_000 },
   });
   const asked: string[] = [];
   // The real owner: its panel is a child of its own extension host, so its guard finds no outsider.
@@ -1415,7 +1419,7 @@ test("a claimed session whose live panel is this window's child opens normally",
     outsideTerminal: (id) => void asked.push(id),
   });
 
-  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('Unbound B', ID.b, w.otherWt)] }), 'routed');
+  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('Unbound B', ID.b, w.otherWt)] }, ROW_CLICK), 'routed');
   const [request] = await owner.inbox.claimAll();
   await owner.router.runClaimed([request]);
 
@@ -1444,7 +1448,7 @@ test("a claimed session open in the claimer's own terminal opens without asking 
     },
   });
 
-  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('In a Pitwall terminal', ID.a, w.mainWt)] }), 'routed');
+  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('In a Pitwall terminal', ID.a, w.mainWt)] }, ROW_CLICK), 'routed');
   const [request] = await claimer.inbox.claimAll();
   await claimer.router.runClaimed([request]);
 
@@ -1469,7 +1473,7 @@ test('openAll with a terminal chat skips the tab wait for it, and a claimed one 
     serial,
     openHere: async (chat) => (chat.name === 'Terminal one' ? 'terminal' : true),
   });
-  await sender.router.route({ kind: 'openAll', chats: [w.chat('Terminal one', ID.a, w.mainWt), w.chat('Tab one', ID.b, w.mainWt)] });
+  await sender.router.route({ kind: 'openAll', chats: [w.chat('Terminal one', ID.a, w.mainWt), w.chat('Tab one', ID.b, w.mainWt)] }, ROW_CLICK);
   const [request] = await mainWindow.inbox.claimAll();
   await mainWindow.router.runClaimed([request]);
   assert.deepEqual(serial[0].results, [false, true], 'a terminal open resolves false: no 5 s wait');
@@ -1506,10 +1510,10 @@ test('a no-transcript chat whose row folder is not this window never starts here
   const here = windowOn(t, w, tempDir(t), () => w.other, { pid: 1001, claims: w.other });
   const chat = w.storage.createChat(w.mainWt.id, 'claude', 'New Session', { pendingUiLaunch: true });
 
-  assert.equal(await here.router.route({ kind: 'openAll', chats: [chat] }), 'gone');
+  assert.equal(await here.router.route({ kind: 'openAll', chats: [chat] }, ROW_CLICK), 'gone');
   assert.deepEqual(here.opened, [], 'nothing opened in this window');
   assert.deepEqual(calls, [], 'and no window raised for a chat with nothing to open');
-  assert.deepEqual(here.routeLog, [`[Pitwall] route ${chat.id.slice(0, 8)} → ${w.main} (no-transcript-elsewhere)`]);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${chat.id.slice(0, 8)} → ${w.main} (no-transcript-elsewhere) via=row-click`]);
 });
 
 test('no-transcript-elsewhere still returns gone', async (t) => {
@@ -1517,11 +1521,11 @@ test('no-transcript-elsewhere still returns gone', async (t) => {
   w.transcript(w.main, ID.a, [w.turn(ID.a, w.main)]);
   const here = windowOn(t, w, tempDir(t), () => w.other, { pid: 1001, claims: w.other, outsideTerminal: (id) => (id === ID.a ? 4321 : undefined) });
   const pending = w.storage.createChat(w.mainWt.id, 'claude', 'New Session', { pendingUiLaunch: true });
-  assert.equal(await here.router.route({ kind: 'open', chats: [pending] }), 'gone', 'only the outside-terminal guard makes outside');
+  assert.equal(await here.router.route({ kind: 'open', chats: [pending] }, ROW_CLICK), 'gone', 'only the outside-terminal guard makes outside');
 
   // A batch where one chat is held back by the guard and another has nothing to open is not 'outside' either.
   const live = w.chat('Live outside', ID.a, w.mainWt);
-  assert.equal(await here.router.route({ kind: 'openAll', chats: [live, pending] }), 'gone');
+  assert.equal(await here.router.route({ kind: 'openAll', chats: [live, pending] }, ROW_CLICK), 'gone');
   assert.deepEqual(here.opened, []);
 });
 
@@ -1549,7 +1553,7 @@ test("a pop-up click on a chat live in this window's own panel, tab unbound, bri
   const activated: string[] = [];
   const handler = new PopupUriHandler({
     chatForSession: (sessionId) => (sessionId === ID.a ? chat : undefined),
-    route: (request) => here.router.route(request),
+    route: (request) => here.router.route(request, ROW_CLICK),
     activateLocal: (entry) => activated.push(entry.name),
     log: (line) => popupLog.push(line),
   });
@@ -1559,7 +1563,7 @@ test("a pop-up click on a chat live in this window's own panel, tab unbound, bri
   assert.deepEqual(revealed, [ID.a], "the agent UI's own open brings the existing tab forward");
   assert.deepEqual(calls, [], 'no handoff');
   assert.deepEqual(shownMessages(), []);
-  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (live-here)`]);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (live-here) via=row-click`]);
   assert.equal(popupLog.at(-1), `[Pitwall] popup click ${ID.a.slice(0, 8)}`);
   assert.deepEqual(activated, ['Pitwall initial idea'], 'marked seen here');
 });
@@ -1574,15 +1578,15 @@ test("a chat live in this window's own panel that can't be brought forward witho
     revealLive: async () => false,
   });
   const chat = w.chat('Main', ID.a, w.mainWt);
-  assert.equal(await failing.router.route({ kind: 'open', chats: [chat] }), 'outside');
+  assert.equal(await failing.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'outside');
   assert.deepEqual(failing.opened, []);
   assert.deepEqual(warnings(OWN_PANEL), [OWN_PANEL]);
-  assert.deepEqual(failing.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (live-here-warn)`]);
+  assert.deepEqual(failing.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (live-here-warn) via=row-click`]);
 
   stub.__reset();
   // No reveal command at all (an older Claude build): the same warning, still no process.
   const none = windowOn(t, w, tempDir(t), () => w.main, { pid: 1002, claims: w.main, outsideTerminal: ownPanel(ID.a) });
-  assert.equal(await none.router.route({ kind: 'open', chats: [chat] }), 'outside');
+  assert.equal(await none.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'outside');
   assert.deepEqual(none.opened, []);
   assert.deepEqual(warnings(OWN_PANEL), [OWN_PANEL]);
 });
@@ -1599,11 +1603,11 @@ test("a chat live in this window with a bound tab is focused as before: the guar
     outsideTerminal: (id) => (asked++, ownPanel(ID.a)(id)),
     revealLive: async (_chat, sessionId) => (revealed.push(sessionId), true),
   });
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Bound', ID.a, w.mainWt)] }), 'here');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Bound', ID.a, w.mainWt)] }, ROW_CLICK), 'here');
   assert.deepEqual(here.opened.map((entry) => entry.chat), ['Bound'], 'its tab is revealed through openHere');
   assert.equal(asked, 0);
   assert.deepEqual(revealed, []);
-  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (open-here)`]);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (open-here) via=row-click`]);
 });
 
 test("a chat that is not live opens normally here (same-folder), and the reveal path isn't used", async (t) => {
@@ -1616,10 +1620,10 @@ test("a chat that is not live opens normally here (same-folder), and the reveal 
     outsideTerminal: () => undefined,
     revealLive: async (_chat, sessionId) => (revealed.push(sessionId), true),
   });
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Idle', ID.a, w.mainWt)] }), 'here');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Idle', ID.a, w.mainWt)] }, ROW_CLICK), 'here');
   assert.deepEqual(here.opened.map((entry) => [entry.chat, entry.path]), [['Idle', w.main]]);
   assert.deepEqual(revealed, []);
-  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (same-folder)`]);
+  assert.deepEqual(here.routeLog, [`[Pitwall] route ${ID.a.slice(0, 8)} → here (same-folder) via=row-click`]);
 });
 
 test("a claimed chat live in the claimer's own panel, tab unbound, is brought forward there without a process", async (t) => {
@@ -1641,7 +1645,7 @@ test("a claimed chat live in the claimer's own panel, tab unbound, is brought fo
     windowsAt: [w.other],
     outsideTerminal: (id) => (id === ID.b ? { pid: 4242, panel: true, cwd: w.other } : undefined),
   });
-  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }), 'routed');
+  assert.equal(await sender.router.route({ kind: 'open', chats: [chat] }, ROW_CLICK), 'routed');
   const [request] = requestsFor(sender.inbox, dir, w.other);
   await claimer.router.runClaimed([request], claimer.inbox);
   assert.deepEqual(claimer.opened, [], 'no openHere on the claim side');
@@ -1654,8 +1658,8 @@ test("a claimed chat live in the claimer's own panel, tab unbound, is brought fo
 test('guardLive: a chat live nowhere is left to the caller; it never opens anything itself', async (t) => {
   const w = world(t);
   const here = windowOn(t, w, tempDir(t), () => w.main, { pid: 1001, claims: w.main, outsideTerminal: () => undefined });
-  assert.equal(await here.router.guardLive(w.chat('Idle', ID.a, w.mainWt)), undefined);
-  assert.equal(await here.router.guardLive(w.chat('Unstarted', null as never, w.mainWt)), undefined, 'no session: nothing to guard');
+  assert.equal(await here.router.guardLive(w.chat('Idle', ID.a, w.mainWt), { via: 'explicit-terminal' }), undefined);
+  assert.equal(await here.router.guardLive(w.chat('Unstarted', null as never, w.mainWt), { via: 'explicit-terminal' }), undefined, 'no session: nothing to guard');
   assert.deepEqual([here.opened, here.started, shownMessages()], [[], [], []]);
 });
 
@@ -1673,9 +1677,9 @@ test("guardLive: this window's own panel is brought forward; an outside terminal
     outsideTerminal: (id) => live[id],
     revealLive: async (_chat, sessionId) => (revealed.push(sessionId), true),
   });
-  assert.equal(await here.router.guardLive(w.chat('Main', ID.a, w.mainWt)), 'here');
-  assert.equal(await here.router.guardLive(w.chat('My terminal', ID.b, w.mainWt)), 'outside');
-  assert.equal(await here.router.guardLive(w.chat('Window B, closed?', ID.c, w.otherWt)), 'outside', 'no Pitwall window on its folder: warn, never open here');
+  assert.equal(await here.router.guardLive(w.chat('Main', ID.a, w.mainWt), { via: 'explicit-terminal' }), 'here');
+  assert.equal(await here.router.guardLive(w.chat('My terminal', ID.b, w.mainWt), { via: 'explicit-terminal' }), 'outside');
+  assert.equal(await here.router.guardLive(w.chat('Window B, closed?', ID.c, w.otherWt), { via: 'explicit-terminal' }), 'outside', 'no Pitwall window on its folder: warn, never open here');
   assert.deepEqual(revealed, [ID.a]);
   assert.deepEqual(here.opened, []);
   assert.deepEqual(warnings(`That chat is already running in another terminal (pid 777). Switch to it there.`).length, 1);
@@ -1695,14 +1699,14 @@ test('guardLive: a chat open in another Pitwall window, or live in a panel there
     openIn: [{ folder: w.other, sessionIds: [ID.b] }],
     outsideTerminal: (id) => (id === ID.c ? { pid: 39032, panel: true, cwd: w.other } : undefined),
   });
-  assert.equal(await here.router.guardLive(w.chat('Open in B', ID.b, w.otherWt)), 'routed');
-  assert.equal(await here.router.guardLive(w.chat('Unbound in B', ID.c, w.otherWt)), 'routed');
+  assert.equal(await here.router.guardLive(w.chat('Open in B', ID.b, w.otherWt), { via: 'explicit-terminal' }), 'routed');
+  assert.equal(await here.router.guardLive(w.chat('Unbound in B', ID.c, w.otherWt), { via: 'explicit-terminal' }), 'routed');
   assert.deepEqual(requestsFor(here.inbox, dir, w.other).map((request) => [request.kind, request.sessionIds]).sort(), [['open', [ID.b]], ['open', [ID.c]]]);
   assert.deepEqual(calls.map((call) => call.path), [w.other, w.other]);
   assert.deepEqual(here.opened, [], 'nothing opens in this window');
   assert.deepEqual(here.routeLog.sort(), [
-    `[Pitwall] route ${ID.b.slice(0, 8)} → ${w.other} (open-there)`,
-    `[Pitwall] route ${ID.c.slice(0, 8)} → ${w.other} (open-there-unbound)`,
+    `[Pitwall] route ${ID.b.slice(0, 8)} → ${w.other} (open-there) via=explicit-terminal`,
+    `[Pitwall] route ${ID.c.slice(0, 8)} → ${w.other} (open-there-unbound) via=explicit-terminal`,
   ].sort());
 });
 
@@ -1735,7 +1739,7 @@ test("a click on a chat whose Pitwall terminal here exited routes it as a stoppe
   terminal.state.agentAlive = false;
   const here = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main, isOpenHere: terminal.isOpenHere, releaseExited: terminal.releaseExited });
 
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Lab Notes', ID.b, w.otherWt)] }), 'routed');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Lab Notes', ID.b, w.otherWt)] }, ROW_CLICK), 'routed');
 
   assert.deepEqual(terminal.state.released, [ID.b]);
   assert.deepEqual(here.opened, [], 'never brought forward on the dead shell');
@@ -1743,7 +1747,7 @@ test("a click on a chat whose Pitwall terminal here exited routes it as a stoppe
   assert.deepEqual(calls, [{ path: w.other, forceNewWindow: true }]);
   assert.deepEqual(here.routeLog, [
     `[Pitwall] released ${ID.b.slice(0, 8)} (its terminal agent exited)`,
-    `[Pitwall] route ${ID.b.slice(0, 8)} → ${w.other} (handoff)`,
+    `[Pitwall] route ${ID.b.slice(0, 8)} → ${w.other} (handoff) via=row-click`,
   ]);
 });
 
@@ -1755,10 +1759,10 @@ test('a click on a chat whose Pitwall terminal here is live still brings that te
   const terminal = pitwallTerminal(ID.b);
   const here = windowOn(t, w, dir, () => w.main, { pid: 1001, claims: w.main, isOpenHere: terminal.isOpenHere, releaseExited: terminal.releaseExited });
 
-  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Lab Notes', ID.b, w.otherWt)] }), 'here');
+  assert.equal(await here.router.route({ kind: 'open', chats: [w.chat('Lab Notes', ID.b, w.otherWt)] }, ROW_CLICK), 'here');
   assert.deepEqual(terminal.state.released, []);
   assert.deepEqual(here.opened.map((entry) => entry.chat), ['Lab Notes'], 'its terminal, focused');
-  assert.deepEqual([calls, here.routeLog], [[], [`[Pitwall] route ${ID.b.slice(0, 8)} → here (open-here)`]]);
+  assert.deepEqual([calls, here.routeLog], [[], [`[Pitwall] route ${ID.b.slice(0, 8)} → here (open-here) via=row-click`]]);
 });
 
 test("a claimed chat whose only tie to the claimer was a dead Pitwall terminal is routed as a click would, never opened on the shell (P2 K4)", async (t) => {
@@ -1772,7 +1776,7 @@ test("a claimed chat whose only tie to the claimer was a dead Pitwall terminal i
   terminal.state.agentAlive = false;
   const claimer = windowOn(t, w, dir, () => w.main, { pid: 1002, claims: w.main, isOpenHere: terminal.isOpenHere, releaseExited: terminal.releaseExited });
 
-  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('Lab Notes', ID.b, w.otherWt)] }), 'routed');
+  assert.equal(await sender.router.route({ kind: 'open', chats: [w.chat('Lab Notes', ID.b, w.otherWt)] }, ROW_CLICK), 'routed');
   const [request] = await claimer.inbox.claimAll();
   await claimer.router.runClaimed([request]);
 

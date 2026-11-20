@@ -181,6 +181,13 @@ export interface FakeTreeView {
    * "Actual command not found, wanted to execute <id>" to `treeErrors`.
    */
   __click(item: { id?: string }): Promise<unknown>;
+  /**
+   * The user clicks a row with the mouse: selects it (no event when it is
+   * already the one selected), then runs its command like `__click`.
+   */
+  __mouseClick(item: { id?: string }): Promise<unknown>;
+  /** Whether a reveal with `select: true` selects its row once it lands (off by default). */
+  __revealSelects: boolean;
   /** How long the workbench takes to expand a reveal's parent rows. */
   __revealRoundTripMs: number;
   /** How long a refresh takes to reach the workbench, which then re-renders the rows. */

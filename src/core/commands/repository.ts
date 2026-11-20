@@ -11,6 +11,7 @@ import { canonicalPath, canonicalRoot, nativePath, samePath } from '../utils/pat
 import { formatRelativeTime } from '../utils/text';
 import { commandRegistrar, importNativeSession, withProgress } from './common';
 import type { ChatRouter } from '../windows/ChatRouter';
+import { OpenSource, sourceArg } from '../windows/openSource';
 import { DumpDeps, writeDump } from '../windows/dumpState';
 import { raiseFolderWindow } from '../windows/raiseWindow';
 import { consumeKeepListFocus } from './navigation';
@@ -125,7 +126,7 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     }
     const router = deps.router?.();
     if (router) {
-      await router.route({ kind: 'new', chats: [], folder: repo.rootPath });
+      await router.route({ kind: 'new', chats: [], folder: repo.rootPath }, { source: { via: 'new-session' } });
       return;
     }
     await vscode.commands.executeCommand('pitwall.newClaudeChat', repositoryRow(repo, item));
@@ -139,10 +140,12 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
    * tab. A Ctrl+↓/↑ that landed on the row left its marker, which is read
    * first: a keyboard walk only expands the row.
    */
-  register('pitwall.openRepoChats', async (item?: WorkspaceTreeItem) => {
+  register('pitwall.openRepoChats', async (item?: WorkspaceTreeItem, given?: OpenSource) => {
     if (consumeKeepListFocus()) {
       return;
     }
+    // The repo row passes `repo-click`; a menu item or the palette passes nothing.
+    const source = sourceArg(given, { via: item ? 'menu' : 'palette' });
     const repo = await repositoryFor(item, 'open the chats of');
     const router = deps.router?.();
     if (!repo || !router || !deps.mainChats) {
@@ -154,12 +157,12 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     }
     const here = deps.windowFolder?.();
     if (here && samePath(here, repo.rootPath) && chats.every((chat) => deps.isChatOpen?.(chat))) {
-      await router.route({ kind: 'open', chats: [chats[0]] });
+      await router.route({ kind: 'open', chats: [chats[0]] }, { source });
       return;
     }
     // Oldest first, so the newest tab opens last and is the one in front.
     const batch = chats.slice(0, REPO_CLICK_CAP);
-    await router.route({ kind: 'openAll', chats: [...batch].reverse() });
+    await router.route({ kind: 'openAll', chats: [...batch].reverse() }, { source });
     const rest = chats.slice(REPO_CLICK_CAP);
     if (rest.length === 0) {
       return;
@@ -172,7 +175,7 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
       ignoreFocusOut: true,
     });
     if (picked) {
-      await router.route({ kind: 'openAll', chats: [...rest].reverse() });
+      await router.route({ kind: 'openAll', chats: [...rest].reverse() }, { source });
     }
   });
 
@@ -187,7 +190,7 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     if (open.length < 2) {
       return;
     }
-    await router.route({ kind: 'sideBySide', chats: open });
+    await router.route({ kind: 'sideBySide', chats: open }, { source: { via: 'side-by-side' } });
   });
 
   /**
@@ -328,7 +331,8 @@ export function registerRepositoryCommands(context: vscode.ExtensionContext, dep
     if (chat) {
       await vscode.commands.executeCommand(
         'pitwall.openChat',
-        new WorkspaceTreeItem(chat.name, vscode.TreeItemCollapsibleState.None, 'chat', chat, 'chat')
+        new WorkspaceTreeItem(chat.name, vscode.TreeItemCollapsibleState.None, 'chat', chat, 'chat'),
+        { via: 'history' } satisfies OpenSource
       );
     }
   });

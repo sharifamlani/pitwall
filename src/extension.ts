@@ -254,7 +254,7 @@ export async function activate(context: vscode.ExtensionContext) {
           const worktree = chat && (await workspacesProvider.getWorktreeByIdAsync(chat.worktreeId));
           const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
           if (chat && worktree) {
-            await openChatHere(chat, { ...worktree, path: folder ?? worktree.path }, false);
+            await openChatHere(chat, { ...worktree, path: folder ?? worktree.path }, false, { via: 'side-by-side' });
           }
         },
         exec: (command) => Promise.resolve(vscode.commands.executeCommand(command)),
@@ -263,8 +263,8 @@ export async function activate(context: vscode.ExtensionContext) {
     },
     chatForSession: (sessionId) =>
       storageService.getChats().find((chat) => harnessRegistry.has(chat.harness) && chatNativeSessionIds(chat).includes(sessionId)),
-    openHere: async (chat, worktree, { keepListFocus }) => {
-      const opened = await openChatHere(chat, worktree, keepListFocus);
+    openHere: async (chat, worktree, { keepListFocus, source }) => {
+      const opened = await openChatHere(chat, worktree, keepListFocus, source);
       return opened === 'failed' ? false : opened === 'terminal' ? 'terminal' : true;
     },
     startNew: async (folder) => {
@@ -534,7 +534,11 @@ export async function activate(context: vscode.ExtensionContext) {
       const reveal = () =>
         workspacesProvider.revealWhenSettled(() =>
           ticket === latestReveal
-            ? workspacesTreeView.reveal(workspacesProvider.getChatTreeItem(chat), { select: true, focus: false, expand: true })
+            ? workspacesProvider.revealRow(workspacesTreeView, workspacesProvider.getChatTreeItem(chat), {
+                select: true,
+                focus: false,
+                expand: true,
+              })
             : Promise.resolve()
         );
       deferredReveal?.dispose();
@@ -673,7 +677,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const chat = storageService.getChat(chatId);
       if (chat) {
         void openFromPopup(chat, {
-          route: (request) => router.route(request),
+          route: (request, options) => router.route(request, options),
           activateLocal: (entry) => activateChat(entry, { revealIfHidden: false }),
         }).catch((error) => console.error('[Pitwall] Could not open the chat from its notification:', error));
       }
@@ -707,7 +711,7 @@ export async function activate(context: vscode.ExtensionContext) {
       new PopupUriHandler({
         chatForSession: (sessionId) =>
           storageService.getChats().find((chat) => harnessRegistry.has(chat.harness) && chatNativeSessionIds(chat).includes(sessionId)),
-        route: (request) => router.route(request),
+        route: (request, options) => router.route(request, options),
         activateLocal: (chat) => activateChat(chat, { revealIfHidden: false }),
         log: logOperation,
         // The window that handled the click comes forward, as a handoff raises its target (v0.6.0).
@@ -960,7 +964,10 @@ export async function activate(context: vscode.ExtensionContext) {
         sessionImporter.wake();
       }
     }),
-    workspacesTreeView.onDidChangeSelection(({ selection: [selected, ...others] }) => {
+    workspacesTreeView.onDidChangeSelection(({ selection }) => {
+      // First, so the next row command's log line can say how its row was selected (`selected=`).
+      workspacesProvider.noteSelection(selection);
+      const [selected, ...others] = selection;
       // Selecting several rows prepares a bulk action; it is not a visit.
       if (!selected || others.length > 0) {
         return;
@@ -1006,7 +1013,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const reveal = () =>
       setTimeout(() => {
         void workspacesProvider.revealWhenSettled(() =>
-          workspacesTreeView.reveal(workspacesProvider.getTreeItemForWorktree(startWorktree), {
+          workspacesProvider.revealRow(workspacesTreeView, workspacesProvider.getTreeItemForWorktree(startWorktree), {
             select: true,
             focus: false,
             expand: true,

@@ -8,6 +8,7 @@ import { logOperation } from '../services/OperationLog';
 import type { WindowRegistry } from './WindowRegistry';
 import { EXPIRE_MS, HandoffInbox, HandoffKind, HandoffOutcome, HandoffRequest, WARN_MS } from './HandoffInbox';
 import { OPEN_ITS_WINDOW, raiseFolderWindow } from './raiseWindow';
+import { OpenSource, viaTail } from './openSource';
 
 /**
  * Where a route landed: opened (or brought forward) in this window, handed to
@@ -96,7 +97,7 @@ export interface ChatRouterDeps {
    * folder, which availability is checked against (Q2). Resolves false when
    * nothing opened, and 'terminal' when it opened in a terminal (no tab).
    */
-  openHere: (chat: ChatSession, worktree: Worktree, options: { keepListFocus: boolean }) => Promise<boolean | 'terminal'>;
+  openHere: (chat: ChatSession, worktree: Worktree, options: { keepListFocus: boolean; source: OpenSource }) => Promise<boolean | 'terminal'>;
   /** Start a new chat in a folder this window shows. */
   startNew: (folder: string) => Promise<boolean>;
   /**
@@ -212,7 +213,7 @@ export class ChatRouter implements vscode.Disposable {
    */
   route(
     req: { kind: HandoffKind; chats: ChatSession[]; folder?: string },
-    options: { keepListFocus?: boolean } = {}
+    options: { keepListFocus?: boolean; source: OpenSource }
   ): Promise<RouteResult> {
     const key =
       req.kind === 'new'
@@ -264,7 +265,7 @@ export class ChatRouter implements vscode.Disposable {
    * process is warned about (Q28, 'outside'). Undefined when the session is
    * live nowhere: only then may the caller start a process.
    */
-  async guardLive(chat: ChatSession): Promise<RouteResult | undefined> {
+  async guardLive(chat: ChatSession, source: OpenSource): Promise<RouteResult | undefined> {
     const sessionId = chat.harnessSessionId;
     if (!sessionId) {
       return undefined;
@@ -274,14 +275,14 @@ export class ChatRouter implements vscode.Disposable {
       return undefined;
     }
     if (live.kind === 'here') {
-      return (await this.revealLive(chat, sessionId)) ? 'here' : 'outside';
+      return (await this.revealLive(chat, sessionId, source)) ? 'here' : 'outside';
     }
     if (live.kind === 'outside') {
-      this.warnOutside(sessionId, live);
+      this.warnOutside(sessionId, live, source);
       return 'outside';
     }
     const sent = await this.handOff(live.folder, 'open', [sessionId]);
-    this.logRoute(sessionId, live.folder, sent ? live.reason : 'no-services');
+    this.logRoute(sessionId, live.folder, sent ? live.reason : 'no-services', source);
     return sent ? 'routed' : 'gone';
   }
 
@@ -336,32 +337,33 @@ export class ChatRouter implements vscode.Disposable {
   }
 
   /** Q28: a live process Pitwall can neither bring forward nor hand off is never opened a second time. */
-  private warnOutside(id: string, live: { pid: number; panel?: boolean }): void {
-    this.logRoute(id, 'elsewhere', 'outside-terminal');
+  private warnOutside(id: string, live: { pid: number; panel?: boolean }, source: OpenSource): void {
+    this.logRoute(id, 'elsewhere', 'outside-terminal', source);
     void vscode.window.showWarningMessage(outsideTerminalMessage(live.pid, live.panel));
   }
 
   private async routeNow(
     req: { kind: HandoffKind; chats: ChatSession[]; folder?: string },
-    options: { keepListFocus?: boolean }
+    options: { keepListFocus?: boolean; source: OpenSource }
   ): Promise<RouteResult> {
     const keepListFocus = options.keepListFocus ?? false;
+    const source = options.source;
     if (req.kind === 'new') {
       const folder = req.folder;
       if (!folder) {
         return 'gone';
       }
       if (!fs.existsSync(folder)) {
-        this.logNewRoute(folder, 'gone');
+        this.logNewRoute(folder, 'gone', source);
         void vscode.window.showWarningMessage(folderGoneMessage(folder));
         return 'gone';
       }
       if (this.isThisWindow(folder)) {
-        this.logNewRoute('here', 'same-folder');
+        this.logNewRoute('here', 'same-folder', source);
         await this.deps.startNew(folder);
         return 'here';
       }
-      this.logNewRoute(folder, 'handoff');
+      this.logNewRoute(folder, 'handoff', source);
       return (await this.handOff(folder, 'new', [])) ? 'routed' : 'gone';
     }
 
@@ -393,7 +395,7 @@ export class ChatRouter implements vscode.Disposable {
       // exited is a shell, not the chat: released first (f3 P2 K4).
       await this.releaseExited(chat);
       if (this.deps.isOpenHere(chat)) {
-        this.logRoute(id, 'here', 'open-here');
+        this.logRoute(id, 'here', 'open-here', source);
         local.push({ chat, worktree: { ...worktree, path: this.deps.windowFolder() ?? worktree.path } });
         continue;
       }
@@ -403,7 +405,7 @@ export class ChatRouter implements vscode.Disposable {
         continue;
       }
       if (live?.kind === 'here') {
-        if (await this.revealLive(chat, chat.harnessSessionId!)) {
+        if (await this.revealLive(chat, chat.harnessSessionId!, source)) {
           revealed++;
         } else {
           outsideTerminal++;
@@ -411,7 +413,7 @@ export class ChatRouter implements vscode.Disposable {
         continue;
       }
       if (live?.kind === 'outside') {
-        this.warnOutside(id, live);
+        this.warnOutside(id, live, source);
         outsideTerminal++;
         continue;
       }
@@ -419,22 +421,22 @@ export class ChatRouter implements vscode.Disposable {
         if ((!chat.harnessSessionId || chat.pendingUiLaunch) && !this.isThisWindow(worktree.path)) {
           // Nothing to hand over, and its folder is another window's: starting it here would
           // run a chat for that folder in this window.
-          this.logRoute(id, worktree.path, 'no-transcript-elsewhere');
+          this.logRoute(id, worktree.path, 'no-transcript-elsewhere', source);
           blocked++;
           continue;
         }
         // Nothing of this chat exists natively to hand over: it stays here.
-        this.logRoute(id, 'here', 'no-transcript');
+        this.logRoute(id, 'here', 'no-transcript', source);
         local.push({ chat, worktree });
         continue;
       }
       // Open nowhere: the launch folder decides (D35).
       const folder = (await this.launchFolder(chat, worktree)) ?? worktree.path;
       if (!fs.existsSync(folder)) {
-        this.logRoute(id, folder, 'gone');
+        this.logRoute(id, folder, 'gone', source);
         gone.add(folder);
       } else if (this.isThisWindow(folder)) {
-        this.logRoute(id, 'here', 'same-folder');
+        this.logRoute(id, 'here', 'same-folder', source);
         local.push({ chat, worktree: { ...worktree, path: folder } });
       } else {
         hand(folder, chat.harnessSessionId!, 'handoff');
@@ -448,7 +450,7 @@ export class ChatRouter implements vscode.Disposable {
     const byId = new Map(local.map((entry) => [idOf(entry.chat), entry]));
     const openLocal = async (id: string): Promise<boolean | 'terminal'> => {
       const entry = byId.get(id)!;
-      return this.deps.openHere(entry.chat, entry.worktree, { keepListFocus });
+      return this.deps.openHere(entry.chat, entry.worktree, { keepListFocus, source });
     };
     const ids = local.map((entry) => idOf(entry.chat));
     await this.openChats(req.kind, ids, openLocal);
@@ -456,7 +458,7 @@ export class ChatRouter implements vscode.Disposable {
     for (const { folder, ids, reasons } of remote.values()) {
       const sent = await this.handOff(folder, req.kind, ids);
       for (const id of ids) {
-        this.logRoute(id, folder, sent ? reasons.get(id)! : 'no-services');
+        this.logRoute(id, folder, sent ? reasons.get(id)! : 'no-services', source);
       }
       routed += sent ? 1 : 0;
     }
@@ -538,6 +540,7 @@ export class ChatRouter implements vscode.Disposable {
   }
 
   private async openClaimedChats(req: HandoffRequest): Promise<HandoffOutcome> {
+    const source: OpenSource = { via: 'claimed' };
     await this.activateUi();
     const failed: string[] = [];
     let outside = 0;
@@ -559,7 +562,7 @@ export class ChatRouter implements vscode.Disposable {
       // (f3 P2 K4), never brought forward on the dead shell.
       if (chat && (await this.deps.releaseExited?.(chat).catch(() => false))) {
         this.log(`[Pitwall] released ${sessionId.slice(0, 8)} (its terminal agent exited)`);
-        const where = await this.routeNow({ kind: 'open', chats: [chat] }, { keepListFocus: false });
+        const where = await this.routeNow({ kind: 'open', chats: [chat] }, { keepListFocus: false, source });
         if (where === 'outside') {
           outside++;
           return false;
@@ -572,14 +575,14 @@ export class ChatRouter implements vscode.Disposable {
       }
       const live = chat && this.deps.isOpenHere(chat) ? undefined : await this.deps.outsideTerminal?.(sessionId).catch(() => undefined);
       if (live?.here) {
-        if (await this.revealLive(chat, sessionId)) {
+        if (await this.revealLive(chat, sessionId, source)) {
           return true;
         }
         outside++;
         return false;
       }
       if (live) {
-        this.logRoute(sessionId, 'elsewhere', 'outside-terminal');
+        this.logRoute(sessionId, 'elsewhere', 'outside-terminal', source);
         void vscode.window.showWarningMessage(outsideTerminalMessage(live.pid, live.panel));
         outside++;
         return false;
@@ -592,7 +595,7 @@ export class ChatRouter implements vscode.Disposable {
       const worktree = chat && (quick || (await this.deps.worktreeOf(chat)));
       const opened =
         chat && worktree
-          ? await this.deps.openHere(chat, { ...worktree, path: req.folder }, { keepListFocus: false })
+          ? await this.deps.openHere(chat, { ...worktree, path: req.folder }, { keepListFocus: false, source })
           : await this.openUnlisted(sessionId, req.folder);
       if (!opened) {
         failed.push(sessionId.slice(0, 8));
@@ -611,13 +614,13 @@ export class ChatRouter implements vscode.Disposable {
    * which reveals it without a process, or warn and open nothing. Never
    * `openHere`, which can start a terminal or a new panel process.
    */
-  private async revealLive(chat: ChatSession | undefined, sessionId: string): Promise<boolean> {
+  private async revealLive(chat: ChatSession | undefined, sessionId: string, source: OpenSource): Promise<boolean> {
     const shown = chat ? await this.deps.revealLive?.(chat, sessionId).catch(() => false) : false;
     if (shown) {
-      this.logRoute(sessionId, 'here', 'live-here');
+      this.logRoute(sessionId, 'here', 'live-here', source);
       return true;
     }
-    this.logRoute(sessionId, 'here', 'live-here-warn');
+    this.logRoute(sessionId, 'here', 'live-here-warn', source);
     void vscode.window.showWarningMessage(ownPanelMessage());
     return false;
   }
@@ -674,15 +677,15 @@ export class ChatRouter implements vscode.Disposable {
     (this.deps.log ?? logOperation)(line);
   }
 
-  /** Log one routing decision (`here`, or the folder it went to or was missing). */
-  private logRoute(id: string, where: string, reason: string): void {
-    const line = `[Pitwall] route ${id.slice(0, 8)} → ${where} (${reason})`;
+  /** Log one routing decision (`here`, or the folder it went to or was missing) and what asked for it. */
+  private logRoute(id: string, where: string, reason: string, source: OpenSource): void {
+    const line = `[Pitwall] route ${id.slice(0, 8)} → ${where} (${reason})${viaTail(source)}`;
     (this.deps.log ?? logOperation)(line);
   }
 
   /** Log where a "+" went: `same-folder` (here), `handoff` (another window) or `gone`. */
-  private logNewRoute(folder: string, reason: string): void {
-    (this.deps.log ?? logOperation)(`[Pitwall] route new → ${folder} (${reason})`);
+  private logNewRoute(folder: string, reason: string, source: OpenSource): void {
+    (this.deps.log ?? logOperation)(`[Pitwall] route new → ${folder} (${reason})${viaTail(source)}`);
   }
 
   /**

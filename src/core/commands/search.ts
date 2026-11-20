@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ChatSession, Repository } from '../types';
 import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../providers/WorkspacesTreeProvider';
 import { commandRegistrar } from './common';
+import { OpenSource } from '../windows/openSource';
 
 export interface SearchDeps {
   workspacesProvider: Pick<WorkspacesTreeProvider, 'repoRowAt' | 'sessionRowsOfRepoRow'>;
@@ -85,7 +86,7 @@ export function registerSearchCommands(context: vscode.ExtensionContext, deps: S
             label: name,
             description: `${repo.name} · ${chatRow.description ?? ''}`.trim() + windowMeta(chatRow.data as ChatSession),
             alwaysShow: true,
-            action: () => run('pitwall.openChat', chatRow),
+            action: () => run('pitwall.openChat', chatRow, { via: 'search' } satisfies OpenSource),
           });
         }
       }

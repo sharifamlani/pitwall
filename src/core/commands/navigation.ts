@@ -3,9 +3,13 @@ import { ChatSession, Repository } from '../types';
 import { FileTreeItem } from '../providers/FilesTreeProvider';
 import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../providers/WorkspacesTreeProvider';
 import { commandRegistrar } from './common';
+import { OpenSource } from '../windows/openSource';
 
 export interface NavigationDeps {
-  workspacesProvider: Pick<WorkspacesTreeProvider, 'repoRowAt' | 'chatRowsOf' | 'getWorktreeById' | 'repositoryFor'>;
+  workspacesProvider: Pick<
+    WorkspacesTreeProvider,
+    'repoRowAt' | 'chatRowsOf' | 'getWorktreeById' | 'repositoryFor' | 'startKeyboardMove' | 'endKeyboardMove' | 'revealRow'
+  >;
   workspacesTreeView: Pick<vscode.TreeView<WorkspaceTreeItem>, 'selection' | 'reveal' | 'onDidChangeSelection'>;
   filesTreeView: Pick<vscode.TreeView<FileTreeItem>, 'visible'>;
 }
@@ -79,7 +83,7 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
     }
     const [selected] = workspacesTreeView.selection;
     if (repoOfRow(selected)?.id !== repo.id) {
-      await workspacesTreeView.reveal(row, REVEAL_ROW);
+      await workspacesProvider.revealRow(workspacesTreeView, row, REVEAL_ROW);
       return;
     }
     // Pressed again on the repo it already shows: open its next chat.
@@ -91,7 +95,7 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
     const at = chats.findIndex((chat) => (chat.data as ChatSession).id === current);
     const next = chats[(at + 1) % chats.length];
     lastOpened.set(repo.id, (next.data as ChatSession).id);
-    await run('pitwall.openChat', next);
+    await run('pitwall.openChat', next, { via: 'hotkey' } satisfies OpenSource);
   };
 
   const goToRepo = (position: number) => () => goToRepoRow(workspacesProvider.repoRowAt(position));
@@ -142,6 +146,8 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
       timer = setTimeout(() => resolve(undefined), LANDING_TIMEOUT_MS);
     });
     try {
+      // The select fires the row's command like a click; it logs via=keyboard-move.
+      workspacesProvider.startKeyboardMove();
       await run(move);
       // Before the select: the row command it fires reads the marker.
       keepListFocusOnce();
@@ -156,11 +162,13 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
         consumeKeepListFocus();
       }
       if (row?.itemType === 'repository') {
-        await workspacesTreeView.reveal(row, REVEAL_ROW);
+        await workspacesProvider.revealRow(workspacesTreeView, row, REVEAL_ROW);
       }
     } finally {
       subscription?.dispose();
       clearTimeout(timer);
+      // A move that ran no row command must not label the next click keyboard-move.
+      workspacesProvider.endKeyboardMove();
     }
   };
   register('pitwall.list.moveDownAndOpen', moveAndOpen('list.focusDown'));

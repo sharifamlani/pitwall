@@ -5,6 +5,7 @@ import type { PopupKey } from '../notify/PopupLedger';
 import { popupCopy, ToastPayload } from '../notify/toastXml';
 import { AUMID } from '../notify/WindowsToast';
 import { isOpenableSessionId, openUri } from '../notify/PopupUriHandler';
+import type { OpenSource } from '../windows/openSource';
 
 export type AttentionKind = 'finished' | 'needs-input';
 
@@ -98,11 +99,11 @@ export function escapeAppleScript(text: string): string {
 export async function openFromPopup(
   chat: ChatSession,
   deps: {
-    route: (request: { kind: 'open'; chats: ChatSession[] }) => Promise<string>;
+    route: (request: { kind: 'open'; chats: ChatSession[] }, options: { source: OpenSource }) => Promise<string>;
     activateLocal: (chat: ChatSession) => void;
   }
 ): Promise<void> {
-  const where = await deps.route({ kind: 'open', chats: [chat] });
+  const where = await deps.route({ kind: 'open', chats: [chat] }, { source: { via: 'notification' } });
   if (where !== 'routed') {
     deps.activateLocal(chat);
   }
