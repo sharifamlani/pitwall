@@ -306,8 +306,12 @@ test('a restored unbound tab (no open time) never stands for any chat', (t) => {
 test('an unbound tab stands for its chat for a bounded time only (UNBOUND_FRONT_MAX_MS)', (t) => {
   const window = liveWindow();
   t.after(() => window.surfaces.dispose());
-  const openedAt = Date.now();
   window.open('Claude Code');
+  // The tab's own open time, as the surface service stamped it. A Date.now() read before open() can be
+  // a millisecond earlier than that stamp on a slow tick, and the chat would then have "started before
+  // the tab" (main CI 44682589278).
+  const openedAt = window.surfaces.activeUnboundTabOpenedAt();
+  assert.ok(openedAt !== undefined, 'the tab the user just opened has an open time');
   const fresh = listedChat('s-new', openedAt);
   const at = (now: number) => frontDeps(window, () => [fresh], new Set(), () => now);
   assert.equal(unboundTabMayBeChat(fresh, at(openedAt + UNBOUND_FRONT_MAX_MS)), true);
@@ -340,8 +344,9 @@ test("an unbound tab stands only for a chat the Claude panel runs: never an outs
 test('a chat started after the tab opened counts by the earlier of its stamps: a row made after the tab with activity before it never fits', (t) => {
   const window = liveWindow();
   t.after(() => window.surfaces.dispose());
-  const openedAt = Date.now();
   window.open('Claude Code');
+  const openedAt = window.surfaces.activeUnboundTabOpenedAt();
+  assert.ok(openedAt !== undefined, 'the tab the user just opened has an open time');
   const at = () => openedAt + 1_000;
   // Listed after the tab opened (createdAt), but its session was active before it (lastAccessedAt).
   const listedLate = { ...listedChat('s-late', openedAt + 500), lastAccessedAt: openedAt - 60_000 } as ChatSession;
