@@ -193,6 +193,9 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
   unless `/compact` itself is highlighted; if it isn't, click the `/compact` item directly. Arrow keys
   can wrap the highlight to the wrong end. (Pitwall 2026-11-20: `/milestone-compaction` was
   highlighted with `/compact` typed.)
+- Before any push to main, run `gh run list --branch main --limit 3` and push only when no run is
+  in progress; a new push cancels the running one. Doc-only pushes count too. (Pitwall 2026-11-20:
+  the Auditor's docs push e8dd184 cancelled main CI on the #84 merge 80ceae7.)
 - Check a claim against git before passing it on. (Pitwall 2026-11-19: "the warning text is new"
   was wrong; it already existed, and the Tester was briefed on the error.)
 - Don't tell a peer a message was forwarded until the send returns success. (Pitwall 2026-11-19:
