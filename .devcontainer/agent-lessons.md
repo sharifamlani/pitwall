@@ -54,6 +54,9 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - A shell whose agent exited is the user's: forget it, never close it (they may run anything in it after
   /exit), and decide "exited" by the process, not the session id (/clear keeps the same pid under a new
   id). (Pitwall #75 QA: the release closed live shells and read /clear as exited.)
+- In a test, take a time boundary from the stamp the code under test recorded, never from a clock read
+  made just before the call. Two `Date.now()` reads can fall in different milliseconds, and a `>=` at the
+  boundary then flips. (Pitwall #77: tab-adoption.test.ts:313 failed on main CI.)
 - A walk brief uses every default the owner has. Never turn a feature off to make the walk easier;
   if one must be off, walk with it on as well. (Pitwall 0.6.0: the walk ran with discovery off and
   hid 5–8 s pop-up lag; with it on, lag was 6.5–8.4 s against a ~5 s bar.)
