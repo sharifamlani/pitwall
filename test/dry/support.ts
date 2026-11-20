@@ -156,6 +156,31 @@ export interface FakeTreeView {
   treeErrors: string[];
   /** Reveals the workbench has finished (or given up on). */
   revealsDone: number;
+  /** Full refreshes (`onDidChangeTreeData` with no element) the provider fired. */
+  fullRefreshes: number;
+  /** Rows the extension host refreshed one by one. */
+  elementRefreshes: number;
+  /** Element refreshes naming an object the extension host never received (it ignores them). */
+  ignoredRefreshes: number;
+  /** The workbench renders the root rows now, and the children of expanded ones. */
+  __render(): Promise<unknown>;
+  /** The row object the extension host holds for an id, if any. */
+  __rowOf(id: string): unknown;
+  /** The ids of a row's children in order, as the extension host holds them (root rows with no argument). */
+  __childIds(parent?: unknown): (string | undefined)[];
+  /** The user expands a row; its children re-render with it from then on. */
+  __expand(item: unknown): Promise<void>;
+  /**
+   * The user collapses a row: its children are no longer fetched on a
+   * refresh. `report: false` leaves out `onDidCollapseElement`.
+   */
+  __collapse(item: unknown, options?: { report?: boolean }): void;
+  /**
+   * The user clicks a row: runs the command the workbench holds for it, as
+   * the editor's CommandsConverter handed it over. A disposed cache id logs
+   * "Actual command not found, wanted to execute <id>" to `treeErrors`.
+   */
+  __click(item: { id?: string }): Promise<unknown>;
   /** How long the workbench takes to expand a reveal's parent rows. */
   __revealRoundTripMs: number;
   /** How long a refresh takes to reach the workbench, which then re-renders the rows. */

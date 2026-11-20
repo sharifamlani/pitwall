@@ -637,6 +637,7 @@ module.exports = {
     createTreeView: (id, options) => {
       const visibility = new EventEmitter();
       const selection = new EventEmitter();
+      const collapse = new EventEmitter();
       const provider = options?.treeDataProvider;
       /**
        * The rows the extension host still knows, by id. As in the editor's
@@ -645,18 +646,102 @@ module.exports = {
        * children after that logs "No tree item with id '1/<id>' found."
        */
       const known = new Set();
+      /**
+       * Row commands as the editor's `CommandsConverter` hands them to the
+       * workbench (extHostCommands.ts `toInternal`): a command with arguments
+       * becomes `_internal_command_delegation` with a cache id
+       * (`<command> /<n>`), and that cache entry is disposed with the row's
+       * node: on a full refresh, or when the row or its parent is refreshed.
+       * The workbench keeps the command it last received until it re-renders,
+       * so a click in between runs a disposed id and the extension host logs
+       * "Actual command not found, wanted to execute <id>".
+       */
+      const commandCache = new Map();
+      let commandPool = 0;
+      /** Extension-host nodes by element object (as `ExtHostTreeView.nodes`): its id, command dispose and children. */
+      const nodes = new Map();
+      /** The command each row's id carries in the workbench, as last received. */
+      const shownCommands = new Map();
+      /** Ids of rows the workbench shows expanded; their children re-render with them. */
+      const expanded = new Set();
+      const toInternal = (command) => {
+        if (!command) return { dto: undefined, dispose: () => undefined };
+        if (Array.isArray(command.arguments) && command.arguments.length > 0) {
+          const cacheId = `${command.command} /${++commandPool}`;
+          commandCache.set(cacheId, command);
+          return {
+            dto: { id: '_internal_command_delegation', arguments: [cacheId] },
+            dispose: () => commandCache.delete(cacheId),
+          };
+        }
+        return { dto: { id: command.command, arguments: undefined }, dispose: () => undefined };
+      };
+      const treeItemOf = (element) => provider?.getTreeItem?.(element) ?? element;
+      const clearNode = (element) => {
+        const node = nodes.get(element);
+        if (!node) return;
+        for (const child of node.children) clearNode(child);
+        node.dispose();
+        nodes.delete(element);
+      };
+      const clearChildren = (parent) => {
+        const node = parent ? nodes.get(parent) : undefined;
+        const children = parent ? node?.children ?? [] : [...nodes.keys()].filter((element) => !nodes.get(element).parent);
+        for (const child of children) clearNode(child);
+        if (node) node.children = [];
+      };
+      const createNode = (element, parent) => {
+        const item = treeItemOf(element);
+        const { dto, dispose } = toInternal(item?.command);
+        nodes.set(element, { id: item?.id, dto, dispose, parent, children: [] });
+        if (parent && nodes.has(parent)) nodes.get(parent).children.push(element);
+        return { item, dto };
+      };
+      /** The workbench receives a row: its command, and its children when it is expanded. */
+      const show = async (item, dto) => {
+        if (!item?.id) return;
+        shownCommands.set(item.id, dto);
+        if (expanded.has(item.id)) await fetchChildren(item);
+      };
+      const fetchChildren = async (parent) => {
+        const items = (await provider?.getChildren?.(parent)) ?? [];
+        // The answer replaces the children held before it (two overlapping
+        // requests leave only the later answer's rows).
+        clearChildren(parent);
+        register(items);
+        const created = items.map((element) => ({ element, ...createNode(element, parent) }));
+        for (const { item, dto } of created) await show(item, dto);
+        return items;
+      };
       const register = (items) => {
         for (const item of items ?? []) {
           if (item && item.id) known.add(item.id);
         }
       };
-      const render = () =>
-        Promise.resolve(provider?.getChildren?.())
-          .then(register)
-          .catch(() => undefined);
+      const render = () => fetchChildren(undefined).catch(() => undefined);
       provider?.onDidChangeTreeData?.((element) => {
-        if (element) return;
+        if (element) {
+          // An element refresh (extHostTreeViews.ts `refreshNode`): each row
+          // the extension host knows, by object, gets a new node and command;
+          // its children are cleared. An object it never handed out is ignored.
+          for (const target of Array.isArray(element) ? element : [element]) {
+            const old = nodes.get(target);
+            if (!old) {
+              view.ignoredRefreshes += 1;
+              continue;
+            }
+            clearChildren(target);
+            old.dispose();
+            nodes.delete(target);
+            const { item, dto } = createNode(target, old.parent);
+            view.elementRefreshes += 1;
+            setTimeout(() => void show(item, dto).catch(() => undefined), view.__renderDelayMs);
+          }
+          return;
+        }
+        view.fullRefreshes += 1;
         known.clear();
+        for (const element of [...nodes.keys()]) clearNode(element);
         // The workbench re-renders the rows once the refresh reaches it.
         if (view.visible) setTimeout(() => void render(), view.__renderDelayMs);
       });
@@ -679,6 +764,58 @@ module.exports = {
         __renderDelayMs: 0,
         /** Reveals the workbench has finished (or given up on). */
         revealsDone: 0,
+        /** Full refreshes (`onDidChangeTreeData` with no element) the provider fired. */
+        fullRefreshes: 0,
+        /** Rows refreshed one by one (element refreshes the extension host carried out). */
+        elementRefreshes: 0,
+        /** Element refreshes naming an object the extension host never received (it ignores them). */
+        ignoredRefreshes: 0,
+        /** The workbench renders the root rows now, and the children of expanded ones. */
+        __render: () => render(),
+        /** The row object the extension host holds for an id, if any. */
+        __rowOf: (rowId) => [...nodes.entries()].find(([, node]) => node.id === rowId)?.[0],
+        /** The ids of a row's children, in order, as the extension host holds them (root rows with no argument). */
+        __childIds: (parent) =>
+          parent
+            ? (nodes.get(parent)?.children ?? []).map((child) => nodes.get(child)?.id)
+            : [...nodes.entries()].filter(([, node]) => !node.parent).map(([, node]) => node.id),
+        /** The user expands a row: the workbench asks for its children and keeps them in step from then on. */
+        __expand: async (item) => {
+          expanded.add(item.id);
+          await fetchChildren(item);
+        },
+        /**
+         * The user collapses a row. The workbench then never fetches its
+         * children on a refresh (AsyncDataTree `refreshNode` marks a collapsed
+         * node stale and gives it no children). `report: false` leaves out
+         * `onDidCollapseElement`, for a collapse the extension never hears of.
+         */
+        __collapse: (item, { report = true } = {}) => {
+          expanded.delete(item.id);
+          if (report) collapse.fire({ element: item });
+        },
+        /**
+         * The user clicks a row: the workbench runs the command it holds for
+         * the row's id, as `TreeView`'s `onDidOpen` does. A disposed cache id
+         * is logged to `treeErrors` and nothing runs.
+         */
+        __click: async (item) => {
+          if (!shownCommands.has(item.id)) {
+            view.treeErrors.push(`No row with id '${item.id}' is shown.`);
+            return;
+          }
+          const dto = shownCommands.get(item.id);
+          if (!dto) return;
+          if (dto.id === '_internal_command_delegation') {
+            const actual = commandCache.get(dto.arguments[0]);
+            if (!actual) {
+              view.treeErrors.push(`Actual command not found, wanted to execute ${dto.arguments[0]}`);
+              return;
+            }
+            return module.exports.commands.executeCommand(actual.command, ...actual.arguments);
+          }
+          return module.exports.commands.executeCommand(dto.id, ...(dto.arguments ?? []));
+        },
         reveal: async (item, revealOptions) => {
           view.reveals.push({ item, options: revealOptions });
           if (!provider?.getParent) {
@@ -707,6 +844,7 @@ module.exports = {
         },
         onDidChangeVisibility: visibility.event,
         onDidChangeSelection: selection.event,
+        onDidCollapseElement: collapse.event,
         /** Test helper: the user selects rows; `selection` changes before listeners run. */
         __select: (items) => {
           view.selection = items;
@@ -997,8 +1135,19 @@ module.exports = {
   },
   commands: {
     registerCommand: (id, handler) => {
+      // VS Code throws on a second registration of a live id ("command '…' already exists").
+      // Enforced for internal commands (a leading underscore, such as the
+      // `_pitwall.row.*` row clicks); tests deliberately re-register public
+      // `pitwall.*` commands with fakes.
+      if (id.startsWith('_') && commandHandlers.has(id)) {
+        throw new Error(`command '${id}' already exists`);
+      }
       commandHandlers.set(id, handler);
-      return { dispose: () => commandHandlers.delete(id) };
+      return {
+        dispose: () => {
+          if (commandHandlers.get(id) === handler) commandHandlers.delete(id);
+        },
+      };
     },
     getCommands: async () => Array.from(commandHandlers.keys()),
     executeCommand: async (id, ...args) => {

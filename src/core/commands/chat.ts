@@ -132,11 +132,14 @@ export function registerChatCommands(
   /**
    * The chat on a session row. A keybinding passes no row, so the command
    * then acts on the tree's selection when exactly one row is selected.
+   * The current record is returned, as `rowChats` does: the list keeps a
+   * row object until its text changes, so the row's own copy can be stale
+   * (a new session id, a rename), and a removed chat gives undefined.
    */
   const rowChat = (item?: WorkspaceTreeItem): ChatSession | undefined => {
     const selection = item ? [item] : selectedRows();
     const row = selection.length === 1 ? selection[0] : undefined;
-    return row?.itemType === 'chat' ? (row.data as ChatSession) : undefined;
+    return row?.itemType === 'chat' ? storageService.getChat((row.data as ChatSession).id) : undefined;
   };
 
   /**
@@ -160,7 +163,8 @@ export function registerChatCommands(
   /** The chat on a session row, or the selected chat for a palette command. */
   const resolveChat = (item?: WorkspaceTreeItem): ChatSession | undefined => {
     const chat = rowChat(item);
-    if (chat) {
+    // A row whose chat was removed acts on nothing, never on the active chat.
+    if (chat || item?.itemType === 'chat') {
       return chat;
     }
     const activeId = storageService.getActiveChatId();

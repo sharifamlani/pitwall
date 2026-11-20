@@ -4,7 +4,7 @@ import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../providers/Workspac
 import { commandRegistrar } from './common';
 
 export interface SearchDeps {
-  workspacesProvider: Pick<WorkspacesTreeProvider, 'repoRowAt' | 'getChildren'>;
+  workspacesProvider: Pick<WorkspacesTreeProvider, 'repoRowAt' | 'sessionRowsOfRepoRow'>;
   /**
    * Whether picking this chat opens it in this window; its meta then ends
    * "· this window", otherwise "· its own window" (row 4.8). Without it, no
@@ -61,7 +61,7 @@ export function registerSearchCommands(context: vscode.ExtensionContext, deps: S
     Promise.all(
       repoRows().map(async (repoRow) => ({
         repoRow,
-        chatRows: ((await workspacesProvider.getChildren(repoRow)) ?? []).filter((row) => row.itemType === 'chat'),
+        chatRows: (await workspacesProvider.sessionRowsOfRepoRow(repoRow)).filter((row) => row.itemType === 'chat'),
       }))
     );
 

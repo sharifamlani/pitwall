@@ -395,6 +395,8 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(workspacesTreeView, filesTreeView);
   // The header description and the needs-you badge.
   workspacesProvider.bindView(workspacesTreeView);
+  // A collapsed repo's session rows are never fetched on a refresh, so reveals must not wait for them.
+  context.subscriptions.push(workspacesTreeView.onDidCollapseElement(({ element }) => workspacesProvider.onRowCollapsed(element)));
   const refreshTree = () => workspacesProvider.refresh();
 
   // The worktree the user last picked in the list: a new session with no row

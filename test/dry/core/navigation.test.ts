@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import pkg from '../../../package.json';
 import { consumeKeepListFocus, keepListFocusOnce, registerNavigationCommands } from '../../../src/core/commands/navigation';
-import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/providers/WorkspacesTreeProvider';
+import { WorkspaceTreeItem, WorkspacesTreeProvider, rowCommandId } from '../../../src/core/providers/WorkspacesTreeProvider';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { SessionStatus } from '../../../src/core/providers/sessionStatus';
 import { RepositoryWorktrees } from '../../../src/core/types';
@@ -246,8 +246,10 @@ test('Ctrl+Down on a repo row still only reveals it (Q22)', async (t) => {
 test('Enter on a repo runs openRepoChats; a Ctrl+↓ landing on it does not (Q22)', async (t) => {
   const { workspacesView, tree, context, repoOpens } = setup(t);
   const [aRow] = await tree.getChildren();
-  assert.equal(aRow.command?.command, 'pitwall.openRepoChats', 'the row command is what Enter (list.select) and a click run');
-  assert.deepEqual(aRow.command?.arguments, [aRow]);
+  // The row command is what Enter (list.select) and a click run: the row's
+  // own argument-free command, which runs openRepoChats for the repo.
+  assert.equal(aRow.command?.command, rowCommandId(aRow.id!));
+  assert.equal(aRow.command?.arguments, undefined, 'no arguments: the editor never caches (and drops) them');
   const keyboard = repoOpens;
   context.subscriptions.push(
     vscode.commands.registerCommand('list.focusDown', () => undefined),

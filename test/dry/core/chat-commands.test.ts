@@ -1616,6 +1616,31 @@ test('Copy Resume Command and Copy Session ID copy a linked session; an unstarte
   assert.ok(shown('This session has no ID yet.'));
 });
 
+test('a row held since before its chat changed acts on the chat as stored now; a removed chat acts on nothing', async (t) => {
+  const f = setup(t);
+  const linked = f.chat('claude', 'Before', 'claude-1');
+  // The list keeps a row object until its text changes; its `data` is the record of then.
+  const held = f.row(linked);
+  f.storage.updateChat(linked.id, { harnessSessionId: 'claude-2', name: 'After' });
+  assert.equal((held.data as ChatSession).harnessSessionId, 'claude-1', 'the held row carries the old record');
+  await runCommand('pitwall.copySessionId', held);
+  assert.equal(await vscode.env.clipboard.readText(), 'claude-2', 'the current session id is copied');
+
+  // Rename offers the current name (the input box is cancelled).
+  await runCommand('pitwall.renameChat', held);
+  assert.equal((stub.__messages.at(-1)![0] as vscode.InputBoxOptions).value, 'After');
+
+  // Once removed, the held row opens nothing in a terminal, and never falls back to the active chat.
+  const active = f.chat('claude', 'Active', 'claude-9');
+  await f.storage.setActiveChatId(active.id);
+  f.storage.deleteChats([linked.id]);
+  const terminalsBefore = stub.window.terminals.length;
+  await runCommand('pitwall.openChatInTerminal', held);
+  await runCommand('pitwall.copySessionId', held);
+  assert.equal(stub.window.terminals.length, terminalsBefore, 'no terminal was opened');
+  assert.equal(await vscode.env.clipboard.readText(), 'claude-2', 'nothing new was copied');
+});
+
 test('run from the keyboard, a row command acts on the selected rows and New Session starts in the worktree on show', async (t) => {
   const f = setup(t);
   stub.__setConfiguration('defaultHarness', 'codex');
