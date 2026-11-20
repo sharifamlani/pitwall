@@ -220,8 +220,10 @@ reviewers to save cost.
 >    saved and committed, no turn is running, its input is empty, and it has no merge or walk in
 >    flight. You compact only a role that has said so. Before typing `/compact`, check with CUA
 >    that the tab, the window title and the empty input match that role. Never type into a busy
->    chat, into someone's draft, or into a window you can't identify. Each compaction goes to
->    Main in one line, with the time and the state location.
+>    chat, into someone's draft, or into a window you can't identify. Send input only to the
+>    role's own window (Sharif's default profile, pid 65548, window 11930698), never to a test
+>    Cursor profile. Log every input you send in UTC: the time, pid, window, tab and what you
+>    sent. Each compaction goes to Main in one line, with the time and the state location.
 > 8. **Lessons owner.** You own `.devcontainer/agent-lessons.md`, and you are its only writer. Each
 >    builder puts its lesson in the PR body under "Lesson:"; you add it to main after the merge. Each cycle, read the work and
 >    messages that matter (PR verdicts, FAILs, walk reports, audit replies), not whole transcripts.
