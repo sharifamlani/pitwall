@@ -105,12 +105,15 @@ export interface UnboundFrontDeps {
  * UNBOUND_FRONT_MAX_MS ago (a restored tab has no open time, so it counts
  * for nothing). It stands for a chat only when exactly one listed chat fits:
  * one of this window's folders, with no open surface anywhere (a chat in a
- * terminal or with its own tab is never in a tab it does not have), whose
- * session started at or after the tab opened. So it can never silence an
+ * terminal or with its own tab is never in a tab it does not have), run by
+ * the harness's panel by its live record (a `claude` in an outside terminal
+ * is not; unknown counts as not), whose session started at or after the tab
+ * opened. So it can never silence an
  * older chat, or either of two new ones. Focus is the caller's check.
  */
 export function unboundTabMayBeChat(chat: ChatSession, deps: UnboundFrontDeps): boolean {
-  const surfaces = deps.adapters().find((adapter) => adapter.id === chat.harness)?.nativeUi?.surfaces;
+  const adapter = deps.adapters().find((entry) => entry.id === chat.harness);
+  const surfaces = adapter?.nativeUi?.surfaces;
   const openedAt = surfaces?.activeUnboundTabOpenedAt?.();
   if (openedAt === undefined || (deps.now?.() ?? Date.now()) - openedAt > UNBOUND_FRONT_MAX_MS) {
     return false;
@@ -123,7 +126,10 @@ export function unboundTabMayBeChat(chat: ChatSession, deps: UnboundFrontDeps): 
       Boolean(candidate.harnessSessionId) &&
       sessionStartedAt(candidate) >= openedAt &&
       Boolean(worktreePath && folders.some((folder) => samePath(folder, worktreePath))) &&
-      !deps.isOpenAnywhere(candidate)
+      !deps.isOpenAnywhere(candidate) &&
+      // Only a panel process can be in a panel tab: a chat started in a terminal never fits, and
+      // neither does one whose start the live record doesn't say (QA #73 round 3, G1).
+      adapter?.isPanelSession?.(candidate.harnessSessionId ?? '') === true
     );
   };
   if (!fits(chat)) {

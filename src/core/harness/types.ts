@@ -530,6 +530,14 @@ export interface HarnessAdapter {
   liveProcessOf?(sessionId: string): Promise<{ pid: number; panel: boolean; cwd?: string; startedAt?: number } | undefined>;
 
   /**
+   * Whether the harness's own editor panel (not a terminal) runs this
+   * session, by the last live record read (the attention tick's): a sync
+   * read for pop-up checks. Undefined when the record does not list the
+   * session or does not say where it started (PR #73, QA round 3).
+   */
+  isPanelSession?(sessionId: string): boolean | undefined;
+
+  /**
    * The folder a session's window is (Q2): the one its agent's UI resumes it
    * from, among `roots` (its repo's main folder and worktrees). Undefined when
    * the harness can't tell; the caller then uses the chat's worktree.

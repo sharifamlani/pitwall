@@ -1914,6 +1914,8 @@ interface ChatBesideTab {
   inTerminal?: boolean;
   /** Has its own Claude tab, bound, while the unbound tab is in front again (R4). */
   boundTab?: boolean;
+  /** Where the live record says its process started (default the Claude panel); `unknown`: the record doesn't say. */
+  entrypoint?: 'claude-vscode' | 'cli' | 'unknown';
 }
 
 /**
@@ -1945,6 +1947,7 @@ async function popBesideUnboundTab(t: TestContext, kind: 'needs' | 'finished', c
   const open = new Set<string>();
   const live = new Set<string>();
   const states: Record<string, HarnessLiveState> = {};
+  const entrypoints = new Map(chats.map((entry) => [entry.sessionId, entry.entrypoint ?? 'claude-vscode']));
   const list = (entry: ChatBesideTab) => {
     const startedAt = entry.older ? Date.now() - 60 * 60_000 : Date.now();
     const chat = storage.createChat('wt-a', 'claude', entry.sessionId, { harnessSessionId: entry.sessionId, createdAt: startedAt, lastAccessedAt: startedAt });
@@ -1973,7 +1976,14 @@ async function popBesideUnboundTab(t: TestContext, kind: 'needs' | 'finished', c
     // As extension.ts wires it.
     unboundFront: (chat) =>
       chatVisibility.unboundTabMayBeChat(chat, {
-        adapters: () => [{ id: 'claude', nativeUi: { surfaces } } as never],
+        adapters: () => [
+          {
+            id: 'claude',
+            nativeUi: { surfaces },
+            // As ClaudeHarness answers from the tick's live record.
+            isPanelSession: (id: string) => (entrypoints.get(id) === 'unknown' ? undefined : entrypoints.get(id) === 'claude-vscode'),
+          } as never,
+        ],
         chats: () => storage.getChats(),
         worktreePathOf: (entry) => `/repo/${entry.worktreeId}`,
         folders: () => ['/repo/wt-a'],
@@ -2029,6 +2039,24 @@ for (const kind of ['needs', 'finished'] as const) {
     const { flow, pops } = await popBesideUnboundTab(t, kind, [{ sessionId: 's-new' }, { sessionId: 's-old', older: true, inTerminal: true }]);
     assert.equal(pops, 1, "only the older terminal chat's");
     assert.equal(flow.skipped('front').length, 1, 'the new chat, judged in front');
+  });
+
+  test(`a new empty tab never silences the ${kind} pop-up of a \`claude\` started after it in an outside terminal (QA #73 round 3, G1)`, async (t) => {
+    const { flow, pops } = await popBesideUnboundTab(t, kind, [{ sessionId: 's-cli', entrypoint: 'cli' }]);
+    assert.equal(pops, 1, 'a terminal process is never in a panel tab');
+    assert.deepEqual(flow.skipped('front'), []);
+  });
+
+  test(`a new chat the live record says nothing of pops ${kind} beside an unbound tab (unknown never fits)`, async (t) => {
+    const { flow, pops } = await popBesideUnboundTab(t, kind, [{ sessionId: 's-new', entrypoint: 'unknown' }]);
+    assert.equal(pops, 1);
+    assert.deepEqual(flow.skipped('front'), []);
+  });
+
+  test(`a new panel chat beside an outside-terminal chat started after the tab: only the terminal chat pops ${kind}`, async (t) => {
+    const { flow, pops } = await popBesideUnboundTab(t, kind, [{ sessionId: 's-new' }, { sessionId: 's-cli', entrypoint: 'cli' }]);
+    assert.equal(pops, 1, "the terminal chat's");
+    assert.equal(flow.skipped('front').length, 1, 'the panel chat, judged in front');
   });
 }
 

@@ -449,6 +449,25 @@ test('liveSessionIds lists the live sessions in the sessions file, and the tick 
   assert.equal(reads.filter((file) => file.endsWith('.json')).length, 2, 'one folder read (two files) per tick');
 });
 
+test("isPanelSession reads the tick's last record: panel, terminal, or unknown when it doesn't say (QA #73 round 3)", async (t) => {
+  const { harness, sessionsDir } = liveHarness(t, { transcriptWrittenAt: 0 });
+  writeSessionFile(sessionsDir, { pid: 4242, sessionId: 'panel', status: 'busy', statusUpdatedAt: 1, entrypoint: 'claude-vscode' });
+  writeSessionFile(sessionsDir, { pid: 4343, sessionId: 'terminal', status: 'busy', statusUpdatedAt: 1, entrypoint: 'cli' });
+  writeSessionFile(sessionsDir, { pid: 4444, sessionId: 'unsaid', status: 'busy', statusUpdatedAt: 1 });
+  writeSessionFile(sessionsDir, { pid: 4545, sessionId: 'odd-status', status: 'compacting', statusUpdatedAt: 1, entrypoint: 'claude-vscode' });
+  assert.equal(harness.isPanelSession('panel'), undefined, 'nothing read yet');
+  await harness.liveSessionIds();
+  assert.equal(harness.isPanelSession('panel'), true);
+  assert.equal(harness.isPanelSession('terminal'), false);
+  assert.equal(harness.isPanelSession('unsaid'), undefined, 'the record does not say where it started');
+  assert.equal(harness.isPanelSession('odd-status'), undefined, 'a status Pitwall does not know: not in the read');
+  assert.equal(harness.isPanelSession('not-live'), undefined);
+
+  fs.rmSync(path.join(sessionsDir, '4242.json'));
+  await harness.liveSessionIds();
+  assert.equal(harness.isPanelSession('panel'), undefined, 'a complete read without it: no longer known');
+});
+
 test('liveSessionsUnderWay lists the busy, waiting and unknown-status sessions from the same read, never an idle one', async (t) => {
   const { harness, sessionsDir } = liveHarness(t, { transcriptWrittenAt: 0 });
   writeSessionFile(sessionsDir, { pid: 4242, sessionId: SESSION_ID, status: 'busy', statusUpdatedAt: 1 });

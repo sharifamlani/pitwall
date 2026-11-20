@@ -221,10 +221,19 @@ const HOUR = 60 * 60_000;
 const listedChat = (harnessSessionId: string, createdAt: number, worktreeId = 'wt-c'): ChatSession =>
   ({ id: `chat-${harnessSessionId}`, harness: 'claude', harnessSessionId, name: harnessSessionId, worktreeId, createdAt, lastAccessedAt: createdAt }) as ChatSession;
 
-/** The heuristic's inputs over one window: every chat listed, `open` the chats with a surface anywhere. */
-function frontDeps(window: ReturnType<typeof liveWindow>, chats: () => ChatSession[], open: Set<string> = new Set(), now?: () => number) {
+/**
+ * The heuristic's inputs over one window: every chat listed, `open` the chats with a surface anywhere,
+ * `panel` whether the live record says the Claude panel runs a session (default: every one).
+ */
+function frontDeps(
+  window: ReturnType<typeof liveWindow>,
+  chats: () => ChatSession[],
+  open: Set<string> = new Set(),
+  now?: () => number,
+  panel: (sessionId: string) => boolean | undefined = () => true
+) {
   return {
-    adapters: () => [{ id: 'claude', nativeUi: { surfaces: window.surfaces } } as never],
+    adapters: () => [{ id: 'claude', nativeUi: { surfaces: window.surfaces }, isPanelSession: panel } as never],
     chats,
     worktreePathOf: (chat: ChatSession) => (chat.worktreeId === 'wt-c' ? LAB_C : LAB_C_WT),
     folders: () => [LAB_C],
@@ -303,4 +312,40 @@ test('an unbound tab stands for its chat for a bounded time only (UNBOUND_FRONT_
   const at = (now: number) => frontDeps(window, () => [fresh], new Set(), () => now);
   assert.equal(unboundTabMayBeChat(fresh, at(openedAt + UNBOUND_FRONT_MAX_MS)), true);
   assert.equal(unboundTabMayBeChat(fresh, at(openedAt + UNBOUND_FRONT_MAX_MS + 1_000)), false, 'a tab left unbound that long holds no new chat');
+});
+
+test("an unbound tab stands only for a chat the Claude panel runs: never an outside terminal's, nor one the record says nothing of (QA #73 round 3, G1)", (t) => {
+  const window = liveWindow();
+  t.after(() => window.surfaces.dispose());
+  window.open('Claude Code');
+  const fresh = listedChat('s-new', Date.now());
+  const entrypoints: Record<string, boolean | undefined> = { 's-new': false };
+  const deps = frontDeps(window, () => [fresh], new Set(), undefined, (id) => entrypoints[id]);
+  assert.equal(unboundTabMayBeChat(fresh, deps), false, '`claude` in an outside terminal (entrypoint cli)');
+  entrypoints['s-new'] = undefined;
+  assert.equal(unboundTabMayBeChat(fresh, deps), false, 'not in the live record, or it does not say: unknown never fits');
+  entrypoints['s-new'] = true;
+  assert.equal(unboundTabMayBeChat(fresh, deps), true, 'a panel chat (entrypoint claude-vscode)');
+  const noRead = frontDeps(window, () => [fresh]);
+  noRead.adapters = () => [{ id: 'claude', nativeUi: { surfaces: window.surfaces } } as never];
+  assert.equal(unboundTabMayBeChat(fresh, noRead), false, 'a harness with no live record never fits');
+
+  // A terminal chat does not count as a candidate either: the panel chat beside it is still the one.
+  const outside = listedChat('s-cli', Date.now());
+  const both = frontDeps(window, () => [fresh, outside], new Set(), undefined, (id) => id === 's-new');
+  assert.equal(unboundTabMayBeChat(fresh, both), true, 'the panel chat, beside an outside terminal chat');
+  assert.equal(unboundTabMayBeChat(outside, both), false, 'the outside terminal chat');
+});
+
+test('a chat started after the tab opened counts by the earlier of its stamps: a row made after the tab with activity before it never fits', (t) => {
+  const window = liveWindow();
+  t.after(() => window.surfaces.dispose());
+  const openedAt = Date.now();
+  window.open('Claude Code');
+  const at = () => openedAt + 1_000;
+  // Listed after the tab opened (createdAt), but its session was active before it (lastAccessedAt).
+  const listedLate = { ...listedChat('s-late', openedAt + 500), lastAccessedAt: openedAt - 60_000 } as ChatSession;
+  assert.equal(unboundTabMayBeChat(listedLate, frontDeps(window, () => [listedLate], new Set(), at)), false, 'activity before the tab');
+  const activeLate = { ...listedChat('s-late', openedAt - 60_000), lastAccessedAt: openedAt + 500 } as ChatSession;
+  assert.equal(unboundTabMayBeChat(activeLate, frontDeps(window, () => [activeLate], new Set(), at)), false, 'row made before the tab');
 });
