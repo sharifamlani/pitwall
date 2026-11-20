@@ -8,6 +8,8 @@ Pitwall is a Cursor / VS Code extension: one sidebar showing every Claude Code s
 
 The team's roles, prompts and learning loop are in [`.devcontainer/AGENT_ROLES.md`](.devcontainer/AGENT_ROLES.md); Pitwall's specifics are under "Agent roles" in [AGENTS.md](AGENTS.md). QA approval plus the Tester's user walk (in a real-use setup) ships a release; the Evaluator grades it after the tag, and its findings become patch releases.
 
+**Build in public is part of the flywheel and runs on its own** (Sharif, 2026-11-20): build → QA → Tester walk → tag → Marketing posts on LinkedIn and X. Sharif pre-approves each release's posts near the end of the release (Main asks when the release-candidate walk starts). The pushed release tag is then the automatic GO: Marketing posts the pre-approved material right away, filling in only the walk's measured numbers and dropping unproven lines, with no further ask.
+
 ## Layout
 
 - **Extension** = TypeScript, built with npm, at the repo root (`package.json`, `src/`, `test/`). Arrives in Phase 1 from Agntree.
