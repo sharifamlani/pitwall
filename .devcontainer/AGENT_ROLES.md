@@ -197,7 +197,9 @@ reviewers to save cost.
 >    without {OWNER}'s yes.
 > 2. **Process.** Each job starts by reading its list in `agent-lessons.md`. Each PR reaches QA
 >    with an exact sha. Each merge is QA-approved at that sha with green CI. Each merged sha reaches
->    the Tester. Each FAIL gets an owner and a lesson line.
+>    the Tester. Each FAIL gets an owner and a lesson line. Build in public: Main asks for post
+>    pre-approval when the RC walk starts; Marketing posts within the hour of the tag; nothing posts
+>    before the tag or without pre-approval.
 > 3. **Hygiene.** Worktrees of merged branches are removed (Build lesson). No second process is
 >    started for a live chat in the test profile. No heavy job runs during a Tester walk. The
 >    shared state files (roadmap, handoff, state files) match what has merged.

@@ -57,6 +57,8 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - In a test, take a time boundary from the stamp the code under test recorded, never from a clock read
   made just before the call. Two `Date.now()` reads can fall in different milliseconds, and a `>=` at the
   boundary then flips. (Pitwall #77: tab-adoption.test.ts:313 failed on main CI.)
+- Ask Sharif for post pre-approval when the RC walk starts, so the tag never waits on him. (Sharif,
+  2026-11-20: the release tag is Marketing's automatic GO for pre-approved posts.)
 - A walk brief uses every default the owner has. Never turn a feature off to make the walk easier;
   if one must be off, walk with it on as well. (Pitwall 0.6.0: the walk ran with discovery off and
   hid 5–8 s pop-up lag; with it on, lag was 6.5–8.4 s against a ~5 s bar.)
@@ -135,6 +137,9 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - Soften claims about platforms nobody tested (macOS).
 - Flag drafts over the length target.
 - Put the repo link in the first comment, never in the post.
+- A release post is pre-approved before the tag; the tag on origin is the GO. Post within the hour,
+  with no second ask. Fill only the walk's measured numbers, and drop any line the walk didn't prove.
+  Any other edit needs a fresh yes. (Sharif, 2026-11-20.)
 - Keep: hold every post until Main sends GO, and state each open flag to Main in writing. (Pitwall
   2026-11-19: v0.6.0 posts held with both flags logged.)
 
