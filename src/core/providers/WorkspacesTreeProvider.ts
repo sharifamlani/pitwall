@@ -18,6 +18,13 @@ import { orderRows, rankRepo, rankSession, repoStatus } from './inboxOrder';
 
 const REFRESH_DEBOUNCE_MS = 300;
 /**
+ * Every redraw request inside this window joins one pass, which then fires
+ * at most one tree change. The window opens with the first request and is
+ * never pushed back, so a list whose chats change status all the time still
+ * redraws every 300 ms instead of never.
+ */
+export const REFRESH_COALESCE_MS = 300;
+/**
  * Before a repository's first listing this session, a background listing
  * may reuse one the session scan made this recently (and vice versa).
  */
@@ -51,6 +58,63 @@ export class WorkspaceTreeItem extends vscode.TreeItem {
     // Stable across refreshes, so selection, expansion, and reveal survive.
     this.id = `${itemType}-${data.id}`;
   }
+
+  /**
+   * Take a newer drawing of the same row. An element refresh must name the
+   * object the editor already holds, so a changed row is updated in place.
+   */
+  assign(from: WorkspaceTreeItem): void {
+    Object.assign(this, {
+      label: from.label,
+      description: from.description,
+      tooltip: from.tooltip,
+      tooltipHeader: from.tooltipHeader,
+      iconPath: from.iconPath,
+      contextValue: from.contextValue,
+      collapsibleState: from.collapsibleState,
+      command: from.command,
+      data: from.data,
+    });
+  }
+}
+
+/**
+ * The command a row's click and Enter run: one id per row, with no
+ * arguments. The editor turns a tree command that has arguments into a
+ * cached id and drops that id when the row is refreshed, so a click on a
+ * row drawn before a refresh ran nothing ("Actual command not found,
+ * wanted to execute pitwall.openChat /4105"). A command with no arguments
+ * is passed through as is and works from any drawing of the row. The
+ * leading underscore keeps it out of the keyboard-shortcuts list.
+ */
+export function rowCommandId(rowId: string): string {
+  return `_pitwall.row.${rowId}`;
+}
+
+/** What a row shows: two drawings with the same key look the same. */
+export function rowKey(item: vscode.TreeItem): string {
+  const tooltip = typeof item.tooltip === 'string' ? item.tooltip : item.tooltip?.value;
+  const label = typeof item.label === 'string' ? item.label : item.label?.label;
+  return JSON.stringify([label, item.description, tooltip, item.contextValue, item.collapsibleState, iconKey(item.iconPath)]);
+}
+
+function iconKey(icon: vscode.TreeItem['iconPath']): string | undefined {
+  if (!icon) {
+    return undefined;
+  }
+  if (icon instanceof vscode.ThemeIcon) {
+    return `theme:${icon.id}`;
+  }
+  if (typeof icon === 'object' && 'light' in icon) {
+    return `${String(icon.light)}|${String(icon.dark)}`;
+  }
+  return String(icon);
+}
+
+/** A row as last handed to the editor: the object it holds and what it showed then. */
+interface RenderedRow {
+  item: WorkspaceTreeItem;
+  key: string;
 }
 
 /** Where row statuses come from: the attention service in the extension. */
@@ -115,10 +179,41 @@ interface RepoEntry {
  * The order changes only when a status changes or a row is added or removed
  * (P6); a redraw in between keeps the rows where they are and refreshes only
  * their text.
+ *
+ * A redraw request never refreshes the whole list by itself. Each pass
+ * compares the rows it would draw with the rows the editor holds: nothing
+ * changed fires nothing; changed rows in the same places are refreshed one
+ * by one; only repo rows added, removed or moved refresh the whole list.
  */
 export class WorkspacesTreeProvider implements vscode.TreeDataProvider<WorkspaceTreeItem> {
-  private readonly changeEmitter = new vscode.EventEmitter<void>();
+  private readonly changeEmitter = new vscode.EventEmitter<WorkspaceTreeItem[] | undefined>();
   readonly onDidChangeTreeData = this.changeEmitter.event;
+
+  /** The repo rows the editor holds, in order; unset from a full refresh until it asks for them again. */
+  private renderedRoots: RenderedRow[] | undefined;
+  /** The session rows the editor holds, by their repo row's id; only expanded repos have any. */
+  private readonly renderedChildren = new Map<string, RenderedRow[]>();
+  /** A full refresh fired and the editor has not asked for the repo rows since. */
+  private fullRefreshOutstanding = false;
+  /** Bumped by every full refresh. */
+  private fullRefreshEpoch = 0;
+  /** Session-row requests from the editor still being answered. */
+  private childRendersInFlight = 0;
+  /**
+   * Expanded repo rows refreshed by a pass, until the editor asks for their
+   * session rows again: a reveal waits for those, as it waits for the render
+   * after a full refresh.
+   */
+  private readonly childrenAwaited = new Set<string>();
+  /** Bumped by every redraw request, so a pass settles waiters only when none came in during it. */
+  private requestGeneration = 0;
+  private flushTimer: NodeJS.Timeout | undefined;
+  private flushing = false;
+  private flushAgain = false;
+  /** A full refresh was held for a reveal (L1). */
+  private heldFull = false;
+  /** Row click commands, by command id (see `rowCommandId`). */
+  private readonly rowCommands = new Map<string, vscode.Disposable>();
 
   /** Each repository's latest worktree listing this session, by repository id. */
   private readonly worktreeCache = new Map<string, RepositoryWorktrees>();
@@ -174,17 +269,6 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
   private readonly disposables: vscode.Disposable[] = [];
   private readonly scanTimer: NodeJS.Timeout;
 
-  private readonly scheduledRefresh = debounce(() => {
-    if (this.pendingCacheClear) {
-      // The old listings still answer lookups; the next render lists again.
-      this.pendingCacheClear = false;
-      this.listed.clear();
-      this.listingGeneration += 1;
-    }
-    this.updateRepoWatchers();
-    this.fireChange();
-  }, REFRESH_DEBOUNCE_MS);
-
   /** A branch switch, `git init`, or `.git` removal changes worktrees and branches. */
   private readonly onGitChange = debounce(() => {
     this.refresh();
@@ -230,10 +314,11 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     this.disposed = true;
     clearInterval(this.scanTimer);
     clearTimeout(this.hiddenListTimer);
-    this.scheduledRefresh.cancel();
+    clearTimeout(this.flushTimer);
+    this.flushTimer = undefined;
     this.onGitChange.cancel();
     this.statusSubscription?.dispose();
-    for (const disposable of [...this.disposables, ...this.repoWatchers]) {
+    for (const disposable of [...this.disposables, ...this.repoWatchers, ...this.rowCommands.values()]) {
       disposable.dispose();
     }
     this.changeEmitter.dispose();
@@ -312,7 +397,9 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
    * expands a reveal's parent rows after the extension host resolved them,
    * so a refresh landing in between makes it ask for a row that no longer
    * exists ("No tree item with id '1/repository-…' found.") and the reveal
-   * fails. A held refresh fires once, when the last reveal ends.
+   * fails. A row refresh clears that row's children the same way, so it is
+   * held too. When the last reveal ends, a held full refresh fires once; a
+   * held row refresh runs as a new pass.
    */
   async revealWhenSettled(reveal: () => Thenable<unknown>): Promise<void> {
     await this.whenSettled();
@@ -325,32 +412,236 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       this.revealsInFlight -= 1;
       if (this.revealsInFlight === 0 && this.refreshHeld) {
         this.refreshHeld = false;
-        this.changeEmitter.fire();
+        if (this.heldFull) {
+          this.heldFull = false;
+          this.fireFull();
+        } else {
+          this.scheduleFlush();
+        }
       }
     }
   }
 
-  /** Fire a full refresh now, or, while a reveal is in flight, once it ends. */
-  private fireChange(): void {
+  /**
+   * Fire a full refresh now, or, while a reveal is in flight, once it ends.
+   * The editor drops every row it holds, so nothing is compared against
+   * until it asks for the rows again.
+   */
+  private fireFull(): void {
     this.renderPending = true;
     if (this.revealsInFlight > 0) {
       this.refreshHeld = true;
+      this.heldFull = true;
       return;
     }
-    this.changeEmitter.fire();
+    this.fullRefreshOutstanding = true;
+    this.fullRefreshEpoch += 1;
+    this.renderedRoots = undefined;
+    this.renderedChildren.clear();
+    this.childrenAwaited.clear();
+    this.changeEmitter.fire(undefined);
   }
 
-  /** Re-render and re-list worktrees (debounced). */
+  /** Re-render and re-list worktrees: always a full refresh. */
   refresh(): void {
     this.renderPending = true;
     this.pendingCacheClear = true;
-    this.scheduledRefresh();
+    this.requestGeneration += 1;
+    this.scheduleFlush();
   }
 
-  /** Re-render rows from storage, keeping the worktree cache. */
+  /** Re-render rows from storage, keeping the worktree cache: only what changed is refreshed. */
   softRefresh(): void {
     this.renderPending = true;
-    this.scheduledRefresh();
+    this.requestGeneration += 1;
+    this.scheduleFlush();
+  }
+
+  /** Join the pass already waiting, or open a new window (`REFRESH_COALESCE_MS`). */
+  private scheduleFlush(): void {
+    if (this.disposed) {
+      return;
+    }
+    if (this.flushing) {
+      this.flushAgain = true;
+      return;
+    }
+    if (this.flushTimer) {
+      return;
+    }
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = undefined;
+      void this.flush();
+    }, REFRESH_COALESCE_MS);
+  }
+
+  private async flush(): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
+    this.flushing = true;
+    const generation = this.requestGeneration;
+    let completed = false;
+    try {
+      let full = false;
+      if (this.pendingCacheClear) {
+        // The old listings still answer lookups; the next render lists again.
+        this.pendingCacheClear = false;
+        this.listed.clear();
+        this.listingGeneration += 1;
+        full = true;
+      }
+      this.updateRepoWatchers();
+      completed = await this.applyChanges(full);
+    } catch (error) {
+      console.error('[Pitwall] Could not redraw the Repos list:', error);
+    } finally {
+      this.flushing = false;
+      if (this.flushAgain) {
+        this.flushAgain = false;
+        this.scheduleFlush();
+      } else if (completed && generation === this.requestGeneration && this.childrenAwaited.size === 0 && this.isQuiet()) {
+        // The editor's rows are up to date without a render from it.
+        this.settle();
+      }
+    }
+  }
+
+  /**
+   * One pass: fire the smallest change that brings the editor's rows up to
+   * date. Returns true when it compared and fired at most row refreshes;
+   * false when it fired a full refresh, was held, or must run again.
+   */
+  private async applyChanges(full: boolean): Promise<boolean> {
+    if (this.revealsInFlight > 0) {
+      this.refreshHeld = true;
+      this.heldFull ||= full;
+      return false;
+    }
+    const rendered = this.renderedRoots;
+    if (full || !rendered) {
+      // A full refresh already on its way reads the state when the editor asks.
+      if (full || !this.fullRefreshOutstanding) {
+        this.fireFull();
+      }
+      return false;
+    }
+    const roots = this.rootRows();
+    if (roots.length !== rendered.length || roots.some((row, index) => row.id !== rendered[index].item.id)) {
+      this.fireFull();
+      return false;
+    }
+
+    // The expanded repos' session rows, drawn again.
+    const byWorktree = this.chatsByWorktree();
+    const wanted = new Map<string, WorkspaceTreeItem[]>();
+    const childrenBefore = new Map(this.renderedChildren);
+    for (const rowId of childrenBefore.keys()) {
+      const root = rendered.find((row) => row.item.id === rowId);
+      const repo = root && this.storageService.getRepository((root.item.data as Repository).id);
+      if (repo) {
+        wanted.set(rowId, await this.sessionRowsOf(this.repoEntry(repo, byWorktree)));
+      }
+    }
+    // The editor asked for rows while this pass drew: compare against those in a new pass.
+    const stale =
+      this.disposed ||
+      this.renderedRoots !== rendered ||
+      this.fullRefreshOutstanding ||
+      this.childRendersInFlight > 0 ||
+      [...childrenBefore].some(([rowId, held]) => this.renderedChildren.get(rowId) !== held);
+    if (stale) {
+      this.flushAgain = true;
+      return false;
+    }
+    if (this.revealsInFlight > 0) {
+      this.refreshHeld = true;
+      return false;
+    }
+
+    const changed: WorkspaceTreeItem[] = [];
+    roots.forEach((row, index) => {
+      const held = rendered[index];
+      const key = rowKey(row);
+      if (key !== held.key) {
+        held.item.assign(row);
+        held.key = key;
+        changed.push(held.item);
+        // A repo row's refresh redraws its session rows too.
+        if (this.renderedChildren.delete(row.id!)) {
+          this.childrenAwaited.add(row.id!);
+        }
+      }
+    });
+    for (const [rowId, rows] of wanted) {
+      const held = this.renderedChildren.get(rowId);
+      if (!held) {
+        continue;
+      }
+      const repoRow = rendered.find((row) => row.item.id === rowId)!;
+      if (rows.length !== held.length || rows.some((row, index) => row.id !== held[index].item.id)) {
+        // Rows added, removed or moved under this repo: refresh the repo row.
+        changed.push(repoRow.item);
+        this.renderedChildren.delete(rowId);
+        this.childrenAwaited.add(rowId);
+        continue;
+      }
+      rows.forEach((row, index) => {
+        const key = rowKey(row);
+        if (key !== held[index].key) {
+          held[index].item.assign(row);
+          held[index].key = key;
+          changed.push(held[index].item);
+        }
+      });
+    }
+    if (changed.length > 0) {
+      this.changeEmitter.fire(changed);
+    }
+    return true;
+  }
+
+  /** No redraw waiting, running, held or on its way to the editor. */
+  private isQuiet(): boolean {
+    return !this.flushTimer && !this.flushing && !this.refreshHeld && !this.fullRefreshOutstanding;
+  }
+
+  /** Resolve every `whenSettled` waiter. */
+  private settle(): void {
+    this.renderPending = false;
+    const waiters = this.settleWaiters;
+    this.settleWaiters = [];
+    waiters.forEach((resolve) => resolve());
+  }
+
+  /** A row's click command (see `rowCommandId`), registered the first time the row is drawn. */
+  private rowCommand(rowId: string, title: string, run: () => Thenable<unknown> | undefined): vscode.Command {
+    const command = rowCommandId(rowId);
+    if (!this.rowCommands.has(command) && !this.disposed) {
+      this.rowCommands.set(command, vscode.commands.registerCommand(command, run));
+    }
+    return { command, title };
+  }
+
+  /** A chat row's click: open the chat as stored now; a chat removed since does nothing. */
+  private openChatRow(chatId: string): Thenable<unknown> | undefined {
+    const chat = this.storageService.getChat(chatId);
+    if (!chat || !this.harnessRegistry.has(chat.harness)) {
+      return undefined;
+    }
+    return vscode.commands.executeCommand('pitwall.openChat', this.getChatTreeItem(chat));
+  }
+
+  /** A repo row's click: open its chats as stored now; a repo removed since does nothing. */
+  private openRepoRow(repoId: string): Thenable<unknown> | undefined {
+    const repo = this.storageService.getRepository(repoId);
+    if (!repo) {
+      return undefined;
+    }
+    return vscode.commands.executeCommand(
+      'pitwall.openRepoChats',
+      this.repositoryItem(repo, vscode.TreeItemCollapsibleState.Collapsed)
+    );
   }
 
   /**
@@ -435,10 +726,11 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     if (!element) {
       await this.awaitRelistings(this.storageService.getRepositories());
       const rows = this.rootRows();
-      this.renderPending = false;
-      const waiters = this.settleWaiters;
-      this.settleWaiters = [];
-      waiters.forEach((resolve) => resolve());
+      // What the editor holds from now on; its old session rows are gone.
+      this.renderedRoots = rows.map((item) => ({ item, key: rowKey(item) }));
+      this.renderedChildren.clear();
+      this.fullRefreshOutstanding = false;
+      this.settle();
       if (!this.firstRenderLogged) {
         this.firstRenderLogged = true;
         logOperation('[Pitwall] first render');
@@ -446,9 +738,21 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       return rows;
     }
     if (element.itemType === 'repository') {
-      await this.awaitRelistings([element.data as Repository]);
-      const entry = this.repoEntry(element.data as Repository, this.chatsByWorktree());
-      return this.sessionRows(entry, this.orderedSessions(entry));
+      this.childRendersInFlight += 1;
+      const epoch = this.fullRefreshEpoch;
+      try {
+        const rows = await this.sessionRowsOfRepoRow(element);
+        // An answer a full refresh overtook is one the editor drops.
+        if (element.id && epoch === this.fullRefreshEpoch) {
+          this.renderedChildren.set(element.id, rows.map((item) => ({ item, key: rowKey(item) })));
+          if (this.childrenAwaited.delete(element.id) && this.childrenAwaited.size === 0 && this.isQuiet()) {
+            this.settle();
+          }
+        }
+        return rows;
+      } finally {
+        this.childRendersInFlight -= 1;
+      }
     }
     if (element.itemType === 'worktree') {
       // Not in the view since Phase 3 (P8); kept for callers that hold a worktree.
@@ -463,6 +767,20 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       return this.sessionRows(entry, sessions);
     }
     return [];
+  }
+
+  /**
+   * A repo row's session rows as the list draws them, for a caller that is
+   * not the editor (search): the editor's own rows are left as they are.
+   */
+  async sessionRowsOfRepoRow(repoRow: WorkspaceTreeItem): Promise<WorkspaceTreeItem[]> {
+    const repo = repoRow.data as Repository;
+    await this.awaitRelistings([repo]);
+    return this.sessionRowsOf(this.repoEntry(repo, this.chatsByWorktree()));
+  }
+
+  private sessionRowsOf(entry: RepoEntry): Promise<WorkspaceTreeItem[]> {
+    return this.sessionRows(entry, this.orderedSessions(entry));
   }
 
   private rootRows(): WorkspaceTreeItem[] {
@@ -624,7 +942,8 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     item.description = `${repoSummary(needs, open, sessions.length)}${windows > 1 ? ` · ${windows} windows` : ''}`;
     item.tooltip = repoTooltip(repo.name, position);
     // A click or Enter opens the repo's chats as tabs (rows 4.3, 4.4); the twistie only expands.
-    item.command = { command: 'pitwall.openRepoChats', title: 'Open Chats', arguments: [item] };
+    // Through the row's own argument-free command, so a refresh cannot drop the click.
+    item.command = this.rowCommand(item.id!, 'Open Chats', () => this.openRepoRow(repo.id));
     return item;
   }
 
@@ -789,7 +1108,8 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       if (!needsPreview) {
         item.tooltip = chatTooltip(chat, adapter.displayName, meta, item.tooltipHeader);
       }
-      item.command = { command: 'pitwall.openChat', title: 'Open Chat', arguments: [item] };
+      // Through the row's own argument-free command, so a refresh cannot drop the click.
+      item.command = this.rowCommand(item.id!, 'Open Chat', () => this.openChatRow(chat.id));
       return item;
     });
   }

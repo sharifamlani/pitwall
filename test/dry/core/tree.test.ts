@@ -466,7 +466,12 @@ test('a window redraws stars, names and dismissals written by another window whe
   t.mock.timers.tick(58_000);
   assert.equal(redraws, 1, 'nothing before the scan');
   t.mock.timers.tick(1_000); // the 60 s scan
-  t.mock.timers.tick(1_000); // its debounced redraw
+  t.mock.timers.tick(1_000); // its coalesced redraw
+  // Only the star changed, on a row in the same place: that row is redrawn
+  // on its own, once the pass has drawn the rows again.
+  for (let turn = 0; turn < 50 && redraws < 2; turn++) {
+    await flush();
+  }
   assert.equal(redraws, 2, 'the 60 s scan redraws');
   assert.equal((await snapshot()).chat, 'After chat');
   assert.ok(keep);

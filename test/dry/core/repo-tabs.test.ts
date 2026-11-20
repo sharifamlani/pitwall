@@ -13,7 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { registerRepositoryCommands } from '../../../src/core/commands/repository';
-import { WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/providers/WorkspacesTreeProvider';
+import { WorkspaceTreeItem, WorkspacesTreeProvider, rowCommandId } from '../../../src/core/providers/WorkspacesTreeProvider';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { splitSideBySide, SIDE_BY_SIDE_MAX } from '../../../src/core/windows/sideBySide';
 import { ChatSession, RepositoryWorktrees } from '../../../src/core/types';
@@ -109,8 +109,12 @@ test("repo click opens the repo's main-folder sidebar chats and no worktree chat
   // Oldest first, so the newest tab opens last and stays in front.
   assert.deepEqual(routes, [{ kind: 'openAll', chats: ['m2', 'm1', 'm0'] }]);
   const [repoRow] = await w.tree.getChildren();
-  assert.equal(repoRow.command?.command, 'pitwall.openRepoChats', 'the repo row runs it on click and Enter');
-  assert.deepEqual(repoRow.command?.arguments, [repoRow]);
+  // The repo row runs it on click and Enter, through its own argument-free command.
+  assert.equal(repoRow.command?.command, rowCommandId(repoRow.id!));
+  assert.equal(repoRow.command?.arguments, undefined);
+  routes.length = 0;
+  await runCommand(repoRow.command!.command);
+  assert.deepEqual(routes, [{ kind: 'openAll', chats: ['m2', 'm1', 'm0'] }], 'the row command opens the same chats');
 });
 
 test('repo click opens at most the Q18 cap, newest first, and offers the rest', async (t) => {
