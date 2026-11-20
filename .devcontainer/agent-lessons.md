@@ -57,6 +57,18 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - In a test, take a time boundary from the stamp the code under test recorded, never from a clock read
   made just before the call. Two `Date.now()` reads can fall in different milliseconds, and a `>=` at the
   boundary then flips. (Pitwall #77: tab-adoption.test.ts:313 failed on main CI.)
+- Before cutting a latency, log or measure each stage between the trigger and the user seeing it,
+  including process start-up. (Pitwall #78: the pop-up's 1 s was a fresh PowerShell per toast; the
+  status path was already 0.2 s.)
+- A job that fans out file reads (one per repo) must cap how many run at once. libuv has four file
+  threads, and every small read queues behind them, the status poll's too. (Pitwall #78: discovery
+  passes of 31–98 s were mostly waiting.)
+- `npm run test:dry` deletes `test/dry/.build`. Never keep a backup or scratch file there across a
+  test run. (Pitwall #78.)
+- A byte pattern that stands in for a JSON key must include what only a key has, the closing quote and
+  its colon (`"key":`), or a string value spelling the key matches too. And an equivalence fixture must
+  carry every field real lines carry (here `entrypoint`), or the fast path it tests never runs.
+  (Pitwall #78: QA on #78.)
 - Ask Sharif for post pre-approval when the RC walk starts, so the tag never waits on him. (Sharif,
   2026-11-20: the release tag is Marketing's automatic GO for pre-approved posts.)
 - A walk brief uses every default the owner has. Never turn a feature off to make the walk easier;
