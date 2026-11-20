@@ -10,7 +10,8 @@ import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { CHILDREN_AWAIT_TIMEOUT_MS, WorkspaceTreeItem, WorkspacesTreeProvider } from '../../../src/core/providers/WorkspacesTreeProvider';
-import { AIM_WINDOW_MS, KEYBOARD_SELECTION_MS } from '../../../src/core/providers/aimedClick';
+import { AIM_WINDOW_MS, KEYBOARD_SELECTION_MS, REDRAW_SETTLE_MS } from '../../../src/core/providers/aimedClick';
+import { registerNavigationCommands } from '../../../src/core/commands/navigation';
 import { HarnessRegistry } from '../../../src/core/harness/HarnessRegistry';
 import { SessionStatus } from '../../../src/core/providers/sessionStatus';
 import { ChatSession, Repository } from '../../../src/core/types';
@@ -28,7 +29,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * a visible tree view with every repo expanded, and the row commands
  * recorded instead of opening anything.
  */
-async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo = 6) {
+async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo: number | number[] = 6) {
   stub.__setTreeViewsVisible(true);
   const storage = makeStorage();
   const statuses = new Map<string, [SessionStatus, number]>();
@@ -42,7 +43,7 @@ async function ownerList(t: { after(fn: () => void): void }, repos = 3, perRepo 
   for (let r = 0; r < repos; r++) {
     const repo = storage.addRepository(`repo${r}`, `/work/repo${r}`);
     repoList.push(repo);
-    for (let c = 0; c < perRepo; c++) {
+    for (let c = 0; c < (Array.isArray(perRepo) ? perRepo[r] : perRepo); c++) {
       const chat = storage.createChat(`wt-repo${r}`, 'claude', `chat ${r}.${c}`, { harnessSessionId: `s-${r}-${c}` });
       chats.push(chat);
       statuses.set(chat.id, ['idle', since - c * 1000]);
@@ -475,8 +476,41 @@ function wireClicks(t: { after(fn: () => void): void }, tree: WorkspacesTreeProv
   return applied;
 }
 
+/**
+ * The navigation commands as extension.ts registers them. `list.select`
+ * acts like the workbench's: it selects the row the list focus is on
+ * (`landOn`) and runs that row's command.
+ */
+function wireKeys(t: { after(fn: () => void): void }, tree: WorkspacesTreeProvider, view: FakeTreeView) {
+  const context = { subscriptions: [] as { dispose(): void }[] };
+  registerNavigationCommands(context as never, {
+    workspacesProvider: tree,
+    workspacesTreeView: view as never,
+    filesTreeView: { visible: false } as never,
+  });
+  const keys = { landOn: '' };
+  context.subscriptions.push(
+    vscode.commands.registerCommand('list.focusDown', () => undefined),
+    vscode.commands.registerCommand('list.select', () => {
+      view.__select([view.__rowOf(keys.landOn)]);
+      void view.__click({ id: keys.landOn });
+    })
+  );
+  t.after(() => context.subscriptions.forEach((entry) => entry.dispose()));
+  return keys;
+}
+
 /** Chat r.c of the fixture. */
-const at = (chats: ChatSession[], r: number, c: number) => chats[r * 6 + c];
+const at = (chats: ChatSession[], r: number, c: number) => chats.find((chat) => chat.name === `chat ${r}.${c}`)!;
+
+/**
+ * The rows the screen shows, top to bottom, as the provider holds them (its
+ * slot map: expanded repos' session rows included); empty while a redraw is
+ * on its way.
+ */
+function screen(tree: WorkspacesTreeProvider): string[] {
+  return (tree as unknown as { screenLayout(): string[] | undefined }).screenLayout() ?? [];
+}
 
 test('the aimed row wins: a click landing on a row that just slid into the slot opens the chat that was there', async (t) => {
   const { tree, view, chats, repos, setStatus, opened } = await ownerList(t);
@@ -521,22 +555,43 @@ test('Enter or a click on the row already selected is never redirected; a new se
   assert.deepEqual(opened.at(-1), at(chats, 0, 1).id);
 });
 
-test('a whole repo moving up: clicks open the repo row or chat each slot held before the move', async (t) => {
+test('an arrow key then Enter on a row that just moved is never redirected (QA #80 F1)', async (t) => {
+  const { tree, view, chats, repos, setStatus, opened } = await ownerList(t);
+  const applied = wireClicks(t, tree, view);
+  const repoRow = view.__rowOf(repoRowId(repos[0]));
+  setStatus(at(chats, 0, 1), 'working');
+  await waitFor(() => view.__childIds(repoRow)[0] === chatRow(at(chats, 0, 1)), 'the swap on screen');
+  // An arrow key selects chat 0.1 (slot 1, where 0.0 sat); Enter follows 120 ms later.
+  view.__select([view.__rowOf(chatRow(at(chats, 0, 1)))]);
+  await sleep(120);
+  await view.__click({ id: chatRow(at(chats, 0, 1)) });
+  assert.deepEqual(opened, [at(chats, 0, 1).id], 'the row the keys selected opened');
+  assert.deepEqual(applied, [[chatRow(at(chats, 0, 1))]], 'and its selection was applied');
+});
+
+test('a whole repo moving up: a click opens the repo row its slot held; the redirect reveal then forgets the old order', async (t) => {
   const { tree, view, chats, repos, setStatus, opened, openedRepos } = await ownerList(t);
   wireClicks(t, tree, view);
   // repo2 gets a needs-you chat and jumps to the top: a full redraw.
   setStatus(at(chats, 2, 4), 'needs');
-  await waitFor(() => {
-    const roots = view.__childIds();
-    const drawn = (repo: Repository) => view.__childIds(view.__rowOf(repoRowId(repo))).length === 6;
-    return roots[0] === repoRowId(repos[2]) && repos.every(drawn);
-  }, 'repo2 on top, every repo drawn');
+  await waitFor(() => view.__childIds()[0] === repoRowId(repos[2]) && screen(tree).length === 21, 'repo2 on top, every repo drawn');
   assert.ok(view.fullRefreshes > 0, 'a repo-level move redraws the whole list');
   // Slot 0 held repo0 and now holds repo2.
   await view.__mouseClick({ id: repoRowId(repos[2]) });
   assert.deepEqual(openedRepos, [repos[0].id], "repo0's row, aimed at, opened its chats");
+  await waitFor(() => (view.selection[0] as WorkspaceTreeItem | undefined)?.id === repoRowId(repos[0]), 'repo0 revealed and selected');
+  // The reveal may have scrolled the list: the next click opens what it lands on.
+  await view.__mouseClick({ id: chatRow(at(chats, 2, 1)) });
+  assert.deepEqual(opened, [at(chats, 2, 1).id], 'the clicked chat opened');
+});
+
+test('a whole repo moving up: a click on a session row opens the chat its slot held', async (t) => {
+  const { tree, view, chats, repos, setStatus, opened } = await ownerList(t);
+  wireClicks(t, tree, view);
+  setStatus(at(chats, 2, 4), 'needs');
+  await waitFor(() => view.__childIds()[0] === repoRowId(repos[2]) && screen(tree).length === 21, 'repo2 on top, every repo drawn');
   // Slot 3 held chat 0.2 and now holds chat 2.1 ([repo2, 2.4, 2.0, 2.1, ...]).
-  assert.equal(view.__childIds(view.__rowOf(repoRowId(repos[2])))[2], chatRow(at(chats, 2, 1)));
+  assert.equal(screen(tree)[3], chatRow(at(chats, 2, 1)));
   await view.__mouseClick({ id: chatRow(at(chats, 2, 1)) });
   assert.deepEqual(opened, [at(chats, 0, 2).id], 'the chat aimed at opened');
 });
@@ -548,10 +603,7 @@ test("a collapsed repo's sessions take no slot when the order before a move is m
   // On screen: [repo0 (collapsed), repo1, 1.0..1.5, repo2, ...]. repo1 jumps to the top.
   setStatus(at(chats, 1, 2), 'needs');
   await waitFor(
-    () =>
-      view.__childIds()[0] === repoRowId(repos[1]) &&
-      view.__childIds(view.__rowOf(repoRowId(repos[1])))[0] === chatRow(at(chats, 1, 2)) &&
-      view.__childIds(view.__rowOf(repoRowId(repos[2]))).length === 6,
+    () => view.__childIds()[0] === repoRowId(repos[1]) && screen(tree)[1] === chatRow(at(chats, 1, 2)) && screen(tree).length === 15,
     'repo1 on top'
   );
   // Slot 1 held repo1's row, not one of repo0's hidden sessions; it now holds chat 1.2.
@@ -560,33 +612,43 @@ test("a collapsed repo's sessions take no slot when the order before a move is m
   assert.deepEqual(opened, [], 'no hidden session of the collapsed repo opened');
 });
 
-test('a selection made by a reveal (a tab gaining focus) is never treated as a click', async (t) => {
-  const { tree, view, chats, repos, setStatus, opened } = await ownerList(t);
+test('a selection made by a reveal (the tab focus and hotkeys reveal through revealRow) is never a click', async (t) => {
+  const { tree, view, chats, repos, setStatus, openedRepos } = await ownerList(t);
   const applied = wireClicks(t, tree, view);
-  const repoRow = view.__rowOf(repoRowId(repos[0]));
-  setStatus(at(chats, 0, 1), 'working');
-  await waitFor(() => view.__childIds(repoRow)[0] === chatRow(at(chats, 0, 1)), 'the swap on screen');
-  // activateChat: chat 0.1's tab gains focus and its row is revealed and selected.
-  tree.expectSelection(chatRow(at(chats, 0, 1)));
-  view.__select([view.__rowOf(chatRow(at(chats, 0, 1)))]);
-  assert.deepEqual(applied.at(-1), [chatRow(at(chats, 0, 1))], 'applied at once, not held');
-  // The user then clicks that row (already selected) or presses Enter on it.
-  await view.__mouseClick({ id: chatRow(at(chats, 0, 1)) });
-  assert.deepEqual(opened, [at(chats, 0, 1).id], 'the revealed row opened');
-  // A real click that newly selects a moved row is still aimed.
-  await view.__mouseClick({ id: chatRow(at(chats, 0, 0)) });
-  assert.deepEqual(opened.at(-1), at(chats, 0, 1).id);
+  setStatus(at(chats, 2, 4), 'needs');
+  await waitFor(() => view.__childIds()[0] === repoRowId(repos[2]) && screen(tree).length === 21, 'repo2 on top, every repo drawn');
+  // repo0 moved from slot 0 to slot 7; Pitwall reveals and selects it.
+  const repo0 = view.__rowOf(repoRowId(repos[0])) as WorkspaceTreeItem;
+  await tree.revealRow(view as never, repo0, { select: true, focus: false });
+  assert.deepEqual(applied.at(-1), [repoRowId(repos[0])], 'applied at once, not held');
+  // A click on that row (already selected) or Enter opens it.
+  await view.__mouseClick({ id: repoRowId(repos[0]) });
+  assert.deepEqual(openedRepos, [repos[0].id], 'the revealed row opened');
+});
+
+test('a hotkey (Ctrl+Alt+1) reveal forgets the old order: the next click opens the row it lands on', async (t) => {
+  const { tree, view, chats, repos, setStatus, opened } = await ownerList(t);
+  wireClicks(t, tree, view);
+  wireKeys(t, tree, view);
+  setStatus(at(chats, 2, 4), 'needs');
+  await waitFor(() => view.__childIds()[0] === repoRowId(repos[2]) && screen(tree).length === 21, 'repo2 on top, every repo drawn');
+  await vscode.commands.executeCommand('pitwall.goToRepo1');
+  await waitFor(() => (view.selection[0] as WorkspaceTreeItem | undefined)?.id === repoRowId(repos[2]), 'repo2 revealed by the key');
+  await view.__mouseClick({ id: chatRow(at(chats, 2, 1)) });
+  assert.deepEqual(opened, [at(chats, 2, 1).id], 'the clicked chat opened');
 });
 
 test('a keyboard move (Ctrl+Down) that selects and opens a moved row is never redirected', async (t) => {
   const { tree, view, chats, repos, setStatus, opened } = await ownerList(t);
   wireClicks(t, tree, view);
+  const keys = wireKeys(t, tree, view);
   const repoRow = view.__rowOf(repoRowId(repos[0]));
   setStatus(at(chats, 0, 1), 'working');
   await waitFor(() => view.__childIds(repoRow)[0] === chatRow(at(chats, 0, 1)), 'the swap on screen');
-  // navigation.ts moveAndOpen: list.focusDown, then list.select, which selects and fires the row command.
-  tree.expectKeyboardSelection();
-  await view.__mouseClick({ id: chatRow(at(chats, 0, 1)) });
+  // Ctrl+Down lands on chat 0.1 (slot 1, where 0.0 sat): list.select selects it and fires its command.
+  keys.landOn = chatRow(at(chats, 0, 1));
+  await vscode.commands.executeCommand('pitwall.list.moveDownAndOpen');
+  await waitFor(() => opened.length > 0, 'the open');
   assert.deepEqual(opened, [at(chats, 0, 1).id], 'the row the key landed on opened');
   await sleep(KEYBOARD_SELECTION_MS + 50);
   // A mouse click right after the next move is still aimed.
@@ -606,4 +668,118 @@ test('a new session appearing shifts the rows down by one: the aimed row wins', 
   // [repo0, new, 0.0, 0.1, 0.2, ...]: chat 0.1 is at slot 3, where chat 0.2 was.
   await view.__mouseClick({ id: chatRow(at(chats, 0, 1)) });
   assert.deepEqual(opened, [at(chats, 0, 2).id], 'the chat aimed at opened, not the one that shifted into its place');
+});
+
+test('a list that got shorter never redirects: scrolled to the bottom, the editor scrolls up under the pointer (QA #80 F2)', async (t) => {
+  const { tree, view, storage, chats, repos, opened } = await ownerList(t);
+  wireClicks(t, tree, view);
+  storage.deleteChats([at(chats, 0, 0).id]);
+  tree.softRefresh();
+  await waitFor(() => view.__childIds(view.__rowOf(repoRowId(repos[0])))[0] === chatRow(at(chats, 0, 1)), 'the shorter list on screen');
+  // Chat 0.2 moved up into slot 2, where 0.1 sat; the pointer may well be on 0.2 itself.
+  await view.__mouseClick({ id: chatRow(at(chats, 0, 2)) });
+  assert.deepEqual(opened, [at(chats, 0, 2).id], 'the clicked chat opened');
+});
+
+test('a collapse after a move forgets the old order, even when the list is as long as before (QA #80 P1)', async (t) => {
+  // repo0 holds one chat: [repo0, 0.0, repo1, 1.0..1.5, repo2, 2.0..2.5].
+  const { tree, view, storage, repos, setStatus, opened, openedRepos } = await ownerList(t, 3, [1, 6, 6]);
+  wireClicks(t, tree, view);
+  // A new, older session joins the bottom of repo1: the rows below it shift down one.
+  const fresh = storage.createChat('wt-repo1', 'claude', 'chat new', { harnessSessionId: 's-new' });
+  setStatus(fresh, 'idle', Date.now() - 10 * HOUR);
+  await waitFor(() => view.__childIds(view.__rowOf(repoRowId(repos[1]))).at(-1) === chatRow(fresh), 'the new row on screen');
+  // The user collapses repo0: one row fewer above, so the list is as long as before the move.
+  view.__collapse(view.__rowOf(repoRowId(repos[0])));
+  // The new row now sits at slot 8, where chat 1.5 sat before the move; the user sees it there.
+  assert.deepEqual([screen(tree).length, screen(tree)[8]], [16, chatRow(fresh)]);
+  await view.__mouseClick({ id: chatRow(fresh) });
+  assert.deepEqual(opened, [fresh.id], 'the clicked chat opened');
+  assert.deepEqual(openedRepos, []);
+});
+
+test('an expansion while a redraw is on its way forgets the old order (QA #80 A8)', async (t) => {
+  const { tree, view, chats, repos, setStatus, openedRepos, opened } = await ownerList(t, 4);
+  wireClicks(t, tree, view);
+  view.__collapse(view.__rowOf(repoRowId(repos[2])));
+  view.__renderDelayMs = 300;
+  setStatus(at(chats, 0, 1), 'working');
+  await waitFor(() => view.elementRefreshes > 0, 'the move on its way');
+  // Before the moved rows land, the user expands repo2: every row below it shifts down six.
+  await view.__expand(view.__rowOf(repoRowId(repos[2])));
+  await waitFor(() => view.__childIds(view.__rowOf(repoRowId(repos[0])))[0] === chatRow(at(chats, 0, 1)), 'the move on screen');
+  // repo3's row is at slot 21, where chat 3.5 sat before.
+  assert.equal(screen(tree)[21], repoRowId(repos[3]));
+  await view.__mouseClick({ id: repoRowId(repos[3]) });
+  assert.deepEqual(openedRepos, [repos[3].id], 'the clicked repo row opened');
+  assert.deepEqual(opened, []);
+});
+
+test('rows the editor never asked for (a collapse it never reported) forget the old order (QA #80 P2)', async (t) => {
+  const { tree, view, chats, repos, setStatus, opened } = await ownerList(t);
+  wireClicks(t, tree, view);
+  view.__collapse(view.__rowOf(repoRowId(repos[2])), { report: false });
+  // In one pass: repo2's summary changes (its rows are refetched, which the
+  // editor never does for a collapsed repo) and chat 0.1 swaps above 0.0.
+  tree.setWindows([{ folder: '/elsewhere', openSessionIds: [at(chats, 2, 0).harnessSessionId!] }]);
+  setStatus(at(chats, 0, 1), 'working');
+  await waitFor(() => view.__childIds(view.__rowOf(repoRowId(repos[0])))[0] === chatRow(at(chats, 0, 1)), 'the swap on screen');
+  // The provider gives up on repo2's rows; then the user expands it.
+  await sleep(CHILDREN_AWAIT_TIMEOUT_MS + 100);
+  await view.__expand(view.__rowOf(repoRowId(repos[2])));
+  await view.__mouseClick({ id: chatRow(at(chats, 0, 1)) });
+  assert.deepEqual(opened, [at(chats, 0, 1).id], 'the clicked chat opened');
+});
+
+test('a move captured while an earlier redraw is still on its way is never matched against a partial order (QA #80 P3)', async (t) => {
+  const { tree, view, chats, repos, setStatus, opened, openedRepos } = await ownerList(t);
+  wireClicks(t, tree, view);
+  view.__renderDelayMs = 600;
+  setStatus(at(chats, 0, 1), 'working');
+  await waitFor(() => view.elementRefreshes > 0, "repo0's new rows on their way");
+  // Pitwall reveals a row (forgetting the order) while repo0's rows are still on their way...
+  await tree.revealRow(view as never, view.__rowOf(repoRowId(repos[1])) as WorkspaceTreeItem, { select: true, focus: false });
+  // ...and a second move lands before them: repo2 jumps to the top.
+  setStatus(at(chats, 2, 1), 'working');
+  await waitFor(
+    () => view.__childIds()[0] === repoRowId(repos[2]) && screen(tree).length === 21 && screen(tree)[1] === chatRow(at(chats, 2, 1)),
+    'both moves on screen',
+    4_000
+  );
+  await view.__mouseClick({ id: chatRow(at(chats, 2, 1)) });
+  assert.deepEqual(opened, [at(chats, 2, 1).id], 'the clicked chat opened');
+  assert.deepEqual(openedRepos, []);
+});
+
+test('a second redraw before the first lands keeps the order from before the first (QA #80 A10)', async (t) => {
+  const { tree, view, chats, repos, setStatus, opened } = await ownerList(t);
+  wireClicks(t, tree, view);
+  view.__renderDelayMs = 600;
+  setStatus(at(chats, 0, 1), 'working');
+  await waitFor(() => view.elementRefreshes > 0, "repo0's new rows on their way");
+  // repo1's summary changes before repo0's rows land: a second redraw.
+  tree.setWindows([{ folder: '/elsewhere', openSessionIds: [at(chats, 1, 0).harnessSessionId!] }]);
+  await waitFor(() => view.elementRefreshes > 1, 'the second redraw');
+  await waitFor(
+    () => view.__childIds(view.__rowOf(repoRowId(repos[0])))[0] === chatRow(at(chats, 0, 1)) && screen(tree).length === 21,
+    'both redraws on screen',
+    4_000
+  );
+  // The screen showed the order from before the first move all along.
+  await view.__mouseClick({ id: chatRow(at(chats, 0, 1)) });
+  assert.deepEqual(opened, [at(chats, 0, 0).id], 'the chat aimed at opened');
+});
+
+test('a redraw the editor finishes only after REDRAW_SETTLE_MS is not trusted (QA #80 A7)', async (t) => {
+  const { tree, view, chats, repos, setStatus, opened } = await ownerList(t);
+  wireClicks(t, tree, view);
+  view.__collapse(view.__rowOf(repoRowId(repos[2])), { report: false });
+  // repo1 jumps to the top: a full redraw, whose collapsed repo2 rows the editor never asks for.
+  setStatus(at(chats, 1, 2), 'needs');
+  await waitFor(() => view.__childIds()[0] === repoRowId(repos[1]) && view.__childIds(view.__rowOf(repoRowId(repos[1]))).length === 6, 'repo1 on top');
+  await sleep(REDRAW_SETTLE_MS + 100);
+  // Long after, the user expands repo2: the redraw is complete at last, but stale.
+  await view.__expand(view.__rowOf(repoRowId(repos[2])));
+  await view.__mouseClick({ id: chatRow(at(chats, 1, 2)) });
+  assert.deepEqual(opened, [at(chats, 1, 2).id], 'the clicked chat opened');
 });

@@ -536,10 +536,12 @@ export async function activate(context: vscode.ExtensionContext) {
           if (ticket !== latestReveal) {
             return Promise.resolve();
           }
-          const row = workspacesProvider.getChatTreeItem(chat);
           // This selection follows the tab, not a click: never redirected (D21).
-          workspacesProvider.expectSelection(row.id);
-          return workspacesTreeView.reveal(row, { select: true, focus: false, expand: true });
+          return workspacesProvider.revealRow(workspacesTreeView, workspacesProvider.getChatTreeItem(chat), {
+            select: true,
+            focus: false,
+            expand: true,
+          });
         });
       deferredReveal?.dispose();
       deferredReveal = undefined;
@@ -1011,11 +1013,13 @@ export async function activate(context: vscode.ExtensionContext) {
     showWorktree(startWorktree);
     const reveal = () =>
       setTimeout(() => {
-        void workspacesProvider.revealWhenSettled(() => {
-          const row = workspacesProvider.getTreeItemForWorktree(startWorktree);
-          workspacesProvider.expectSelection(row.id);
-          return workspacesTreeView.reveal(row, { select: true, focus: false, expand: true });
-        });
+        void workspacesProvider.revealWhenSettled(() =>
+          workspacesProvider.revealRow(workspacesTreeView, workspacesProvider.getTreeItemForWorktree(startWorktree), {
+            select: true,
+            focus: false,
+            expand: true,
+          })
+        );
       }, 100);
     if (workspacesTreeView.visible) {
       reveal();

@@ -285,3 +285,17 @@ test('no code path calls tabGroups.close or moveEditor outside side by side and 
   assert.equal((tracker.match(/tabGroups\s*\.\s*close/g) ?? []).length, 1, 'the tracker closes a tab only in closeSurface');
   assert.ok(!/moveEditor/.test(tracker));
 });
+
+test('every reveal of a list row goes through WorkspacesTreeProvider.revealRow (D21)', () => {
+  // A reveal selects a row and may scroll the list: revealRow announces that
+  // selection (never taken for a click aimed before a re-sort) and forgets the
+  // order from before the last move. A tree view reveal anywhere else skips both.
+  const calls = tsFiles(SRC).flatMap((file) =>
+    fs
+      .readFileSync(file, 'utf8')
+      .split('\n')
+      .filter((line) => /\.reveal\s*\(/.test(line) && !/^\s*(\*|\/\/|\/\*\*)/.test(line) && !/\bdeps\.reveal\s*\(/.test(line))
+      .map((line) => `${path.relative(ROOT, file).split(path.sep).join('/')}: ${line.trim()}`)
+  );
+  assert.deepEqual(calls, ['src/core/providers/WorkspacesTreeProvider.ts: return view.reveal(row, options);']);
+});

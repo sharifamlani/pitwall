@@ -377,17 +377,24 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
     apply: (event: { selection: readonly WorkspaceTreeItem[] }) => void
   ): vscode.Disposable {
     this.selectRow = (row) => {
-      this.clicks.expectSelection(row.id!);
-      void this.revealWhenSettled(() => view.reveal(row, { select: true, focus: false }));
+      void this.revealWhenSettled(() => this.revealRow(view, row, { select: true, focus: false }));
     };
     return view.onDidChangeSelection(({ selection }) => this.clicks.select(selection, this.screenLayout(), apply));
   }
 
-  /** Pitwall is about to select this row itself (a reveal): its selection is never taken for a click. */
-  expectSelection(rowId: string | undefined): void {
-    if (rowId) {
-      this.clicks.expectSelection(rowId);
-    }
+  /**
+   * Every reveal of a list row goes through here (an architecture test
+   * holds every caller to it). The selection it makes is Pitwall's own, never
+   * taken for a click, and the reveal may scroll the list, so the order from
+   * before the last move is forgotten (D21).
+   */
+  revealRow(
+    view: Pick<vscode.TreeView<WorkspaceTreeItem>, 'reveal'>,
+    row: WorkspaceTreeItem,
+    options: { select?: boolean; focus?: boolean; expand?: boolean | number }
+  ): Thenable<void> {
+    this.clicks.expectSelection(row.id ?? '');
+    return view.reveal(row, options);
   }
 
   /** A keyboard move is about to select and open a row: never taken for a click. */
@@ -811,7 +818,10 @@ export class WorkspacesTreeProvider implements vscode.TreeDataProvider<Workspace
       held.apply({ selection: held.selection });
       return open();
     }
-    logOperation(`[Pitwall] click landed on ${rowId} just after a re-sort; opening ${held.aimed}, the row it was aimed at`);
+    logOperation(
+      `[Pitwall] click landed on ${rowId} just after a re-sort; opening ${held.aimed}, the row it was aimed at (selection to command ${held.gapMs} ms)`
+    );
+    this.clicks.redirected(held);
     held.apply({ selection: [aimed] });
     this.selectRow?.(aimed);
     return aimed.itemType === 'chat'

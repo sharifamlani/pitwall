@@ -8,36 +8,47 @@
  * reach the screen, a click that newly selects a row that moved opens the row
  * that sat in that slot before the move, the one the user aimed at.
  *
- * Only a mouse click is redirected. A click is a selection change followed at
- * once by the row's command; Enter (or any action) on a row already selected
- * runs the command with no selection change, and a reveal or a keyboard move
- * announces its selection first, so neither is ever redirected. Whenever the
- * on-screen order is not known for sure, the clicked row opens, as before.
+ * Only a mouse click is redirected. A click is a selection change followed,
+ * within `CLICK_PAIR_MS`, by the row's command: one pointer event sends both.
+ * Enter (or any action) on a row already selected runs the command with no
+ * selection change; a human's arrow key and Enter are further apart than
+ * that; and a reveal or a keyboard move announces its selection first. None
+ * of those is ever redirected. Whenever the on-screen order is not known for
+ * sure, including after anything that may have scrolled the list (a Pitwall
+ * reveal, a collapse, an expansion, a list that got shorter), the clicked row
+ * opens, as before.
  */
 
 /** How long after moved rows reach the screen a click still counts as aimed at the old order. */
 export const AIM_WINDOW_MS = 800;
 /**
- * How long a selection waits for its row's command before it counts as a
- * plain selection (an arrow key). A click's selection and command arrive
- * back to back from one pointer event.
+ * The longest gap between a selection and its row's command that still
+ * counts as one click. A click's selection and command come from one
+ * pointer event, back to back; an arrow key then Enter is 100 ms or more.
  */
-export const CLICK_PAIR_MS = 250;
+export const CLICK_PAIR_MS = 50;
 /** How long a selection Pitwall asked for (a reveal) is expected. */
 export const EXPECTED_SELECTION_MS = 5_000;
 /** How long a keyboard move's selection is expected. */
 export const KEYBOARD_SELECTION_MS = 1_000;
 /** A redraw whose rows the editor has not all asked for within this long is not trusted. */
-export const REDRAW_SETTLE_MS = 1_500;
+export const REDRAW_SETTLE_MS = 2_500;
+/** After a redirected click, a second click on the same row this soon (a double-click) goes to the same aimed row. */
+export const DOUBLE_CLICK_MS = 500;
 
 /**
  * The row the user aimed at: the one that sat in the clicked row's slot in
  * `before`. Undefined when the click needs no redirect (the clicked row was
  * already there) or when the slot is unsure: the clicked row is not shown,
- * the old slot held nothing, or the old row is no longer shown. Slots count
- * visible rows only, so a collapsed repo's sessions take none.
+ * the old slot held nothing, the old row is no longer shown, or the list got
+ * shorter (the editor then scrolls up when it was scrolled to the bottom, so
+ * the pointer may still be on the row it aimed at). Slots count visible rows
+ * only, so a collapsed repo's sessions take none.
  */
 export function aimedRowId(before: readonly string[], after: readonly string[], clicked: string): string | undefined {
+  if (after.length < before.length) {
+    return undefined;
+  }
   const slot = after.indexOf(clicked);
   if (slot < 0 || slot >= before.length) {
     return undefined;
@@ -46,14 +57,25 @@ export function aimedRowId(before: readonly string[], after: readonly string[], 
   return aimed !== clicked && after.includes(aimed) ? aimed : undefined;
 }
 
-/** A selection held back until its row's command shows whether it was a click. */
-export interface HeldClick<T> {
+/** A click the row command redirects to `aimed`. */
+export interface AimedClick<T> {
   /** The row the click landed on. */
   clicked: string;
   /** The row that sat in that slot before the move. */
   aimed: string;
+  /** Milliseconds between the selection and the row's command (0 for a double-click's second command). */
+  gapMs: number;
   selection: readonly T[];
   apply: (event: { selection: readonly T[] }) => void;
+}
+
+/** A selection held back until its row's command shows whether it was a click. */
+interface HeldClick<T> {
+  clicked: string;
+  aimed: string;
+  selection: readonly T[];
+  apply: (event: { selection: readonly T[] }) => void;
+  selectedAt: number;
   timer: NodeJS.Timeout;
 }
 
@@ -80,6 +102,8 @@ export class AimedClicks<T extends { id?: string }> {
   private readonly expected = new Map<string, number>();
   private keyboardUntil = 0;
   private held: HeldClick<T> | undefined;
+  /** The latest redirected click, for the second click of a double-click. */
+  private lastRedirect: { clicked: string; aimed: string; at: number; apply: (event: { selection: readonly T[] }) => void } | undefined;
 
   constructor(private readonly clock: () => number = Date.now) {}
 
@@ -150,20 +174,30 @@ export class AimedClicks<T extends { id?: string }> {
     this.moved = { before: pending.before, shownAt: this.clock() };
   }
 
-  /** The user changed what the list shows (a collapse), or a redraw was given up on: nothing is remembered. */
+  /**
+   * Something changed what the list shows or where it is scrolled (a
+   * collapse, a Pitwall reveal), or a redraw was given up on: nothing is
+   * remembered.
+   */
   forget(): void {
     this.pending = undefined;
     this.moved = undefined;
   }
 
-  /** Pitwall is about to select this row itself (a reveal): its selection is never a click. */
+  /**
+   * Pitwall is about to reveal and select this row itself: its selection is
+   * never a click, and the reveal may scroll the list, so the order before
+   * the last move is forgotten.
+   */
   expectSelection(rowId: string): void {
     this.expected.set(rowId, this.clock() + EXPECTED_SELECTION_MS);
+    this.forget();
   }
 
-  /** A keyboard move is about to select a row: its selection is never a click. */
+  /** A keyboard move is about to select a row (and may scroll the list): its selection is never a click. */
   expectKeyboardSelection(): void {
     this.keyboardUntil = this.clock() + KEYBOARD_SELECTION_MS;
+    this.forget();
   }
 
   /**
@@ -190,22 +224,38 @@ export class AimedClicks<T extends { id?: string }> {
     }
     const timer = setTimeout(() => this.release(), CLICK_PAIR_MS);
     timer.unref?.();
-    this.held = { clicked: ids[0], aimed, selection, apply, timer };
+    this.held = { clicked: ids[0], aimed, selection, apply, selectedAt: this.clock(), timer };
   }
 
   /**
-   * A row's command ran. Returns the held click it completes, which the
-   * caller redirects to `aimed`; undefined for a row whose selection was not
-   * held (Enter or an action on a row already selected).
+   * A row's command ran. Returns the click it completes, which the caller
+   * redirects to `aimed`: a held selection of this row made at most
+   * `CLICK_PAIR_MS` ago, or the second click of a double-click on a row
+   * just redirected. Undefined otherwise (Enter or an action on a row already
+   * selected, or a selection made too long before, like an arrow key).
    */
-  claim(rowId: string): HeldClick<T> | undefined {
+  claim(rowId: string): AimedClick<T> | undefined {
     const held = this.held;
-    if (!held || held.clicked !== rowId) {
-      return undefined;
+    if (held && held.clicked === rowId) {
+      const gapMs = this.clock() - held.selectedAt;
+      if (gapMs > CLICK_PAIR_MS) {
+        this.release();
+        return undefined;
+      }
+      clearTimeout(held.timer);
+      this.held = undefined;
+      return { clicked: held.clicked, aimed: held.aimed, gapMs, selection: held.selection, apply: held.apply };
     }
-    clearTimeout(held.timer);
-    this.held = undefined;
-    return held;
+    const last = this.lastRedirect;
+    if (!held && last && last.clicked === rowId && this.clock() - last.at <= DOUBLE_CLICK_MS) {
+      return { clicked: rowId, aimed: last.aimed, gapMs: 0, selection: [], apply: last.apply };
+    }
+    return undefined;
+  }
+
+  /** The caller redirected this click: a quick second click on the same row follows it (a double-click). */
+  redirected(click: AimedClick<T>): void {
+    this.lastRedirect = { clicked: click.clicked, aimed: click.aimed, at: this.clock(), apply: click.apply };
   }
 
   private release(): void {
@@ -228,6 +278,11 @@ export class AimedClicks<T extends { id?: string }> {
     this.expected.delete(id);
     if ((expectedUntil !== undefined && now <= expectedUntil) || now <= this.keyboardUntil) {
       return undefined;
+    }
+    const last = this.lastRedirect;
+    if (last && last.clicked === id && now - last.at <= DOUBLE_CLICK_MS) {
+      // The second click of a double-click on the row just redirected.
+      return last.aimed;
     }
     if (previous.length === 1 && previous[0] === id) {
       // Not newly selected.

@@ -7,7 +7,7 @@ import { commandRegistrar } from './common';
 export interface NavigationDeps {
   workspacesProvider: Pick<
     WorkspacesTreeProvider,
-    'repoRowAt' | 'chatRowsOf' | 'getWorktreeById' | 'repositoryFor' | 'expectSelection' | 'expectKeyboardSelection'
+    'repoRowAt' | 'chatRowsOf' | 'getWorktreeById' | 'repositoryFor' | 'revealRow' | 'expectKeyboardSelection'
   >;
   workspacesTreeView: Pick<vscode.TreeView<WorkspaceTreeItem>, 'selection' | 'reveal' | 'onDidChangeSelection'>;
   filesTreeView: Pick<vscode.TreeView<FileTreeItem>, 'visible'>;
@@ -83,8 +83,7 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
     const [selected] = workspacesTreeView.selection;
     if (repoOfRow(selected)?.id !== repo.id) {
       // A hotkey's selection is never taken for a click aimed before a re-sort (D21).
-      workspacesProvider.expectSelection(row.id);
-      await workspacesTreeView.reveal(row, REVEAL_ROW);
+      await workspacesProvider.revealRow(workspacesTreeView, row, REVEAL_ROW);
       return;
     }
     // Pressed again on the repo it already shows: open its next chat.
@@ -163,8 +162,7 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
         consumeKeepListFocus();
       }
       if (row?.itemType === 'repository') {
-        workspacesProvider.expectSelection(row.id);
-        await workspacesTreeView.reveal(row, REVEAL_ROW);
+        await workspacesProvider.revealRow(workspacesTreeView, row, REVEAL_ROW);
       }
     } finally {
       subscription?.dispose();
