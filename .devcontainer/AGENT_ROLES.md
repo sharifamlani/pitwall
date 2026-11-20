@@ -47,7 +47,8 @@ Rules:
 > app yourself**, not even "a quick look". Your job is to oversee the agents and keep the loop
 > moving smoothly:
 > - **Delegate:** send each feature or fix to a builder agent (its own branch or worktree,
->   test-first, told to read the "Build" list in `.devcontainer/agent-lessons.md`); send every PR
+>   test-first, told to read the "Build" list in `.devcontainer/agent-lessons.md`, and to put its
+>   lesson line in the PR body under "Lesson:", not in the file); send every PR
 >   to QA at its exact sha; send every merged sha to the Tester; send release material to
 >   Marketing. Root-cause digging belongs to the builder, not to you.
 > - **Gate:** merge only a QA-approved sha with green CI, then tell the Tester at once. Ship when
@@ -202,7 +203,8 @@ reviewers to save cost.
 >    that the tab, the window title and the empty input match that role. Never type into a busy
 >    chat, into someone's draft, or into a window you can't identify. Each compaction goes to
 >    Main in one line, with the time and the state location.
-> 8. **Lessons owner.** You own `.devcontainer/agent-lessons.md`. Each cycle, read the work and
+> 8. **Lessons owner.** You own `.devcontainer/agent-lessons.md`, and you are its only writer. Each
+>    builder puts its lesson in the PR body under "Lesson:"; you add it to main after the merge. Each cycle, read the work and
 >    messages that matter (PR verdicts, FAILs, walk reports, audit replies), not whole transcripts.
 >    When an agent does something wrong, add the rule to its list, with the moment it came from.
 >    When an agent does something well, add a `Keep:` line to its list. Each line is one rule,
