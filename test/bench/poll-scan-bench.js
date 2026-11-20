@@ -21,8 +21,11 @@
  *   discovery a settled window's discovery pass
  *   cold      a window's first import scan
  *   rewritten a settled window's scan after its 678 MB chat lost its parse
+ *   failed    a settled window's scan after one could not open its 678 MB chat
  *   other     a settled window's polls while another process (a window
  *             opening) runs its first scan
+ *   storm     the same beside two such windows and eight chats loading at
+ *             once (each a process reading its transcript whole)
  *
  * PITWALL_BENCH_DIR=<dir> keeps the fixture there and reuses it on the next
  * run (it is regenerated when missing). Otherwise it goes to a temp folder
@@ -209,6 +212,26 @@ async function main() {
         const fresh = bench.newService();
         await bench.scan(fresh, roots.slice(1, -1));
         show('rewritten', await bench.pollsDuring(bench.makePoll(fresh, path.join(dir, 'sessions'), open), () => bench.scan(fresh, roots)));
+      }
+      if (runs('failed')) {
+        // The live 678 MB chat could not be opened for a moment during one
+        // scan (busy file); the next scan is timed.
+        const big = path.join(dir, 'projects', fixture.repos[0].replace(/[^A-Za-z0-9]/g, '-'), `${fixture.ids[0]}.jsonl`);
+        const open = fs.promises.open;
+        fs.promises.open = async (file, ...rest) => {
+          if (path.resolve(String(file)) === path.resolve(big)) {
+            throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+          }
+          return open(file, ...rest);
+        };
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          await bench.scan(service, roots);
+        } finally {
+          fs.promises.open = open;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        show('failed', await bench.pollsDuring(poll, () => bench.scan(service, roots)));
       }
       if (runs('other')) {
         // Another window opening: a separate process runs its first scan.
