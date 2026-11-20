@@ -281,7 +281,12 @@ export class ClaudeSessionService {
       await running.catch(() => undefined);
     }
     // No await between the check above and this set: no second parse can start in between.
-    const parse = this.sessionFileCache.get(filePath, (stats) => this.parseSessionFile(filePath, sessionId, stats));
+    // A read that fails is not cached: the last good parse stands in (the
+    // session stays listed), and the next call tries again from the parse's
+    // resume point (`parseSessionFile`).
+    const parse = this.sessionFileCache
+      .get(filePath, (stats) => this.parseSessionFile(filePath, sessionId, stats))
+      .catch(() => this.sessionFileCache.last(filePath)?.value ?? null);
     this.parsing.set(filePath, parse);
     try {
       return await parse;
@@ -336,34 +341,44 @@ export class ClaudeSessionService {
    * read at all. Transcripts only append, so a file that has only grown
    * since its last parse resumes where that parse ended; a file that shrank
    * or changed before that point is parsed again from the start.
+   *
+   * A read that fails (the file busy for a moment, an I/O error) rejects, so
+   * the caller neither caches it nor loses the session: the transcript's
+   * resume point is kept, advanced to the last whole line this attempt fed
+   * (`parseFrom` keeps its check current), and the next parse goes on from
+   * there. Before, a failure dropped it and was cached as "no session" until
+   * the file changed, and the next parse read the whole transcript again.
    */
   private async parseSessionFile(filePath: string, sessionId: string, stats: fs.Stats): Promise<ClaudeSession | null> {
-    // Taken out while it runs, so a failed parse never leaves a half-fed one
-    // behind (`parseSessionFileCached` keeps a second caller out meanwhile).
+    // `parseSessionFileCached` runs one parse per file at a time, so nothing
+    // else feeds this progress while it runs.
     const previous = this.parseProgress.get(filePath);
-    this.parseProgress.delete(filePath);
     if (stats.size === 0) {
+      this.parseProgress.delete(filePath);
       return null;
     }
-    let handle: fs.promises.FileHandle;
+    const handle = await fs.promises.open(filePath, 'r');
+    let progress: ParseProgress | undefined;
     try {
-      handle = await fs.promises.open(filePath, 'r');
-    } catch {
-      return null;
-    }
-    try {
-      let progress: ParseProgress;
       if (previous && (await this.continues(handle, previous, stats.size))) {
         progress = previous;
       } else {
-        progress = { parser: new TranscriptParser(sessionId, filePath), offset: 0, check: Buffer.alloc(0) };
+        // A rewritten file: the old resume point no longer holds.
+        this.parseProgress.delete(filePath);
+        progress = { parser: new TranscriptParser(sessionId, filePath), offset: 0, check: Buffer.alloc(0), checkAt: 0 };
         await this.skimFirstParse(handle, progress, stats.size);
       }
       await this.parseFrom(handle, progress, stats.size);
       this.parseProgress.set(filePath, progress);
       return progress.parser.finish(stats.mtime);
-    } catch {
-      return null;
+    } catch (error) {
+      // The lines fed so far are a prefix of the file (a skim passes over only
+      // lines that cannot matter; what follows is decoded in full later), so a
+      // resume point whose check names bytes the file holds is kept.
+      if (progress && progress.check.length > 0) {
+        this.parseProgress.set(filePath, progress);
+      }
+      throw error;
     } finally {
       await handle.close().catch(() => undefined);
     }
@@ -514,7 +529,7 @@ export class ClaudeSessionService {
     }
     const length = progress.check.length;
     const buffer = Buffer.alloc(length);
-    const { bytesRead } = await handle.read(buffer, 0, length, progress.offset - length);
+    const { bytesRead } = await handle.read(buffer, 0, length, progress.checkAt - length);
     return bytesRead === length && buffer.equals(progress.check);
   }
 
@@ -555,6 +570,12 @@ export class ClaudeSessionService {
         start = newline + 1;
         progress.offset = position - chunk.length + start;
       }
+      // The bytes before the last whole line fed, kept as the parse goes: a
+      // read that fails later leaves a resume point that can still be checked.
+      if (start >= ClaudeSessionService.PARSE_CHECK_BYTES) {
+        progress.check = Buffer.from(chunk.subarray(start - ClaudeSessionService.PARSE_CHECK_BYTES, start));
+        progress.checkAt = progress.offset;
+      }
       if (start < chunk.length) {
         pending.push(chunk.subarray(start));
       }
@@ -568,6 +589,7 @@ export class ClaudeSessionService {
     const check = Buffer.alloc(progress.offset - checkStart);
     const { bytesRead } = await handle.read(check, 0, check.length, checkStart);
     progress.check = check.subarray(0, bytesRead);
+    progress.checkAt = checkStart + bytesRead;
   }
 
   /**
@@ -843,11 +865,16 @@ function startsWithAt(line: Buffer, at: number, pattern: Buffer): boolean {
   return at + pattern.length <= line.length && line.compare(pattern, 0, pattern.length, at, at + pattern.length) === 0;
 }
 
-/** A transcript's parse so far: the parser, the bytes it has read, and the bytes just before that point. */
+/**
+ * A transcript's parse so far: the parser, the bytes it has read, and bytes
+ * it read (`check`, ending at `checkAt`, at most a chunk before `offset`) that
+ * the file must still hold for the parse to resume.
+ */
 interface ParseProgress {
   parser: TranscriptParser;
   offset: number;
   check: Buffer;
+  checkAt: number;
 }
 
 /** A transcript line's fields, as Claude writes them; any may be missing or odd. */
