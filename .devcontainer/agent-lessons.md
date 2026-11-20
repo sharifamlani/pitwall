@@ -27,6 +27,9 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - Keep: merge with `--match-head-commit <approved sha>`, so the merged commit is the one QA approved.
   (Pitwall #70–#72: approved and merged shas matched.)
 - Keep: builders extend the Build list in their own PR. (Pitwall #72, #73, #74.)
+- A walk brief uses every default the owner has. Never turn a feature off to make the walk easier;
+  if one must be off, walk with it on as well. (Pitwall 0.6.0: the walk ran with discovery off and
+  hid 5–8 s pop-up lag; with it on, lag was 6.5–8.4 s against a ~5 s bar.)
 
 ## Review (QA reads before reviewing)
 
