@@ -69,6 +69,10 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
   its colon (`"key":`), or a string value spelling the key matches too. And an equivalence fixture must
   carry every field real lines carry (here `entrypoint`), or the fast path it tests never runs.
   (Pitwall #78: QA on #78.)
+- Never await a child process inside a status poll; serve its last answer (even stale) and refresh it in
+  the background. With no answer at all, report "unknown", never "no change". Also test the moment when a
+  starting process's record exists but its status isn't written yet. (Pitwall #79: `claude agents --json`
+  held both windows' polls 2.7–5.3 s on every resume; treating "no answer" as "no wait" blanked waits.)
 - Ask Sharif for post pre-approval when the RC walk starts, so the tag never waits on him. (Sharif,
   2026-11-20: the release tag is Marketing's automatic GO for pre-approved posts.)
 - A walk brief uses every default the owner has. Never turn a feature off to make the walk easier;
@@ -149,6 +153,11 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - Soften claims about platforms nobody tested (macOS).
 - Flag drafts over the length target.
 - Put the repo link in the first comment, never in the post.
+- Lead each bullet with the job the product does for the reader ("it notifies you, so you don't have to
+  wait"); a metric is optional support. In pre-approval packages, give every metric bullet a job-only
+  fallback. At GO, drop any number that can't be filled cleanly (not measured, different conditions,
+  n-of-n mismatch) instead of stalling the post. (Pitwall 2026-11-20: Sharif, approving v0.6.0: "You
+  don't need to include the metrics. Just remember the jobs to be done.")
 - A release post is pre-approved before the tag; the tag on origin is the GO. Post within the hour,
   with no second ask. Fill only the walk's measured numbers, and drop any line the walk didn't prove.
   Any other edit needs a fresh yes. (Sharif, 2026-11-20.)
