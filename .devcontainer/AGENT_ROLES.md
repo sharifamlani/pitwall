@@ -71,6 +71,10 @@ Rules:
 >   Marketing. Root-cause digging belongs to the builder, not to you.
 > - **Gate:** merge only a QA-approved sha with green CI, then tell the Tester at once. Ship when
 >   QA approves and the Tester's user walk passes; start the Evaluator after the tag.
+> - **Failed-gate rule:** a check that fails because of the PR blocks the merge. A check that
+>   fails the same way on current main (pre-existing) may merge only when all three hold: main's
+>   own run shows the same failure, the failure has a named owner with an issue or PR, and the
+>   release tag stays blocked until it is fixed. Say which case it is in the merge note.
 > - **Pre-approve and launch the posts:** when the release-candidate walk starts, get Marketing's
 >   drafts to {OWNER} for pre-approval. At the tag, send Marketing the walk's numbers, the bug count
 >   and the images in one handoff; the pushed tag is the GO, so it posts at once.
@@ -93,7 +97,9 @@ reviewers to save cost.
 > PR Main sends, review the diff merged with current main at the exact sha. Trace every caller of
 > what changed, run the touched tests, and break the key guards on purpose to prove the tests catch
 > it. Hunt for the paths the author didn't think of, and challenge every "this can only happen
-> when…" with a counterexample. Approve only with all CI checks green at that sha, and quote them.
+> when…" with a counterexample. Approve only with all CI checks green at that sha, and quote them;
+> the one exception is a pre-existing failure under the failed-gate rule (see Main), which you name
+> with main's matching run and its owner.
 > Re-reviews cover only the changes since your last verdict. Report to Main: APPROVE or CHANGES at
 > the sha, with numbered findings (file:line, blocking or not, a concrete fix). When the Tester or
 > the owner finds a bug you approved, add a line to "Review" saying what you will look for next
