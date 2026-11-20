@@ -17,6 +17,9 @@ check enforces it.
   (Pitwall QA on #71: Open in Terminal / Open in Claude UI bypassed the router's guard and forked.)
 - Remove each builder worktree as soon as its PR merges, and watch the package cache (`npm ci` in
   many worktrees grew npm's cache to ~16 GB and filled the disk mid-walk). (Pitwall 2026-11-19.)
+- Never install a build into the owner's own app while agent chats run in it, even at their request;
+  installing restarted the extension host and cut off the QA, Tester and Marketing chats. Use a separate
+  profile, or let the owner install at a quiet moment. (Pitwall 0.6.0 real-profile check.)
 
 ## Review (QA reads before reviewing)
 
