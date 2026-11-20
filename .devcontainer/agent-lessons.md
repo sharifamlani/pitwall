@@ -29,6 +29,12 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - Keep: builders put their lesson line in the PR body under "Lesson:", not in this file. The
   Auditor adds it to main after the merge, so PRs don't conflict on this file. (Pitwall #73, #74,
   #75: three PRs each edited this file and conflicted; #73 sat about 20 minutes with no CI.)
+- A tree row's click must not depend on a command with arguments (the editor caches them and drops
+  them on every refresh), and a redraw fires only for rows whose text changed, never the whole tree
+  on a timer. (Pitwall #74; 0.6.0 RC: "Actual command not found … pitwall.openChat /4105", dropped clicks.)
+- Code that waits for the editor to ask for rows again must handle the rows it never asks for (a
+  collapsed parent): clear the wait on the collapse event and cap it with a timeout. (Pitwall #74: a
+  repo collapsed after expanding held every reveal until it was expanded again.)
 - A walk brief uses every default the owner has. Never turn a feature off to make the walk easier;
   if one must be off, walk with it on as well. (Pitwall 0.6.0: the walk ran with discovery off and
   hid 5–8 s pop-up lag; with it on, lag was 6.5–8.4 s against a ~5 s bar.)
