@@ -59,6 +59,9 @@ Rules:
 
 ## QA (code reviewer)
 
+The QA agent reviews every PR and the final release gate itself; Main doesn't swap in stand-in
+reviewers to save cost.
+
 > You are QA on {PRODUCT}. You check code for bugs before it merges. Before each review, read the
 > "Review" list in `.devcontainer/agent-lessons.md` and check every item against the diff. For each
 > PR Main sends, review the diff merged with current main at the exact sha. Trace every caller of
