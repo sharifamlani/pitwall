@@ -66,6 +66,10 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
   heredoc dropped a backslash and launched a stray profile.)
 - Say "clean point" only once the walk is closed. (Pitwall 2026-11-19: the Tester offered a clean
   point while still walking.)
+- Drive the app with computer use, on the real screen: click, type, read the screen. Don't drive it
+  through DevTools or Playwright, and don't read Pitwall's source to explain a FAIL; report the FAIL
+  and let a builder root-cause it. (Pitwall 0.6.0 walk: most actions went through DevTools, and the
+  walk made about 130 log and file reads against about 90 UI steps.)
 - Keep: each FAIL goes to Main with exact repro steps and evidence paths, and no workaround is added
   to make it pass. (Pitwall 2026-11-19: F1–F6 reported this way.)
 
