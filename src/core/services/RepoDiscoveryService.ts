@@ -26,6 +26,8 @@ export interface RepoDiscoveryOptions {
   onAdded?: (roots: string[]) => void;
   /** Called once, when the first pass has ended, however it ended. */
   onFirstPassDone?: () => void;
+  /** The Operations log: each pass's start, and its end with counts and time. */
+  log?: (line: string) => void;
 }
 
 export interface RepoDiscoveryResult {
@@ -57,6 +59,7 @@ export class RepoDiscoveryService implements vscode.Disposable {
   private readonly intervalMs: number;
   private readonly now: () => number;
   private readonly onAdded: (roots: string[]) => void;
+  private readonly log: (line: string) => void;
   private onFirstPassDone: (() => void) | undefined;
   /** Folder → its repo root (null: not in git), with when git was asked. */
   private readonly roots = new BoundedCache<string, { root: string | null; at: number }>(2_000);
@@ -85,6 +88,7 @@ export class RepoDiscoveryService implements vscode.Disposable {
     this.intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
     this.now = options.now ?? Date.now;
     this.onAdded = options.onAdded ?? (() => undefined);
+    this.log = options.log ?? (() => undefined);
     this.onFirstPassDone = options.onFirstPassDone;
   }
 
@@ -150,11 +154,16 @@ export class RepoDiscoveryService implements vscode.Disposable {
 
   private async runScan(): Promise<RepoDiscoveryResult> {
     const result: RepoDiscoveryResult = { added: [], skipped: 0 };
+    let started: number | undefined;
     try {
       if (!this.enabled()) {
         return result;
       }
-      const counts: DiscoveryCounts = { skipped: 0 };
+      // Timestamped in the Operations log (the view may be hidden), so a
+      // pass can be timed and matched to the extension host's CPU.
+      started = Date.now();
+      this.log('[Pitwall] discovery started');
+      const counts: DiscoveryCounts = { skipped: 0, sessions: 0 };
       const sinceMs = this.now() - this.retentionDays() * DAY_MS;
       const folders = await this.discoverFolders(sinceMs, counts);
 
@@ -193,13 +202,19 @@ export class RepoDiscoveryService implements vscode.Disposable {
         result.added.push(root);
       }
       result.skipped = counts.skipped;
+      // Counts only: paths are the user's folders, not log material.
+      this.log(
+        `[Pitwall] discovery finished: ${found.length} repos (${result.added.length} new), ` +
+          `${counts.sessions ?? 0} sessions, ${result.skipped} skipped, ${Date.now() - started} ms`
+      );
       if (result.added.length > 0) {
-        // Counts only: paths are the user's folders, not log material.
-        console.log(`[Pitwall] discovery added ${result.added.length} repos (${result.skipped} skipped)`);
         this.onAdded(result.added);
       }
     } catch (error) {
       console.error('[Pitwall] discovery failed:', error);
+      if (started !== undefined) {
+        this.log(`[Pitwall] discovery failed after ${Date.now() - started} ms`);
+      }
     }
     return result;
   }

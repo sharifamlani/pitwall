@@ -62,6 +62,8 @@ export interface SessionImportServiceOptions {
   onSessionsListed?: (sessions: HarnessSession[]) => void;
   /** Settings are read per scan so a change applies without a reload. */
   readSettings?: () => SessionImportSettings;
+  /** The Operations log: each full scan's repos, sessions and time, to match a CPU spike to it. */
+  log?: (line: string) => void;
 }
 
 interface PendingUiExpectation {
@@ -99,6 +101,7 @@ export class SessionImportService implements vscode.Disposable {
   private readonly onChatsChanged: (event: SessionImportEvent) => void;
   private readonly onSessionsListed: (sessions: HarnessSession[]) => void;
   private readonly readSettings: () => SessionImportSettings;
+  private readonly log: (line: string) => void;
 
   private readonly expectations = new Map<string, PendingUiExpectation>();
   private readonly configListener: vscode.Disposable;
@@ -126,6 +129,7 @@ export class SessionImportService implements vscode.Disposable {
     this.isVisible = options.isVisible ?? (() => true);
     this.onChatsChanged = options.onChatsChanged ?? (() => undefined);
     this.onSessionsListed = options.onSessionsListed ?? (() => undefined);
+    this.log = options.log ?? (() => undefined);
     this.readSettings =
       options.readSettings ??
       (() => {
@@ -339,6 +343,10 @@ export class SessionImportService implements vscode.Disposable {
       const retentionMs = settings.retentionDays * DAY_MS;
       const starred = this.storageService.getStarredChatIds();
       const listings = await this.listRepositorySessions(scopes, adapters);
+      this.log(
+        `[Pitwall] import scan: ${scopes.length} repos, ` +
+          `${listings.reduce((sum, listing) => sum + listing.sessions.length, 0)} sessions, ${Date.now() - now} ms`
+      );
       this.onSessionsListed(listings.flatMap((listing) => listing.sessions));
       // Roots can nest, and a listing for the outer root includes the inner
       // root's sessions; each goes to the deepest worktree across all roots.

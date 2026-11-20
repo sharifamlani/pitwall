@@ -571,6 +571,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // Retention must also keep a chat whose terminal is still resuming.
     isChatOpen: (chat) => isChatOpen(chat) || terminalManager.isResuming(chat.id),
     isVisible: () => workspacesTreeView.visible,
+    log: logOperation,
     onChatsChanged: (event) => {
       workspacesProvider.softRefresh();
       const activeId = storageService.getActiveChatId();
@@ -597,6 +598,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const repoDiscovery = new RepoDiscoveryService(storageService, gitService, () => harnessRegistry.all(), {
     // Until the first pass ends, the empty list says it is scanning, not "No repositories yet".
     onFirstPassDone: () => setContext('pitwall.scanned', true),
+    log: logOperation,
     onAdded: () => {
       worktreeCatalog.invalidate();
       refreshTree();
