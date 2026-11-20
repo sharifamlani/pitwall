@@ -301,7 +301,15 @@ test('a wait from before activation that only claude agents knows is judged pre-
   t.after(() => watching.dispose());
   await load.service.poll(true);
   await load.agents.getSnapshot();
-  await sleep(50);
+  // The answer landing wakes watchLive's listener, which starts a re-poll. Wait for it to judge the wait
+  // rather than guessing a delay: under load a fixed sleep ends first, and the explicit poll() below
+  // is then only queued behind the running one and returns before anything is judged.
+  const started = Date.now();
+  while (load.pops.length === 0) {
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed < 20_000, `the answer-triggered re-poll never judged the wait (${elapsed} ms, ${load.calls()} agents call(s))`);
+    await sleep(10);
+  }
   await load.service.poll();
   assert.equal(load.calls(), 1);
   assert.ok(load.pops.length > 0, 'the wait was judged');
