@@ -87,6 +87,9 @@ test('sessions that ended free their place under the unplaced bound', async () =
   await handler.ask(fifty);
   fifty.forEach((id) => gone.add(id));
   await handler.ask(['s-late']);
+  assert.equal(calls.imports.length, 2);
   await handler.onReposAdded();
+  // Its own import, not the ask's: the ask's import made room by dropping the fifty that ended (QA #73 round 3, U6).
+  assert.equal(calls.imports.length, 3, 'discovery added repos: s-late imported again');
   assert.deepEqual(calls.imports.at(-1), ['s-late'], 'kept, though fifty were held before it');
 });

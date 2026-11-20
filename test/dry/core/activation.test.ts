@@ -720,6 +720,53 @@ test('with the Pitwall view hidden for the whole life of the window, a brand-new
   await scans.stop(f.context);
 });
 
+test("the extension's unbound-tab front check stands for a new chat only while it is open nowhere (QA #73 round 3, U8)", async (t) => {
+  const lab = labFolder(t);
+  const now = Date.now();
+  const f = await seededActivation(
+    t,
+    [{ id: 'a0a0a0a0-new', name: 'New chat', harnessSessionId: 's-new', status: 'idle', worktreeId: lab.worktreeId, createdAt: now, lastAccessedAt: now }],
+    {},
+    [lab.repository]
+  );
+  (stub.workspace as { workspaceFolders: unknown[] }).workspaceFolders = [{ uri: vscode.Uri.file(lab.repository.rootPath), name: 'lab', index: 0 }];
+  const { NativeUiTabSurfaceService } = await import('../../../src/core/harness/kit/NativeUiTabSurfaceService');
+  const { ClaudeHarness } = await import('../../../src/harnesses/claude/ClaudeHarness');
+  const { WorkspacesTreeProvider } = await import('../../../src/core/providers/WorkspacesTreeProvider');
+  // The NotificationService the extension made, reached through its Test sound command.
+  let service: { options: { unboundFront?: (chat: ChatSession) => boolean } } | undefined;
+  const testSound = NotificationService.prototype.testSound;
+  NotificationService.prototype.testSound = async function (this: NotificationService) {
+    service = this as never;
+  };
+  // A Claude tab opened a second ago is in front, bound to nothing; the live record says the panel runs s-new.
+  const openedAt = NativeUiTabSurfaceService.prototype.activeUnboundTabOpenedAt;
+  NativeUiTabSurfaceService.prototype.activeUnboundTabOpenedAt = () => now - 1_000;
+  const isPanelSession = ClaudeHarness.prototype.isPanelSession;
+  ClaudeHarness.prototype.isPanelSession = (sessionId: string) => sessionId === 's-new';
+  // What the Workspaces view knows of the chat's surfaces (a terminal here, a tab in another window).
+  let openAnywhere = false;
+  const isOpenAnywhere = WorkspacesTreeProvider.prototype.isOpenAnywhere;
+  WorkspacesTreeProvider.prototype.isOpenAnywhere = () => openAnywhere;
+  t.after(() => {
+    NotificationService.prototype.testSound = testSound;
+    NativeUiTabSurfaceService.prototype.activeUnboundTabOpenedAt = openedAt;
+    ClaudeHarness.prototype.isPanelSession = isPanelSession;
+    WorkspacesTreeProvider.prototype.isOpenAnywhere = isOpenAnywhere;
+  });
+  await f.start();
+  await vscode.commands.executeCommand('pitwall.testSound');
+  const unboundFront = service?.options.unboundFront;
+  assert.ok(unboundFront, 'the extension wires the unbound-tab check');
+  const chat = () => f.storedChats().find((entry) => entry.harnessSessionId === 's-new')!;
+  await waitFor(() => unboundFront(chat()), 'the one new panel chat with no surface stands behind the tab');
+  openAnywhere = true;
+  assert.equal(unboundFront(chat()), false, 'open anywhere: it has its own surface, so the tab is not it');
+  openAnywhere = false;
+  ClaudeHarness.prototype.isPanelSession = () => false;
+  assert.equal(unboundFront(chat()), false, 'run in a terminal: never in a panel tab');
+});
+
 test("discovery adding repos imports again the live sessions it may have placed, and drops one that ended (R7: onAdded → onReposAdded)", async (t) => {
   const lab = labFolder(t);
   const f = await seededActivation(t, [], {}, [lab.repository]);
