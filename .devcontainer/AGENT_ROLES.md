@@ -31,6 +31,14 @@ from the final walk go in, so a pre-approved draft may change only by dropping l
 didn't prove or filling in the walk's measured numbers in pre-approved slots. Any other change
 needs a fresh yes.
 
+## The three agents
+
+- **Main builds.** Its job is to write the code.
+- **QA reviews the code.** It checks for bugs and issues, the way it has been doing, and writes the verdict.
+- **Test acts as the end user.** It uses the real product the way {OWNER} does, and reports what works and what doesn't.
+
+The sections below give each agent's full prompt, plus the Marketing and Auditor roles that support them.
+
 ## The learning loop
 
 Every bug that gets past a stage is a lesson for that stage. The team gets faster because the same
