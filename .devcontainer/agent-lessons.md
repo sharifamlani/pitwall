@@ -43,6 +43,10 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
   surface, started after the surface appeared, the only one that fits, and only for a bounded time.
   Test it against a chat started outside the product. (Pitwall #73 rounds 2–3: an unbound tab silenced
   same-folder chats, then an outside-terminal `claude`.)
+- Size a performance repro from the owner's real data, not test-sized fixtures, and never let a reader
+  wait for an entry the writer may not write. (Pitwall #76: current Claude writes no `turn_duration`, so
+  the tail reader read 1.7 GB of live transcripts whole; a 48 MB fixture showed 0.5 s, the owner's sizes
+  showed 15–24 s.)
 - A walk brief uses every default the owner has. Never turn a feature off to make the walk easier;
   if one must be off, walk with it on as well. (Pitwall 0.6.0: the walk ran with discovery off and
   hid 5–8 s pop-up lag; with it on, lag was 6.5–8.4 s against a ~5 s bar.)
