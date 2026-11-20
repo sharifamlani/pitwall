@@ -372,7 +372,8 @@ export class ClaudeSessionService {
    * the caller neither caches it nor loses the session: the transcript's
    * resume point is kept, advanced to the last whole line this attempt fed
    * (`parseFrom` keeps its check current), and the next parse goes on from
-   * there. Before, a failure dropped it and was cached as "no session" until
+   * there. When the check could not keep up with that line, the resume point
+   * is dropped instead, and the next parse starts over. Before, a failure dropped it and was cached as "no session" until
    * the file changed, and the next parse read the whole transcript again.
    */
   private async parseSessionFile(filePath: string, sessionId: string, stats: fs.Stats): Promise<ClaudeSession | null> {
@@ -412,9 +413,16 @@ export class ClaudeSessionService {
       this.counters.failedReads += 1;
       // The lines fed so far are a prefix of the file (a skim passes over only
       // lines that cannot matter; what follows is decoded in full later), so a
-      // resume point whose check names bytes the file holds is kept.
-      if (progress && progress.check.length > 0) {
+      // resume point is kept when its check ends where it resumes. A check
+      // left behind its offset (the last line fed ended in a chunk's first
+      // bytes, so `parseFrom` could not refresh it) would leave the bytes
+      // between them unverified: a file rewritten there would resume
+      // mid-file with the old lines (QA on #81). That resume point is
+      // dropped, and the next parse starts over.
+      if (progress && progress.check.length > 0 && progress.checkAt === progress.offset) {
         this.parseProgress.set(filePath, progress);
+      } else if (progress) {
+        this.parseProgress.delete(filePath);
       }
       throw error;
     } finally {
@@ -906,8 +914,10 @@ function startsWithAt(line: Buffer, at: number, pattern: Buffer): boolean {
 
 /**
  * A transcript's parse so far: the parser, the bytes it has read, and bytes
- * it read (`check`, ending at `checkAt`, at most a chunk before `offset`) that
- * the file must still hold for the parse to resume.
+ * it read (`check`, ending at `checkAt`) that the file must still hold for the
+ * parse to resume. A finished parse ends its check at `offset`; during a
+ * parse `checkAt` can fall behind it, and a failed parse that leaves it
+ * behind is not kept (`parseSessionFile`).
  */
 interface ParseProgress {
   parser: TranscriptParser;

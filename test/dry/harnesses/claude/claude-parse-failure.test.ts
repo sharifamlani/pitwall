@@ -122,3 +122,104 @@ test('a transcript that cannot be read at its first parse is tried again at the 
   const [after] = await service.findSessionsForWorktree(repo);
   assert.equal(after?.lastAsk?.text, 'Only ask', 'the unchanged file is read once it can be');
 });
+
+test('a first parse that fails partway keeps what it read, and the next scan goes on from there', async (t) => {
+  const profile = claudeProfile(t);
+  const repo = profile.dir('repo');
+  const file = profile.write(SESSION_ID, repo, [entry.user('First ask')]);
+  fs.appendFileSync(file, bulk(repo, 8) + lines(repo, [entry.user('Last ask'), entry.assistant('all done')]));
+  // A whole-file first parse (no skim): 1 MB reads, and the fourth one fails.
+  const service = new ClaudeSessionService({ skimMinBytes: Infinity });
+  let during: Awaited<ReturnType<ClaudeSessionService['findSessionsForWorktree']>> = [];
+  await readsDuring(async () => {
+    during = await service.findSessionsForWorktree(repo);
+  }, { afterReads: 3 });
+  assert.equal(during.length, 0, 'nothing finished yet, nothing to list');
+
+  let after: Awaited<ReturnType<ClaudeSessionService['findSessionsForWorktree']>> = [];
+  const bytes = await readsDuring(async () => {
+    after = await service.findSessionsForWorktree(repo);
+  });
+  assert.equal(after[0]?.lastAsk?.text, 'Last ask');
+  assert.ok(bytes < 6 * 1024 * 1024, `the retry read ${bytes} bytes: it went on from the 3 MB read, not from the start`);
+  const [fresh] = await new ClaudeSessionService().findSessionsForWorktree(repo);
+  assert.deepEqual(after[0], fresh, 'and it reads like a fresh parse');
+});
+
+test('a failed read whose check fell behind a long line drops the resume point: a transcript replaced past it parses from the start', async (t) => {
+  const profile = claudeProfile(t);
+  const repo = profile.dir('repo');
+  const file = profile.write(SESSION_ID, repo, [entry.user('First ask')]);
+  fs.appendFileSync(file, bulk(repo, 1));
+  const service = new ClaudeSessionService();
+  await service.findSessionsForWorktree(repo);
+  const prefix = fs.readFileSync(file);
+  const MB = 1024 * 1024;
+  const longLine = (n: number) => `${JSON.stringify({ cwd: repo, sessionId: SESSION_ID, ...entry.assistant('x'.repeat(n)) })}\n`;
+  // A line that ends 30 bytes into the resume's second 1 MB chunk, too early in
+  // the chunk for the check to move with it; then a longer line past that chunk.
+  const line = longLine(MB + 30 - Buffer.byteLength(longLine(0)));
+  assert.equal(Buffer.byteLength(line), MB + 30);
+  fs.appendFileSync(file, line + longLine(MB + 200_000) + lines(repo, [entry.user('Last ask')]));
+  // The resume's third chunk read fails: its offset is past the line, its check still before it.
+  await readsDuring(() => service.findSessionsForWorktree(repo), { afterReads: 3 });
+
+  // Replaced: the same bytes up to the line's start, then different lines, longer than before.
+  fs.writeFileSync(file, Buffer.concat([prefix, Buffer.from(lines(repo, [entry.user('Replaced ask')]) + longLine(3 * MB))]));
+  const [after] = await service.findSessionsForWorktree(repo);
+  const [fresh] = await new ClaudeSessionService().findSessionsForWorktree(repo);
+  assert.equal(fresh?.lastAsk?.text, 'Replaced ask');
+  assert.equal(after?.lastAsk?.text, 'Replaced ask', 'the parse resumed mid-file, past the replaced lines');
+  assert.deepEqual(after, fresh, 'and it reads like a fresh parse');
+});
+
+/**
+ * Two transcripts of the same length whose last line (so the 64 bytes a
+ * resume checks) is the same, but whose first prompt differs: `same` resumes
+ * on `original`'s progress only if that progress was wrongly kept.
+ */
+function lookalikes(cwd: string): { original: string; same: string } {
+  const at = '2026-11-20T00:00:00.000Z';
+  const last = lines(cwd, [entry.user('Shared last ask', at)]);
+  return {
+    original: lines(cwd, [entry.user('First ask', at), entry.assistant('a'.repeat(500), 'end_turn', at)]) + last,
+    same: lines(cwd, [entry.user('Other ask', at), entry.assistant('b'.repeat(500), 'end_turn', at)]) + last,
+  };
+}
+
+test('a rewritten transcript whose first read fails does not keep the old resume point', async (t) => {
+  const profile = claudeProfile(t);
+  const repo = profile.dir('repo');
+  const { original, same } = lookalikes(repo);
+  assert.equal(Buffer.byteLength(original), Buffer.byteLength(same));
+  const file = profile.write(SESSION_ID, repo, [entry.user('Placeholder')]);
+  fs.writeFileSync(file, original);
+  const service = new ClaudeSessionService();
+  await service.findSessionsForWorktree(repo);
+  // Rewritten shorter, and its first read fails.
+  fs.writeFileSync(file, lines(repo, [entry.user('Short')]));
+  await readsDuring(() => service.findSessionsForWorktree(repo), { afterReads: 0 });
+  // Rewritten again: the old check matches at the old offset, but the lines before it differ.
+  fs.writeFileSync(file, same + lines(repo, [entry.user('Newest ask')]));
+  const [after] = await service.findSessionsForWorktree(repo);
+  const [fresh] = await new ClaudeSessionService().findSessionsForWorktree(repo);
+  assert.equal(fresh?.summary, 'Other ask');
+  assert.deepEqual(after, fresh, 'it resumed on the transcript it replaced');
+});
+
+test('a transcript emptied and then rewritten does not resume on its old parse', async (t) => {
+  const profile = claudeProfile(t);
+  const repo = profile.dir('repo');
+  const { original, same } = lookalikes(repo);
+  const file = profile.write(SESSION_ID, repo, [entry.user('Placeholder')]);
+  fs.writeFileSync(file, original);
+  const service = new ClaudeSessionService();
+  await service.findSessionsForWorktree(repo);
+  fs.writeFileSync(file, '');
+  await service.findSessionsForWorktree(repo);
+  fs.writeFileSync(file, same + lines(repo, [entry.user('Newest ask')]));
+  const [after] = await service.findSessionsForWorktree(repo);
+  const [fresh] = await new ClaudeSessionService().findSessionsForWorktree(repo);
+  assert.equal(fresh?.summary, 'Other ask');
+  assert.deepEqual(after, fresh, 'it resumed on the emptied transcript');
+});
