@@ -384,8 +384,9 @@ export class ClaudeSessionService {
    * one of those: Claude writes compact JSON, so an entry's `"type":"user"`,
    * its keys and its title or summary type appear verbatim in its bytes, and
    * only in an entry's structure (a quote inside a string is escaped). A
-   * line with `"tool_use_id"` is a tool result, never a typed prompt (none of
-   * 5,378 typed prompts in 661,215 lines on the owner's profile, 2026-11-20).
+   * line with the key `"tool_use_id":` is a tool result, never a typed prompt:
+   * a prompt, title or summary is a flat string, where a quote is escaped, so
+   * it can hold that word as a value but never as a key.
    * Small files are parsed whole: it costs less than two passes.
    */
   private async skimFirstParse(handle: fs.promises.FileHandle, progress: ParseProgress, size: number): Promise<void> {
@@ -797,7 +798,12 @@ export class ClaudeSessionService {
  * quote inside a string is escaped, so `"type":"` starts a real type field.
  */
 const TYPE_FIELD = Buffer.from('"type":"');
-const TOOL_USE_ID = Buffer.from('"tool_use_id"');
+/**
+ * The tool_use_id key, with its colon: a string value of exactly `tool_use_id`
+ * (a /rename, a prompt, a git branch) is followed by `,` `}` or `]`, never `:`
+ * (QA on #78).
+ */
+const TOOL_USE_ID = Buffer.from('"tool_use_id":');
 const CWD_KEY = Buffer.from('"cwd"');
 const ENTRYPOINT_KEY = Buffer.from('"entrypoint"');
 const USER = Buffer.from('user"');

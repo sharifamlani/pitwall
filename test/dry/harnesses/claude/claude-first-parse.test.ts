@@ -260,3 +260,96 @@ test('a scan parses at most two transcripts at once, and lists them all', async 
   assert.ok(maxOpen <= 2, `${maxOpen} transcripts open at once`);
   assert.ok(maxOpen >= 1);
 });
+
+/** Stamps an entrypoint on every user and assistant entry, as real transcripts do, so the quick tool-result skip runs. */
+function stamped(entries: object[], entrypoint = 'claude-vscode'): object[] {
+  return entries.map((value) => {
+    const type = (value as { type?: string }).type;
+    return type === 'user' || type === 'assistant' ? { entrypoint, ...value } : value;
+  });
+}
+
+/** Gives every entry `extra`'s fields. */
+function withFields(entries: object[], extra: object): object[] {
+  return entries.map((value) => ({ ...value, ...extra }));
+}
+
+/**
+ * A string value of exactly `tool_use_id` is not a tool result (QA on #78: the
+ * skim matched `"tool_use_id"`, so it dropped these lines). Each checks the
+ * field it would have lost, then the whole session.
+ */
+const TOOL_USE_ID_VALUES: Record<string, { entries: () => object[]; check: (session: Awaited<ReturnType<ClaudeSessionService['getSessionById']>>) => void }> = {
+  'a /rename to tool_use_id before the last reply': {
+    entries: () => stamped([...turn('ask a', 6, 'a'), entry.customTitle('tool_use_id'), ...turn('ask b', 6, 'b')]),
+    check: (session) => assert.equal(session?.summary, 'tool_use_id'),
+  },
+  'an ai-title of tool_use_id': {
+    entries: () => stamped([...turn('ask a', 6, 'a'), entry.aiTitle('tool_use_id'), ...turn('ask b', 6, 'b')]),
+    check: (session) => assert.equal(session?.summary, 'tool_use_id'),
+  },
+  'a typed prompt of exactly tool_use_id': {
+    entries: () => stamped([...turn('ask a', 4, 'a'), ...turn('tool_use_id', 4, 'q'), ...turn('ask b', 4, 'b'), ...turn('ask c', 4, 'c')]),
+    check: (session) => assert.deepEqual(session?.recentUserPrompts.map((prompt) => prompt.text), ['tool_use_id', 'ask b', 'ask c']),
+  },
+  'a git branch named tool_use_id on every line': {
+    entries: () =>
+      stamped(withFields([...turn('ask a', 4, 'a'), ...turn('ask b', 4, 'b'), ...turn('ask c', 4, 'c'), ...turn('ask d', 4, 'd')], { gitBranch: 'tool_use_id' })),
+    check: (session) => assert.equal(session?.lastAsk?.text, 'ask d'),
+  },
+  'a summary of tool_use_id': {
+    entries: () => stamped([...turn('ask a', 6, 'a'), entry.summary('tool_use_id'), ...turn('ask b', 6, 'b')]),
+    check: (session) => assert.equal(session?.summary, 'tool_use_id'),
+  },
+};
+
+for (const [name, { entries, check }] of Object.entries(TOOL_USE_ID_VALUES)) {
+  test(`a skimmed first parse equals a whole parse: ${name}`, async (t) => {
+    const { whole, skimmed } = await bothParses(t, entries());
+    check(whole);
+    assert.deepEqual(skimmed, whole);
+  });
+}
+
+test('a skimmed first parse takes the first entrypoint from a tool call after the first message (QA on #78)', async (t) => {
+  const tools = Array.from({ length: 4 }, (_, i) => toolPair(i)).flat();
+  const { whole, skimmed } = await bothParses(t, [
+    entry.user('ask a', at()),
+    { ...tools[0], entrypoint: 'claude-vscode' },
+    ...tools.slice(1),
+    entry.assistant('a', 'end_turn', at()),
+    ...stamped([...turn('ask b', 4, 'b'), ...turn('ask c', 4, 'c')], 'cli'),
+  ]);
+  assert.equal(whole?.entrypoint, 'claude-vscode');
+  assert.deepEqual(skimmed, whole);
+});
+
+test('a skimmed first parse takes the first entrypoint from a tool result before the tail (QA on #78)', async (t) => {
+  const tools = Array.from({ length: 4 }, (_, i) => toolPair(i)).flat();
+  const { whole, skimmed } = await bothParses(t, [
+    entry.user('ask a', at()),
+    tools[0],
+    { ...tools[1], entrypoint: 'claude-vscode' },
+    ...tools.slice(2),
+    entry.assistant('a', 'end_turn', at()),
+    ...stamped([...turn('ask b', 4, 'b'), ...turn('ask c', 4, 'c')], 'cli'),
+  ]);
+  assert.equal(whole?.entrypoint, 'claude-vscode');
+  assert.deepEqual(skimmed, whole);
+});
+
+test('a skimmed first parse takes the first cwd from a tool result before the tail (QA on #78)', async (t) => {
+  const profile = claudeProfile(t);
+  const repo = profile.dir('repo');
+  const tools = Array.from({ length: 4 }, (_, i) => toolPair(i)).flat();
+  const noCwd = (entries: object[]) => stamped(entries).map((value) => ({ ...value, cwd: undefined }));
+  profile.write(ID, repo, [
+    ...noCwd([entry.user('ask a', at()), tools[0]]),
+    { ...tools[1], cwd: repo },
+    ...noCwd([...tools.slice(2), entry.assistant('a', 'end_turn', at()), ...turn('ask b', 4, 'b')]),
+  ]);
+  const whole = await new ClaudeSessionService({ skimMinBytes: Infinity }).getSessionById(ID);
+  const skimmed = await new ClaudeSessionService({ skimMinBytes: 0 }).getSessionById(ID);
+  assert.equal(whole?.cwd, repo);
+  assert.deepEqual(skimmed, whole);
+});
