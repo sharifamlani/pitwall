@@ -89,6 +89,10 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
   A stall inside a timer callback makes the event loop fire the overdue tick before the queued
   input, so the tick reads 0 ms old at the moment that matters. (Pitwall #82: QA's host-lag blind
   spot.)
+- Main: never brief a builder to run CPU-load tests while a Tester walk is running; check the
+  Tester's state first. Builders: run load tests only when Main says no walk is in progress, and
+  kill every spawned load process in a `finally`. (Pitwall #85: 16, then 64 busy-loop processes ran
+  during the v0.6.0 RC walk and 64 were orphaned; the soak, CPU trace and speed trials were retaken.)
 - When a PR is stacked on another that gets dropped, rebuild it on main by re-homing each hook it
   borrowed, not by carrying the base along, then grep for the dropped PR's names. (Pitwall #82,
   rebuilt on main without #80.)
@@ -206,6 +210,13 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - Before any push to main, run `gh run list --branch main --limit 3` and push only when no run is
   in progress; a new push cancels the running one. Doc-only pushes count too. (Pitwall 2026-11-20:
   the Auditor's docs push e8dd184 cancelled main CI on the #84 merge 80ceae7.)
+- While a Tester walk runs, don't run `verify.sh` (it runs `npm ci` and a compile); doc pushes wait
+  for the walk to end. Flag any process spike to Main at once, even before a walk starts. (Pitwall
+  2026-11-20: the Auditor saw #85's 65 load-test processes 13 minutes before the RC walk began
+  and didn't flag them; the load test then ran into the walk.)
+- Never leave an unpushed commit on `main` in a checkout other agents share; hold it on a side
+  branch and cherry-pick it onto `origin/main` when the push is allowed. (Pitwall 2026-11-20: the
+  held lessons commit made Main's `git pull` create a merge in the shared checkout.)
 - Check a claim against git before passing it on. (Pitwall 2026-11-19: "the warning text is new"
   was wrong; it already existed, and the Tester was briefed on the error.)
 - Don't tell a peer a message was forwarded until the send returns success. (Pitwall 2026-11-19:
