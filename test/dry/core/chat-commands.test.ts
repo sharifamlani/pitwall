@@ -460,7 +460,7 @@ function listKeys(row: WorkspaceTreeItem) {
     treeDataProvider: { getChildren: async () => [] } as never,
   }) as unknown as FakeTreeView;
   registerNavigationCommands({ subscriptions: [] } as never, {
-    workspacesProvider: {} as never,
+    workspacesProvider: { expectSelection: () => undefined, expectKeyboardSelection: () => undefined } as never,
     workspacesTreeView: view as never,
     filesTreeView: files as never,
   });
