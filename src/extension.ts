@@ -534,7 +534,11 @@ export async function activate(context: vscode.ExtensionContext) {
       const reveal = () =>
         workspacesProvider.revealWhenSettled(() =>
           ticket === latestReveal
-            ? workspacesTreeView.reveal(workspacesProvider.getChatTreeItem(chat), { select: true, focus: false, expand: true })
+            ? workspacesProvider.revealRow(workspacesTreeView, workspacesProvider.getChatTreeItem(chat), {
+                select: true,
+                focus: false,
+                expand: true,
+              })
             : Promise.resolve()
         );
       deferredReveal?.dispose();
@@ -1009,7 +1013,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const reveal = () =>
       setTimeout(() => {
         void workspacesProvider.revealWhenSettled(() =>
-          workspacesTreeView.reveal(workspacesProvider.getTreeItemForWorktree(startWorktree), {
+          workspacesProvider.revealRow(workspacesTreeView, workspacesProvider.getTreeItemForWorktree(startWorktree), {
             select: true,
             focus: false,
             expand: true,

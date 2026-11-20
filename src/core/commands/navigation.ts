@@ -8,7 +8,7 @@ import { OpenSource } from '../windows/openSource';
 export interface NavigationDeps {
   workspacesProvider: Pick<
     WorkspacesTreeProvider,
-    'repoRowAt' | 'chatRowsOf' | 'getWorktreeById' | 'repositoryFor' | 'startKeyboardMove'
+    'repoRowAt' | 'chatRowsOf' | 'getWorktreeById' | 'repositoryFor' | 'startKeyboardMove' | 'endKeyboardMove' | 'revealRow'
   >;
   workspacesTreeView: Pick<vscode.TreeView<WorkspaceTreeItem>, 'selection' | 'reveal' | 'onDidChangeSelection'>;
   filesTreeView: Pick<vscode.TreeView<FileTreeItem>, 'visible'>;
@@ -83,7 +83,7 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
     }
     const [selected] = workspacesTreeView.selection;
     if (repoOfRow(selected)?.id !== repo.id) {
-      await workspacesTreeView.reveal(row, REVEAL_ROW);
+      await workspacesProvider.revealRow(workspacesTreeView, row, REVEAL_ROW);
       return;
     }
     // Pressed again on the repo it already shows: open its next chat.
@@ -162,11 +162,13 @@ export function registerNavigationCommands(context: vscode.ExtensionContext, dep
         consumeKeepListFocus();
       }
       if (row?.itemType === 'repository') {
-        await workspacesTreeView.reveal(row, REVEAL_ROW);
+        await workspacesProvider.revealRow(workspacesTreeView, row, REVEAL_ROW);
       }
     } finally {
       subscription?.dispose();
       clearTimeout(timer);
+      // A move that ran no row command must not label the next click keyboard-move.
+      workspacesProvider.endKeyboardMove();
     }
   };
   register('pitwall.list.moveDownAndOpen', moveAndOpen('list.focusDown'));
