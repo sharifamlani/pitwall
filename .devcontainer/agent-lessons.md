@@ -73,6 +73,9 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
   the background. With no answer at all, report "unknown", never "no change". Also test the moment when a
   starting process's record exists but its status isn't written yet. (Pitwall #79: `claude agents --json`
   held both windows' polls 2.7–5.3 s on every resume; treating "no answer" as "no wait" blanked waits.)
+- Instrument before you attribute. A route line with no trigger source can't settle what caused an
+  open; add the trigger to the log first, then name the cause. (Pitwall 2026-11-20: the 11-19 "spurious
+  opens" were blamed on the owner's dictation without evidence.)
 - Ask Sharif for post pre-approval when the RC walk starts, so the tag never waits on him. (Sharif,
   2026-11-20: the release tag is Marketing's automatic GO for pre-approved posts.)
 - A walk brief uses every default the owner has. Never turn a feature off to make the walk easier;
