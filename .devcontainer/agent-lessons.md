@@ -70,6 +70,11 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
   through DevTools or Playwright, and don't read Pitwall's source to explain a FAIL; report the FAIL
   and let a builder root-cause it. (Pitwall 0.6.0 walk: most actions went through DevTools, and the
   walk made about 130 log and file reads against about 90 UI steps.)
+- Close the test windows' untitled scratch tabs before quitting, and don't leave a test window
+  focused while others use the machine; dictation and clicks land in it. (Pitwall 0.6.0 walk: foreign
+  dictated text in window a's untitled tab, likely the source of the "spurious opens" anomaly.)
+- Count `claude` processes per second across a quit and relaunch: an outside chat can die at quit.
+  (Pitwall 0.6.0 F5 FAIL C.)
 - Keep: each FAIL goes to Main with exact repro steps and evidence paths, and no workaround is added
   to make it pass. (Pitwall 2026-11-19: F1–F6 reported this way.)
 
