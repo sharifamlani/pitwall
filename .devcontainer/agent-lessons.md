@@ -79,6 +79,9 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - Before building a fix for "X waits behind Y", A/B the suspected mechanism at real scale. A poll-
   priority gate for file threads changed nothing (72–82 vs 67–80 ms), so the PR ships per-step timing
   instead. (Pitwall #81, round 1.)
+- A test on mocked timers that also waits on real I/O must hold the mocked clock while that I/O is in
+  flight; moving the clock at a fixed rate charges machine load to the code's timers. (Pitwall #83:
+  first-scan tests went 1/30 → 30/30 under load.)
 - Instrument before you attribute. A route line with no trigger source can't settle what caused an
   open; add the trigger to the log first, then name the cause. (Pitwall 2026-11-20: the 11-19 "spurious
   opens" were blamed on the owner's dictation without evidence.)
