@@ -114,6 +114,14 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
   (Pitwall 0.6.0 real-profile check.)
 - Try every way to open the same thing, on running and stopped items, and count processes before
   and after. (Pitwall #71.)
+- Before every walk, stop your own stray cua-driver overlay processes and keep exactly one driver
+  session. Six overlays were running when three chats opened that no deliberate action explains.
+  (Pitwall 2026-11-20: the PR #79 gate's "unrequested opens".)
+- Take a fresh screenshot right before every click, and never click from a frame more than a few
+  seconds old; pixel clicks take the scale of the latest screenshot. (Pitwall 2026-11-20: text typed
+  into a scratch editor; a click missed by scale.)
+- Log each deliberate click's UTC wall-clock time in the walk notes (time, window, target), so every
+  Pitwall route line can be matched to a deliberate action or flagged. (Pitwall 2026-11-20.)
 - Include one real end-to-end action through the operating system (a real notification click),
   not only a simulated one. (Pitwall 0.6.0 real click.)
 
