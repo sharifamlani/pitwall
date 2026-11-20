@@ -178,17 +178,29 @@ export class ClaudeAgentsService {
   }
 
   /**
+   * What `getSnapshot` would return without starting a call: the cached
+   * answer while it is fresh, the empty answer while calls are off or
+   * paused, else undefined (only a new call can answer). Never spawns.
+   */
+  cachedSnapshot(): ClaudeAgentsSnapshot | undefined {
+    if (!this.enabled() || (this.failedAt !== undefined && this.now() - this.failedAt < RETRY_AFTER_FAILURE_MS)) {
+      return { observedAt: this.now(), states: new Map() };
+    }
+    if (this.cache && this.now() - this.cache.at < CACHE_TTL_MS) {
+      return this.cache.snapshot;
+    }
+    return undefined;
+  }
+
+  /**
    * The states plus `observedAt`, the start of the call that produced them.
    * A cached answer keeps its original stamp, so callers can tell how old a
    * "waiting" row may be.
    */
   async getSnapshot(): Promise<ClaudeAgentsSnapshot> {
-    if (!this.enabled() || (this.failedAt !== undefined && this.now() - this.failedAt < RETRY_AFTER_FAILURE_MS)) {
-      return { observedAt: this.now(), states: new Map() };
-    }
-
-    if (this.cache && this.now() - this.cache.at < CACHE_TTL_MS) {
-      return this.cache.snapshot;
+    const cached = this.cachedSnapshot();
+    if (cached) {
+      return cached;
     }
     if (this.inFlight) {
       return this.inFlight;

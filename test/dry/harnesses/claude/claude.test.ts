@@ -276,24 +276,27 @@ function liveHarness(
   }
   let agentCalls = 0;
   let clockOffset = 0;
+  const agentsService = new ClaudeAgentsService({
+    command: () => 'fake-claude',
+    enabled: () => true,
+    now: () => Date.now() + clockOffset,
+    exec: async () => {
+      agentCalls++;
+      return JSON.stringify(options.agents ?? []);
+    },
+  });
   const harness = new ClaudeHarness({
     sessionService,
     sessionsFile: new ClaudeSessionsFile({ dir: () => sessionsDir, isAlive: () => true, pidDomain: async () => DOMAIN }),
-    agentsService: new ClaudeAgentsService({
-      command: () => 'fake-claude',
-      enabled: () => true,
-      now: () => Date.now() + clockOffset,
-      exec: async () => {
-        agentCalls++;
-        return JSON.stringify(options.agents ?? []);
-      },
-    }),
+    agentsService,
   });
   return {
     harness,
     sessionsDir,
     stats,
     agentCalls: () => agentCalls,
+    /** The `claude agents` call a poll started without waiting for it (it shares the call in flight). */
+    agentsAnswered: () => agentsService.getSnapshot(),
     /** Ages the agents cache past its 10 s TTL, so the next tick that needs the CLI calls it. */
     expireAgentsCache: () => {
       clockOffset += 20_000;
@@ -379,14 +382,22 @@ test('fallback samples keep the R40 drop; same-ms counts as before', async (t) =
   const later = liveHarness(t, { agents, transcriptWrittenAt: callStart + 1 });
   writeSessionFile(later.sessionsDir, { pid: 4242, sessionId: SESSION_ID, status: 'compacting', statusUpdatedAt: 1 });
   writeSessionFile(later.sessionsDir, { pid: 4343, sessionId: 'someone-else', status: 'busy', statusUpdatedAt: 1 });
-  const dropped = (await later.harness.getLiveStates([SESSION_ID])).get(SESSION_ID)!;
+  // The poll never waits for the CLI (0.6.0 RC poll stall): this tick reads the folder alone and starts the call.
+  const first = (await later.harness.getLiveStates([SESSION_ID])).get(SESSION_ID)!;
   assert.equal(later.agentCalls(), 1, 'an unknown status falls back to claude agents for that session');
+  assert.equal(first.waitingFor, undefined, 'the tick that starts the call does not wait for its answer');
+  assert.equal(first.liveStatus, undefined);
+  await later.agentsAnswered();
+  const dropped = (await later.harness.getLiveStates([SESSION_ID])).get(SESSION_ID)!;
+  assert.equal(later.agentCalls(), 1, 'the next tick uses the cached answer');
   assert.equal(dropped.waitingFor, undefined, 'a transcript written after the agents call drops the cached wait');
   assert.equal(dropped.liveStatus, undefined);
 
   const sameMs = liveHarness(t, { agents, transcriptWrittenAt: callStart + 0.5 });
   writeSessionFile(sameMs.sessionsDir, { pid: 4242, sessionId: SESSION_ID, status: 'compacting', statusUpdatedAt: 1 });
   writeSessionFile(sameMs.sessionsDir, { pid: 4343, sessionId: 'someone-else', status: 'busy', statusUpdatedAt: 1 });
+  await sameMs.harness.getLiveStates([SESSION_ID]);
+  await sameMs.agentsAnswered();
   const kept = (await sameMs.harness.getLiveStates([SESSION_ID])).get(SESSION_ID)!;
   assert.equal(kept.waitingFor, 'permission prompt');
   assert.equal(kept.writtenAt, callStart);
@@ -394,15 +405,47 @@ test('fallback samples keep the R40 drop; same-ms counts as before', async (t) =
 });
 
 test('a torn sessions file sends sessions it does not list to claude agents', async (t) => {
-  const { harness, sessionsDir, agentCalls } = liveHarness(t, {
+  const { harness, sessionsDir, agentCalls, agentsAnswered } = liveHarness(t, {
     agents: [{ sessionId: SESSION_ID, status: 'waiting', waitingFor: 'permission prompt' }],
     transcriptWrittenAt: 0,
   });
   writeSessionFile(sessionsDir, { pid: 4343, sessionId: 'someone-else', status: 'busy', statusUpdatedAt: 1 });
   fs.writeFileSync(path.join(sessionsDir, '4242.json'), `{"pid": 4242, "sessionId": "${SESSION_ID.slice(0, 8)}`);
-  const live = (await harness.getLiveStates([SESSION_ID])).get(SESSION_ID)!;
+  // The tick that starts the call does not wait for it (0.6.0 RC poll stall); the answer serves the next tick.
+  await harness.getLiveStates([SESSION_ID]);
   assert.equal(agentCalls(), 1);
+  await agentsAnswered();
+  const live = (await harness.getLiveStates([SESSION_ID])).get(SESSION_ID)!;
+  assert.equal(agentCalls(), 1, 'one call, cached');
   assert.equal(live.waitingFor, 'permission prompt', 'a half-written file never clears a wait by itself');
+});
+
+test('a claude agents call a poll did not wait for re-polls every live watcher when it lands, once, and never a disposed one', async (t) => {
+  const { harness, sessionsDir, agentCalls, agentsAnswered } = liveHarness(t, {
+    agents: [{ sessionId: SESSION_ID, status: 'busy' }],
+    transcriptWrittenAt: 0,
+  });
+  writeSessionFile(sessionsDir, { pid: 4343, sessionId: 'someone-else', status: 'busy', statusUpdatedAt: 1 });
+  // A starting process: its record has no status yet.
+  writeSessionFile(sessionsDir, { pid: 4242, sessionId: SESSION_ID });
+  let kept = 0;
+  let dropped = 0;
+  const keep = harness.watchLive(() => kept++);
+  const drop = harness.watchLive(() => dropped++);
+  t.after(() => keep.dispose());
+  drop.dispose();
+
+  // Two polls before the answer: one call between them.
+  const [first, second] = await Promise.all([harness.getLiveStates([SESSION_ID]), harness.getLiveStates([SESSION_ID])]);
+  assert.equal(first.get(SESSION_ID)?.liveStatus, undefined, 'the poll read the folder alone');
+  assert.equal(second.get(SESSION_ID)?.liveStatus, undefined);
+  assert.equal(agentCalls(), 1, 'the polls share one call');
+  await agentsAnswered();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(kept, 1, 'the live watcher re-polls once when the answer lands');
+  assert.equal(dropped, 0, 'a disposed watcher is never called');
+  assert.equal((await harness.getLiveStates([SESSION_ID])).get(SESSION_ID)?.liveStatus, 'busy', 'the re-poll gets the answer');
+  assert.equal(agentCalls(), 1);
 });
 
 test('a torn read that hides a session waiting on the previous tick keeps its previous file state for one tick (R45 residual)', async (t) => {
