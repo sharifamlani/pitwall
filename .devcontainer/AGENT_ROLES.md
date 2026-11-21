@@ -31,6 +31,16 @@ from the final walk go in, so a pre-approved draft may change only by dropping l
 didn't prove or filling in the walk's measured numbers in pre-approved slots. Any other change
 needs a fresh yes.
 
+**The original design is the test (red flag rule, {OWNER} 2026-11-20).** The original design
+artifact ({OWNER}'s founding idea and the spec canvas the plan links) says what the product is for.
+If anything (a platform limit, a test result, a design decision, a workaround) means the product will
+NOT work the way that artifact describes, that is a **red flag**: stop building on it and tell
+{OWNER} at once, in one plain sentence ("this means you still can't X"), before any more work. Never
+record it only as a ROADMAP decision or a "later" row and keep building. Every role checks its work
+against the original design: builders and QA when a limit or workaround appears, the Tester when the
+walk shows the product doing something other than the design's core promise, Main before accepting
+any decision that narrows that promise.
+
 ## The three agents
 
 | Agent | Job | Output |
