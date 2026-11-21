@@ -2265,7 +2265,12 @@ async function twoWindowsOneInFront(t: TestContext, chat: 'new' | 'existing', aF
     a: flowA,
     b: flowB,
     turn,
-    focus,
+    /** Window a loses focus (another app comes in front); the focus change beats, as extension.ts does. */
+    blurA: () => {
+      focus.a = false;
+      windowState().state = { focused: false };
+      beatA();
+    },
     shown: () => [...flowA.shownLines(), ...flowB.shownLines()],
   };
 }
@@ -2300,7 +2305,7 @@ for (const chat of ['new', 'existing'] as const) {
     const w = await twoWindowsOneInFront(t, chat);
     await w.turn('a', false);
     assert.deepEqual(w.shown(), []);
-    w.focus.a = false; // the user moves to another app
+    w.blurA(); // the user moves to another app
     await w.turn('b', true);
     assert.equal(w.shown().length, 1, 'the next turn pops once');
   });
