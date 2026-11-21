@@ -1,5 +1,7 @@
 # Pitwall
 
+> **No longer maintained (2026-11-20).** This project stopped before v1.0. Its goal was to work in every repo's Claude Code sessions from one place. The official Claude Code extension only runs sessions for the folder open in its own Cursor window, so that can't be done through it today (see [anthropics/claude-code#104879](https://github.com/anthropics/claude-code/issues/104879)). The last release is `v0.5.0`. The code stays here under the MIT license for anyone who wants to build on it; the history and reasons are in [ROADMAP.md](ROADMAP.md) §0.
+
 **Every Claude Code session across your repos, in one sidebar.**
 
 You run Claude Code in several repos at once. Sessions finish, or stop and wait for your approval, inside Cursor windows you are not looking at, and nothing tells you. Pitwall puts every repo and its Claude Code sessions in one place.
