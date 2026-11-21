@@ -96,6 +96,13 @@ the bug, PR or moment it came from. Remove a rule once a test or check enforces 
 - When a PR is stacked on another that gets dropped, rebuild it on main by re-homing each hook it
   borrowed, not by carrying the base along, then grep for the dropped PR's names. (Pitwall #82,
   rebuilt on main without #80.)
+- When a CI assertion fails, find which line fails and what dropped the value before fixing. A
+  plausible race that never failed is not the cause. (Pitwall #85: round 1 fixed a race QA showed
+  wasn't the failure; the real cause was the transcript's file time running ahead of `Date.now()`
+  on Windows.)
+- A judgement that holds a pop-up back must leave the same trace for other windows as one that shows
+  it: take the shared lock, and publish every "in front" the local check can see (here, a new chat's
+  unbound tab), not only the bound ones. (Pitwall #86: RC2 walk item 1 FAIL.)
 - Instrument before you attribute. A route line with no trigger source can't settle what caused an
   open; add the trigger to the log first, then name the cause. (Pitwall 2026-11-20: the 11-19 "spurious
   opens" were blamed on the owner's dictation without evidence.)
