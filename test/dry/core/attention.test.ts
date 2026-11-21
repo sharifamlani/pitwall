@@ -12,6 +12,7 @@ import {
 } from '../../../src/core/services/SessionAttentionService';
 import { escapeAppleScript, NotificationOptions, NotificationService, openFromPopup } from '../../../src/core/services/NotificationService';
 import { PopupKey, PopupLedger } from '../../../src/core/notify/PopupLedger';
+import { WindowRegistry } from '../../../src/core/windows/WindowRegistry';
 import { ClaudeSessionsFile } from '../../../src/harnesses/claude/ClaudeSessionsFile';
 import { writeDump } from '../../../src/core/windows/dumpState';
 import { HarnessAdapter, HarnessLiveState } from '../../../src/core/harness/types';
@@ -1180,6 +1181,10 @@ interface PopupFlowOptions extends RowFlowOptions {
   onUnlisted?: (sessionIds: string[]) => void | readonly string[] | Promise<void | readonly string[]>;
   /** The Windows pop-up host; without one every pop-up is the in-window message. */
   toast?: NotificationOptions['toast'];
+  /** Whether the user is looking at this chat in this window; default: the chat is in `visible`. */
+  isVisible?: (chatId: string) => boolean;
+  /** Publishes this window's chat in front to the registry (as extension.ts wires it). */
+  publishFront?: () => void;
 }
 
 /** rowFlow with the whole Phase 5 pop-up path: lock, front anywhere, listed check, log lines. */
@@ -1198,7 +1203,7 @@ function popupFlow(storage: ReturnType<typeof makeStorage>, options: PopupFlowOp
     },
     ...(options.underWay ? { liveSessionsUnderWay: async () => options.underWay!() } : {}),
   });
-  const isVisible = (chatId: string) => visible.has(chatId);
+  const isVisible = options.isVisible ?? ((chatId: string) => visible.has(chatId));
   const notifications = new NotificationService(() => undefined, isVisible, {
     ledger: {
       claim: async (key: PopupKey) => {
@@ -1211,6 +1216,7 @@ function popupFlow(storage: ReturnType<typeof makeStorage>, options: PopupFlowOp
     unboundFront: options.unboundFront,
     log: (line) => logs.push(line),
     toast: options.toast,
+    publishFront: options.publishFront,
   });
   const service = new SessionAttentionService(
     storage,
@@ -2119,6 +2125,178 @@ for (const kind of ['needs', 'finished'] as const) {
     const { flow, pops } = await popBesideUnboundTab(t, kind, [{ sessionId: 's-new' }, { sessionId: 's-cli', entrypoint: 'cli' }]);
     assert.equal(pops, 1, "the terminal chat's");
     assert.equal(flow.skipped('front').length, 1, 'the panel chat, judged in front');
+  });
+}
+
+// ---------------------------------------------------------------------------
+// RC walk on 8553eb3 (N2, N3): a chat in front of the focused window a never
+// pops from window b, whichever window judges the turn end first. The two
+// windows share the pop-up locks and the window registry, as real ones do.
+// ---------------------------------------------------------------------------
+
+/**
+ * Window a's active tab is the chat's own: `new`, a brand-new chat's tab not
+ * bound yet ("Claude Code: Open in New Tab", PR #73); `existing`, an hour-old
+ * chat's bound tab. Window b lists the same chat and has nothing in front.
+ * Window a publishes its front as extension.ts does: on the tab change and on
+ * each poll while a pop-up may follow.
+ */
+async function twoWindowsOneInFront(t: TestContext, chat: 'new' | 'existing', aFocused = true) {
+  const ledgerDir = path.join(tempDir(t), 'pitwall-popups');
+  const sharedDir = tempDir(t);
+  const registryA = new WindowRegistry(sharedDir, { pid: process.pid, folder: '/repo/wt-a' });
+  const registryB = new WindowRegistry(sharedDir, { pid: process.ppid, folder: '/repo/wt-b' });
+  t.after(() => (registryA.dispose(), registryB.dispose()));
+
+  const tabOf = (label: string) => ({ label, input: new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel'), isActive: false });
+  const group = { isActive: true, viewColumn: 1, activeTab: undefined as unknown, tabs: [] as unknown[] };
+  (stub.window as unknown as { tabGroups: { all: unknown[] } }).tabGroups.all = [group];
+  let fire: (event: vscode.TabChangeEvent) => void = () => undefined;
+  const surfaces = claudeUiSurfaces({
+    getTabGroups: () => [group] as never,
+    onDidChangeTabs: (listener) => ((fire = listener), { dispose: () => undefined }),
+    onDidChangeTabGroups: () => ({ dispose: () => undefined }),
+    log: () => undefined,
+  });
+  t.after(() => surfaces.dispose());
+  const openTab = (label: string) => {
+    const tab = tabOf(label);
+    group.tabs.push(tab);
+    group.activeTab = tab;
+    fire({ opened: [tab], closed: [], changed: [] } as never);
+  };
+
+  const sessionId = chat === 'new' ? 's-new' : 's-old';
+  const storages = [makeStorage(), makeStorage()];
+  const listChat = (startedAt: number) =>
+    storages.forEach((storage) =>
+      storage.createChat('wt-a', 'claude', 'Watched', { id: 'chat-w', harnessSessionId: sessionId, createdAt: startedAt, lastAccessedAt: startedAt })
+    );
+  if (chat === 'new') {
+    openTab('Claude Code');
+    listChat(Date.now());
+    assert.equal(surfaces.activeSessionId(), undefined, 'its tab is not bound yet');
+  } else {
+    listChat(Date.now() - 60 * 60_000);
+    surfaces.expect(sessionId, 'Watched');
+    openTab('Watched');
+    assert.equal(surfaces.activeSessionId(), sessionId, 'its own tab, bound');
+  }
+  const states: Record<string, HarnessLiveState> = { [sessionId]: busy(Date.now()) };
+  const live = () => new Set([sessionId]);
+
+  // Window a, wired as extension.ts wires it.
+  const adapterA = { id: 'claude', nativeUi: { surfaces }, isPanelSession: () => true } as unknown as HarnessAdapter;
+  const sourcesA: chatVisibility.ChatVisibilitySources = {
+    getChats: () => storages[0].getChats(),
+    adapters: () => [adapterA],
+    chatIdForTerminalName: () => undefined,
+  };
+  const unboundA: chatVisibility.UnboundFrontDeps = {
+    adapters: () => [adapterA],
+    chats: () => storages[0].getChats(),
+    worktreePathOf: (entry) => `/repo/${entry.worktreeId}`,
+    folders: () => ['/repo/wt-a'],
+    isOpenAnywhere: (entry) => chatNativeSessionIds(entry).some((id) => surfaces.isOpen(id)),
+  };
+  const beats: Promise<void>[] = [];
+  const beatA = () =>
+    void beats.push(
+      registryA.beat({
+        openSessionIds: storages[0].getChats().flatMap((entry) => chatNativeSessionIds(entry).filter((id) => surfaces.isOpen(id))),
+        front: chatVisibility.publishedFrontSessionId(sourcesA, unboundA),
+        focused: vscode.window.state.focused,
+      })
+    );
+  const flowA = popupFlow(storages[0], {
+    ledgerDir,
+    live,
+    states: () => states,
+    isVisible: (chatId) => chatVisibility.isChatVisible(sourcesA, chatId),
+    unboundFront: (entry) => chatVisibility.unboundTabMayBeChat(entry, unboundA),
+    publishFront: beatA,
+  });
+  // Window b: nothing in front; it reads the registry.
+  const flowB = popupFlow(storages[1], { ledgerDir, live, states: () => states, frontAnywhere: (id) => registryB.frontAnywhere(id) });
+
+  const focus = { a: aFocused, b: false };
+  const flows = { a: flowA, b: flowB };
+  const pollIn = async (name: 'a' | 'b', prime = false) => {
+    windowState().state = { focused: focus[name] };
+    await flows[name].service.poll(prime);
+  };
+  await registryB.refresh();
+  await pollIn('a', true);
+  beatA(); // the tab change
+  await pollIn('b', true);
+  await Promise.all(beats);
+
+  /**
+   * One turn: under way in both windows, then over. `first` judges its end
+   * first; `bReadA` says whether window b's registry has read window a's
+   * beats by then (its folder watcher fired), or still holds an older read.
+   */
+  const turn = async (first: 'a' | 'b', bReadA: boolean) => {
+    states[sessionId] = busy(Date.now());
+    await pollIn('a');
+    await pollIn('b');
+    await Promise.all(beats);
+    if (bReadA) {
+      await registryB.refresh();
+    }
+    const stamp = Date.now() + 1;
+    states[sessionId] = idleAfter(stamp);
+    while (Date.now() <= stamp) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    for (const name of first === 'a' ? (['a', 'b'] as const) : (['b', 'a'] as const)) {
+      await pollIn(name);
+      await pollIn(name);
+    }
+    await Promise.all(beats);
+  };
+  return {
+    a: flowA,
+    b: flowB,
+    turn,
+    focus,
+    shown: () => [...flowA.shownLines(), ...flowB.shownLines()],
+  };
+}
+
+for (const chat of ['new', 'existing'] as const) {
+  test(`the ${chat} chat in front of focused window a, judged there first: 0 pop-ups, window b loses the lock (RC N2/N3)`, async (t) => {
+    const w = await twoWindowsOneInFront(t, chat);
+    await w.turn('a', false);
+    assert.deepEqual(w.shown(), [], 'no window pops a chat in front of the focused window');
+    assert.equal(w.a.skipped('front').length, 1, 'window a judges it in front');
+    assert.equal(w.b.skipped('locked').length, 1, "window a's front judgement holds the lock");
+  });
+
+  test(`the ${chat} chat in front of focused window a, judged in window b first: 0 pop-ups, b reads a's front`, async (t) => {
+    const w = await twoWindowsOneInFront(t, chat);
+    await w.turn('b', true);
+    assert.deepEqual(w.shown(), [], 'no window pops a chat in front of the focused window');
+    assert.equal(w.b.skipped('front').length, 1, "window b reads window a's front from the registry");
+    assert.equal(w.a.skipped('front').length, 1);
+  });
+
+  test(`the ${chat} chat in front of window a while another app is in front pops exactly once`, async (t) => {
+    for (const first of ['a', 'b'] as const) {
+      const w = await twoWindowsOneInFront(t, chat, false);
+      await w.turn(first, true);
+      assert.equal(w.shown().length, 1, `one pop-up (${first} first)`);
+      assert.deepEqual([...w.a.skipped('front'), ...w.b.skipped('front')], [], 'a window that is not focused silences nothing');
+    }
+  });
+
+  test(`a ${chat} chat's turn held back in front still lets its next turn pop, once`, async (t) => {
+    const w = await twoWindowsOneInFront(t, chat);
+    await w.turn('a', false);
+    assert.deepEqual(w.shown(), []);
+    w.focus.a = false; // the user moves to another app
+    await w.turn('b', true);
+    assert.equal(w.shown().length, 1, 'the next turn pops once');
   });
 }
 

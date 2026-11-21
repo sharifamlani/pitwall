@@ -61,6 +61,17 @@ export function frontSessionId(sources: ChatVisibilitySources): string | undefin
   return (chatId && sources.getChats().find((chat) => chat.id === chatId)?.harnessSessionId) || undefined;
 }
 
+/**
+ * The session this window publishes as in front (the registry's `front`,
+ * Q33): its bound chat tab's, else the one brand-new chat its unbound tab may
+ * be (PR #73). Without the second, a new chat watched in its own tab was in
+ * front only to this window, and another window popped its first turn (0.6.0
+ * RC walk, N2/N3).
+ */
+export function publishedFrontSessionId(sources: ChatVisibilitySources, unbound: UnboundFrontDeps): string | undefined {
+  return frontSessionId(sources) ?? (unboundTabChat(unbound)?.harnessSessionId || undefined);
+}
+
 /** The chat whose terminal or native-UI tab is the active tab of the active group, focus aside. */
 function chatIdOfActiveTab(sources: ChatVisibilitySources): string | undefined {
   const activeTab = vscode.window.tabGroups.activeTabGroup?.activeTab;
@@ -113,30 +124,52 @@ export interface UnboundFrontDeps {
  */
 export function unboundTabMayBeChat(chat: ChatSession, deps: UnboundFrontDeps): boolean {
   const adapter = deps.adapters().find((entry) => entry.id === chat.harness);
-  const surfaces = adapter?.nativeUi?.surfaces;
-  const openedAt = surfaces?.activeUnboundTabOpenedAt?.();
-  if (openedAt === undefined || (deps.now?.() ?? Date.now()) - openedAt > UNBOUND_FRONT_MAX_MS) {
+  const fits = adapter && unboundTabFit(adapter, deps);
+  if (!fits?.(chat)) {
     return false;
   }
+  const candidates = deps.chats().filter(fits);
+  return candidates.length === 1 && candidates[0].id === chat.id;
+}
+
+/**
+ * The one chat this window's active unbound tab may be, by the same rules as
+ * `unboundTabMayBeChat`, if any: what the registry publishes as in front for
+ * a new chat whose tab has not bound yet.
+ */
+export function unboundTabChat(deps: UnboundFrontDeps): ChatSession | undefined {
+  for (const adapter of deps.adapters()) {
+    const fits = unboundTabFit(adapter, deps);
+    if (fits) {
+      const candidates = deps.chats().filter(fits);
+      if (candidates.length === 1) {
+        return candidates[0];
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Whether a chat can be the adapter's active unbound tab; undefined when no such tab is in front, or it is too old. */
+function unboundTabFit(adapter: HarnessAdapter, deps: UnboundFrontDeps): ((candidate: ChatSession) => boolean) | undefined {
+  const openedAt = adapter.nativeUi?.surfaces?.activeUnboundTabOpenedAt?.();
+  if (openedAt === undefined || (deps.now?.() ?? Date.now()) - openedAt > UNBOUND_FRONT_MAX_MS) {
+    return undefined;
+  }
   const folders = deps.folders();
-  const fits = (candidate: ChatSession): boolean => {
+  return (candidate) => {
     const worktreePath = deps.worktreePathOf(candidate);
     return (
-      candidate.harness === chat.harness &&
+      candidate.harness === adapter.id &&
       Boolean(candidate.harnessSessionId) &&
       sessionStartedAt(candidate) >= openedAt &&
       Boolean(worktreePath && folders.some((folder) => samePath(folder, worktreePath))) &&
       !deps.isOpenAnywhere(candidate) &&
       // Only a panel process can be in a panel tab: a chat started in a terminal never fits, and
       // neither does one whose start the live record doesn't say (QA #73 round 3, G1).
-      adapter?.isPanelSession?.(candidate.harnessSessionId ?? '') === true
+      adapter.isPanelSession?.(candidate.harnessSessionId ?? '') === true
     );
   };
-  if (!fits(chat)) {
-    return false;
-  }
-  const candidates = deps.chats().filter(fits);
-  return candidates.length === 1 && candidates[0].id === chat.id;
 }
 
 /**
