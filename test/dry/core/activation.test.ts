@@ -804,6 +804,79 @@ test("the extension's unbound-tab front check stands for a new chat only while i
   assert.equal(unboundFront(chat()), false, 'run in a terminal: never in a panel tab');
 });
 
+test("the extension publishes a new chat's unbound tab as this window's front once the chat fits, with no tab event, and only on a change (QA on #86, E1/E2/E3)", async (t) => {
+  const lab = labFolder(t);
+  const now = Date.now();
+  const f = await seededActivation(
+    t,
+    [{ id: 'a0a0a0a0-new', name: 'New chat', harnessSessionId: 's-new', status: 'idle', worktreeId: lab.worktreeId, createdAt: now, lastAccessedAt: now }],
+    {},
+    [lab.repository]
+  );
+  const storage = tempDir(t, 'pitwall-storage-');
+  (f.context as { globalStorageUri?: vscode.Uri }).globalStorageUri = vscode.Uri.file(storage);
+  (stub.workspace as { workspaceFolders: unknown[] }).workspaceFolders = [{ uri: vscode.Uri.file(lab.repository.rootPath), name: 'lab', index: 0 }];
+  const { NativeUiTabSurfaceService } = await import('../../../src/core/harness/kit/NativeUiTabSurfaceService');
+  const { ClaudeHarness } = await import('../../../src/harnesses/claude/ClaudeHarness');
+  const { WorkspacesTreeProvider } = await import('../../../src/core/providers/WorkspacesTreeProvider');
+  const { WindowRegistry } = await import('../../../src/core/windows/WindowRegistry');
+  // The NotificationService the extension made, reached through its Test sound command.
+  let service: { options: { publishFront?: () => void } } | undefined;
+  const testSound = NotificationService.prototype.testSound;
+  NotificationService.prototype.testSound = async function (this: NotificationService) {
+    service = this as never;
+  };
+  // A Claude tab opened a second ago is in front, bound to nothing. The live record doesn't name the panel yet.
+  const openedAt = NativeUiTabSurfaceService.prototype.activeUnboundTabOpenedAt;
+  NativeUiTabSurfaceService.prototype.activeUnboundTabOpenedAt = () => now - 1_000;
+  let panel = false;
+  const isPanelSession = ClaudeHarness.prototype.isPanelSession;
+  ClaudeHarness.prototype.isPanelSession = (sessionId: string) => panel && sessionId === 's-new';
+  const isOpenAnywhere = WorkspacesTreeProvider.prototype.isOpenAnywhere;
+  WorkspacesTreeProvider.prototype.isOpenAnywhere = () => false;
+  // Every record this window writes to the registry.
+  const beats: Array<{ front?: string }> = [];
+  const beat = WindowRegistry.prototype.beat;
+  WindowRegistry.prototype.beat = function (this: InstanceType<typeof WindowRegistry>, state) {
+    beats.push(Array.isArray(state) ? {} : { ...state });
+    return beat.call(this, state);
+  };
+  t.after(() => {
+    NotificationService.prototype.testSound = testSound;
+    NativeUiTabSurfaceService.prototype.activeUnboundTabOpenedAt = openedAt;
+    ClaudeHarness.prototype.isPanelSession = isPanelSession;
+    WorkspacesTreeProvider.prototype.isOpenAnywhere = isOpenAnywhere;
+    WindowRegistry.prototype.beat = beat;
+  });
+  await f.start();
+  await vscode.commands.executeCommand('pitwall.testSound');
+  const publishFront = service?.options.publishFront;
+  assert.ok(publishFront, 'the extension wires publishFront');
+  // The registry's own first beat at activation, then the window services' first beat after the first render.
+  await waitFor(() => beats.length >= 2, 'the window services publish this window', 6_000);
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 120)); // past the 50 ms debounce
+  await settle();
+  assert.ok(beats.every((entry) => entry.front === undefined), 'nothing in front while the live record does not name the panel');
+
+  // The live record now names the panel: the tab can be the new chat. No tab event fires.
+  panel = true;
+  const before = beats.length;
+  publishFront();
+  await waitFor(() => beats.length > before, 'publishFront beats once the front changed', 1_000);
+  assert.equal(beats[beats.length - 1].front, 's-new', "the new chat's session, though its tab is unbound");
+  const record = path.join(storage, 'pitwall-windows', `${process.pid}.json`);
+  await waitFor(() => fs.existsSync(record) && JSON.parse(fs.readFileSync(record, 'utf8')).front === 's-new', "this window's registry record names it");
+
+  // Two more ticks with nothing changed: no write.
+  await settle();
+  const after = beats.length;
+  publishFront();
+  await settle();
+  publishFront();
+  await settle();
+  assert.equal(beats.length, after, 'publishFront writes only on a change');
+});
+
 test("discovery adding repos imports again the live sessions it may have placed, and drops one that ended (R7: onAdded → onReposAdded)", async (t) => {
   const lab = labFolder(t);
   const f = await seededActivation(t, [], {}, [lab.repository]);

@@ -2241,8 +2241,10 @@ async function twoWindowsOneInFront(t: TestContext, chat: 'new' | 'existing', aF
    * One turn: under way in both windows, then over. `first` judges its end
    * first; `bReadA` says whether window b's registry has read window a's
    * beats by then (its folder watcher fired), or still holds an older read.
+   * `ends` is how: the turn finishes, or it stops at a wait (one
+   * statusUpdatedAt, the same in both windows' live record).
    */
-  const turn = async (first: 'a' | 'b', bReadA: boolean) => {
+  const turn = async (first: 'a' | 'b', bReadA: boolean, ends: 'finished' | 'needs' = 'finished') => {
     states[sessionId] = busy(Date.now());
     await pollIn('a');
     await pollIn('b');
@@ -2251,7 +2253,7 @@ async function twoWindowsOneInFront(t: TestContext, chat: 'new' | 'existing', aF
       await registryB.refresh();
     }
     const stamp = Date.now() + 1;
-    states[sessionId] = idleAfter(stamp);
+    states[sessionId] = ends === 'needs' ? waitingAt(stamp) : idleAfter(stamp);
     while (Date.now() <= stamp) {
       await new Promise((resolve) => setImmediate(resolve));
     }
@@ -2282,6 +2284,22 @@ for (const chat of ['new', 'existing'] as const) {
     assert.deepEqual(w.shown(), [], 'no window pops a chat in front of the focused window');
     assert.equal(w.a.skipped('front').length, 1, 'window a judges it in front');
     assert.equal(w.b.skipped('locked').length, 1, "window a's front judgement holds the lock");
+  });
+
+  test(`the ${chat} chat waiting in front of focused window a, judged there first: 0 pop-ups, window b loses the needs lock`, async (t) => {
+    const w = await twoWindowsOneInFront(t, chat);
+    await w.turn('a', false, 'needs');
+    assert.deepEqual(w.shown(), [], 'no window pops a wait in front of the focused window');
+    assert.deepEqual(
+      w.a.skipped('front').map((line) => line.split(' ')[2]),
+      ['needs'],
+      'window a judges the wait in front'
+    );
+    assert.deepEqual(
+      w.b.skipped('locked').map((line) => line.split(' ')[2]),
+      ['needs'],
+      "window a's front judgement holds the wait's own lock"
+    );
   });
 
   test(`the ${chat} chat in front of focused window a, judged in window b first: 0 pop-ups, b reads a's front`, async (t) => {

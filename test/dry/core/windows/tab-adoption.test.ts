@@ -309,6 +309,18 @@ test("the registry's front for an unbound tab is the chat the front check names,
   assert.equal(unboundTabChat(frontDeps(window, () => [fresh], new Set(), () => Date.now() + UNBOUND_FRONT_MAX_MS + 1)), undefined, 'a tab left unbound too long');
 });
 
+test("another folder's new panel chat is never this window's unbound tab: not published, not judged in front (QA on #86, V5)", (t) => {
+  const window = liveWindow();
+  t.after(() => window.surfaces.dispose());
+  window.open('Claude Code');
+  // A fresh panel chat with no surface, started after the tab opened, in a worktree this window doesn't hold.
+  const elsewhere = listedChat('s-wt', Date.now(), 'wt-other');
+  assert.equal(unboundTabChat(frontDeps(window, () => [elsewhere])), undefined, 'the registry never names it in front here');
+  assert.equal(unboundTabMayBeChat(elsewhere, frontDeps(window, () => [elsewhere])), false, 'and no pop-up of it is held back here');
+  const fresh = listedChat('s-new', Date.now());
+  assert.equal(unboundTabChat(frontDeps(window, () => [elsewhere, fresh]))?.id, fresh.id, "this folder's new chat, beside it, still is");
+});
+
 test('a restored unbound tab (no open time) never stands for any chat', (t) => {
   const window = liveWindow(['Claude Code']);
   t.after(() => window.surfaces.dispose());
