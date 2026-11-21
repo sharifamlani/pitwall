@@ -24,9 +24,10 @@ is not loaded every session; read the relevant section when you touch that subsy
 
 ## Agent roles
 
-The roles (Main, QA, Tester, Evaluator, Marketing), their paste-in prompts and the learning loop
-live in [`.devcontainer/AGENT_ROLES.md`](.devcontainer/AGENT_ROLES.md), so they travel with the
-dev container to other repos. Each role reads its list in
+The roles (Main, Builder, QA, Tester, Evaluator, Marketing, Auditor), their paste-in prompts, the
+handoffs between them ("How work moves") and the learning loop live in
+[`.devcontainer/AGENT_ROLES.md`](.devcontainer/AGENT_ROLES.md), so they travel with the dev
+container to other repos. Each role reads its list in
 [`.devcontainer/agent-lessons.md`](.devcontainer/agent-lessons.md) before every job, and adds a
 line when a bug gets past it.
 
@@ -50,6 +51,12 @@ the Evaluator grades it afterwards, and its findings become patch releases.
   `%LOCALAPPDATA%\pitwall-uj\captures\phaseN-*` (uj-lab-* repos only); state file
   `MARKETING_STATE.md` in its scratchpad; series = ROADMAP D39; repo link
   `github.com/sharifamlani/pitwall`; never "Claude" in the product name.
+- **Walk line and media:** the Tester's state file is
+  `%LOCALAPPDATA%\pitwall-uj\captures\_testing-state.md`; its first line is `WALK: OPEN <UTC>` or
+  `WALK: CLOSED <UTC>`. Captures go under `%LOCALAPPDATA%\pitwall-uj\captures\`, one line each in
+  `_media-manifest.md` there (file, what it shows, the proven claim).
+- **Staging builds:** `staging` = `main` + at most two PRs under test; each staged VSIX is named
+  `pitwall-<version>-staging-<short sha>.vsix` and installed only into the test profile.
 - Pop-up clicks are simulated in the test profile, because `cursor://` belongs to the default
   profile. Each release adds one real pop-up click in Sharif's setup, done by Sharif.
 
