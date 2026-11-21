@@ -16,7 +16,7 @@ import { claudeProfile, entry } from '../../harnesses/claude/claudeFixture';
 import { HarnessRegistry } from '../../../../src/core/harness/HarnessRegistry';
 import { SessionImportService } from '../../../../src/core/services/SessionImportService';
 import { WorktreeCatalog } from '../../../../src/core/services/WorktreeCatalog';
-import { UNBOUND_FRONT_MAX_MS, unboundTabMayBeChat } from '../../../../src/core/services/chatVisibility';
+import { UNBOUND_FRONT_MAX_MS, unboundTabChat, unboundTabMayBeChat } from '../../../../src/core/services/chatVisibility';
 import { fakeAdapter, makeStorage, sessionRecord, worktreeRecord } from '../../support';
 
 const LAB_C = 'C:\\lab\\uj-lab-c';
@@ -293,6 +293,32 @@ test('two chats that fit: the unbound tab stands for neither', (t) => {
   for (const chat of chats) {
     assert.equal(unboundTabMayBeChat(chat, frontDeps(window, () => chats)), false, chat.harnessSessionId!);
   }
+});
+
+test("the registry's front for an unbound tab is the chat the front check names, and only that one (RC N2/N3)", (t) => {
+  const window = liveWindow();
+  t.after(() => window.surfaces.dispose());
+  const old = listedChat('s-old', Date.now() - HOUR);
+  assert.equal(unboundTabChat(frontDeps(window, () => [old])), undefined, 'no unbound tab in front');
+  window.open('Claude Code');
+  assert.equal(unboundTabChat(frontDeps(window, () => [old])), undefined, 'an hour-old chat is never the tab');
+  const fresh = listedChat('s-new', Date.now());
+  assert.equal(unboundTabChat(frontDeps(window, () => [old, fresh]))?.id, fresh.id, 'the one new chat');
+  assert.equal(unboundTabChat(frontDeps(window, () => [old, fresh], new Set(), undefined, () => undefined)), undefined, 'not when the live record does not say panel');
+  assert.equal(unboundTabChat(frontDeps(window, () => [fresh, listedChat('s-two', Date.now())])), undefined, 'two that fit: neither');
+  assert.equal(unboundTabChat(frontDeps(window, () => [fresh], new Set(), () => Date.now() + UNBOUND_FRONT_MAX_MS + 1)), undefined, 'a tab left unbound too long');
+});
+
+test("another folder's new panel chat is never this window's unbound tab: not published, not judged in front (QA on #86, V5)", (t) => {
+  const window = liveWindow();
+  t.after(() => window.surfaces.dispose());
+  window.open('Claude Code');
+  // A fresh panel chat with no surface, started after the tab opened, in a worktree this window doesn't hold.
+  const elsewhere = listedChat('s-wt', Date.now(), 'wt-other');
+  assert.equal(unboundTabChat(frontDeps(window, () => [elsewhere])), undefined, 'the registry never names it in front here');
+  assert.equal(unboundTabMayBeChat(elsewhere, frontDeps(window, () => [elsewhere])), false, 'and no pop-up of it is held back here');
+  const fresh = listedChat('s-new', Date.now());
+  assert.equal(unboundTabChat(frontDeps(window, () => [elsewhere, fresh]))?.id, fresh.id, "this folder's new chat, beside it, still is");
 });
 
 test('a restored unbound tab (no open time) never stands for any chat', (t) => {

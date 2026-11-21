@@ -60,6 +60,12 @@ export interface NotificationOptions {
    * PR #73). Counts as in front while the window is focused.
    */
   unboundFront?: (chat: ChatSession) => boolean;
+  /**
+   * Publish the chat in front of this window now (the registry's `front`), so
+   * another window holds back its pop-ups too (Q33). Called whenever a pop-up
+   * may follow soon, before anything is judged.
+   */
+  publishFront?: () => void;
   /** True when the chat is on the sidebar list (Q31). Default: always. */
   isListed?: (chatId: string) => boolean;
   /** The Operations log. Lines carry an id8 and a reason, never a title or a path. */
@@ -166,6 +172,10 @@ export class NotificationService {
       (windowFocused && (this.isChatVisible(target.chat.id) || this.options.unboundFront?.(target.chat))) ||
       this.options.frontAnywhere?.(target.sessionId)
     ) {
+      // Take the transition's lock too, so a window that judges it later (one with the chat not in
+      // front, before it reads this window's front from the registry) loses the claim and stays
+      // quiet (0.6.0 RC walk, N2/N3). The lock is this transition's alone: the next one still pops.
+      await this.options.ledger?.claim({ sessionId: target.sessionId, kind: popKind, at }).catch(() => false);
       return this.skip(popKind, target, 'front');
     }
     if (this.options.ledger && !(await this.options.ledger.claim({ sessionId: target.sessionId, kind: popKind, at }))) {
@@ -192,6 +202,7 @@ export class NotificationService {
    * #76 live gate). Judges nothing and shows nothing.
    */
   prepare(): void {
+    this.options.publishFront?.();
     this.options.toast?.warm?.();
   }
 

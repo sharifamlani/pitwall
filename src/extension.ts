@@ -287,6 +287,20 @@ export async function activate(context: vscode.ExtensionContext) {
    * the rows (` · open`, ` · {k} windows`, the menu flip), refreshed at most
    * every 500 ms.
    */
+  /**
+   * What the unbound-tab front check reads (PR #73): a brand-new chat's tab, in
+   * front before it binds, is in front, for this window's pop-ups and for the
+   * registry's `front` alike.
+   */
+  const unboundFrontDeps: chatVisibility.UnboundFrontDeps = {
+    adapters: () => harnessRegistry.all(),
+    chats: () => storageService.getChats(),
+    worktreePathOf: (entry) => workspacesProvider.getWorktreeById(entry.worktreeId)?.path,
+    folders: () => (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath),
+    isOpenAnywhere: (entry) => workspacesProvider.isOpenAnywhere(entry),
+  };
+  /** Publishes this window's chat in front if it changed; set once the registry starts. */
+  let publishFront: () => void = () => undefined;
   const publishWindows = (registry: WindowRegistry): void => {
     const openSessionIds = (): string[] =>
       storageService.getChats().flatMap((chat) => {
@@ -301,13 +315,20 @@ export async function activate(context: vscode.ExtensionContext) {
         return surfaces ? ids.filter((id) => surfaces.isOpen(id)) : [];
       });
     // The chat in front and window focus ride along (Q33): no other window pops a chat in front of a focused window here.
-    const beat = debounce(
-      () =>
-        void registry
-          .beat({ openSessionIds: openSessionIds(), front: chatVisibility.frontSessionId(visibilitySources), focused: vscode.window.state.focused })
-          .catch(() => undefined),
-      50
-    );
+    // A brand-new chat's unbound tab counts too (0.6.0 RC walk, N2/N3).
+    const frontNow = (): string | undefined => chatVisibility.publishedFrontSessionId(visibilitySources, unboundFrontDeps);
+    let publishedFront: string | undefined;
+    const beat = debounce(() => {
+      publishedFront = frontNow();
+      void registry.beat({ openSessionIds: openSessionIds(), front: publishedFront, focused: vscode.window.state.focused }).catch(() => undefined);
+    }, 50);
+    // A new chat's tab becomes its "in front" when the chat is listed and its live record names the panel,
+    // with no tab event: the attention tick asks before each pop-up may follow, and a change beats.
+    publishFront = () => {
+      if (frontNow() !== publishedFront) {
+        beat();
+      }
+    };
     const showWindows = debounce(() => void registry.windows().then((windows) => workspacesProvider.setWindows(windows)), 500);
     context.subscriptions.push(
       terminalManager.onTerminalStateChange(() => beat()),
@@ -689,14 +710,8 @@ export async function activate(context: vscode.ExtensionContext) {
       isListed: (chatId) => storageService.getChat(chatId) !== undefined,
       // A brand-new chat's tab, in front before it binds, is in front: only the one new chat with no
       // open surface that started after the tab opened (PR #73, QA round 2).
-      unboundFront: (chat) =>
-        chatVisibility.unboundTabMayBeChat(chat, {
-          adapters: () => harnessRegistry.all(),
-          chats: () => storageService.getChats(),
-          worktreePathOf: (entry) => workspacesProvider.getWorktreeById(entry.worktreeId)?.path,
-          folders: () => (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath),
-          isOpenAnywhere: (entry) => workspacesProvider.isOpenAnywhere(entry),
-        }),
+      unboundFront: (chat) => chatVisibility.unboundTabMayBeChat(chat, unboundFrontDeps),
+      publishFront: () => publishFront(),
       log: logOperation,
       toast: windowsToast,
       sound: (kind) => soundSwitches.get(kind),
