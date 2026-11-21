@@ -229,9 +229,10 @@ test('the claude agents answer still reaches the row, re-polled the moment it la
 const PROBE_SESSION = 'aaaaaaaa-0000-4000-8000-0000000000aa';
 
 /** One open chat whose sessions file has a status Pitwall doesn't know; `claude agents` says it waits on a prompt. */
-function unknownStatusLoad(t: Parameters<typeof claudeProfile>[0], opts: { held?: boolean } = {}) {
+function unknownStatusLoad(t: Parameters<typeof claudeProfile>[0], opts: { held?: boolean; clockSkewMs?: number } = {}) {
   // `held`: the stand-in answers only after release(), so "before the first answer" cannot be overtaken by a
-  // fast background call (windows CI, main 8553eb3: the 50 ms answer landed before the first read).
+  // fast background call. (Not the cause of windows CI's failure on main 8553eb3, which was the transcript
+  // mtime below; this is a separate, latent race.) `clockSkewMs`: the file clock runs that far ahead of Date.now().
   let release!: () => void;
   const gate = opts.held ? new Promise<void>((resolve) => (release = resolve)) : undefined;
   if (!gate) {
@@ -243,7 +244,10 @@ function unknownStatusLoad(t: Parameters<typeof claudeProfile>[0], opts: { held?
   const lab = profile.dir('lab');
   const storage = makeStorage();
   const worktrees = new Map([['wt', worktreeRecord({ id: 'wt', repoId: 'r', path: lab })]]);
-  profile.write(PROBE_SESSION, lab, [entry.user('go'), entry.assistant('x')]);
+  // Dated well in the past, like createdAt and statusUpdatedAt below. Undated, the transcript's mtime is "now" on
+  // the file clock, which on Windows can run a few ms ahead of Date.now(); then mtime > observedAt (the start of the
+  // claude agents call) and ClaudeHarness drops the wait (R40, ClaudeHarness.ts), the failure on main 8553eb3 at :327.
+  profile.write(PROBE_SESSION, lab, [entry.user('go'), entry.assistant('x')], { mtimeSeconds: (Date.now() - 60_000) / 1000 });
   const chat = storage.createChat('wt', 'claude', 'Chat', { harnessSessionId: PROBE_SESSION });
   // Listed well before activation: created in the same ms as the service, R45 would count it as launched
   // after activation (createdAt >= activatedAt), and its wait could pop (ubuntu CI on 153cccc).
@@ -259,7 +263,7 @@ function unknownStatusLoad(t: Parameters<typeof claudeProfile>[0], opts: { held?
   const agents = new ClaudeAgentsService({
     command: () => 'fake-claude',
     enabled: () => true,
-    now: () => Date.now() + offset,
+    now: () => Date.now() + offset - (opts.clockSkewMs ?? 0),
     exec: async () => {
       calls++;
       await (gate ?? sleep(50));
@@ -336,6 +340,15 @@ test('before the first claude agents answer, a session only it can place reads a
   const answered = (await load.harness.getLiveStates([PROBE_SESSION])).get(PROBE_SESSION)!;
   assert.equal(answered.liveUnknown, undefined, 'an answered session is known');
   assert.equal(answered.waitingFor, 'permission prompt');
+});
+
+test('a 30 ms file-clock skew does not drop a wait only claude agents knows (R40, windows CI on 8553eb3)', async (t) => {
+  const load = unknownStatusLoad(t, { clockSkewMs: 30 });
+  await load.harness.getLiveStates([PROBE_SESSION]);
+  await load.agents.getSnapshot();
+  const answered = (await load.harness.getLiveStates([PROBE_SESSION])).get(PROBE_SESSION)!;
+  assert.equal(answered.waitingFor, 'permission prompt', 'the skewed clock dropped the wait');
+  assert.equal(answered.liveStatus, 'waiting');
 });
 
 test('a steady wait only claude agents knows keeps its reason through every 10 s cache expiry, and never pops again (QA F2)', async (t) => {
