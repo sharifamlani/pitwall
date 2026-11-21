@@ -2147,7 +2147,10 @@ async function twoWindowsOneInFront(t: TestContext, chat: 'new' | 'existing', aF
   const registryA = new WindowRegistry(sharedDir, { pid: process.pid, folder: '/repo/wt-a' });
   const registryB = new WindowRegistry(sharedDir, { pid: process.ppid, folder: '/repo/wt-b' });
   t.after(() => (registryA.dispose(), registryB.dispose()));
+  // Window b's last read of the registry: from before window a beat.
+  await registryB.refresh();
 
+  windowState().state = { focused: aFocused };
   const tabOf = (label: string) => ({ label, input: new vscode.TabInputWebview('mainThreadWebview-claudeVSCodePanel'), isActive: false });
   const group = { isActive: true, viewColumn: 1, activeTab: undefined as unknown, tabs: [] as unknown[] };
   (stub.window as unknown as { tabGroups: { all: unknown[] } }).tabGroups.all = [group];
@@ -2159,31 +2162,8 @@ async function twoWindowsOneInFront(t: TestContext, chat: 'new' | 'existing', aF
     log: () => undefined,
   });
   t.after(() => surfaces.dispose());
-  const openTab = (label: string) => {
-    const tab = tabOf(label);
-    group.tabs.push(tab);
-    group.activeTab = tab;
-    fire({ opened: [tab], closed: [], changed: [] } as never);
-  };
-
   const sessionId = chat === 'new' ? 's-new' : 's-old';
   const storages = [makeStorage(), makeStorage()];
-  const listChat = (startedAt: number) =>
-    storages.forEach((storage) =>
-      storage.createChat('wt-a', 'claude', 'Watched', { id: 'chat-w', harnessSessionId: sessionId, createdAt: startedAt, lastAccessedAt: startedAt })
-    );
-  if (chat === 'new') {
-    openTab('Claude Code');
-    listChat(Date.now());
-    assert.equal(surfaces.activeSessionId(), undefined, 'its tab is not bound yet');
-  } else {
-    listChat(Date.now() - 60 * 60_000);
-    surfaces.expect(sessionId, 'Watched');
-    openTab('Watched');
-    assert.equal(surfaces.activeSessionId(), sessionId, 'its own tab, bound');
-  }
-  const states: Record<string, HarnessLiveState> = { [sessionId]: busy(Date.now()) };
-  const live = () => new Set([sessionId]);
 
   // Window a, wired as extension.ts wires it.
   const adapterA = { id: 'claude', nativeUi: { surfaces }, isPanelSession: () => true } as unknown as HarnessAdapter;
@@ -2208,6 +2188,33 @@ async function twoWindowsOneInFront(t: TestContext, chat: 'new' | 'existing', aF
         focused: vscode.window.state.focused,
       })
     );
+  // A tab change beats (extension.ts: the surfaces' onDidChange).
+  const openTab = (label: string) => {
+    const tab = tabOf(label);
+    group.tabs.push(tab);
+    group.activeTab = tab;
+    fire({ opened: [tab], closed: [], changed: [] } as never);
+    beatA();
+  };
+
+  const listChat = (startedAt: number) =>
+    storages.forEach((storage) =>
+      storage.createChat('wt-a', 'claude', 'Watched', { id: 'chat-w', harnessSessionId: sessionId, createdAt: startedAt, lastAccessedAt: startedAt })
+    );
+  if (chat === 'new') {
+    // The tab opens empty; the chat is listed after its first prompt, with no tab event.
+    openTab('Claude Code');
+    listChat(Date.now());
+    assert.equal(surfaces.activeSessionId(), undefined, 'its tab is not bound yet');
+  } else {
+    listChat(Date.now() - 60 * 60_000);
+    surfaces.expect(sessionId, 'Watched');
+    openTab('Watched');
+    assert.equal(surfaces.activeSessionId(), sessionId, 'its own tab, bound');
+  }
+  const states: Record<string, HarnessLiveState> = { [sessionId]: busy(Date.now()) };
+  const live = () => new Set([sessionId]);
+
   const flowA = popupFlow(storages[0], {
     ledgerDir,
     live,
@@ -2225,9 +2232,8 @@ async function twoWindowsOneInFront(t: TestContext, chat: 'new' | 'existing', aF
     windowState().state = { focused: focus[name] };
     await flows[name].service.poll(prime);
   };
-  await registryB.refresh();
+  await Promise.all(beats);
   await pollIn('a', true);
-  beatA(); // the tab change
   await pollIn('b', true);
   await Promise.all(beats);
 
